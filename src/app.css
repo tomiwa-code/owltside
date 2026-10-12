@@ -1,0 +1,178 @@
+@import '@fontsource/space-grotesk/500.css';
+@import '@fontsource/space-grotesk/600.css';
+@import '@fontsource/space-grotesk/700.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import 'tailwindcss';
+
+@theme {
+	/* ── Evently Pulse palette (extracted from design sources) ───────────── */
+	--color-surface: #0b1326;
+	--color-surface-base: #0b1120;
+	--color-surface-dim: #0b1326;
+	--color-surface-bright: #31394d;
+	--color-surface-container-lowest: #060e20;
+	--color-surface-container-low: #131b2e;
+	--color-surface-container: #171f33;
+	--color-surface-container-high: #222a3d;
+	--color-surface-container-highest: #2d3449;
+	--color-surface-raised: #1e293b;
+	--color-surface-variant: #2d3449;
+	--color-surface-glass: rgba(30, 41, 59, 0.72);
+	--color-surface-glass-border: rgba(255, 255, 255, 0.08);
+
+	--color-on-surface: #dae2fd;
+	--color-on-surface-variant: #c7c4d7;
+	--color-on-background: #dae2fd;
+	--color-inverse-surface: #dae2fd;
+	--color-inverse-on-surface: #283044;
+
+	--color-primary: #c0c1ff;
+	--color-on-primary: #1000a9;
+	--color-primary-container: #8083ff;
+	--color-on-primary-container: #0d0096;
+	--color-primary-fixed: #e1e0ff;
+	--color-primary-fixed-dim: #c0c1ff;
+	--color-inverse-primary: #494bd6;
+	--color-primary-cta: #6366f1;
+
+	--color-secondary: #ffb2b7;
+	--color-on-secondary: #67001b;
+	--color-secondary-container: #b50036;
+	--color-on-secondary-container: #ffc2c4;
+
+	--color-tertiary: #4cd7f6;
+	--color-on-tertiary: #003640;
+	--color-tertiary-container: #009eb9;
+	--color-on-tertiary-container: #002f38;
+
+	--color-error: #ffb4ab;
+	--color-on-error: #690005;
+	--color-error-container: #93000a;
+	--color-on-error-container: #ffdad6;
+
+	--color-outline: #908fa0;
+	--color-outline-variant: #464554;
+
+	--color-accent-emerald: #10b981;
+	--color-accent-amber: #f59e0b;
+
+	/* ── Typography ──────────────────────────────────────────────────────── */
+	--font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+	--font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+	--font-code: 'JetBrains Mono', ui-monospace, monospace;
+
+	--text-display-hero: 48px;
+	--text-display-hero--line-height: 52px;
+	--text-display-hero--letter-spacing: -0.03em;
+	--text-display-hero--font-weight: 700;
+	--text-display-hero-mobile: 32px;
+	--text-display-hero-mobile--line-height: 38px;
+	--text-display-hero-mobile--letter-spacing: -0.02em;
+	--text-display-hero-mobile--font-weight: 700;
+	--text-headline-lg: 30px;
+	--text-headline-lg--line-height: 36px;
+	--text-headline-lg--letter-spacing: -0.02em;
+	--text-headline-lg--font-weight: 600;
+	--text-headline-lg-mobile: 24px;
+	--text-headline-lg-mobile--line-height: 30px;
+	--text-headline-lg-mobile--letter-spacing: -0.01em;
+	--text-headline-lg-mobile--font-weight: 600;
+	--text-headline-md: 20px;
+	--text-headline-md--line-height: 26px;
+	--text-headline-md--letter-spacing: -0.01em;
+	--text-headline-md--font-weight: 600;
+	--text-body-lg: 16px;
+	--text-body-lg--line-height: 24px;
+	--text-body-lg--font-weight: 400;
+	--text-body-md: 14px;
+	--text-body-md--line-height: 20px;
+	--text-body-md--font-weight: 400;
+	--text-body-sm: 12px;
+	--text-body-sm--line-height: 16px;
+	--text-body-sm--letter-spacing: 0.01em;
+	--text-body-sm--font-weight: 400;
+	--text-label-code: 13px;
+	--text-label-code--line-height: 16px;
+	--text-label-code--letter-spacing: 0.04em;
+	--text-label-code--font-weight: 500;
+	--text-label-badge: 11px;
+	--text-label-badge--line-height: 14px;
+	--text-label-badge--letter-spacing: 0.06em;
+	--text-label-badge--font-weight: 600;
+
+	/* ── Spacing ─────────────────────────────────────────────────────────── */
+	--spacing-gutter: 1rem;
+	--spacing-gutter-desktop: 1.5rem;
+	--spacing-margin: 1rem;
+	--spacing-margin-desktop: 2.5rem;
+	--spacing-space-xs: 0.25rem;
+	--spacing-space-sm: 0.5rem;
+	--spacing-space-md: 1rem;
+	--spacing-space-lg: 1.5rem;
+	--spacing-space-xl: 2.5rem;
+
+	/* ── Radii ───────────────────────────────────────────────────────────── */
+	--radius-default: 0.5rem;
+	--radius-lg: 0.5rem;
+	--radius-xl: 0.75rem;
+	--radius-2xl: 1rem;
+}
+
+@utility pt-safe {
+	padding-top: env(safe-area-inset-top);
+}
+@utility pb-safe {
+	padding-bottom: env(safe-area-inset-bottom);
+}
+@utility scrollbar-none {
+	scrollbar-width: none;
+	&::-webkit-scrollbar {
+		display: none;
+	}
+}
+@utility glow-primary {
+	box-shadow: 0 0 24px -4px rgba(99, 102, 241, 0.35);
+}
+@utility glass {
+	background-color: var(--color-surface-glass);
+	backdrop-filter: blur(16px);
+	border: 1px solid var(--color-surface-glass-border);
+}
+
+@layer base {
+	html {
+		font-family: var(--font-body);
+		background-color: var(--color-surface-base);
+		color: var(--color-on-surface);
+		-webkit-tap-highlight-color: transparent;
+	}
+	body {
+		min-height: 100dvh;
+		background-color: var(--color-surface-base);
+		color: var(--color-on-surface);
+		font-family: var(--font-body);
+	}
+	h1,
+	h2,
+	h3,
+	h4 {
+		font-family: var(--font-display);
+	}
+	code,
+	.font-code {
+		font-family: var(--font-code);
+	}
+	button {
+		cursor: pointer;
+	}
+	input,
+	textarea,
+	select {
+		font: inherit;
+	}
+}
