@@ -16,7 +16,7 @@ npm install
 npm run dev          # http://localhost:5173  (demo mode, zero config)
 npm run test:unit    # vitest
 npm run check        # svelte-check / typecheck
-npm run build        # production build (adapter-node)
+npm run build        # production build (Vercel adapter, Node 24)
 ```
 
 ### Demo mode vs live mode
