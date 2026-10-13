@@ -5,14 +5,16 @@
 	let { children } = $props();
 
 	/**
-	 * The desktop (md+) home feed renders its own full-width top bar per the
-	 * desktop design source, so the shared side rail is skipped there. Every
+	 * Routes whose desktop (md+) design source carries its own full-width top
+	 * bar (home feed, checkout node) skip the shared side rail there. Every
 	 * other route keeps the rail on desktop; mobile is unchanged everywhere.
 	 */
-	const homeShell = $derived(page.url.pathname === '/home' || page.url.pathname.startsWith('/home/'));
+	const fullBleedDesktop = $derived(
+		['/home', '/checkout'].some((r) => page.url.pathname === r || page.url.pathname.startsWith(r + '/'))
+	);
 </script>
 
-<div class="md:pl-20" class:md:pl-0={homeShell}>
+<div class="md:pl-20" class:md:pl-0={fullBleedDesktop}>
 	{@render children()}
-	<BottomNav railOnDesktop={!homeShell} />
+	<BottomNav railOnDesktop={!fullBleedDesktop} />
 </div>
