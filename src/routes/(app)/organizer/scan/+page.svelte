@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import {
 		ArrowLeft,
+		Bell,
 		CheckCircle2,
 		Camera,
 		KeyRound,
@@ -10,16 +11,21 @@
 		RadioTower,
 		RotateCw,
 		ScanLine,
+		Search,
 		ShieldCheck,
 		Wifi,
 		WifiOff,
 		Zap
 	} from '@lucide/svelte';
+	import Avatar from '$components/Avatar.svelte';
+	import { page } from '$app/state';
 	import type { Checkin, OrganizerPayload } from '$lib/types';
 	import { fmtRelative } from '$lib/utils/dates';
 	import { toast } from '$lib/state/toast.svelte';
 
 	let { data } = $props();
+
+	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
 	const events = $derived(data.organizer.events);
 	let eventId = $state(events[0]?.id ?? '');
@@ -30,6 +36,7 @@
 	let phase = $state<'pin' | 'scan'>('pin');
 	let digits = $state(['8', '4', '2', '', '', '']);
 	let cellRefs: HTMLInputElement[] = [];
+	let cellRefsDesk: HTMLInputElement[] = [];
 	let countdown = $state(299); // 04:59
 	let resendIn = $state(17);
 	let pinBusy = $state(false);
@@ -55,6 +62,14 @@
 	function onBack(i: number, e: KeyboardEvent) {
 		if (e.key === 'Backspace' && !digits[i] && i > 0) cellRefs[i - 1]?.focus();
 	}
+	function onDigitDesk(i: number, e: Event) {
+		const v = (e.target as HTMLInputElement).value.replace(/\D/g, '').slice(-1);
+		digits[i] = v;
+		if (v && i < 5) cellRefsDesk[i + 1]?.focus();
+	}
+	function onBackDesk(i: number, e: KeyboardEvent) {
+		if (e.key === 'Backspace' && !digits[i] && i > 0) cellRefsDesk[i - 1]?.focus();
+	}
 	function activate() {
 		if (!pinComplete) return;
 		pinBusy = true;
@@ -67,6 +82,8 @@
 
 	/* ── phase B: scanning ──────────────────────────────────── */
 	let videoEl: HTMLVideoElement | undefined = $state();
+	let videoElDesk: HTMLVideoElement | undefined = $state();
+	let camEl: HTMLVideoElement | undefined;
 	let camOn = $state(false);
 	let camError = $state(false);
 	let manualCode = $state('');
@@ -174,9 +191,10 @@
 			stream = await navigator.mediaDevices.getUserMedia({
 				video: { facingMode: 'environment' }
 			});
-			if (videoEl) {
-				videoEl.srcObject = stream;
-				await videoEl.play();
+			camEl = window.matchMedia('(min-width: 768px)').matches ? videoElDesk : videoEl;
+			if (camEl) {
+				camEl.srcObject = stream;
+				await camEl.play();
 			}
 			camOn = true;
 			camError = false;
@@ -184,8 +202,8 @@
 				// @ts-expect-error BarcodeDetector not yet in lib.dom
 				const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
 				detectTimer = setInterval(async () => {
-					if (!videoEl || videoEl.readyState < 2) return;
-					const codes = await detector.detect(videoEl).catch(() => []);
+					if (!camEl || camEl.readyState < 2) return;
+					const codes = await detector.detect(camEl).catch(() => []);
 					const value = codes[0]?.rawValue;
 					if (value && (lastScanned?.code !== value || Date.now() - (lastScanned?.at ?? 0) > 4000)) {
 						lastScanned = { code: value, at: Date.now() };
@@ -209,6 +227,310 @@
 
 <svelte:head><title>Ticket Scanner • Owltside</title></svelte:head>
 
+<!-- ── desktop (md+) gate scanner terminal in the shipped console design
+     language (design source unavailable this turn — extrapolated); mobile
+     scanner below unchanged ── -->
+<div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
+	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
+			<a href="/home" class="flex items-center gap-2.5 shrink-0">
+				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
+				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
+			</a>
+			<nav class="flex items-center gap-1" aria-label="Primary">
+				{#each [
+					['/home', 'Home'],
+					['/explore', 'Explore'],
+					['/tickets', 'Tickets'],
+					['/organizer', 'Organizer']
+				] as [href, label]}
+					<a
+						{href}
+						class="px-3 h-9 rounded-lg flex items-center text-body-sm transition-colors {href === '/organizer' ? 'bg-surface-container-high text-on-surface' : 'text-on-surface-variant hover:text-on-surface'}"
+					>
+						{label}
+					</a>
+				{/each}
+			</nav>
+			<div class="flex-1"></div>
+			<span class="relative hidden lg:flex items-center w-64 h-10">
+				<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
+				<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, venues…</span>
+				<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
+			</span>
+			<span class="hidden xl:flex items-center gap-1.5 h-9 px-3 rounded-lg border border-surface-glass-border {MONO} text-on-surface-variant shrink-0">
+				<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> Secure_Node
+			</span>
+			<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
+				<Bell class="w-4.5 h-4.5" />
+				<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
+			</a>
+			<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
+				<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
+				<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">Connected</span>
+			</div>
+			<a href="/profile" aria-label="Your profile" class="shrink-0">
+				<Avatar name={page.data.session?.name ?? 'Guest'} size="sm" />
+			</a>
+		</div>
+	</header>
+
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-10 pb-2 flex flex-wrap items-end justify-between gap-4">
+		<div class="min-w-0">
+			<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
+				<span>Gate_Node</span>
+				<span class="text-outline-variant">/</span>
+				<span>Scanner_Terminal</span>
+			</span>
+			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-3">Ticket Scanner & Gate Control</h1>
+			<p class="text-body-md text-on-surface-variant mt-2">Arm this terminal with a staff token, then verify HMAC passes online or offline at {gate}.</p>
+		</div>
+		<div class="flex items-center gap-3 flex-wrap">
+			<span class="h-10 px-3.5 rounded-lg flex items-center gap-2 border {online ? 'border-accent-emerald/25 bg-accent-emerald/5 text-accent-emerald' : 'border-accent-amber/30 bg-accent-amber/5 text-accent-amber'} {MONO}">
+				{#if online}<Wifi class="w-3.5 h-3.5" /> Online{:else}<WifiOff class="w-3.5 h-3.5" /> Offline{/if}
+				{#if queue.length > 0}<span class="text-accent-amber">• {queue.length} queued</span>{/if}
+			</span>
+			<a href="/organizer" class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors">
+				<RadioTower class="w-4 h-4 text-on-surface-variant" /><span>Back to Console</span>
+			</a>
+		</div>
+	</div>
+
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 grid lg:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
+		<div class="min-w-0">
+			{#if phase === 'pin'}
+				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-8 flex flex-col items-center text-center">
+					<div class="flex items-center justify-center gap-2 flex-wrap">
+						<span class="flex items-center gap-1.5 rounded-full bg-surface-container-high border border-surface-glass-border px-3 py-1.5 {MONO} text-on-surface-variant">
+							<KeyRound class="w-3.5 h-3.5 text-primary" /> HMAC Token Vault • Step 2 of 2
+						</span>
+						<span class="flex items-center gap-1.5 rounded-full bg-accent-emerald/10 border border-accent-emerald/30 px-3 py-1.5 {MONO} text-accent-emerald">
+							<ShieldCheck class="w-3.5 h-3.5" /> TLS 1.3
+						</span>
+					</div>
+					<div class="relative w-24 h-24 flex items-center justify-center mt-6">
+						<span class="absolute inset-0 rounded-full bg-primary/20 blur-2xl"></span>
+						<span class="absolute inset-2 rounded-full bg-primary/10 animate-pulse"></span>
+						<span class="relative w-16 h-16 rounded-full bg-gradient-to-br from-primary/30 to-secondary/30 border border-surface-glass-border flex items-center justify-center text-primary">
+							<Lock class="w-7 h-7" />
+						</span>
+					</div>
+					<h2 class="font-display text-headline-lg text-on-surface mt-4">Verify Security Token</h2>
+					<p class="text-body-sm text-on-surface-variant mt-1 max-w-md">
+						Enter the 6-digit code sent to <span class="text-on-surface">gate-staff@owltside.ng</span> to arm this device as {gate}.
+					</p>
+					<span class="font-code text-label-code text-primary mt-2">{mm}:{ss}</span>
+					<div class="flex gap-2.5 justify-center mt-6">
+						{#each digits as d, i (i)}
+							<input
+								bind:this={cellRefsDesk[i]}
+								type="text"
+								inputmode="numeric"
+								maxlength="1"
+								value={d}
+								oninput={(e) => onDigitDesk(i, e)}
+								onkeydown={(e) => onBackDesk(i, e)}
+								aria-label="Digit {i + 1}"
+								class="w-14 h-16 text-center font-display text-headline-md rounded-xl border text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all {d ? 'bg-surface-container-high border-surface-glass-border' : 'bg-surface-container-low border-surface-glass-border'}"
+							/>
+						{/each}
+					</div>
+					<button
+						type="button"
+						class="w-full max-w-sm h-12 mt-6 rounded-lg bg-primary text-on-primary text-body-md font-semibold disabled:opacity-40 flex items-center justify-center gap-2 glow-primary"
+						disabled={!pinComplete || pinBusy}
+						onclick={activate}
+					>
+						{#if pinBusy}<span class="w-4 h-4 rounded-full border-2 border-on-primary/30 border-t-on-primary animate-spin"></span>{:else}<ShieldCheck class="w-4 h-4" /> Arm scanner{/if}
+					</button>
+					<div class="w-full max-w-sm rounded-lg bg-surface-container-low border border-surface-glass-border p-4 flex items-center justify-between mt-6">
+						<p class="text-body-sm text-on-surface-variant">
+							Didn't receive code? <span class="text-on-surface">{resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend now'}</span>
+						</p>
+						<button
+							class="flex items-center gap-1.5 text-body-sm font-medium text-primary disabled:opacity-40"
+							disabled={resendIn > 0}
+							onclick={() => { resendIn = 17; toast('New code sent', 'success'); }}
+						>
+							<RotateCw class="w-3.5 h-3.5" /> Resend
+						</button>
+					</div>
+					<button class="flex items-center justify-center gap-2 text-body-sm text-on-surface-variant hover:text-on-surface mt-4" onclick={() => toast('Sent via instant message', 'success')}>
+						<Zap class="w-3.5 h-3.5 text-accent-amber" /> Prefer instant message?
+					</button>
+				</section>
+			{:else}
+				<div class="grid grid-cols-3 gap-5">
+					{#each [
+						['Verified', counts.verified, 'text-accent-emerald'],
+						['Duplicate', counts.duplicate, 'text-accent-amber'],
+						['Invalid', counts.invalid, 'text-error']
+					] as [label, value, tone]}
+						<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 text-center">
+							<span class="font-display text-[30px] leading-9 font-bold tracking-tight {tone}">{value}</span>
+							<span class="{MONO} text-on-surface-variant block mt-1">{label}</span>
+						</section>
+					{/each}
+				</div>
+
+				<div class="flex items-center justify-between rounded-lg px-4 py-2.5 border mt-5 {online ? 'bg-accent-emerald/5 border-accent-emerald/25' : 'bg-accent-amber/5 border-accent-amber/30'}">
+					<span class="flex items-center gap-2 text-body-sm {online ? 'text-accent-emerald' : 'text-accent-amber'}">
+						{#if online}<Wifi class="w-4 h-4" /> Online — scans sync instantly{:else}<WifiOff class="w-4 h-4" /> Offline — scans queued locally{/if}
+					</span>
+					{#if queue.length > 0}
+						<span class="{MONO} text-accent-amber">{queue.length} queued</span>
+					{/if}
+				</div>
+
+				<div class="grid md:grid-cols-2 gap-5 mt-5">
+					<section class="relative aspect-video rounded-xl overflow-hidden bg-surface-container-low border border-dashed border-surface-glass-border flex items-center justify-center">
+						{#if camOn}
+							<video bind:this={videoElDesk} muted playsinline class="absolute inset-0 w-full h-full object-cover"></video>
+							<div class="absolute inset-x-10 top-1/2 h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent animate-pulse"></div>
+							<button class="absolute top-3 right-3 rounded-full bg-surface-container/80 backdrop-blur px-3 py-1.5 {MONO} text-on-surface" onclick={stopCam}>
+								Stop camera
+							</button>
+						{:else}
+							<div class="flex flex-col items-center gap-3 p-6 text-center">
+								<ScanLine class="w-10 h-10 text-on-surface-variant" />
+								<p class="text-body-sm text-on-surface-variant max-w-xs">Point the camera at a ticket QR, or verify a code manually on the right.</p>
+								<button class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary" onclick={startCam}>
+									<Camera class="w-4 h-4" /> Start camera
+								</button>
+								{#if camError}<p class="{MONO} text-accent-amber">Camera blocked — manual entry still works.</p>{/if}
+							</div>
+						{/if}
+					</section>
+					<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-3">
+						<span class="{MONO} text-on-surface-variant">Manual Verification</span>
+						<div class="flex gap-2">
+							<input
+								type="text"
+								bind:value={manualCode}
+								placeholder="EV-XXXX-XXXX-0001"
+								class="flex-1 min-w-0 px-4 py-3 rounded-lg bg-surface-container-low border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary font-code"
+								onkeydown={(e) => { if (e.key === 'Enter') { verify(manualCode); manualCode = ''; } }}
+							/>
+							<button class="h-12 px-5 rounded-lg bg-on-surface text-surface-base text-body-sm font-semibold shrink-0" onclick={() => { verify(manualCode); manualCode = ''; }}>
+								Verify
+							</button>
+						</div>
+						<button class="h-11 rounded-lg border border-dashed border-surface-glass-border text-on-surface-variant text-body-sm font-medium flex items-center justify-center gap-2 hover:border-primary hover:text-primary transition-colors" onclick={simulate}>
+							<Zap class="w-4 h-4" /> Simulate a scan (demo)
+						</button>
+						<p class="text-xs text-on-surface-variant mt-auto">Scans verify against the rotating HMAC window; offline scans settle from the local queue when the link returns.</p>
+					</section>
+				</div>
+
+				{#if last}
+					<div class="rounded-xl p-5 border flex items-center gap-4 mt-5 {last.result === 'verified' ? 'bg-accent-emerald/10 border-accent-emerald/30' : last.result === 'duplicate' ? 'bg-accent-amber/10 border-accent-amber/30' : 'bg-error/10 border-error/30'}">
+						<span class="flex-shrink-0 {last.result === 'verified' ? 'text-accent-emerald' : last.result === 'duplicate' ? 'text-accent-amber' : 'text-error'}">
+							{#if last.result === 'invalid'}<OctagonAlert class="w-8 h-8" />{:else}<CheckCircle2 class="w-8 h-8" />{/if}
+						</span>
+						<div class="flex flex-col min-w-0">
+							<span class="font-display text-headline-md capitalize {last.result === 'verified' ? 'text-accent-emerald' : last.result === 'duplicate' ? 'text-accent-amber' : 'text-error'}">{last.result}</span>
+							<span class="text-body-sm text-on-surface truncate">{last.holder} • {last.tier}</span>
+							<span class="{MONO} text-on-surface-variant">{last.ticketCode} • {fmtRelative(last.at)}</span>
+						</div>
+					</div>
+				{/if}
+
+				<div class="flex items-center justify-between gap-3 mt-5">
+					<button class="flex items-center justify-center gap-2 text-body-sm text-on-surface-variant hover:text-on-surface" onclick={() => { stopCam(); phase = 'pin'; }}>
+						<Lock class="w-3.5 h-3.5" /> Disarm scanner & return to PIN
+					</button>
+					<a href="/organizer" class="flex items-center justify-center gap-2 text-body-sm text-on-surface-variant hover:text-on-surface">
+						<RadioTower class="w-3.5 h-3.5" /> Back to console
+					</a>
+				</div>
+			{/if}
+		</div>
+
+		<div class="flex flex-col gap-6 min-w-0">
+			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
+				<div class="flex items-center justify-between gap-3">
+					<h2 class="font-display text-headline-md text-on-surface">Terminal Status</h2>
+					<span class="{MONO} text-on-surface-variant">{phase === 'scan' ? 'Armed' : 'Standby'}</span>
+				</div>
+				<div class="flex flex-col gap-2 mt-4 text-body-sm">
+					{#each [
+						['Gate', gate],
+						['Event', event?.title ?? 'No event'],
+						['Token Window', phase === 'pin' ? `${mm}:${ss}` : '6h armed'],
+						['HMAC Rotation', '45s'],
+						['Cipher', 'TLS 1.3']
+					] as [label, value]}
+						<div class="flex items-center justify-between gap-3">
+							<span class="text-on-surface-variant">{label}</span>
+							<span class="{MONO} text-on-surface truncate max-w-[60%] text-right">{value}</span>
+						</div>
+					{/each}
+				</div>
+			</section>
+
+			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
+				<div class="flex items-center justify-between gap-3">
+					<h2 class="font-display text-headline-md text-on-surface">Scan Queue</h2>
+					<span class="{MONO} text-on-surface-variant">{queue.length} Pending</span>
+				</div>
+				<div class="flex flex-col gap-2.5 mt-4">
+					{#each queue.slice(0, 5) as q (q.code + q.at)}
+						<div class="flex items-center justify-between gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5">
+							<span class="font-code text-label-code text-on-surface truncate">{q.code}</span>
+							<span class="{MONO} text-on-surface-variant shrink-0">{fmtRelative(q.at)}</span>
+						</div>
+					{:else}
+						<p class="text-body-sm text-on-surface-variant">Queue empty — every scan settled in real time.</p>
+					{/each}
+				</div>
+			</section>
+
+			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
+				<div class="flex items-center justify-between gap-3">
+					<h2 class="font-display text-headline-md text-on-surface">Gate Assignment</h2>
+					<span class="{MONO} text-on-surface-variant">Node_0x7E3</span>
+				</div>
+				{#if events.length > 1}
+					<label class="block mt-4">
+						<span class="{MONO} text-on-surface-variant block mb-1.5">Active event</span>
+						<select bind:value={eventId} class="w-full px-3 py-2.5 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm text-on-surface">
+							{#each events as e (e.id)}<option value={e.id}>{e.title}</option>{/each}
+						</select>
+					</label>
+				{:else}
+					<p class="text-body-sm text-on-surface mt-4">{event?.title ?? 'No event'}</p>
+				{/if}
+				<div class="flex items-center justify-between gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high px-4 py-3 mt-4">
+					<span class="flex items-center gap-2 min-w-0 {MONO} text-on-surface-variant">
+						<ShieldCheck class="w-4 h-4 text-accent-emerald shrink-0" />
+						Secure_Channel: RSA-4096
+					</span>
+					<span class="{MONO} text-outline-variant shrink-0">v2.4.1</span>
+				</div>
+			</section>
+		</div>
+	</div>
+
+	<footer class="mt-4 border-t border-surface-glass-border">
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
+			<span class="flex items-center gap-3">
+				<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
+				<span class="w-px h-4 bg-outline-variant/40"></span>
+				<span class="{MONO} text-on-surface-variant">Decentralized Event Protocol</span>
+			</span>
+			<span class="flex items-center gap-5">
+				<span class="flex items-center gap-1.5 {MONO} text-on-surface-variant">
+					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
+					Mainnet 99.98% Operational
+				</span>
+				<span class="{MONO} text-on-surface-variant">Latency: 24ms</span>
+				<span class="{MONO} text-on-surface-variant">© {new Date().getFullYear()} Owltside Protocol</span>
+			</span>
+		</div>
+	</footer>
+</div>
+
+<div class="md:hidden">
 <main class="flex flex-col relative w-full pt-3 pb-28 md:pb-16 bg-surface min-h-dvh">
 	<header class="fixed top-0 left-0 w-full z-30 bg-surface/85 backdrop-blur-xl border-b border-surface-glass-border">
 		<div class="flex items-center px-gutter h-16 md:max-w-3xl md:mx-auto w-full gap-2">
@@ -394,3 +716,4 @@
 		{/if}
 	</div>
 </main>
+</div>
