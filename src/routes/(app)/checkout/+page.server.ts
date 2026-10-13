@@ -17,10 +17,12 @@ export const load: PageServerLoad = async ({ url, locals, cookies }) => {
 	const tierId = url.searchParams.get('tier') ?? event.tiers.find((t) => t.capacity - t.sold > 0)?.id;
 	const tier = event.tiers.find((t) => t.id === tierId) ?? event.tiers[0];
 	const qty = Math.max(1, Math.min(6, Number(url.searchParams.get('qty') ?? 1)));
+	const promoParam = (url.searchParams.get('promo') ?? '').toUpperCase();
 	return {
 		event,
 		tierId: tier.id,
 		qty,
+		promo: promoParam === 'TECHCOMMUNITY' || promoParam === 'OWL10' ? promoParam : null,
 		paystack: paystackConfigured(),
 		holder: {
 			name: locals.session?.name ?? 'Guest Explorer',

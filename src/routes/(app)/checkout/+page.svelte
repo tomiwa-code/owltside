@@ -39,7 +39,7 @@
 	let tierId = $state(data.tierId);
 	let qty = $state(data.qty);
 	let promoInput = $state('');
-	let appliedPromo = $state<string | null>(null);
+	let appliedPromo = $state<string | null>(data.promo ?? null);
 	let method = $state<'card' | 'transfer' | 'ussd' | 'split'>('card');
 	let scenario = $state<PaymentScenario>('approve');
 
