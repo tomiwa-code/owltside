@@ -3,6 +3,7 @@
 		BadgeCheck,
 		Bell,
 		CalendarDays,
+		ChevronLeft,
 		ChevronRight,
 		Copy,
 		Edit,
@@ -21,7 +22,7 @@
 	import { page } from '$app/state';
 	import { follows } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
-	import { fmtDate } from '$lib/utils/dates';
+	import { fmtDate, fmtTime } from '$lib/utils/dates';
 
 	let { data } = $props();
 	const session = $derived(page.data.session);
@@ -55,6 +56,33 @@
 				})
 				.map((t) => new Date(t.eventStartsAt).getDate())
 		)
+	);
+
+	// ── desktop calendar-hero state ──
+	let monthOffset = $state(0);
+	let selectedDay = $state<number | null>(null);
+	const view = $derived(new Date(year, month + monthOffset, 1));
+	const viewLabel = $derived(view.toLocaleDateString('en-NG', { month: 'long', year: 'numeric' }));
+	const viewFirst = $derived((view.getDay() + 6) % 7);
+	const viewDays = $derived(new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate());
+	const todayInView = $derived(view.getFullYear() === year && view.getMonth() === month);
+	const activeDay = $derived(selectedDay ?? (todayInView ? now.getDate() : null));
+	const passesOn = (d: number) =>
+		upcoming.filter((t) => {
+			const s = new Date(t.eventStartsAt);
+			return (
+				s.getFullYear() === view.getFullYear() && s.getMonth() === view.getMonth() && s.getDate() === d
+			);
+		});
+	const monthCount = $derived(
+		upcoming.filter((t) => {
+			const s = new Date(t.eventStartsAt);
+			return s.getFullYear() === view.getFullYear() && s.getMonth() === view.getMonth();
+		}).length
+	);
+	const daySchedule = $derived(activeDay ? passesOn(activeDay) : []);
+	const activeLabel = $derived(
+		activeDay ? fmtDate(new Date(view.getFullYear(), view.getMonth(), activeDay, 12).toISOString()) : ''
 	);
 
 	const vaultRows = $derived([
@@ -134,7 +162,7 @@
 				<span>Public_Profile</span>
 			</span>
 			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-3">Profile & Pass Portfolio</h1>
-			<p class="text-body-md text-on-surface-variant mt-2">Public identity, vault readiness and the upcoming gate schedule for this access node.</p>
+			<p class="text-body-md text-on-surface-variant mt-2">Public identity, vault readiness and the pass calendar for this access node.</p>
 		</div>
 		<div class="flex items-center gap-3">
 			<a href="/settings" aria-label="Settings" class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors">
@@ -215,61 +243,99 @@
 			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<span class="flex items-center gap-2.5">
-						<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
-						<span class="font-display text-headline-md text-on-surface">Gate Schedule — Next Up</span>
+						<CalendarDays class="w-4.5 h-4.5 text-primary" />
+						<span class="font-display text-headline-md text-on-surface">{viewLabel}</span>
 					</span>
-					<span class="{MONO} text-on-surface-variant">{upcoming.length} Valid Passes</span>
+					<span class="flex items-center gap-2">
+						<button class="w-9 h-9 rounded-md bg-surface-container-high border border-surface-glass-border text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Previous month" onclick={() => { monthOffset -= 1; selectedDay = null; }}>
+							<ChevronLeft class="w-4 h-4" />
+						</button>
+						<button class="h-9 px-3 rounded-md bg-surface-container-high border border-surface-glass-border {MONO} text-on-surface-variant hover:text-on-surface transition-colors" onclick={() => { monthOffset = 0; selectedDay = null; }}>
+							Today
+						</button>
+						<button class="w-9 h-9 rounded-md bg-surface-container-high border border-surface-glass-border text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Next month" onclick={() => { monthOffset += 1; selectedDay = null; }}>
+							<ChevronRight class="w-4 h-4" />
+						</button>
+					</span>
+				</div>
+				<div class="grid grid-cols-7 gap-1.5 text-center {MONO} text-outline py-2 mt-3">
+					{#each ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as d}<span>{d}</span>{/each}
+				</div>
+				<div class="grid grid-cols-7 gap-1.5">
+					{#each Array(viewFirst) as _, i (i)}<span></span>{/each}
+					{#each Array(viewDays) as _, i (i)}
+						{@const day = i + 1}
+						{@const evs = passesOn(day)}
+						{@const isSel = activeDay === day}
+						{@const isToday = todayInView && now.getDate() === day}
+						<button
+							class="h-14 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors {isSel ? 'bg-primary text-on-primary' : evs.length ? 'bg-surface-container-high/70 text-on-surface hover:bg-surface-container-high' : 'bg-surface-container-high/40 text-on-surface-variant hover:bg-surface-container-high/60'} {isToday && !isSel ? 'ring-1 ring-primary/50' : ''}"
+							onclick={() => (selectedDay = day)}
+							aria-label="{viewLabel} day {day}{evs.length ? `, ${evs.length} events` : ''}"
+						>
+							<span class="text-body-sm {isSel ? 'font-bold' : ''}">{day}</span>
+							{#if evs.length}<span class="w-1.5 h-1.5 rounded-full {isSel ? 'bg-on-primary' : 'bg-primary'}"></span>{/if}
+						</button>
+					{/each}
+				</div>
+				<div class="flex items-center gap-4 mt-4 pt-3 border-t border-surface-glass-border {MONO} text-on-surface-variant">
+					<span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-primary"></span> Event day</span>
+					<span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full ring-1 ring-primary/60"></span> Today</span>
+					<span class="ml-auto">{monthCount} Events This Month</span>
+				</div>
+			</section>
+
+			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<span class="flex items-center gap-2.5">
+						<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
+						<span class="font-display text-headline-md text-on-surface">Day Schedule{activeLabel ? ` — ${activeLabel}` : ''}</span>
+					</span>
+					<span class="{MONO} text-on-surface-variant">{daySchedule.length} Passes</span>
 				</div>
 				<div class="flex flex-col gap-2.5 mt-4">
-					{#each upcoming.slice(0, 5) as t (t.id)}
+					{#each daySchedule as t (t.id)}
 						<a href="/tickets/{t.id}" class="flex items-center gap-4 rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-3 hover:bg-surface-container-high transition-colors">
-							<span class="w-12 h-12 rounded-md bg-surface-container-highest border border-surface-glass-border flex flex-col items-center justify-center shrink-0">
-								<span class="font-code text-[10px] tracking-[0.14em] text-on-surface-variant uppercase">{new Date(t.eventStartsAt).toLocaleDateString('en-NG', { month: 'short' })}</span>
-								<span class="font-display text-body-lg font-bold text-on-surface leading-5">{new Date(t.eventStartsAt).getDate()}</span>
-							</span>
+							<span class="{MONO} text-on-surface shrink-0 w-16">{fmtTime(t.eventStartsAt)}</span>
 							<span class="flex-1 min-w-0">
 								<span class="block text-body-md font-semibold text-on-surface truncate">{t.eventTitle}</span>
-								<span class="block text-body-sm text-on-surface-variant truncate">{fmtDate(t.eventStartsAt)} • {t.venue}</span>
+								<span class="block text-body-sm text-on-surface-variant truncate">{t.venue}</span>
 							</span>
 							<span class="{MONO} px-2 py-1 rounded bg-surface-container-high border border-surface-glass-border text-on-surface-variant shrink-0">{t.tierName}</span>
 							<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
 						</a>
 					{:else}
-						<p class="text-body-sm text-on-surface-variant py-6 text-center">No upcoming passes — the city is waiting.</p>
-					{/each}
-				</div>
-			</section>
-
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<div class="flex items-center justify-between gap-3">
-					<span class="flex items-center gap-2">
-						<CalendarDays class="w-4.5 h-4.5 text-primary" />
-						<span class="font-display text-headline-md text-on-surface">{monthLabel}</span>
-					</span>
-					<span class="{MONO} px-2 py-0.5 rounded bg-primary/20 text-primary">{eventDays.size} Events</span>
-				</div>
-				<div class="grid grid-cols-7 gap-1 text-center {MONO} text-outline py-2 mt-2">
-					{#each ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as d}<span>{d}</span>{/each}
-				</div>
-				<div class="grid grid-cols-7 gap-1 text-center text-body-sm text-on-surface-variant">
-					{#each Array(firstDay) as _, i (i)}<span class="py-1.5 text-outline/40"></span>{/each}
-					{#each Array(daysInMonth) as _, i (i)}
-						{@const day = i + 1}
-						<span class="py-1.5 rounded {eventDays.has(day) ? 'bg-primary text-on-primary font-bold shadow-sm' : 'bg-surface-container-high/60'}">{day}</span>
-					{/each}
-				</div>
-				<div class="mt-4 pt-3 border-t border-surface-glass-border flex items-center gap-1.5 text-on-surface-variant {MONO}">
-					<span class="w-2 h-2 rounded-full bg-primary"></span>
-					{#each upcoming.slice(0, 2) as t}
-						<span>{fmtDate(t.eventStartsAt)}: {t.eventTitle}</span>
-					{:else}
-						<span>No events this month</span>
+						<p class="text-body-sm text-on-surface-variant py-6 text-center">No passes on this day — pick a marked date or explore new events.</p>
 					{/each}
 				</div>
 			</section>
 		</div>
 
 		<div class="flex flex-col gap-6 min-w-0">
+			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
+				<div class="flex items-center justify-between gap-3">
+					<h2 class="font-display text-headline-md text-on-surface">Next Up</h2>
+					<span class="{MONO} text-on-surface-variant">{upcoming.length} Valid</span>
+				</div>
+				<div class="flex flex-col gap-2.5 mt-4">
+					{#each upcoming.slice(0, 4) as t (t.id)}
+						<a href="/tickets/{t.id}" class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5 hover:bg-surface-container-high transition-colors">
+							<span class="w-10 h-10 rounded-md bg-surface-container-highest border border-surface-glass-border flex flex-col items-center justify-center shrink-0">
+								<span class="font-code text-[9px] tracking-[0.14em] text-on-surface-variant uppercase">{new Date(t.eventStartsAt).toLocaleDateString('en-NG', { month: 'short' })}</span>
+								<span class="font-display text-body-sm font-bold text-on-surface leading-4">{new Date(t.eventStartsAt).getDate()}</span>
+							</span>
+							<span class="flex-1 min-w-0">
+								<span class="block text-body-sm font-medium text-on-surface truncate">{t.eventTitle}</span>
+								<span class="block text-xs text-on-surface-variant truncate">{fmtDate(t.eventStartsAt)} • {t.tierName}</span>
+							</span>
+							<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
+						</a>
+					{:else}
+						<p class="text-body-sm text-on-surface-variant">No upcoming passes — the city is waiting.</p>
+					{/each}
+				</div>
+			</section>
+
 			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
 				<div class="flex items-center justify-between gap-3">
 					<h2 class="font-display text-headline-md text-on-surface">Vault Readiness</h2>
