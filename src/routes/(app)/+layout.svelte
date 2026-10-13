@@ -10,9 +10,12 @@
 	 * other route keeps the rail on desktop; mobile is unchanged everywhere.
 	 */
 	const fullBleedDesktop = $derived(
-		['/home', '/checkout', '/organizer/create', '/events', '/explore', '/inbox', '/notifications'].some((r) =>
+		['/home', '/checkout', '/organizer/create', '/events', '/explore', '/inbox', '/notifications', '/organizer'].some((r) =>
 			page.url.pathname === r || page.url.pathname.startsWith(r + '/')
-		)
+		) &&
+			!['/organizer/scan', '/organizer/events'].some(
+				(r) => page.url.pathname === r || page.url.pathname.startsWith(r + '/')
+			)
 	);
 </script>
 
