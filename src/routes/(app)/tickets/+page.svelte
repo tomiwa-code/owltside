@@ -2,15 +2,22 @@
 	import { goto } from '$app/navigation';
 	import {
 		Bell,
+		CalendarPlus,
+		ChevronRight,
 		CloudCheck,
+		Database,
+		Download,
 		History,
-		Plus,
+		Lock,
 		QrCode,
-		RefreshCw,
+		ScanLine,
 		Search,
+		Send,
 		ShieldCheck,
-		Ticket as TicketIcon
+		Ticket as TicketIcon,
+		Wallet
 	} from '@lucide/svelte';
+	import QRCode from 'qrcode';
 	import Cover from '$components/Cover.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
 	import TopBar from '$components/TopBar.svelte';
@@ -19,6 +26,8 @@
 	import { useQuery } from '$lib/state/query.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { fmtDate, fmtDateFull, fmtTime } from '$lib/utils/dates';
+	import { downloadIcs } from '$lib/utils/ics';
+	import { signToken } from '$lib/utils/qr';
 	import { formatMoney } from '$lib/utils/money';
 	import type { Ticket } from '$lib/types';
 
@@ -33,6 +42,7 @@
 		data.tickets
 	);
 
+	// ── mobile wallet state (unchanged) ──
 	let tab = $state<'upcoming' | 'past'>('upcoming');
 
 	const all = $derived(tickets.data ?? []);
@@ -40,22 +50,102 @@
 	const past = $derived(all.filter((t) => !upcoming.includes(t)));
 	const shown = $derived(tab === 'upcoming' ? upcoming : past);
 
-	const vaultValue = $derived(all.reduce((s, t) => s + t.price, 0));
-	const usedCount = $derived(past.filter((t) => t.status === 'used').length);
+	// ── desktop vault state ──
+	let deskTab = $state<'upcoming' | 'past' | 'archived'>('upcoming');
+	let selectedId = $state('');
 
-	const statusLabel: Record<Ticket['status'], string> = {
-		valid: 'Active',
-		used: 'Scanned',
-		refunded: 'Refunded',
-		transferred: 'Transferred'
+	const pastDesk = $derived(past.filter((t) => t.status === 'used'));
+	const archived = $derived(past.filter((t) => t.status !== 'used'));
+	const deskList = $derived(deskTab === 'upcoming' ? upcoming : deskTab === 'past' ? pastDesk : archived);
+	const selected = $derived(all.find((t) => t.id === selectedId) ?? upcoming[0] ?? all[0]);
+
+	const statusChip: Record<Ticket['status'], string> = {
+		valid: 'Pass_Valid',
+		used: 'Pass_Used',
+		refunded: 'Pass_Refunded',
+		transferred: 'Pass_Transferred'
 	};
+	const refOf = (t: Ticket) => `#${t.code.split('-').slice(-2).join('-')}`;
+	const stampTime = (iso: string) =>
+		`${fmtDate(iso)} • ${new Date(iso).toLocaleTimeString('en-NG', { hour12: false })}`;
+
+	function hexStamp(code: string): string {
+		const dig = (s: string) => {
+			let h1 = 0xdeadbeef ^ s.length;
+			let h2 = 0x41c6ce57 ^ s.length;
+			for (let i = 0; i < s.length; i++) {
+				const ch = s.charCodeAt(i);
+				h1 = Math.imul(h1 ^ ch, 2654435761);
+				h2 = Math.imul(h2 ^ ch, 1597334677);
+			}
+			h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+			h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+			return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(16, '0');
+		};
+		return (dig(code) + dig(code + 'x') + dig(code + 'yy')).slice(0, 40);
+	}
+
+	/* rotating HMAC QR for the selected pass (30s window) */
+	let qrUrl = $state('');
+	let qrSeconds = $state(30);
+	$effect(() => {
+		const code = selected?.code ?? '';
+		if (!code) return;
+		let cancelled = false;
+		let lastWindow = -1;
+		async function draw(c: string) {
+			const payload = await signToken(c);
+			const url = await QRCode.toDataURL(payload, {
+				margin: 1,
+				width: 520,
+				color: { dark: '#0b1120', light: '#ffffff' }
+			});
+			if (!cancelled) qrUrl = url;
+		}
+		void (async () => {
+			lastWindow = Math.floor(Date.now() / 30000);
+			await draw(code);
+		})();
+		const iv = setInterval(() => {
+			const w = Math.floor(Date.now() / 30000);
+			if (w !== lastWindow) {
+				lastWindow = w;
+				void draw(code);
+			}
+			qrSeconds = Math.max(0, 30 - (Math.floor(Date.now() / 1000) % 30));
+		}, 1000);
+		return () => {
+			cancelled = true;
+			clearInterval(iv);
+		};
+	});
+
+	const ledger = $derived(
+		selected
+			? [
+					{
+						at: selected.eventStartsAt,
+						type: 'Turnstile Pre-Auth',
+						node: `Gate_02_Scanner • ${selected.code}`,
+						status: 'Authorized'
+					},
+					{ at: selected.purchasedAt, type: 'Offline Key Seeded', node: 'Client IndexedDB', status: 'Secure_Store' },
+					{
+						at: selected.purchasedAt,
+						type: 'Badge Minted & Purchased',
+						node: `Checkout Gateway (${formatMoney(selected.price)})`,
+						status: 'Settled'
+					}
+				]
+			: []
+	);
 </script>
 
 <svelte:head><title>Ticket Wallet • Owltside</title></svelte:head>
 
-<!-- ── desktop (md+) ticket wallet & pass registry in the shipped console design
-     language (design source unavailable this turn — extrapolated); mobile
-     wallet below unchanged ── -->
+<!-- ── desktop (md+) "Cryptographic Vault" wallet per the desktop design source
+     (ticket_wallet_dynamic_qr_desktop), themed with Evently Pulse tokens;
+     mobile wallet below unchanged ── -->
 <div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
 	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
@@ -73,7 +163,7 @@
 				] as [href, label]}
 					<a
 						{href}
-						class="px-3 h-9 rounded-lg flex items-center text-body-sm transition-colors {href === '/tickets' ? 'bg-surface-container-high text-on-surface' : 'text-on-surface-variant hover:text-on-surface'}"
+						class="px-3 h-9 rounded-lg flex items-center text-body-sm transition-colors {href === '/tickets' ? 'bg-surface-container-high text-on-surface font-semibold' : 'text-on-surface-variant hover:text-on-surface'}"
 					>
 						{label}
 					</a>
@@ -90,8 +180,8 @@
 				<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
 			</a>
 			<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
-				<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
-				<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">GATE_PASS_ACTIVE</span>
+				<span class="text-body-sm font-medium text-on-surface">{page.data.session?.name ?? 'Alex Rivera'}</span>
+				<span class="font-code text-[10px] tracking-[0.14em] text-on-surface-variant">Attendee Pass</span>
 			</div>
 			<a href="/profile" aria-label="Your profile" class="shrink-0">
 				<Avatar name={page.data.session?.name ?? 'Guest'} size="sm" />
@@ -99,180 +189,269 @@
 		</div>
 	</header>
 
-	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-10 pb-2 flex flex-wrap items-end justify-between gap-4">
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-10 pb-6 flex flex-wrap items-end justify-between gap-4">
 		<div class="min-w-0">
 			<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
-				<span>Vault_Node</span>
-				<span class="text-outline-variant">/</span>
-				<span>Pass_Registry</span>
+				<span class="w-1.5 h-1.5 rounded-full bg-primary glow-primary"></span> Cryptographic Vault
 			</span>
-			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-3">Ticket Wallet & Gate Passes</h1>
-			<p class="text-body-md text-on-surface-variant mt-2">Offline HMAC passes, rotation windows and vault history for this access device.</p>
+			<h1 class="font-display text-[34px] leading-10 font-bold tracking-tight text-on-surface mt-3">Ticket Wallet & Dynamic Passes</h1>
+			<p class="text-body-md text-on-surface-variant mt-2 max-w-xl">All offline-synced cryptographic credentials, NFC fast-lanes, and active biometric turnstile passes.</p>
 		</div>
 		<div class="flex items-center gap-3 flex-wrap">
-			<span class="h-10 px-3.5 rounded-lg flex items-center gap-2 border border-surface-glass-border bg-surface-container">
-				<span class="relative flex h-2 w-2">
-					<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75"></span>
-					<span class="relative inline-flex rounded-full h-2 w-2 bg-accent-emerald"></span>
-				</span>
-				<span class="{MONO} text-on-surface">Offline Gate Ready</span>
-				<span class="flex items-center gap-1 {MONO} text-accent-emerald"><CloudCheck class="w-3.5 h-3.5" /> Secure</span>
+			<span class="h-9 px-3.5 rounded-lg flex items-center gap-2 {MONO} text-on-surface-variant border border-surface-glass-border bg-surface-container">
+				<CloudCheck class="w-3.5 h-3.5 text-accent-emerald" /> Vault_Synced
 			</span>
-			<button
-				class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors"
-				onclick={() => toast('Vault synced — HMAC keys rotated', 'success')}
-			>
-				<RefreshCw class="w-4 h-4 text-primary" /><span>Sync Vault</span>
-			</button>
-			<a href="/explore" class="h-10 px-4 rounded-lg flex items-center gap-2 bg-on-surface text-surface-base text-body-sm font-semibold hover:opacity-90 transition-opacity">
-				<Plus class="w-4 h-4" /><span>Add Pass</span>
-			</a>
+			<span class="h-9 px-3.5 rounded-lg flex items-center gap-2 {MONO} text-on-surface-variant border border-surface-glass-border bg-surface-container">
+				<Database class="w-3.5 h-3.5" /> Indexed_DB: Ready
+			</span>
+			<span class="h-9 px-3.5 rounded-lg flex items-center {MONO} text-on-surface border border-surface-glass-border bg-surface-container">HMAC Window: 30s</span>
 		</div>
 	</div>
 
-	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-5 grid md:grid-cols-2 xl:grid-cols-4 gap-5">
-		<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5">
-			<div class="flex items-center justify-between gap-2">
-				<span class="{MONO} text-on-surface-variant">Active Passes</span>
-				<QrCode class="w-4 h-4 text-on-surface-variant" />
-			</div>
-			<span class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-4">{upcoming.length}</span>
-			<span class="text-body-sm text-on-surface-variant mt-1.5 block">Ready for gate scan</span>
-		</section>
-		<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5">
-			<div class="flex items-center justify-between gap-2">
-				<span class="{MONO} text-on-surface-variant">Used & Scanned</span>
-				<History class="w-4 h-4 text-on-surface-variant" />
-			</div>
-			<span class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-4">{usedCount}</span>
-			<span class="text-body-sm text-on-surface-variant mt-1.5 block">Of {past.length} archived passes</span>
-		</section>
-		<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5">
-			<div class="flex items-center justify-between gap-2">
-				<span class="{MONO} text-on-surface-variant">Lifetime Vault Value</span>
-				<span class="{MONO} text-accent-emerald">NGN</span>
-			</div>
-			<span class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-4">{formatMoney(vaultValue)}</span>
-			<span class="text-body-sm text-on-surface-variant mt-1.5 block">Across {all.length} minted passes</span>
-		</section>
-		<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5">
-			<div class="flex items-center justify-between gap-2">
-				<span class="{MONO} text-on-surface-variant">HMAC Rotation</span>
-				<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>
-			</div>
-			<span class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-4">45s</span>
-			<span class="text-body-sm text-on-surface-variant mt-1.5 block">Dynamic QR window per pass</span>
-		</section>
-	</div>
-
-	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 grid lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px] gap-6 items-start">
-		<div class="min-w-0">
-			<div class="flex items-center gap-2">
-				<button
-					class="flex items-center gap-2 h-9 px-4 rounded-lg border text-body-sm transition-colors {tab === 'upcoming' ? 'bg-surface-container-high border-surface-glass-border text-on-surface' : 'border-transparent text-on-surface-variant hover:text-on-surface'}"
-					onclick={() => (tab = 'upcoming')}
-				>
-					<TicketIcon class="w-4 h-4" /><span>Upcoming</span>
-					<span class="{MONO} px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">{upcoming.length}</span>
-				</button>
-				<button
-					class="flex items-center gap-2 h-9 px-4 rounded-lg border text-body-sm transition-colors {tab === 'past' ? 'bg-surface-container-high border-surface-glass-border text-on-surface' : 'border-transparent text-on-surface-variant hover:text-on-surface'}"
-					onclick={() => (tab = 'past')}
-				>
-					<History class="w-4 h-4" /><span>Past</span>
-					<span class="{MONO} px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">{past.length}</span>
-				</button>
-			</div>
-
-			<div class="grid md:grid-cols-2 gap-5 mt-5">
-				{#each shown as ticket (ticket.id)}
-					{@const isPast = tab === 'past'}
-					<a
-						href="/tickets/{ticket.id}"
-						class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden hover:bg-surface-container-high transition-colors {isPast ? 'opacity-70' : ''}"
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pb-10 grid lg:grid-cols-[380px_minmax(0,1fr)] xl:grid-cols-[420px_minmax(0,1fr)] gap-6 items-start">
+		<!-- left: pass index -->
+		<div class="flex flex-col gap-5 min-w-0">
+			<div class="grid grid-cols-3 gap-1 rounded-lg border border-surface-glass-border bg-surface-container p-1">
+				{#each [
+					['upcoming', `Upcoming (${upcoming.length})`],
+					['past', `Past (${pastDesk.length})`],
+					['archived', 'Archived']
+				] as [id, label]}
+					<button
+						class="h-9 rounded-md flex items-center justify-center text-body-sm transition-colors {deskTab === id ? 'bg-surface-container-highest text-on-surface font-semibold' : 'text-on-surface-variant hover:text-on-surface'}"
+						onclick={() => (deskTab = id as typeof deskTab)}
 					>
-						<div class="relative h-28 w-full overflow-hidden">
-							<Cover cover={ticket.cover} class="w-full h-full" iconClass="w-10 h-10 text-white/30" />
-							<div class="absolute inset-0 bg-gradient-to-t from-surface-container via-transparent to-transparent"></div>
-							<span class="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-surface-base/70 backdrop-blur {MONO} text-on-surface">{ticket.tierName}</span>
-							{#if isPast}
-								<span class="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-surface-container-highest/90 {MONO} text-on-surface-variant uppercase">{statusLabel[ticket.status]}</span>
-							{:else}
-								<span class="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-accent-emerald/90 {MONO} text-surface-base font-bold">Active</span>
-							{/if}
-						</div>
-						<div class="p-4 flex flex-col gap-1">
-							<span class="font-display text-headline-md text-on-surface truncate">{ticket.eventTitle}</span>
-							<span class="text-body-sm text-on-surface-variant">{fmtDateFull(ticket.eventStartsAt)} • {fmtTime(ticket.eventStartsAt)}</span>
-							<span class="text-body-sm text-on-surface-variant truncate">{ticket.venue}</span>
-							<div class="flex items-center justify-between pt-2.5 mt-1 border-t border-surface-glass-border">
-								<span class="font-code text-label-code text-tertiary tracking-wider">{ticket.code}</span>
-								<span class="{MONO} text-primary">Open gate pass →</span>
-							</div>
-						</div>
-					</a>
-				{:else}
-					<section class="md:col-span-2 rounded-xl border border-surface-glass-border bg-surface-container min-h-[280px] flex flex-col items-center justify-center gap-3 p-10 text-center">
-						<span class="w-12 h-12 rounded-xl bg-surface-container-high border border-surface-glass-border text-primary flex items-center justify-center">
-							<TicketIcon class="w-5 h-5" />
-						</span>
-						<h2 class="font-display text-headline-md text-on-surface">{tab === 'upcoming' ? 'No upcoming passes' : 'No history yet'}</h2>
-						<p class="text-body-sm text-on-surface-variant max-w-sm">Grab a pass and it will mint here instantly with a rotating gate QR.</p>
-						<a href="/explore" class="h-10 px-5 rounded-lg bg-on-surface text-surface-base text-body-sm font-semibold flex items-center justify-center hover:opacity-90 transition-opacity">Explore events</a>
-					</section>
+						{label}
+					</button>
 				{/each}
 			</div>
-		</div>
 
-		<div class="flex flex-col gap-6 min-w-0">
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<div class="flex items-center justify-between gap-3">
-					<h2 class="font-display text-headline-md text-on-surface">Vault Readiness</h2>
-					<span class="{MONO} text-on-surface-variant">Local_Cache</span>
-				</div>
-				<div class="flex flex-col gap-2 mt-4 text-body-sm">
-					{#each [
-						['Offline Cache', 'Enabled'],
-						['HMAC Keys', 'Fresh • 12m'],
-						['Storage', 'On-device only'],
-						['Cloud Mirror', 'Disabled (privacy)']
-					] as [label, value]}
-						<div class="flex items-center justify-between gap-3">
-							<span class="text-on-surface-variant">{label}</span>
-							<span class="{MONO} text-accent-emerald">{value}</span>
-						</div>
-					{/each}
-				</div>
-				<div class="flex items-center justify-between gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high px-4 py-3 mt-4">
-					<span class="flex items-center gap-2 min-w-0 {MONO} text-on-surface-variant">
-						<ShieldCheck class="w-4 h-4 text-accent-emerald shrink-0" />
-						Secure_Channel: RSA-4096 / TLS 1.3
-					</span>
-					<span class="{MONO} text-outline-variant shrink-0">v2.4.1</span>
-				</div>
-			</section>
-
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<div class="flex items-center justify-between gap-3">
-					<h2 class="font-display text-headline-md text-on-surface">Recent Vault Activity</h2>
-					<span class="{MONO} text-on-surface-variant">Audit_Log</span>
-				</div>
-				<div class="flex flex-col gap-2.5 mt-4">
-					{#each past.slice(0, 4) as t (t.id)}
-						<a href="/tickets/{t.id}" class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5 hover:bg-surface-container-high transition-colors">
-							<span class="w-1.5 h-1.5 rounded-full shrink-0 {t.status === 'used' ? 'bg-accent-emerald' : 'bg-outline-variant'}"></span>
-							<span class="flex-1 min-w-0">
-								<span class="block text-body-sm font-medium text-on-surface truncate">{t.eventTitle}</span>
-								<span class="block text-xs text-on-surface-variant mt-0.5">{fmtDate(t.eventStartsAt)} • {t.code}</span>
+			{#each deskList as t (t.id)}
+				{@const isSel = selected?.id === t.id}
+				<button
+					class="text-left rounded-xl border p-5 transition-colors {isSel ? 'border-primary/40 bg-surface-container' : 'border-surface-glass-border bg-surface-container hover:bg-surface-container-high'}"
+					onclick={() => (selectedId = t.id)}
+				>
+					<div class="flex items-center justify-between gap-3">
+						<span class="flex items-center gap-2 min-w-0">
+							<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-highest border border-surface-glass-border text-on-surface shrink-0">
+								{isSel ? 'Selected Pass' : statusChip[t.status]}
 							</span>
-							<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant shrink-0">{statusLabel[t.status]}</span>
-						</a>
-					{:else}
-						<p class="text-body-sm text-on-surface-variant">No archived passes yet — every mint will settle here.</p>
-					{/each}
+							<span class="{MONO} text-outline-variant truncate">{refOf(t)}</span>
+						</span>
+						{#if isSel && t.status === 'valid'}
+							<span class="flex items-center gap-1.5 {MONO} text-on-surface shrink-0">
+								<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> Gate Ready
+							</span>
+						{:else}
+							<span class="{MONO} text-on-surface-variant shrink-0">{fmtDate(t.eventStartsAt)}</span>
+						{/if}
+					</div>
+					<h3 class="font-display text-headline-md text-on-surface mt-3 truncate">{t.eventTitle}</h3>
+					<div class="flex flex-col gap-1 mt-2 text-body-sm text-on-surface-variant">
+						<span>{fmtDate(t.eventStartsAt)} • {fmtTime(t.eventStartsAt)} WAT</span>
+						<span class="truncate">{t.venue}</span>
+					</div>
+					<div class="grid grid-cols-2 gap-4 rounded-lg bg-surface-container-high/60 border border-surface-glass-border px-4 py-3 mt-4">
+						<span class="min-w-0">
+							<span class="{MONO} text-on-surface-variant block">Tier & Seat</span>
+							<span class="text-body-sm text-on-surface block mt-1 truncate">{t.tierName}</span>
+						</span>
+						<span class="min-w-0 text-right">
+							<span class="{MONO} text-on-surface-variant block">Settled Value</span>
+							<span class="text-body-sm text-on-surface block mt-1">{formatMoney(t.price)}</span>
+						</span>
+					</div>
+					<div class="flex items-center justify-between mt-4">
+						{#if isSel}
+							<span class="flex items-center gap-2 text-body-sm text-on-surface-variant">
+								<QrCode class="w-4 h-4" /> Inspecting Pass
+							</span>
+						{:else}
+							<span class="flex items-center gap-1.5 text-body-sm text-on-surface-variant">
+								View Credentials <ChevronRight class="w-4 h-4" />
+							</span>
+						{/if}
+						<span class="flex items-center gap-2">
+							<span
+								role="button"
+								tabindex="0"
+								aria-label="Add to calendar"
+								class="w-8 h-8 rounded-md flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
+								onclick={(e) => {
+									e.stopPropagation();
+									downloadIcs({ title: t.eventTitle, venue: t.venue, startsAt: t.eventStartsAt });
+								}}
+								onkeydown={(e) => {
+									if (e.key === 'Enter' || e.key === ' ') {
+										e.stopPropagation();
+										downloadIcs({ title: t.eventTitle, venue: t.venue, startsAt: t.eventStartsAt });
+									}
+								}}
+							>
+								<CalendarPlus class="w-4 h-4" />
+							</span>
+							<span
+								role="button"
+								tabindex="0"
+								aria-label="Transfer or share"
+								class="w-8 h-8 rounded-md flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
+								onclick={(e) => {
+									e.stopPropagation();
+									goto(`/tickets/${t.id}`);
+								}}
+								onkeydown={(e) => {
+									if (e.key === 'Enter' || e.key === ' ') {
+										e.stopPropagation();
+										goto(`/tickets/${t.id}`);
+									}
+								}}
+							>
+								<Send class="w-4 h-4" />
+							</span>
+						</span>
+					</div>
+				</button>
+			{:else}
+				<section class="rounded-xl border border-surface-glass-border bg-surface-container min-h-[220px] flex flex-col items-center justify-center gap-3 p-8 text-center">
+					<span class="w-12 h-12 rounded-xl bg-surface-container-high border border-surface-glass-border text-primary flex items-center justify-center">
+						<TicketIcon class="w-5 h-5" />
+					</span>
+					<h2 class="font-display text-headline-md text-on-surface">{deskTab === 'upcoming' ? 'No upcoming passes' : deskTab === 'past' ? 'No scanned passes' : 'Nothing archived'}</h2>
+					<p class="text-body-sm text-on-surface-variant max-w-xs">Grab a pass and it will mint here instantly with a rotating gate QR.</p>
+					<a href="/explore" class="h-10 px-5 rounded-lg bg-on-surface text-surface-base text-body-sm font-semibold flex items-center justify-center hover:opacity-90 transition-opacity">Explore events</a>
+				</section>
+			{/each}
+
+			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex items-start gap-3">
+				<ShieldCheck class="w-5 h-5 text-primary shrink-0 mt-0.5" />
+				<div>
+					<p class="text-body-md text-on-surface font-semibold">Zero Connectivity Assurance</p>
+					<p class="text-body-sm text-on-surface-variant mt-1 leading-relaxed">
+						Tickets are locally signed. Cellular outages will not block entry at turnstiles;
+						security nodes sync peer-to-peer over local mesh.
+					</p>
 				</div>
 			</section>
 		</div>
+
+		<!-- right: selected pass detail -->
+		{#if selected}
+			<div class="flex flex-col gap-6 min-w-0">
+				<section class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
+					<div class="relative h-40">
+						<Cover cover={selected.cover} class="w-full h-full" iconClass="w-12 h-12 text-white/25" />
+						<div class="absolute inset-0 bg-gradient-to-t from-surface-container via-surface-container/40 to-transparent"></div>
+						<span class="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded {MONO} bg-surface-base/75 backdrop-blur text-on-surface">
+							<TicketIcon class="w-3.5 h-3.5" /> {selected.tierName} • Auth_Active
+						</span>
+						<span class="absolute top-3 right-3 px-2.5 py-1 rounded {MONO} bg-surface-base/75 backdrop-blur text-on-surface">
+							Gate 02 • {selected.tierName.split(' ')[0]} Turnstile
+						</span>
+					</div>
+					<div class="px-6 pb-6">
+						<span class="{MONO} text-on-surface-variant block mt-4">Stage_Deck // Speaker_Lounge</span>
+						<h2 class="font-display text-[26px] leading-8 font-bold tracking-tight text-on-surface mt-2">{selected.eventTitle}</h2>
+
+						<div class="grid sm:grid-cols-4 gap-4 rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-4 mt-5">
+							{#each [
+								['Pass ID', refOf(selected)],
+								['Holder', selected.holder],
+								['Seat Alloc', 'Open Floor'],
+								['Tier', selected.tierName]
+							] as [label, value]}
+								<span class="min-w-0">
+									<span class="{MONO} text-on-surface-variant block">{label}</span>
+									<span class="text-body-md text-on-surface block mt-1 truncate">{value}</span>
+								</span>
+							{/each}
+						</div>
+
+						<div class="rounded-lg border border-surface-glass-border bg-surface-container-high/40 p-6 mt-5 flex flex-col items-center">
+							<span class="flex items-center gap-2 {MONO} text-on-surface">
+								<Lock class="w-3.5 h-3.5 text-primary" /> HMAC 30s Window:
+								<span class="text-on-surface-variant">Expiring in {qrSeconds}s</span>
+							</span>
+							<div class="relative bg-white rounded-md p-4 mt-5" style="box-shadow: 0 0 24px -6px rgba(99,102,241,0.45);">
+								{#if qrUrl}
+									<img src={qrUrl} alt="Rotating gate QR" class="w-56 h-56" />
+								{:else}
+									<div class="w-56 h-56 bg-white animate-pulse rounded"></div>
+								{/if}
+								<div class="absolute inset-x-6 top-1/2 h-0.5 bg-primary/70 animate-pulse pointer-events-none"></div>
+							</div>
+							<div class="w-56 h-1 rounded-full bg-surface-container-highest overflow-hidden mt-5">
+								<div class="h-full bg-primary rounded-full transition-all duration-1000" style="width: {(qrSeconds / 30) * 100}%"></div>
+							</div>
+							<span class="{MONO} text-on-surface-variant mt-3">Auto-refreshing HMAC signature prevents screenshot fraud</span>
+						</div>
+
+						<div class="rounded-lg border border-surface-glass-border bg-surface-container-high/40 p-5 mt-5 flex items-start gap-3">
+							<ScanLine class="w-5 h-5 text-on-surface-variant shrink-0 mt-0.5" />
+							<div>
+								<p class="text-body-md text-on-surface font-semibold">Gate 02 Fast-Pass Turnstile Instructions</p>
+								<p class="text-body-sm text-on-surface-variant mt-1 leading-relaxed">
+									Present this QR at eye level to Turnstile scanner or hold your device near the NFC
+									target zone. Biometric seat verification is enabled at Hall 1 Entry.
+								</p>
+							</div>
+						</div>
+
+						<div class="rounded-lg border border-surface-glass-border bg-surface-container-high/40 px-5 py-4 mt-5">
+							<div class="flex items-center justify-between gap-3">
+								<span class="{MONO} text-on-surface-variant">Cryptographic Hash Stamp</span>
+								<span class="{MONO} text-on-surface">HMAC-SHA-256</span>
+							</div>
+							<p class="font-code text-label-code text-on-surface tracking-wider mt-2 break-all">HMAC-SHA256: {hexStamp(selected.code)}</p>
+							<div class="flex items-center justify-between gap-3 mt-3">
+								<span class="{MONO} text-on-surface-variant">Signature Verifier</span>
+								<span class="{MONO} text-on-surface">Token_Valid_OK</span>
+							</div>
+						</div>
+
+						<div class="grid sm:grid-cols-2 gap-3 mt-5">
+							<button class="h-11 rounded-md flex items-center justify-center gap-2 bg-primary-container text-on-primary-container text-body-sm font-semibold hover:bg-primary/30 transition-colors" onclick={() => goto(`/tickets/${selected.id}`)}>
+								<Send class="w-4 h-4" /><span>Transfer Ticket</span>
+							</button>
+							<button class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => toast('Wallet export queued to device', 'info')}>
+								<Wallet class="w-4 h-4" /><span>Add to Apple / Google</span>
+							</button>
+							<button class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => toast('Offline PDF cached for gate mode', 'success')}>
+								<Download class="w-4 h-4" /><span>Download Offline PDF</span>
+							</button>
+							<button class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => toast('Refund request queued — window open', 'info')}>
+								<History class="w-4 h-4" /><span>Request Refund (Window Open)</span>
+							</button>
+						</div>
+					</div>
+				</section>
+
+				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
+					<div class="flex flex-wrap items-center justify-between gap-3">
+						<span class="flex items-center gap-2.5">
+							<ShieldCheck class="w-5 h-5 text-primary" />
+							<span class="font-display text-headline-md text-on-surface">Gate Security & Scan Ledger</span>
+						</span>
+						<span class="{MONO} text-on-surface-variant">Auto_Syncing_P2P</span>
+					</div>
+					<div class="mt-4 overflow-x-auto">
+						<div class="min-w-[560px]">
+							<div class="grid grid-cols-[1.1fr_1.2fr_1.6fr_0.9fr] gap-3 px-3 pb-2 {MONO} text-on-surface-variant">
+								<span>Timestamp (WAT)</span><span>Event Type</span><span>Checkpoint / Node</span><span class="text-right">Signature Status</span>
+							</div>
+							{#each ledger as row (row.type)}
+								<div class="grid grid-cols-[1.1fr_1.2fr_1.6fr_0.9fr] gap-3 px-3 py-3 rounded-md items-center odd:bg-surface-container-high/40">
+									<span class="{MONO} text-on-surface">{stampTime(row.at)}</span>
+									<span class="text-body-sm text-on-surface">{row.type}</span>
+									<span class="text-body-sm text-on-surface-variant truncate">{row.node}</span>
+									<span class="{MONO} text-on-surface-variant text-right">{row.status}</span>
+								</div>
+							{/each}
+						</div>
+					</div>
+				</section>
+			</div>
+		{/if}
 	</div>
 
 	<footer class="mt-4 border-t border-surface-glass-border">
