@@ -1,13 +1,25 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { ArrowLeft, ShieldCheck } from '@lucide/svelte';
+	import { ArrowLeft, ArrowRight, ShieldCheck, Timer } from '@lucide/svelte';
 
 	let { data, form } = $props();
 
+	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
+
 	const digits = $state<string[]>(['', '', '', '', '', '']);
 	let inputs: Array<HTMLInputElement | null> = [];
+	let inputsDesk: Array<HTMLInputElement | null> = [];
 	const code = $derived(digits.join(''));
 	const complete = $derived(code.length === 6);
+
+	/* resend countdown */
+	let resendIn = $state(42);
+	$effect(() => {
+		const iv = setInterval(() => (resendIn = Math.max(0, resendIn - 1)), 1000);
+		return () => clearInterval(iv);
+	});
+	const mm = $derived(String(Math.floor(resendIn / 60)).padStart(2, '0'));
+	const ss = $derived(String(resendIn % 60).padStart(2, '0'));
 
 	function onInput(i: number, e: Event) {
 		const el = e.currentTarget as HTMLInputElement;
@@ -26,8 +38,130 @@
 	function onKey(i: number, e: KeyboardEvent) {
 		if (e.key === 'Backspace' && !digits[i] && i > 0) inputs[i - 1]?.focus();
 	}
+
+	function onInputDesk(i: number, e: Event) {
+		const el = e.currentTarget as HTMLInputElement;
+		const v = el.value.replace(/\D/g, '');
+		if (!v) {
+			digits[i] = '';
+			return;
+		}
+		const chars = v.slice(0, 6 - i).split('');
+		chars.forEach((c, k) => (digits[i + k] = c));
+		const next = Math.min(5, i + chars.length);
+		inputsDesk[next]?.focus();
+	}
+
+	function onKeyDesk(i: number, e: KeyboardEvent) {
+		if (e.key === 'Backspace' && !digits[i] && i > 0) inputsDesk[i - 1]?.focus();
+	}
 </script>
 
+<!-- ── desktop (md+) "verify token" composition per the desktop design source
+     (verify_token_desktop), themed with Evently Pulse tokens; mobile verify
+     below unchanged ── -->
+<div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
+	<header class="border-b border-surface-glass-border">
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center justify-between">
+			<a href="/home" class="flex items-center gap-2.5 shrink-0">
+				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
+				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
+			</a>
+			<a href="/home" class="flex items-center gap-2 {MONO} text-on-surface-variant hover:text-on-surface transition-colors">
+				<ArrowLeft class="w-4 h-4" /> Return to App
+			</a>
+		</div>
+	</header>
+
+	<main class="flex-1 flex flex-col items-center justify-center px-6 py-12">
+		<div class="w-full max-w-xl">
+			<div class="rounded-t-xl border border-surface-glass-border bg-surface-container px-10 py-10 flex flex-col items-center text-center">
+				<span class="flex items-center gap-3">
+					<span class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border flex items-center justify-center">
+						<ShieldCheck class="w-5 h-5 text-on-surface" />
+					</span>
+					<span class="font-display font-bold tracking-tight text-on-surface text-[20px]">OWLTSIDE</span>
+				</span>
+				<span class="flex items-center gap-2 mt-6 px-3 py-1.5 rounded-full border border-surface-glass-border bg-surface-container-high {MONO} text-on-surface-variant">
+					<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span> Passcode Dispatched
+				</span>
+				<h1 class="font-display text-[32px] leading-10 font-bold tracking-tight text-on-surface mt-5">Check your inbox</h1>
+				<p class="text-body-md text-on-surface-variant mt-3 max-w-sm">
+					We sent a 6-digit cryptographic verification code to
+					<span class="block text-on-surface font-semibold mt-1">{data.email || 'your email'}</span>
+				</p>
+				<p class="text-body-sm text-on-surface-variant mt-2">
+					Wrong email?
+					<a href="/auth/login" class="text-on-surface underline underline-offset-4 hover:text-primary transition-colors">Change</a>
+				</p>
+
+				<form method="POST" action="?/verify" use:enhance class="w-full flex flex-col items-center mt-8">
+					<input type="hidden" name="email" value={data.email} />
+					<input type="hidden" name="code" value={code} />
+					<div class="flex items-center justify-center gap-3">
+						{#each digits as d, i (i)}
+							<input
+								bind:this={inputsDesk[i]}
+								value={d}
+								oninput={(e) => onInputDesk(i, e)}
+								onkeydown={(e) => onKeyDesk(i, e)}
+								inputmode="numeric"
+								maxlength="6"
+								aria-label="Digit {i + 1}"
+								class="w-14 h-16 text-center bg-surface-base border border-surface-glass-border rounded-lg font-code text-headline-md text-on-surface focus:outline-none focus:border-primary focus:bg-surface-container-low transition-colors"
+							/>
+						{/each}
+					</div>
+
+					<div class="w-full flex items-center justify-between mt-6">
+						<span class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-surface-container-high border border-surface-glass-border {MONO} text-on-surface-variant">
+							<Timer class="w-3.5 h-3.5" /> Resend code in {mm}:{ss}
+						</span>
+						<button
+							type="button"
+							disabled={resendIn > 0}
+							class="{MONO} text-on-surface-variant enabled:text-primary enabled:hover:underline disabled:opacity-50 transition-colors"
+							onclick={() => (resendIn = 60)}
+						>
+							Resend Code
+						</button>
+					</div>
+
+					{#if form?.error}
+						<p class="text-body-sm text-error mt-4">{form.error}</p>
+					{/if}
+
+					<button
+						disabled={!complete}
+						class="w-full h-12 mt-6 rounded-md bg-primary-container text-on-primary-container text-body-md font-semibold flex items-center justify-center gap-2 transition-colors hover:bg-primary/30 disabled:opacity-40"
+						type="submit"
+					>
+						<span>Verify & Enter OWLTSIDE</span>
+						<ArrowRight class="w-4 h-4" />
+					</button>
+					<p class="{MONO} text-on-surface-variant mt-4">Demo mode: any 6 digits work</p>
+				</form>
+			</div>
+			<div class="rounded-b-xl border border-t-0 border-surface-glass-border bg-surface-container-low px-10 py-5 flex flex-col items-center gap-2 text-center">
+				<span class="flex items-center gap-2 {MONO} text-on-surface">
+					<ShieldCheck class="w-3.5 h-3.5" /> Tamper-Evident Session
+				</span>
+				<span class="{MONO} text-on-surface-variant">Codes expire in 10 minutes • Powered by OWLTSIDE Mesh Protocol</span>
+			</div>
+			<div class="flex items-center justify-center gap-3 mt-6 {MONO} text-on-surface-variant">
+				<span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-outline-variant"></span> Node: 0x7E3-LAG-01</span>
+				<span class="text-outline-variant">/</span>
+				<span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-outline-variant"></span> Session: #7098F2</span>
+			</div>
+		</div>
+	</main>
+
+	<footer class="border-t border-surface-glass-border py-5">
+		<p class="text-center {MONO} text-on-surface-variant">Secure Client Handshake // TLS 1.3 // 256-Bit Encryption</p>
+	</footer>
+</div>
+
+<div class="md:hidden">
 <header class="fixed top-0 inset-x-0 z-50 bg-surface/90 backdrop-blur-xl border-b border-surface-glass-border pt-safe">
 	<div class="h-16 px-space-md md:max-w-lg md:mx-auto flex items-center">
 		<a href="/auth/login" aria-label="Back" class="w-11 h-11 -ml-2 flex items-center justify-center text-on-surface rounded-full hover:bg-surface-container transition-colors">
@@ -90,3 +224,4 @@
 		</form>
 	</div>
 </main>
+</div>
