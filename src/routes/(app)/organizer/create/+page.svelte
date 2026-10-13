@@ -15,21 +15,25 @@
 		CloudUpload,
 		Code,
 		Copy,
+		Info,
 		Italic,
 		Landmark,
 		Link2,
 		List,
 		ListOrdered,
+		Lock,
 		MapPin,
 		Megaphone,
 		Mic,
 		Pencil,
 		Plus,
 		Quote,
+		Rocket,
 		Save,
 		ScanBarcode,
 		ScanLine,
 		Search,
+		Share2,
 		ShieldCheck,
 		SlidersHorizontal,
 		Smartphone,
@@ -182,6 +186,20 @@
 			/* clipboard unavailable — toast still confirms the deep link */
 		}
 		toast('Scanner PWA link copied', 'success');
+	}
+
+	/* ── desktop step 5 (Review & Pre-Flight Clearance) ── */
+	let publishExplore = $state(true);
+	let broadcast = $state(true);
+	let launchMode = $state<'now' | 'staged'>('now');
+
+	const sessionCount = $derived(days.reduce((s, d) => s + d.sessions.length, 0));
+	const staffTotal = $derived(gates.reduce((s, g) => s + g.staff, 0));
+
+	function publishHandler() {
+		return async ({ update }: { update: () => Promise<void> }) => {
+			await update();
+		};
 	}
 
 	/* ── helpers ─────────────────────────────────────────────── */
@@ -1127,7 +1145,460 @@
 	</div>
 {/if}
 
-<div class="{step <= 4 ? 'md:hidden' : ''}">
+<!-- ── desktop (md+) "Review & Pre-Flight Clearance" — step 5 per the desktop
+     design source, same theme tokens; publishes through the real ?/create action ── -->
+{#if step === 5}
+	<div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
+		<!-- top bar -->
+		<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
+				<a href="/home" class="flex items-center gap-2.5 shrink-0">
+					<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
+					<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
+				</a>
+				<nav class="flex items-center gap-1" aria-label="Primary">
+					{#each [
+						['/home', 'Home'],
+						['/explore', 'Explore'],
+						['/tickets', 'Tickets'],
+						['/organizer', 'Organizer']
+					] as [href, label]}
+						<a
+							{href}
+							aria-current={href === '/organizer' ? 'page' : undefined}
+							class="px-3 h-9 rounded-lg flex items-center text-body-sm transition-colors
+								{href === '/organizer'
+									? 'text-on-surface font-semibold bg-surface-container border border-surface-glass-border'
+									: 'text-on-surface-variant hover:text-on-surface'}"
+						>
+							{label}
+						</a>
+					{/each}
+				</nav>
+				<div class="flex-1"></div>
+				<a href="/explore" class="relative hidden lg:flex items-center w-72 h-10">
+					<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
+					<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, venues…</span>
+					<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
+				</a>
+				<span class="hidden xl:flex items-center gap-2 h-10 px-3 border border-surface-glass-border rounded-lg">
+					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>
+					<span class="{MONO} text-on-surface">Secure_Node</span>
+				</span>
+				<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
+					<Bell class="w-4.5 h-4.5" />
+					<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
+				</a>
+				<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
+					<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
+					<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">CONNECTED</span>
+				</div>
+				<a href="/profile" aria-label="Your profile" class="shrink-0">
+					<Avatar name={page.data.session?.name ?? 'Organizer'} size="sm" />
+				</a>
+			</div>
+		</header>
+
+		<!-- pre-flight sub-header -->
+		<div class="border-b border-surface-glass-border bg-surface-container-low/60">
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-wrap items-end justify-between gap-4">
+				<div class="min-w-0">
+					<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
+						<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+						Production Wizard • V4.2
+						<span class="text-outline-variant">/</span>
+						Step 5 of 5
+					</span>
+					<h1 class="font-display text-headline-lg md:text-[34px] leading-tight text-on-surface pt-2">Review &amp; Pre-Flight Clearance</h1>
+				</div>
+				<div class="flex items-center gap-3 pb-1">
+					<span class="h-9 px-3 rounded-lg bg-surface-container border border-surface-glass-border flex items-center gap-2 {MONO} text-on-surface">
+						<Lock class="w-3.5 h-3.5 text-accent-emerald" /> HMAC Keygen Ready
+					</span>
+					<span class="h-9 px-3 rounded-lg bg-surface-container border border-surface-glass-border flex items-center gap-2 {MONO} text-on-surface">
+						<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> Pre-Flight Checks Passed
+					</span>
+				</div>
+			</div>
+			<!-- module stepper strip -->
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 grid grid-cols-2 lg:grid-cols-5 border-t border-surface-glass-border">
+				{#each ([
+					[1, '01', 'Basics & Venue', venue || 'Venue TBA'],
+					[2, '02', 'Tickets & Pools', `${tiers.length} Tiers • ${totalCapacity.toLocaleString()} Cap`],
+					[3, '03', 'Schedule & Lineup', `${sessionCount} Sessions Pinned`],
+					[4, '04', 'Gate Infrastructure', `HMAC 30s • ${staffTotal} Scanners`],
+					[5, '05', 'Review & Deploy', '100% Validated']
+				] as [number, string, string, string][]) as [n, num, label, sub]}
+					<button
+						type="button"
+						onclick={() => {
+							if (n !== 5) {
+								step = n;
+								scrollTo({ top: 0 });
+							}
+						}}
+						class="text-left px-4 py-4 border-b-2 transition-colors
+							{n === 5
+								? 'border-primary bg-surface-container-high'
+								: 'border-transparent hover:bg-surface-container/60'} {n > 1 ? 'lg:border-l lg:border-l-surface-glass-border' : ''}"
+					>
+						<span class="flex items-center justify-between gap-2">
+							<span class="font-code text-label-badge tracking-[0.14em] text-on-surface-variant">{num}</span>
+							{#if n === 5}
+								<span class="{MONO} bg-primary text-on-primary px-2 py-0.5 rounded">Launch Ready</span>
+							{:else}
+								<Check class="w-4 h-4 text-accent-emerald" />
+							{/if}
+						</span>
+						<span class="text-body-md font-semibold text-on-surface block pt-2">{label}</span>
+						<span class="text-body-sm text-on-surface-variant block pt-0.5 truncate">{sub}</span>
+					</button>
+				{/each}
+			</div>
+		</div>
+
+		<!-- main grid -->
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8 grid lg:grid-cols-[minmax(0,1fr)_440px] xl:grid-cols-[minmax(0,1fr)_460px] gap-6 xl:gap-8 items-start">
+			<!-- left column -->
+			<section class="flex flex-col gap-6 min-w-0">
+				<!-- hero -->
+				<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
+					<div class="relative">
+						<Cover cover={demoCover} class="w-full h-64" iconClass="w-16 h-16 text-white/25" />
+						<div class="absolute inset-0 bg-gradient-to-t from-surface-container via-surface-container/20 to-transparent"></div>
+						<div class="absolute top-4 left-4 flex items-center gap-2 flex-wrap">
+							<span class="{MONO} bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded flex items-center gap-1.5">
+								<BadgeCheck class="w-3.5 h-3.5 text-accent-emerald" /> Ready to Launch • ID: EVT-2026-LGS
+							</span>
+							<span class="{MONO} bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded">Mainnet Protocol 1.4</span>
+						</div>
+						<div class="absolute inset-x-0 bottom-0 p-6">
+							<span class="{MONO} text-tertiary">{(tags[0] ?? 'Annual Tech & Sound').toUpperCase()} SUMMIT</span>
+							<h2 class="font-display text-headline-lg md:text-[32px] leading-tight text-on-surface pt-2">{title || 'Untitled node'}</h2>
+							<span class="flex flex-wrap items-center gap-4 pt-2 text-body-sm text-on-surface-variant">
+								<span class="flex items-center gap-1.5"><CalendarDays class="w-4 h-4 text-primary" /> {fmtDate(date)} – {fmtDate(dateEnd)}</span>
+								<span class="flex items-center gap-1.5 min-w-0"><MapPin class="w-4 h-4 text-primary shrink-0" /> <span class="truncate">{venue}, {city}</span></span>
+							</span>
+						</div>
+					</div>
+					<div class="grid grid-cols-3 border-t border-surface-glass-border bg-surface-base/60">
+						<div class="flex flex-col items-center gap-1 py-4 px-2 text-center">
+							<span class="{MONO} text-on-surface-variant">Total Max Cap</span>
+							<span class="font-display text-headline-lg text-on-surface font-bold">{totalCapacity.toLocaleString()}</span>
+							<span class="text-body-sm text-on-surface-variant">Guests Across {days.length} Days</span>
+						</div>
+						<div class="flex flex-col items-center gap-1 py-4 px-2 text-center border-x border-surface-glass-border">
+							<span class="{MONO} text-on-surface-variant">Gross Revenue Cap</span>
+							<span class="font-display text-headline-lg text-primary font-bold">{formatMoney(totalGross)}</span>
+							<span class="text-body-sm text-on-surface-variant">Estimated Yield</span>
+						</div>
+						<div class="flex flex-col items-center gap-1 py-4 px-2 text-center">
+							<span class="{MONO} text-on-surface-variant">Gate Security</span>
+							<span class="font-display text-headline-lg text-on-surface font-bold">HMAC 30s</span>
+							<span class="text-body-sm text-on-surface-variant">Anti-Screenshot</span>
+						</div>
+					</div>
+				</div>
+
+				<!-- audit banner -->
+				<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex gap-4">
+					<span class="w-11 h-11 rounded-lg bg-surface-container-high border border-surface-glass-border text-primary flex items-center justify-center shrink-0">
+						<ShieldCheck class="w-5 h-5" />
+					</span>
+					<div class="min-w-0 flex-1">
+						<div class="flex flex-wrap items-center justify-between gap-2">
+							<span class="text-body-lg font-semibold text-on-surface">Pre-Flight Security Audit: PASSED</span>
+							<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">0 Errors • 0 Bottlenecks</span>
+						</div>
+						<p class="text-body-sm text-on-surface-variant leading-relaxed pt-1.5">
+							Zero conflicting agendas, venue occupancy limits match local Lagos State Safety Commission
+							requirements, and cryptographic signature pools are generated with 256-bit encryption.
+						</p>
+					</div>
+				</div>
+
+				<!-- modules summary -->
+				<div class="flex flex-col gap-4">
+					<div class="flex items-end justify-between gap-4">
+						<h2 class="font-display text-headline-lg text-on-surface">Configured Modules Summary</h2>
+						<span class="{MONO} text-on-surface-variant hidden sm:block pb-1">Click edit to return to specific module</span>
+					</div>
+
+					<!-- module 1 -->
+					<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-4">
+						<div class="flex items-center justify-between gap-3">
+							<span class="flex items-center gap-3 min-w-0">
+								<span class="w-8 h-8 rounded-lg bg-surface-container-high border border-surface-glass-border font-code text-label-badge text-on-surface flex items-center justify-center shrink-0">1</span>
+								<span class="min-w-0">
+									<span class="text-body-lg font-semibold text-on-surface block truncate">Basics, Branding &amp; Geolocation</span>
+									<span class="text-body-sm text-on-surface-variant block pt-0.5">Physical Venue • {venue}, {city}</span>
+								</span>
+							</span>
+							<button type="button" onclick={() => { step = 1; scrollTo({ top: 0 }); }} class="h-9 px-3.5 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors shrink-0">
+								<Pencil class="w-3.5 h-3.5" /> Edit
+							</button>
+						</div>
+						<div class="grid sm:grid-cols-3 gap-4 border-t border-surface-glass-border pt-4">
+							<div>
+								<span class="{MONO} text-on-surface-variant block">Event Title</span>
+								<span class="text-body-md font-semibold text-on-surface block pt-1 truncate">{title || 'Untitled'}</span>
+							</div>
+							<div>
+								<span class="{MONO} text-on-surface-variant block">Coordinates</span>
+								<span class="font-code text-[12px] tracking-[0.06em] text-on-surface block pt-1.5">6.4253° N, 3.4219° E</span>
+							</div>
+							<div>
+								<span class="{MONO} text-on-surface-variant block">Artwork Asset</span>
+								<span class="text-body-md font-semibold text-on-surface block pt-1">16:9 4K Master Validated</span>
+							</div>
+						</div>
+					</div>
+
+					<!-- module 2 -->
+					<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-4">
+						<div class="flex items-center justify-between gap-3">
+							<span class="flex items-center gap-3 min-w-0">
+								<span class="w-8 h-8 rounded-lg bg-surface-container-high border border-surface-glass-border font-code text-label-badge text-on-surface flex items-center justify-center shrink-0">2</span>
+								<span class="min-w-0">
+									<span class="text-body-lg font-semibold text-on-surface block truncate">Ticket Tiers &amp; Liquidity Pools</span>
+									<span class="text-body-sm text-on-surface-variant block pt-0.5">{tiers.length} Smart Contract Pools Configured</span>
+								</span>
+							</span>
+							<button type="button" onclick={() => { step = 2; scrollTo({ top: 0 }); }} class="h-9 px-3.5 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors shrink-0">
+								<Pencil class="w-3.5 h-3.5" /> Edit
+							</button>
+						</div>
+						<div class="flex flex-col gap-2 border-t border-surface-glass-border pt-4">
+							{#each tiers as tier, i (i)}
+								<div class="rounded-lg bg-surface-container-low border border-surface-glass-border px-4 py-3 flex flex-wrap items-center gap-3">
+									<span class="text-body-md font-semibold text-on-surface">Tier {i + 1}: {tier.name}</span>
+									{#if tier.benefits}
+										<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">{tier.benefits}</span>
+									{/if}
+									<span class="ml-auto flex items-center gap-4">
+										<span class="text-body-sm text-on-surface-variant">{tier.capacity.toLocaleString()} Qty</span>
+										<span class="font-code text-body-md font-bold text-on-surface w-24 text-right">{tier.price === 0 ? 'Free' : formatMoney(tier.price)}</span>
+									</span>
+								</div>
+							{/each}
+						</div>
+					</div>
+
+					<!-- module 3 -->
+					<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-4">
+						<div class="flex items-center justify-between gap-3">
+							<span class="flex items-center gap-3 min-w-0">
+								<span class="w-8 h-8 rounded-lg bg-surface-container-high border border-surface-glass-border font-code text-label-badge text-on-surface flex items-center justify-center shrink-0">3</span>
+								<span class="min-w-0">
+									<span class="text-body-lg font-semibold text-on-surface block truncate">Curated Agenda &amp; Talent</span>
+									<span class="text-body-sm text-on-surface-variant block pt-0.5">{days.length} Days • {sessionCount} Interactive Panels • 6 Verified Headliners</span>
+								</span>
+							</span>
+							<button type="button" onclick={() => { step = 3; scrollTo({ top: 0 }); }} class="h-9 px-3.5 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors shrink-0">
+								<Pencil class="w-3.5 h-3.5" /> Edit
+							</button>
+						</div>
+						<div class="grid sm:grid-cols-3 gap-3 border-t border-surface-glass-border pt-4">
+							{#each roster.slice(0, 2) as person (person.name)}
+								<div class="rounded-lg bg-surface-container-low border border-surface-glass-border px-4 py-3 flex items-center gap-3 min-w-0">
+									<Avatar name={person.name} size="xs" />
+									<span class="min-w-0">
+										<span class="text-body-md font-semibold text-on-surface block truncate">{person.name}</span>
+										<span class="text-body-sm text-on-surface-variant block truncate">{person.role}</span>
+									</span>
+								</div>
+							{/each}
+							<div class="rounded-lg bg-surface-container-low border border-surface-glass-border px-4 py-3 flex items-center gap-3 min-w-0">
+								<span class="w-7 h-7 rounded-full bg-surface-container-high border border-surface-glass-border font-code text-label-badge text-on-surface-variant flex items-center justify-center shrink-0">+4</span>
+								<span class="min-w-0">
+									<span class="text-body-md font-semibold text-on-surface block">4 More Artists</span>
+									<span class="text-body-sm text-on-surface-variant block">Contract Signed</span>
+								</span>
+							</div>
+						</div>
+					</div>
+
+					<!-- module 4 -->
+					<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-4">
+						<div class="flex items-center justify-between gap-3">
+							<span class="flex items-center gap-3 min-w-0">
+								<span class="w-8 h-8 rounded-lg bg-surface-container-high border border-surface-glass-border font-code text-label-badge text-on-surface flex items-center justify-center shrink-0">4</span>
+								<span class="min-w-0">
+									<span class="text-body-lg font-semibold text-on-surface block truncate">Gate Architecture &amp; Scanner Terminals</span>
+									<span class="text-body-sm text-on-surface-variant block pt-0.5">Dynamic QR Passes • Offline Cache Active</span>
+								</span>
+							</span>
+							<button type="button" onclick={() => { step = 4; scrollTo({ top: 0 }); }} class="h-9 px-3.5 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors shrink-0">
+								<Pencil class="w-3.5 h-3.5" /> Edit
+							</button>
+						</div>
+						<div class="grid grid-cols-2 xl:grid-cols-4 gap-4 border-t border-surface-glass-border pt-4">
+							<div>
+								<span class="{MONO} text-on-surface-variant block">Active Gates</span>
+								<span class="text-body-md font-semibold text-on-surface block pt-1 truncate">{gates.map((g) => g.name).slice(0, 2).join(' & ') || 'Gate A'}</span>
+							</div>
+							<div>
+								<span class="{MONO} text-on-surface-variant block">Hardware Devices</span>
+								<span class="text-body-md font-semibold text-on-surface block pt-1">{staffTotal} Door Scanners</span>
+							</div>
+							<div>
+								<span class="{MONO} text-on-surface-variant block">Staff Access PIN</span>
+								<span class="font-code text-body-md font-bold text-on-surface block pt-1">#8402</span>
+							</div>
+							<div>
+								<span class="{MONO} text-on-surface-variant block">Sync Latency</span>
+								<span class="text-body-md font-semibold text-on-surface block pt-1">&lt; 120ms P2P</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- right column -->
+			<aside class="flex flex-col gap-6 min-w-0">
+				<!-- settlement -->
+				<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-4">
+					<div class="flex items-center justify-between gap-3">
+						<span class="flex items-center gap-2.5">
+							<Landmark class="w-4.5 h-4.5 text-primary" />
+							<span class="font-display text-headline-md text-on-surface">Settlement &amp; Payouts</span>
+						</span>
+						<button type="button" onclick={() => toast('Payout rails are managed from the organizer console', 'info')} class="{MONO} text-on-surface underline underline-offset-4 hover:text-primary">Change</button>
+					</div>
+					<div class="rounded-lg bg-surface-container-low border border-surface-glass-border p-4 flex items-center gap-3">
+						<span class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border font-code text-label-badge font-bold text-on-surface flex items-center justify-center shrink-0">GTB</span>
+						<span class="min-w-0 flex-1">
+							<span class="text-body-md font-semibold text-on-surface block">Guaranty Trust Bank</span>
+							<span class="font-code text-[12px] tracking-[0.06em] text-on-surface-variant block pt-0.5">•••• 4821 (NGN Main)</span>
+						</span>
+						<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded shrink-0">Verified</span>
+					</div>
+					<div class="flex flex-col gap-2">
+						{#each [
+							['Account Holder:', 'Starlight Experiences Ltd'],
+							['Gateway Engine:', 'Paystack Split Gateway (KYC Tier 3)'],
+							['Payout Frequency:', 'T+2 Rolling Settlement']
+						] as [k, v]}
+							<div class="flex items-baseline justify-between gap-3">
+								<span class="{MONO} text-on-surface-variant">{k}</span>
+								<span class="font-code text-[12px] tracking-[0.06em] text-on-surface text-right">{v}</span>
+							</div>
+						{/each}
+					</div>
+					<div class="rounded-lg bg-surface-base border border-surface-glass-border p-4 flex gap-3">
+						<Info class="w-4 h-4 text-on-surface-variant shrink-0 mt-0.5" />
+						<p class="text-body-sm text-on-surface-variant leading-relaxed">
+							<span class="text-on-surface font-semibold">Fee Policy:</span> ₦0 upfront creation fee. A flat 3.0%
+							protocol charge is deducted automatically at ticket checkout.
+						</p>
+					</div>
+				</div>
+
+				<!-- distribution -->
+				<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-5">
+					<span class="flex items-center gap-2.5">
+						<Share2 class="w-4.5 h-4.5 text-primary" />
+						<span class="font-display text-headline-md text-on-surface">Distribution &amp; Discovery Controls</span>
+					</span>
+					{#each [
+						{ key: 'explore', title: 'Publish to OWLTSIDE Explore', sub: 'Feature on global algorithmic discovery radar and location heatmaps in Lagos.' },
+						{ key: 'broadcast', title: 'Instant Organizer Broadcast', sub: 'Dispatch push notification to 4,280 verified Starlight followers immediately upon launch.' }
+					] as row (row.key)}
+						<div class="flex items-start justify-between gap-4">
+							<span class="min-w-0">
+								<span class="text-body-md font-semibold text-on-surface block">{row.title}</span>
+								<span class="text-body-sm text-on-surface-variant block pt-0.5">{row.sub}</span>
+							</span>
+							<button
+								type="button"
+								role="switch"
+								aria-label={row.title}
+								aria-checked={row.key === 'explore' ? publishExplore : broadcast}
+								onclick={() => {
+									if (row.key === 'explore') publishExplore = !publishExplore;
+									else broadcast = !broadcast;
+								}}
+								class="w-11 h-6 rounded-full relative shrink-0 transition-colors
+									{row.key === 'explore' ? (publishExplore ? 'bg-primary' : 'bg-surface-container-highest') : broadcast ? 'bg-primary' : 'bg-surface-container-highest'}"
+							>
+								<span
+									class="absolute top-0.5 w-5 h-5 rounded-full bg-surface-base transition-all
+										{row.key === 'explore' ? (publishExplore ? 'left-[22px]' : 'left-0.5') : broadcast ? 'left-[22px]' : 'left-0.5'}"
+								></span>
+							</button>
+						</div>
+					{/each}
+					<div class="flex flex-col gap-2 border-t border-surface-glass-border pt-4">
+						<span class="{MONO} text-on-surface-variant">Launch Timeline</span>
+						{#each [
+							{ id: 'now', icon: true, title: 'Publish Now', badge: 'Instant', sub: 'Smart contracts deploy immediately; live on explore under 30 seconds.' },
+							{ id: 'staged', icon: false, title: 'Schedule Staged Drop', badge: '', sub: 'Specify exact embargo date, countdown page, and queue opening.' }
+						] as row (row.id)}
+							<label class="rounded-lg border border-surface-glass-border bg-surface-container-low px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors {launchMode === row.id ? 'border-primary/50' : ''}">
+								<input type="radio" name="launchMode" class="accent-[#c0c1ff] w-4 h-4 mt-0.5" checked={launchMode === row.id} onchange={() => (launchMode = row.id as 'now' | 'staged')} />
+								<span class="min-w-0">
+									<span class="flex items-center gap-2 flex-wrap">
+										{#if row.icon}<Zap class="w-3.5 h-3.5 text-accent-amber" />{/if}
+										<span class="text-body-md font-semibold text-on-surface">{row.title}</span>
+										{#if row.badge}<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-1.5 py-0.5 rounded">{row.badge}</span>{/if}
+									</span>
+									<span class="text-body-sm text-on-surface-variant block pt-0.5">{row.sub}</span>
+								</span>
+							</label>
+						{/each}
+					</div>
+				</div>
+
+				<!-- final approval -->
+				<form method="POST" action="?/create" use:enhance={publishHandler} class="rounded-xl border border-surface-glass-border bg-surface-container-low p-5 flex flex-col gap-4">
+					<input type="hidden" name="draft" value={draftJson} />
+					{#if form?.error}
+						<p role="alert" class="rounded-lg bg-error/10 border border-error/30 px-4 py-3 text-body-sm text-error">{form.error}</p>
+					{/if}
+					<div class="flex items-center justify-between gap-3">
+						<span class="{MONO} text-on-surface-variant">Final Approval</span>
+						<span class="flex items-center gap-1.5 {MONO} text-on-surface-variant">
+							<ShieldCheck class="w-3.5 h-3.5 text-primary" /> Decentralized Event Engine
+						</span>
+					</div>
+					<p class="text-body-sm text-on-surface-variant leading-relaxed">
+						By executing this launch, ticket pools will be written to the ledger, and your organizer
+						account will become liable for venue capacity limits under OWLTSIDE Protocol terms.
+					</p>
+					<div class="flex items-center gap-3 pt-1">
+						<button type="button" onclick={() => toast('Draft synced to organizer node', 'success')} class="h-12 px-5 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface hover:border-primary/40 transition-colors shrink-0">
+							Save Draft
+						</button>
+						<button type="submit" disabled={tiers.length === 0} class="flex-1 h-12 rounded-lg bg-primary text-on-primary text-body-md font-semibold flex items-center justify-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40">
+							<span>Launch &amp; Publish Event</span>
+							<Rocket class="w-4 h-4" />
+						</button>
+					</div>
+					<span class="flex items-center justify-center gap-1.5 font-code text-[11px] tracking-[0.08em] text-on-surface-variant">
+						<Clock class="w-3.5 h-3.5" /> Autosaved 1 minute ago • Build revision #824
+					</span>
+				</form>
+			</aside>
+		</div>
+
+		<!-- footer -->
+		<footer class="mt-8 border-t border-surface-glass-border">
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
+				<span class="flex items-center gap-3">
+					<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
+					<span class="{MONO} text-on-surface-variant">Decentralized Event Protocol</span>
+				</span>
+				<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
+					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
+					Mainnet 99.98% Operational • Latency: 24ms
+				</span>
+				<span class="text-body-sm text-on-surface-variant">© {new Date().getFullYear()} OWLTSIDE Protocol. All rights reserved.</span>
+			</div>
+		</footer>
+	</div>
+{/if}
+
+<div class="md:hidden">
 
 <main class="flex flex-col relative w-full pb-28 bg-surface min-h-dvh">
 	<!-- top bar -->
@@ -1363,11 +1834,7 @@
 			<form
 				method="POST"
 				action="?/create"
-				use:enhance={() => {
-					return async ({ update }) => {
-						await update();
-					};
-				}}
+				use:enhance={publishHandler}
 				class="flex flex-col gap-space-sm"
 			>
 				<input type="hidden" name="draft" value={draftJson} />
