@@ -1,13 +1,17 @@
 <script lang="ts">
-	import { MessageSquare, Users, Megaphone, Star, Wifi } from '@lucide/svelte';
+	import { MessageSquare, MessageSquarePlus, Search, Bell, Users, Megaphone, Star, Wifi } from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
+	import DesktopInboxList from '$components/DesktopInboxList.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import { useQuery } from '$lib/state/query.svelte';
 	import { fmtRelative } from '$lib/utils/dates';
+	import { page } from '$app/state';
 	import type { Conversation } from '$lib/types';
 
 	let { data } = $props();
+
+	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
 	const conversations = useQuery<Conversation[]>(
 		'conversations:mine',
@@ -41,6 +45,100 @@
 
 <svelte:head><title>Inbox • Owltside</title></svelte:head>
 
+<!-- ── desktop (md+) "Direct Comms" session index per the desktop design
+     source, themed with Evently Pulse tokens; mobile inbox below unchanged ── -->
+<div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
+	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
+			<a href="/home" class="flex items-center gap-2.5 shrink-0">
+				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
+				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
+				<span class="{MONO} text-tertiary border border-tertiary/25 bg-tertiary/10 rounded px-1.5 py-0.5">Secure_Node</span>
+			</a>
+			<nav class="flex items-center gap-1" aria-label="Primary">
+				{#each [
+					['/home', 'Home'],
+					['/explore', 'Explore'],
+					['/tickets', 'Tickets'],
+					['/organizer', 'Organizer']
+				] as [href, label]}
+					<a
+						{href}
+						class="px-3 h-9 rounded-lg flex items-center text-body-sm text-on-surface-variant hover:text-on-surface transition-colors"
+					>
+						{label}
+					</a>
+				{/each}
+			</nav>
+			<div class="flex-1"></div>
+			<span class="relative hidden lg:flex items-center w-72 h-10">
+				<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
+				<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, gates, artists…</span>
+				<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
+			</span>
+			<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
+				<Bell class="w-4.5 h-4.5" />
+				<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
+			</a>
+			<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
+				<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
+				<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">GATE_PASS_ACTIVE</span>
+			</div>
+			<a href="/profile" aria-label="Your profile" class="shrink-0">
+				<Avatar name={page.data.session?.name ?? 'Guest'} size="sm" />
+			</a>
+		</div>
+	</header>
+
+	<div class="border-b border-surface-glass-border bg-surface-container-low/60">
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-5 flex flex-wrap items-center justify-between gap-4">
+			<span class="flex items-center gap-3 min-w-0">
+				<span class="{MONO} text-on-surface-variant">Communication_Suite //</span>
+				<span class="font-display text-headline-lg text-on-surface">Direct Comms</span>
+				<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{(conversations.data ?? []).length} Sessions</span>
+			</span>
+			<span class="flex items-center gap-3 {MONO} text-on-surface-variant">
+				<span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> Latency: 18ms</span>
+				<span class="text-outline-variant">|</span>
+				<span>Gate_Node: 0x7E3-West-Africa</span>
+			</span>
+		</div>
+	</div>
+
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-8 grid lg:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[400px_minmax(0,1fr)] gap-6 items-start">
+		<DesktopInboxList items={conversations.data ?? []} />
+		<section class="rounded-xl border border-surface-glass-border bg-surface-container min-h-[420px] flex flex-col items-center justify-center gap-4 p-10 text-center">
+			<span class="w-14 h-14 rounded-xl bg-surface-container-high border border-surface-glass-border text-primary flex items-center justify-center">
+				<MessageSquarePlus class="w-6 h-6" />
+			</span>
+			<h2 class="font-display text-headline-md text-on-surface">Select a session</h2>
+			<p class="text-body-sm text-on-surface-variant max-w-sm">
+				Open a thread from the index to view the encrypted message flow, speaker passes and
+				suggested replies for that peer.
+			</p>
+			<span class="{MONO} text-on-surface-variant">Peer Synced • Mesh Gateway 0x7E3</span>
+		</section>
+	</div>
+
+	<footer class="mt-4 border-t border-surface-glass-border">
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
+			<span class="flex items-center gap-3">
+				<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
+				<span class="w-px h-4 bg-outline-variant/40"></span>
+				<span class="{MONO} text-on-surface-variant">Event Ticketing Architecture</span>
+			</span>
+			<span class="flex items-center gap-5">
+				<span class="flex items-center gap-1.5 {MONO} text-on-surface-variant">
+					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
+					System Status: 99.98% Optimal
+				</span>
+				<span class="{MONO} text-on-surface-variant">© {new Date().getFullYear()} Owltside Protocol</span>
+			</span>
+		</div>
+	</footer>
+</div>
+
+<div class="md:hidden">
 <TopBar title="Inbox" subtitle="Organisers, friends & channels" />
 
 <main class="flex-1 flex flex-col relative w-full pt-16 pb-28 md:pb-16 bg-surface min-h-dvh">
@@ -107,3 +205,4 @@
 		</div>
 	</div>
 </main>
+</div>
