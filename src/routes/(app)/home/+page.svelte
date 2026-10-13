@@ -25,6 +25,7 @@
 	import SearchBar from '$components/SearchBar.svelte';
 	import SectionHeader from '$components/SectionHeader.svelte';
 	import Avatar from '$components/Avatar.svelte';
+	import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 	import { categories } from '$components/iconMap';
 	import { useQuery } from '$lib/state/query.svelte';
 	import { toast } from '$lib/state/toast.svelte';
@@ -79,6 +80,10 @@
 
 <svelte:head><title>Home • Owltside</title></svelte:head>
 
+<!-- desktop (md+) composition — see DesktopHomeFeed; mobile feed below is unchanged -->
+<DesktopHomeFeed events={list} unread={data.unread} initialTickets={data.tickets} />
+
+<div class="md:hidden">
 <header class="fixed top-0 inset-x-0 z-50 bg-surface/80 backdrop-blur-xl pt-safe md:left-20">
 	<div class="h-16 px-gutter md:max-w-5xl md:mx-auto flex items-center justify-between gap-space-sm">
 		<div class="flex items-center gap-space-sm">
@@ -250,3 +255,4 @@
 		{/if}
 	</div>
 </main>
+</div>

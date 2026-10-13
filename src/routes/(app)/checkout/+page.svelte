@@ -5,12 +5,16 @@
 		ArrowRight,
 		BadgeCheck,
 		CircleCheck,
+		Clock,
 		CreditCard,
 		Info,
 		Landmark,
 		Lock,
+		MapPin,
 		PieChart,
+		QrCode,
 		ScanLine,
+		Search,
 		ShieldCheck,
 		Smartphone,
 		Tag,
@@ -22,6 +26,7 @@
 		XCircle,
 		Fingerprint
 	} from '@lucide/svelte';
+	import Avatar from '$components/Avatar.svelte';
 	import Cover from '$components/Cover.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { formatMoney } from '$lib/utils/money';
@@ -87,14 +92,452 @@
 	}
 
 	let formEl: HTMLFormElement | undefined;
+	let formElDesktop: HTMLFormElement | undefined;
+	let storeToken = $state(true);
+
+	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
+	const orderId = $derived(
+		`ORD-${([...event.id].reduce((a, c) => a + c.charCodeAt(0), 0) % 9000) + 1000}-NG`
+	);
+
+	function payHandler() {
+		return async ({ result }: { result: { type: string; status?: number } }) => {
+			if (result.type === 'failure') {
+				modal = 'declined';
+				if (result.status === 402) toast('Payment declined by gateway', 'error');
+			}
+		};
+	}
+
 	function submitForm() {
 		modal = 'verifying';
-		// let the modal paint, then submit through enhance
-		setTimeout(() => formEl?.requestSubmit(), 60);
+		// let the modal paint, then submit the visible form through enhance
+		setTimeout(() => {
+			const desktop = window.matchMedia('(min-width: 768px)').matches;
+			(desktop ? formElDesktop : formEl)?.requestSubmit();
+		}, 60);
 	}
 </script>
 
 <svelte:head><title>Checkout • Owltside</title></svelte:head>
+
+<!-- ── desktop (md+) "Checkout Node" composition — same design language as the
+     desktop home/login, themed with Evently Pulse tokens; mobile below unchanged ── -->
+<div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
+	<!-- top bar -->
+	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
+			<a href="/home" class="flex items-center gap-2.5 shrink-0">
+				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
+				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
+			</a>
+			<nav class="flex items-center gap-1" aria-label="Primary">
+				{#each [
+					['/home', 'Home'],
+					['/explore', 'Explore'],
+					['/tickets', 'Tickets'],
+					['/organizer', 'Organizer'],
+					['/settings', 'Settings']
+				] as [href, label]}
+					<a
+						{href}
+						class="px-3 h-9 rounded-lg flex items-center text-body-sm text-on-surface-variant hover:text-on-surface transition-colors"
+					>
+						{label}
+					</a>
+				{/each}
+			</nav>
+			<div class="flex-1"></div>
+			<a href="/explore" class="relative hidden lg:flex items-center w-72 h-10">
+				<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
+				<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events or venues</span>
+				<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
+			</a>
+			<span class="hidden xl:flex items-center gap-2 h-10 px-3 border border-surface-glass-border rounded-lg">
+				<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>
+				<span class="{MONO} text-on-surface">Node 01 // Sync</span>
+			</span>
+			<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
+				<span class="font-code text-label-badge text-on-surface">0x7F…49B2</span>
+				<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">VERIFIED WALLET</span>
+			</div>
+			<a href="/profile" aria-label="Your profile" class="shrink-0">
+				<Avatar name={data.holder.name} size="sm" />
+			</a>
+		</div>
+	</header>
+
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-10">
+		<!-- breadcrumb + header -->
+		<nav class="{MONO} text-on-surface-variant flex items-center gap-2 min-w-0" aria-label="Breadcrumb">
+			<a href="/home" class="hover:text-on-surface shrink-0">Home</a>
+			<span class="text-outline-variant">/</span>
+			<a href="/explore" class="hover:text-on-surface shrink-0">Events</a>
+			<span class="text-outline-variant">/</span>
+			<a href="/events/{event.slug}" class="hover:text-on-surface truncate">{event.title}</a>
+			<span class="text-outline-variant">/</span>
+			<span class="text-on-surface">Checkout</span>
+		</nav>
+		<div class="flex flex-wrap items-end justify-between gap-6 pt-4 pb-8 border-b border-surface-glass-border">
+			<div class="flex items-center gap-4 min-w-0">
+				<h1 class="font-display text-display-hero text-on-surface">Checkout Node</h1>
+				<span class="{MONO} bg-surface-container border border-surface-glass-border text-on-surface px-2.5 py-1 rounded mb-2">ID: {orderId}</span>
+			</div>
+			<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container px-4 py-3 mb-1">
+				<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+				<div class="flex flex-col leading-tight">
+					<span class="{MONO} text-on-surface font-bold">Secure Settlement Channel</span>
+					<span class="text-body-sm text-on-surface-variant pt-0.5">Paystack &amp; Flutterwave Rail • Multi-Mesh Enclave</span>
+				</div>
+			</div>
+		</div>
+
+		<!-- pipeline stepper -->
+		<div class="grid md:grid-cols-3 gap-4 pt-8">
+			<div class="rounded-lg border border-surface-glass-border bg-surface-container p-4 flex items-center gap-3">
+				<span class="w-8 h-8 rounded-full bg-surface-container-high text-on-surface-variant flex items-center justify-center shrink-0">
+					<CircleCheck class="w-4 h-4 text-accent-emerald" />
+				</span>
+				<div class="min-w-0">
+					<span class="{MONO} text-on-surface-variant">Step 01</span>
+					<p class="text-body-md text-on-surface font-semibold truncate">Ticket Selection ({tier.name})</p>
+				</div>
+			</div>
+			<div class="rounded-lg border border-surface-glass-border bg-surface-container p-4 flex items-center gap-3">
+				<span class="w-8 h-8 rounded-full bg-surface-container-high text-on-surface-variant flex items-center justify-center shrink-0">
+					<CircleCheck class="w-4 h-4 text-accent-emerald" />
+				</span>
+				<div class="min-w-0">
+					<span class="{MONO} text-on-surface-variant">Step 02</span>
+					<p class="text-body-md text-on-surface font-semibold truncate">{data.holder.name} ({data.holder.email})</p>
+				</div>
+			</div>
+			<div class="rounded-lg border border-surface-glass-border border-l-2 border-l-primary bg-surface-container-high p-4 flex items-center gap-3">
+				<span class="w-8 h-8 rounded-full bg-primary text-on-primary font-code text-label-badge font-bold flex items-center justify-center shrink-0">03</span>
+				<div class="min-w-0">
+					<span class="{MONO} text-on-surface-variant">Active Pipeline</span>
+					<p class="text-body-md text-on-surface font-semibold truncate">Payment Method &amp; Issuance</p>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- main grid -->
+	<form
+		method="POST"
+		action="?/pay"
+		bind:this={formElDesktop}
+		use:enhance={payHandler}
+		class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8 pb-4 grid lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_440px] gap-6 xl:gap-8 items-start"
+	>
+		<input type="hidden" name="event" value={event.slug} />
+		<input type="hidden" name="tier" value={tierId} />
+		<input type="hidden" name="qty" value={qty} />
+		<input type="hidden" name="promo" value={appliedPromo ?? ''} />
+		<input type="hidden" name="method" value={method} />
+		<input type="hidden" name="scenario" value={scenario} />
+
+		<!-- left column -->
+		<div class="flex flex-col gap-6 min-w-0">
+			<!-- holder -->
+			<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex items-center gap-4">
+				<span class="w-11 h-11 rounded-full bg-surface-container-high border border-surface-glass-border text-on-surface flex items-center justify-center shrink-0">
+					<ShieldCheck class="w-5 h-5" />
+				</span>
+				<div class="flex-1 min-w-0">
+					<span class="flex items-center gap-2 min-w-0">
+						<span class="text-body-lg font-semibold text-on-surface truncate">{data.holder.name}</span>
+						<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded shrink-0">{tier.name} Holder</span>
+					</span>
+					<span class="block text-body-sm text-on-surface-variant truncate pt-0.5">{data.holder.email} • +234 812 490 8821</span>
+				</div>
+				<a href="/settings" class="{MONO} text-on-surface underline underline-offset-4 hover:text-primary shrink-0">Modify</a>
+			</div>
+
+			<!-- settlement protocol -->
+			<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
+				<div class="p-6 flex items-start justify-between gap-4">
+					<div>
+						<h2 class="font-display text-headline-lg text-on-surface">Select Settlement Protocol</h2>
+						<p class="text-body-sm text-on-surface-variant pt-1">All transactions cleared strictly in Nigerian Naira (₦ / NGN).</p>
+					</div>
+					<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2.5 py-1 rounded shrink-0">Zero Foreign Surcharge</span>
+				</div>
+				<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 px-6 pb-6">
+					{#each methods as m (m.id)}
+						<button
+							type="button"
+							onclick={() => (method = m.id)}
+							aria-pressed={method === m.id}
+							class="rounded-lg border p-4 flex flex-col items-center gap-2 text-center transition-colors
+								{method === m.id
+									? 'border-primary/60 bg-surface-container-high glow-primary'
+									: 'border-surface-glass-border bg-surface-container-low hover:border-primary/30'}"
+						>
+							<m.icon class="w-5 h-5 {method === m.id ? 'text-primary' : 'text-on-surface-variant'}" />
+							<span class="font-code text-label-badge font-bold text-on-surface leading-tight">{m.title}</span>
+							<span class="font-code text-[10px] tracking-[0.08em] text-on-surface-variant leading-tight">{m.sub}</span>
+						</button>
+					{/each}
+				</div>
+
+				<div class="border-t border-surface-glass-border p-6 flex flex-col gap-5">
+					<!-- sandbox harness -->
+					<div class="rounded-lg border border-surface-glass-border bg-surface-container-low p-4 flex flex-wrap items-center justify-between gap-4">
+						<div class="flex items-center gap-3 min-w-0">
+							<FlaskConical class="w-4.5 h-4.5 text-accent-amber shrink-0" />
+							<div class="min-w-0">
+								<span class="{MONO} text-on-surface font-bold">Gateway Sandbox Mode</span>
+								<p class="text-body-sm text-on-surface-variant truncate">Pre-validate response vectors before ticket minting</p>
+							</div>
+						</div>
+						<div class="flex items-center gap-1 p-1 rounded-lg bg-surface-container border border-surface-glass-border">
+							{#each [['approve', 'Approve'], ['3ds', '3-D Secure'], ['decline', 'Decline']] as [id, label]}
+								<button
+									type="button"
+									onclick={() => (scenario = id as PaymentScenario)}
+									class="px-3 py-1.5 rounded font-code text-label-badge transition-colors
+										{scenario === id ? 'bg-primary text-on-primary font-bold' : 'text-on-surface-variant hover:text-on-surface'}"
+								>
+									{label}
+								</button>
+							{/each}
+						</div>
+					</div>
+
+					{#if method === 'card'}
+						<div class="flex flex-col gap-4">
+							<div>
+								<span class="{MONO} text-on-surface-variant">Card Number</span>
+								<div class="mt-2 flex items-center gap-3 bg-surface-base border border-surface-glass-border rounded-lg px-4 h-12">
+									<input readonly value="5399 •••• •••• 8820" class="flex-1 bg-transparent font-code text-body-md text-on-surface focus:outline-none" />
+									<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">Mastercard</span>
+									<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">Verve</span>
+								</div>
+							</div>
+							<div class="grid grid-cols-2 gap-4">
+								<div>
+									<span class="{MONO} text-on-surface-variant">Expiry Date</span>
+									<div class="mt-2 bg-surface-base border border-surface-glass-border rounded-lg px-4 h-12 flex items-center">
+										<input readonly value="09 / 27" class="w-full bg-transparent font-code text-body-md text-on-surface focus:outline-none" />
+									</div>
+								</div>
+								<div>
+									<span class="{MONO} text-on-surface-variant flex items-center justify-between">
+										<span>CVV / CVC</span>
+										<span class="text-on-surface-variant normal-case tracking-normal font-code text-[11px]">3-digits back</span>
+									</span>
+									<div class="mt-2 bg-surface-base border border-surface-glass-border rounded-lg px-4 h-12 flex items-center">
+										<input readonly type="password" value="123" class="w-full bg-transparent font-code text-body-md text-on-surface focus:outline-none" />
+									</div>
+								</div>
+							</div>
+						</div>
+					{/if}
+
+					<label class="flex items-center justify-between gap-4 cursor-pointer">
+						<span class="flex items-center gap-3 min-w-0">
+							<input type="checkbox" bind:checked={storeToken} class="accent-[#c0c1ff] w-4 h-4 rounded" />
+							<span class="text-body-md text-on-surface truncate">Store cryptographic token for 1-click turnstile recharge</span>
+						</span>
+						<Info class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</label>
+				</div>
+			</div>
+
+			<!-- voucher -->
+			<div class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
+				<div class="flex items-center justify-between gap-4">
+					<span class="{MONO} text-on-surface-variant">Incentive &amp; Access Voucher</span>
+					<span class="flex items-center gap-1.5 font-code text-label-badge text-on-surface">
+						<BadgeCheck class="w-3.5 h-3.5 text-accent-emerald" /> Verified Sponsor Pool
+					</span>
+				</div>
+				{#if appliedPromo}
+					<div class="flex items-center gap-3 pt-4">
+						<div class="flex-1 flex items-center gap-3 bg-surface-base border border-surface-glass-border rounded-lg px-4 h-12 min-w-0">
+							<Tag class="w-4 h-4 text-primary shrink-0" />
+							<span class="font-code text-body-md text-on-surface truncate">{appliedPromo}</span>
+							<span class="{MONO} bg-accent-emerald/15 border border-accent-emerald/30 text-accent-emerald px-2 py-0.5 rounded ml-auto shrink-0">-{formatMoney(discount)} Applied</span>
+						</div>
+						<button type="button" onclick={() => (appliedPromo = null)} class="{MONO} h-12 px-4 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface hover:text-error hover:border-error/40 transition-colors shrink-0">
+							Remove
+						</button>
+					</div>
+				{:else}
+					<div class="flex items-center gap-3 pt-4">
+						<div class="flex-1 flex items-center gap-3 bg-surface-base border border-surface-glass-border rounded-lg px-4 h-12 min-w-0">
+							<Tag class="w-4 h-4 text-on-surface-variant shrink-0" />
+							<input bind:value={promoInput} placeholder="PROMO CODE" class="w-full bg-transparent font-code text-body-md text-on-surface uppercase placeholder:text-outline-variant focus:outline-none" />
+						</div>
+						<button type="button" onclick={applyPromo} class="{MONO} h-12 px-4 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface hover:bg-primary hover:text-on-primary hover:border-primary transition-colors shrink-0">
+							Apply
+						</button>
+					</div>
+				{/if}
+				<p class="text-body-sm text-on-surface-variant pt-3">Community allocations granted via Owltside Lagos node seed pool.</p>
+			</div>
+
+			<!-- assurance -->
+			<div class="rounded-xl border border-surface-glass-border bg-surface-container p-6 flex gap-4">
+				<span class="w-11 h-11 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface flex items-center justify-center shrink-0">
+					<ShieldCheck class="w-5 h-5 text-primary" />
+				</span>
+				<div class="min-w-0">
+					<h3 class="text-body-lg font-semibold text-on-surface">Zero Scalping &amp; Cryptographic Turnstile Assurance</h3>
+					<p class="text-body-sm text-on-surface-variant leading-relaxed pt-2">
+						Tickets issued through OWLTSIDE utilize dynamic 256-bit HMAC payloads rotating every 15
+						seconds. Counterfeiting, unauthorized screenshots, and secondary scalping are
+						mathematically prevented at {event.venue} turnstiles.
+					</p>
+					<div class="flex flex-wrap items-center gap-6 pt-4">
+						<span class="flex items-center gap-2 font-code text-label-badge text-on-surface">
+							<Clock class="w-3.5 h-3.5 text-on-surface-variant" />
+							100% Refund Window: Valid till {fmtDate(event.startsAt, { month: 'short', day: 'numeric', year: 'numeric' })}
+						</span>
+						<span class="flex items-center gap-2 font-code text-label-badge text-on-surface">
+							<Lock class="w-3.5 h-3.5 text-accent-emerald" />
+							256-bit Nonce Protection
+						</span>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- right column -->
+		<aside class="flex flex-col gap-6 min-w-0">
+			<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
+				<div class="p-6 flex flex-col gap-4">
+					<div class="flex items-start justify-between gap-4">
+						<div class="min-w-0">
+							<span class="flex items-center gap-2 min-w-0">
+								<span class="{MONO} bg-primary text-on-primary px-2 py-0.5 rounded shrink-0">{event.city} Node</span>
+								<span class="{MONO} text-on-surface-variant truncate">{fmtDate(event.startsAt)}</span>
+							</span>
+							<h2 class="font-display text-headline-lg text-on-surface leading-tight pt-3">{event.title}</h2>
+							<span class="flex items-center gap-1.5 text-body-sm text-on-surface-variant pt-1 min-w-0">
+								<MapPin class="w-3.5 h-3.5 shrink-0" />
+								<span class="truncate">{event.venue}, {event.city}</span>
+							</span>
+						</div>
+						<Cover cover={event.cover} class="w-16 h-16 rounded-lg border border-surface-glass-border shrink-0" iconClass="w-7 h-7 text-white/40" />
+					</div>
+
+					<div class="flex items-center justify-between gap-3 bg-surface-base border border-surface-glass-border rounded-lg px-4 h-11">
+						<span class="flex items-center gap-2 font-code text-label-badge text-on-surface min-w-0">
+							<Timer class="w-3.5 h-3.5 text-accent-amber shrink-0" />
+							<span class="truncate">Seat reservation locked:</span>
+						</span>
+						<span class="font-code text-body-md font-bold text-accent-amber shrink-0">{timerLabel}</span>
+					</div>
+
+					<div class="flex flex-col gap-3">
+						<div>
+							<div class="flex items-baseline justify-between gap-3">
+								<span class="text-body-md text-on-surface font-semibold">{qty}x {tier.name}</span>
+								<span class="font-code text-body-md font-bold text-on-surface">{formatMoney(base)}</span>
+							</div>
+							<p class="text-body-sm text-on-surface-variant pt-0.5">{tier.benefits ?? 'Rotating HMAC gate pass'}</p>
+						</div>
+						<div class="flex items-center justify-between gap-3">
+							<span class="flex items-center gap-1.5 text-body-sm text-on-surface-variant">
+								Protocol &amp; Network Rail Fee <Info class="w-3.5 h-3.5 text-outline-variant" />
+							</span>
+							<span class="font-code text-body-sm text-on-surface-variant">{formatMoney(fee)}</span>
+						</div>
+						{#if discount > 0}
+							<div class="flex items-center justify-between gap-3">
+								<span class="flex items-center gap-2 text-body-sm text-on-surface-variant min-w-0">
+									<span class="truncate">Partner Pass Incentive</span>
+									<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-tertiary px-2 py-0.5 rounded shrink-0">{appliedPromo}</span>
+								</span>
+								<span class="font-code text-body-sm font-bold text-accent-emerald">-{formatMoney(discount)}</span>
+							</div>
+						{/if}
+					</div>
+
+					<div class="border-t border-surface-glass-border pt-4 flex items-end justify-between gap-4">
+						<div class="min-w-0">
+							<span class="{MONO} text-on-surface-variant">Grand Total Settlement</span>
+							<p class="text-body-sm text-on-surface-variant pt-1">Denominated in Nigerian Naira (NGN)</p>
+						</div>
+						<div class="text-right shrink-0">
+							<span class="font-display text-[38px] leading-none font-bold text-on-surface">{formatMoney(total)}</span>
+							<p class="font-code text-label-badge text-on-surface-variant pt-1">≈ {formatMoney(total, 'USD')} Equiv.</p>
+						</div>
+					</div>
+
+					<button type="button" onclick={onPay} class="w-full h-12 rounded-lg bg-primary text-on-primary text-body-lg font-semibold flex items-center justify-center gap-2.5 hover:bg-primary-container transition-colors glow-primary">
+						<Lock class="w-4 h-4" />
+						<span>Complete Payment • {formatMoney(total)}</span>
+					</button>
+					<span class="flex items-center justify-center gap-1.5 text-body-sm text-on-surface-variant">
+						<ShieldCheck class="w-4 h-4 text-accent-emerald shrink-0" />
+						Instant cryptographic pass minted directly to your OWLTSIDE wallet
+					</span>
+				</div>
+				<div class="grid grid-cols-3 border-t border-surface-glass-border bg-surface-base">
+					<span class="flex flex-col items-center gap-2 py-4 px-2 text-center">
+						<Lock class="w-4 h-4 text-on-surface" />
+						<span class="{MONO} text-on-surface-variant">256-bit TLS 1.3 Encryption</span>
+					</span>
+					<span class="flex flex-col items-center gap-2 py-4 px-2 text-center border-x border-surface-glass-border">
+						<BadgeCheck class="w-4 h-4 text-on-surface" />
+						<span class="{MONO} text-on-surface-variant">PCI-DSS Gateway Level 1</span>
+					</span>
+					<span class="flex flex-col items-center gap-2 py-4 px-2 text-center">
+						<QrCode class="w-4 h-4 text-on-surface" />
+						<span class="{MONO} text-on-surface-variant">Instant HMAC QR Turnstile</span>
+					</span>
+				</div>
+			</div>
+
+			<!-- geofence -->
+			<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5">
+				<div class="flex items-center justify-between gap-4">
+					<span class="{MONO} text-on-surface-variant">Venue Geofence Clearance</span>
+					<span class="font-code text-label-badge text-on-surface">6.4253° N, 3.4219° E</span>
+				</div>
+				<div class="relative mt-4 h-40 rounded-lg overflow-hidden border border-surface-glass-border bg-surface-container-low">
+					<div
+						class="absolute inset-0 opacity-60"
+						style="background-image: linear-gradient(rgba(192,193,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(192,193,255,0.07) 1px, transparent 1px), radial-gradient(circle at 70% 30%, rgba(76,215,246,0.12) 0, transparent 45%); background-size: 28px 28px, 28px 28px, 100% 100%;"
+					></div>
+					<div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
+						<span class="absolute w-16 h-16 rounded-full border border-primary/30 animate-ping"></span>
+						<span class="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center">
+							<MapPin class="w-4 h-4" />
+						</span>
+					</div>
+					<div class="absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 bg-surface-base/85 backdrop-blur-md px-4 py-2.5">
+						<span class="text-body-sm text-on-surface font-medium truncate">Turnstile Hall 2 (VIP Access Lane)</span>
+						<span class="{MONO} bg-primary text-on-primary px-2 py-0.5 rounded shrink-0">Gate Open</span>
+					</div>
+				</div>
+			</div>
+		</aside>
+	</form>
+
+	<!-- footer -->
+	<footer class="mt-8 border-t border-surface-glass-border">
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
+			<span class="flex items-center gap-3">
+				<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
+				<span class="{MONO} text-on-surface-variant">Prot-v2.4.1</span>
+			</span>
+			<span class="text-body-sm text-on-surface-variant">© {new Date().getFullYear()} OWLTSIDE Protocol. Engineered for nocturnal creators &amp; urban nodes.</span>
+			<span class="flex items-center gap-6">
+				{#each ['Status', 'Privacy & Terms', 'Telemetry'] as link}
+					<button type="button" onclick={() => toast(`${link} console ships with the organizer suite`, 'info')} class="font-code text-label-badge tracking-[0.08em] text-on-surface-variant hover:text-on-surface transition-colors">
+						{link}
+					</button>
+				{/each}
+			</span>
+		</div>
+	</footer>
+</div>
+
+<div class="md:hidden">
 
 <header class="fixed top-0 inset-x-0 z-50 bg-surface/80 backdrop-blur-xl pt-safe md:left-20">
 	<div class="h-16 px-gutter md:max-w-2xl md:mx-auto flex items-center gap-space-xs">
@@ -128,12 +571,7 @@
 			method="POST"
 			action="?/pay"
 			bind:this={formEl}
-			use:enhance={() => async ({ result }) => {
-					if (result.type === 'failure') {
-						modal = 'declined';
-						if (result.status === 402) toast('Payment declined by gateway', 'error');
-					}
-				}}
+			use:enhance={payHandler}
 			class="px-gutter flex flex-col gap-space-md"
 		>
 			<input type="hidden" name="event" value={event.slug} />
@@ -333,6 +771,7 @@
 		</div>
 	</div>
 </main>
+</div>
 
 <!-- simulation modal -->
 {#if modal}
