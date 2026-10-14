@@ -26,6 +26,8 @@
 	} from '@lucide/svelte';
 	import QRCode from 'qrcode';
 	import Avatar from './Avatar.svelte';
+	import Carousel from './Carousel.svelte';
+	import EventCard from './EventCard.svelte';
 	import Cover from './Cover.svelte';
 	import { categories } from './iconMap';
 	import { useQuery } from '$lib/state/query.svelte';
@@ -50,7 +52,12 @@
 	let search = $state('');
 	let curatedPage = $state(0);
 
-	const rail = $derived(category === 'all' ? events : events.filter((e) => e.category === category));
+	const rail = $derived(
+		[...events]
+			.filter((event) => category === 'all' || event.category === category)
+			.sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt))
+			.slice(0, 12)
+	);
 	const featured = $derived(rail.find((e) => e.featured) ?? rail[0]);
 	const trending = $derived(
 		rail
@@ -152,9 +159,8 @@
 	<!-- ── top bar ──────────────────────────────────────────────────────── -->
 	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
 		<div class="{WRAP} h-16 flex items-center gap-5">
-			<a href="/home" class="flex items-center gap-2.5 shrink-0">
-				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
-				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
+			<a href="/home" aria-label="Owltside home" class="flex items-center gap-2.5 shrink-0">
+				<img src="/owl-icon.png" alt="Owltside logo" class="w-8 h-8 object-contain" />
 				<span class="{MONO} text-tertiary border border-tertiary/25 bg-tertiary/10 rounded px-1.5 py-0.5">Secure_Node</span>
 			</a>
 			<nav class="flex items-center gap-1" aria-label="Primary">
@@ -298,6 +304,24 @@
 				</div>
 			</div>
 		</div>
+	{/if}
+
+	<!-- ── near-you event slides ────────────────────────────────────────── -->
+	{#if rail.length}
+		<section class="{WRAP} pt-8">
+			<div class="flex items-end justify-between gap-4">
+				<div>
+					<h2 class="font-display text-headline-lg text-on-surface">Happening Near You</h2>
+					<p class="text-body-sm text-on-surface-variant mt-1">Handpicked sessions in your geo-zone</p>
+				</div>
+				<button type="button" onclick={() => goto('/explore')} class="{MONO} text-primary hover:underline flex items-center gap-1 shrink-0">View all <ArrowUpRight class="w-3.5 h-3.5" /></button>
+			</div>
+			<div class="pt-5">
+				<Carousel items={rail}>
+					{#snippet children(event: EventItem)}<EventCard {event} />{/snippet}
+				</Carousel>
+			</div>
+		</section>
 	{/if}
 
 	<!-- ── main grid ────────────────────────────────────────────────────── -->

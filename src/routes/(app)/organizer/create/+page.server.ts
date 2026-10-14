@@ -12,6 +12,7 @@ const draftSchema = z.object({
 	title: z.string().min(3, 'Give the event a title').max(80),
 	tags: z.array(z.string().min(1).max(24)).max(4).default([]),
 	date: z.string().min(8, 'Pick a date'),
+	dateEnd: z.string().min(8, 'Pick an end date'),
 	venue: z.string().min(2, 'Add a venue'),
 	city: z.string().min(2).default('Lagos'),
 	description: z.string().max(600).default(''),
@@ -36,6 +37,9 @@ const draftSchema = z.object({
 		)
 		.default([]),
 	gates: z.array(z.object({ name: z.string(), staff: z.number().int().min(1) })).default([])
+}).refine((draft) => draft.dateEnd >= draft.date, {
+	path: ['dateEnd'],
+	message: 'End date cannot be before the start date'
 });
 
 export const actions: Actions = {
@@ -59,6 +63,7 @@ export const actions: Actions = {
 				category: 'conferences',
 				tags: d.tags,
 				startsAt: `${d.date}T09:00:00`,
+				endsAt: `${d.dateEnd}T23:59:00`,
 				venue: d.venue,
 				city: d.city,
 				description: d.description || `${d.title} — details coming soon.`,

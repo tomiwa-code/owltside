@@ -533,9 +533,13 @@
 </div>
 
 <div class="md:hidden">
-	<TopBar title="Organizer" subtitle="Console & gate ops" />
+	<TopBar title="Organizer" subtitle="Console & gate ops">
+		{#snippet right()}
+			<button aria-label="Export attendee check-ins" onclick={exportCsv} class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container"><Download class="w-4.5 h-4.5" /></button>
+		{/snippet}
+	</TopBar>
 
-<main class="flex flex-col relative w-full pt-16 pb-28 md:pb-16 bg-surface min-h-dvh">
+<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
 	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md pt-space-sm">
 		<!-- identity -->
 		<div class="relative overflow-hidden rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
@@ -596,6 +600,12 @@
 				</div>
 			</a>
 
+			<section class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm flex flex-col gap-space-sm">
+				<div class="flex items-start justify-between gap-3"><div class="min-w-0"><span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Primary event</span><h2 class="font-display text-headline-md text-on-surface pt-1 truncate">{mainEvent.title}</h2><p class="text-body-sm text-on-surface-variant pt-1">{dateLabel} · {mainEvent.venue}, {mainEvent.city}</p></div><span class="shrink-0 rounded-full px-2.5 py-1 text-label-badge {mainEvent.live ? 'bg-accent-emerald/10 text-accent-emerald' : 'bg-surface-container-highest text-on-surface-variant'}">{mainEvent.live ? 'Live' : 'Scheduled'}</span></div>
+				<div class="grid grid-cols-2 gap-2 pt-1"><a href="/organizer/events/{mainEvent.id}" class="h-10 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center gap-1.5"><LayoutGrid class="w-4 h-4" />Manage event</a><a href="/organizer/create" class="h-10 rounded-lg bg-surface-container-high border border-outline-variant/30 text-on-surface text-body-sm font-semibold flex items-center justify-center gap-1.5"><PenLine class="w-4 h-4" />Edit wizard</a></div>
+				<div class="grid grid-cols-2 gap-2 border-t border-outline-variant/20 pt-3"><div><span class="text-label-badge text-on-surface-variant block">Rejected scans</span><span class="text-body-sm font-semibold text-on-surface">{rejected} blocked</span></div><div><span class="text-label-badge text-on-surface-variant block">Offline cache sync</span><span class="text-body-sm font-semibold text-on-surface">100% up to date</span></div></div>
+			</section>
+
 			<!-- stats grid -->
 			{#if stats}
 				<div class="grid grid-cols-2 gap-space-sm">
@@ -612,8 +622,9 @@
 							</span>
 						</div>
 						<div class="w-full bg-surface-container-highest h-1 rounded-full overflow-hidden mt-1">
-							<div class="bg-accent-emerald h-full w-4/5 rounded-full"></div>
+							<div class="bg-accent-emerald h-full rounded-full" style="width: {goalPct}%"></div>
 						</div>
+						<span class="text-label-badge text-on-surface-variant pt-1">Target: {formatMoney(potential)} · {goalPct}% to goal</span>
 					</div>
 					<div class="flex flex-col justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
 						<div class="flex items-center justify-between">
@@ -698,6 +709,29 @@
 					{/each}
 				</div>
 			</div>
+
+			<section class="flex flex-col gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
+				<div class="flex items-start justify-between gap-2"><div><h2 class="font-display text-headline-md text-on-surface">Ticket Tier Breakdown</h2><p class="text-body-sm text-on-surface-variant pt-1">Live inventory and gross by category</p></div><span class="text-label-badge text-on-surface-variant shrink-0">{mainEvent.tiers.length} tiers</span></div>
+				{#each mainEvent.tiers as t, i (t.id)}
+					{@const pct = t.capacity ? Math.round((t.sold / t.capacity) * 1000) / 10 : 0}
+					<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3 flex flex-col gap-2">
+						<div class="flex items-start justify-between gap-2"><span class="min-w-0"><span class="block text-body-md font-semibold text-on-surface truncate">{t.name}</span><span class="block text-label-badge text-on-surface-variant pt-0.5">Tier {i + 1} · {t.benefits ?? 'Standard gate access'}</span></span><span class="text-body-sm font-semibold text-on-surface shrink-0">{formatMoney(t.price)}</span></div>
+						<div class="grid grid-cols-3 gap-2 text-label-badge"><span><span class="block text-on-surface-variant">Sold / cap</span><span class="block text-on-surface pt-0.5">{t.sold} / {t.capacity}</span></span><span><span class="block text-on-surface-variant">Gross</span><span class="block text-on-surface pt-0.5">{formatMoney(t.sold * t.price)}</span></span><span><span class="block text-on-surface-variant">Sold</span><span class="block text-on-surface pt-0.5">{pct}%</span></span></div>
+						<div class="w-full h-1.5 rounded-full bg-surface-container-highest overflow-hidden"><div class="h-full bg-primary rounded-full" style="width: {pct}%"></div></div>
+					</div>
+				{/each}
+			</section>
+
+			<section class="flex flex-col gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
+				<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Hardware &amp; Gates</h2><Radio class="w-4 h-4 text-on-surface-variant" /></div>
+				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3"><span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Door scanner PWA access PIN</span><div class="flex items-center justify-between gap-2 pt-1"><span class="font-code text-headline-lg-mobile tracking-[0.16em] text-primary">{deskPin}</span><span class="text-label-badge text-on-surface-variant">Exp: 18h 42m</span></div><p class="text-body-sm text-on-surface-variant pt-2">Rotating passkey for door leads—no admin credentials required.</p><div class="grid grid-cols-2 gap-2 pt-3"><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={copyScannerLink}><Copy class="w-3.5 h-3.5" />Copy scanner link</button><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={regenPin}><RefreshCw class="w-3.5 h-3.5" />Rotate PIN</button></div></div>
+				<div><span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Active gate terminals</span><div class="flex flex-col gap-2 pt-2">{#each terminals as term}<div class="flex items-center justify-between gap-2 rounded-lg bg-surface-container-high/60 border border-outline-variant/20 px-3 py-2"><span class="flex items-center gap-2 min-w-0"><span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span><span class="min-w-0"><span class="block text-body-sm text-on-surface truncate">{term.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{term.sub}</span></span></span><span class="text-label-badge text-on-surface-variant shrink-0">{term.ms}</span></div>{:else}<p class="text-body-sm text-on-surface-variant pt-2">No active terminals reported.</p>{/each}</div></div>
+			</section>
+
+			<section class="flex flex-col gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
+				<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Settlement Account</h2><span class="inline-flex items-center gap-1 text-label-badge text-accent-emerald"><ShieldCheck class="w-3.5 h-3.5" />KYC active</span></div>
+				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3"><div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">Guaranty Trust Bank</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div><span class="block font-code text-label-badge text-on-surface-variant pt-1">Account: ••••••••4821</span><div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">Paystack Split Active</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Protocol processing fee</span><span class="text-on-surface">0.00% (Genesis Tier)</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">Tonight at 23:59 WAT</span></div></div></div>
+			</section>
 		{/if}
 
 		<!-- quick management -->
@@ -756,6 +790,9 @@
 						</div>
 					</div>
 					<ChevronRight class="w-5 h-5 text-outline-variant group-hover:text-on-surface" />
+				</button>
+				<button onclick={() => toast('Floorplan sync queued for ' + (mainEvent?.venue ?? 'the venue'), 'info')} class="flex items-center justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm hover:bg-surface-container-high transition-colors group text-left">
+					<div class="flex items-center gap-space-md min-w-0"><div class="w-10 h-10 rounded-full bg-surface-container-highest border border-outline-variant/30 text-on-surface flex items-center justify-center flex-shrink-0"><Map class="w-5 h-5" /></div><div class="flex flex-col min-w-0"><span class="text-body-lg text-on-surface font-semibold truncate">Venue Floorplan Map Sync</span><span class="text-body-sm text-on-surface-variant truncate">Update {mainEvent?.venue ?? 'venue'} Hall 1 booths</span></div></div><ChevronRight class="w-5 h-5 text-outline-variant group-hover:text-on-surface" />
 				</button>
 			</div>
 		</div>

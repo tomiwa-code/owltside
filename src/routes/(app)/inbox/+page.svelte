@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { MessageSquare, MessageSquarePlus, Search, Bell, Users, Megaphone, Star, Wifi } from '@lucide/svelte';
+	import { BadgeCheck, MessageSquare, MessageSquarePlus, Search, Bell, Users, Megaphone, Star, Wifi } from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import DesktopInboxList from '$components/DesktopInboxList.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
@@ -21,12 +21,14 @@
 	);
 
 	let search = $state('');
-	let filter = $state<'all' | 'organizers' | 'attendees' | 'channels'>('all');
+	let filter = $state<'all' | 'unread' | 'organizers' | 'attendees' | 'channels'>('all');
+	const unreadCount = $derived((conversations.data ?? []).reduce((total, conversation) => total + conversation.unread, 0));
 
 	const filterDefs: Array<{ id: typeof filter; label: string; icon: typeof MessageSquare }> = [
 		{ id: 'all', label: 'All Messages', icon: MessageSquare },
+		{ id: 'unread', label: 'Unread', icon: Bell },
 		{ id: 'organizers', label: 'Organizers', icon: Star },
-		{ id: 'attendees', label: 'Attendees', icon: Users },
+		{ id: 'attendees', label: 'Speakers', icon: Users },
 		{ id: 'channels', label: 'Event Channels', icon: Megaphone }
 	];
 
@@ -34,6 +36,7 @@
 		(conversations.data ?? [])
 			.filter((c) => {
 				if (search && !`${c.peer.name} ${c.lastMessage}`.toLowerCase().includes(search.toLowerCase())) return false;
+				if (filter === 'unread') return c.unread > 0;
 				if (filter === 'organizers') return c.peer.verified;
 				if (filter === 'attendees') return !c.peer.verified && c.peer.handle !== 'owltside';
 				if (filter === 'channels') return c.peer.handle === 'owltside';
@@ -141,7 +144,7 @@
 <div class="md:hidden">
 <TopBar title="Inbox" subtitle="Organisers, friends & channels" />
 
-<main class="flex-1 flex flex-col relative w-full pt-16 pb-28 md:pb-16 bg-surface min-h-dvh">
+<main class="flex-1 flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
 	<div class="flex flex-col w-full md:max-w-2xl md:mx-auto">
 		<div class="px-space-md py-space-sm bg-surface sticky top-16 z-30">
 			<div class="relative flex items-center w-full">
@@ -159,6 +162,7 @@
 						onclick={() => (filter = f.id)}
 					>
 						<f.icon class="w-3.5 h-3.5" /><span>{f.label}</span>
+						{#if f.id === 'unread'}<span class="font-code text-[10px]">{unreadCount}</span>{/if}
 					</button>
 				{/each}
 			</div>
@@ -183,12 +187,16 @@
 					href="/inbox/{conv.id}"
 					class="group relative flex items-center gap-3.5 p-3 rounded-2xl bg-surface-container hover:bg-surface-bright active:scale-[0.99] transition-all"
 				>
-					<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="lg" online={!!conv.online} />
+					<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="lg" />
 					<span class="flex-1 min-w-0">
 						<span class="flex items-center justify-between gap-2">
-							<span class="text-body-md text-on-surface font-semibold truncate">{conv.peer.name}</span>
+							<span class="flex items-center gap-1.5 min-w-0">
+								<span class="text-body-md text-on-surface font-semibold truncate">{conv.peer.name}</span>
+								{#if conv.peer.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}
+							</span>
 							<span class="text-body-sm text-outline shrink-0">{fmtRelative(conv.lastAt)}</span>
 						</span>
+						<span class="text-label-badge text-tertiary pt-0.5">{conv.peer.verified ? 'Official organiser' : conv.peer.handle === 'owltside' ? 'Event channel' : 'Speaker'}</span>
 						<span class="flex items-center justify-between gap-2">
 							<span class="text-body-sm truncate {conv.unread ? 'text-on-surface font-medium' : 'text-on-surface-variant'}">{conv.lastMessage}</span>
 							{#if conv.unread > 0}

@@ -41,7 +41,6 @@
 	let openPolicy = $state<number | null>(null);
 
 	const tier = $derived(event.tiers.find((t) => t.id === tierId)!);
-	const total = $derived(tier.price * qty);
 	const left = $derived(tier.capacity - tier.sold);
 	const saved = $derived(bookmarks.value.includes(event.id));
 	const following = $derived(follows.value.includes(event.organizer.id));
@@ -598,21 +597,18 @@
 				<span class="text-body-md text-on-surface-variant truncate">Event Detail</span>
 			</div>
 		</div>
-		<span class="inline-flex items-center gap-1.5 bg-surface-container px-2.5 py-1 rounded-full border border-surface-glass-border">
-			<span class="w-2 h-2 rounded-full bg-accent-emerald animate-pulse"></span>
-			<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Online</span>
-		</span>
+
 	</div>
 </header>
 
-<main class="flex flex-col relative w-full pt-16 pb-safe bg-surface min-h-dvh">
+<main class="flex flex-col relative w-full pt-mobile-header pb-safe bg-surface min-h-dvh">
 	<div class="flex flex-col w-full pb-28 md:pb-32 md:max-w-5xl md:mx-auto">
 		<!-- hero -->
 		<div class="relative w-full aspect-[16/10] overflow-hidden bg-surface-container-low shadow-lg">
 			<Cover cover={event.cover} class="w-full h-full" iconClass="w-20 h-20 text-white/25" />
 			<div class="absolute inset-0 bg-gradient-to-t from-surface via-surface/40 to-black/30"></div>
 			<div class="absolute top-4 right-4 flex items-center gap-space-xs z-10">
-				<button aria-label="Bookmark" onclick={() => toggleIn(bookmarks, event.id)} class="w-10 h-10 rounded-full bg-surface-raised/80 backdrop-blur-md text-on-surface flex items-center justify-center shadow-md active:scale-90 transition-transform">
+				<button aria-label={saved ? 'Remove bookmark' : 'Bookmark'} aria-pressed={saved} onclick={() => toggleIn(bookmarks, event.id)} class="w-10 h-10 rounded-full bg-surface-raised/80 backdrop-blur-md text-on-surface flex items-center justify-center shadow-md active:scale-90 transition-transform">
 					{#if saved}<BookmarkCheck class="w-5 h-5 text-primary" />{:else}<Bookmark class="w-5 h-5" />{/if}
 				</button>
 				<button aria-label="Share" onclick={share} class="w-10 h-10 rounded-full bg-surface-raised/80 backdrop-blur-md text-on-surface flex items-center justify-center shadow-md active:scale-90 transition-transform">
@@ -640,6 +636,13 @@
 			<div class="flex flex-col gap-space-xs">
 				<h1 class="font-display text-headline-lg-mobile md:text-headline-lg text-on-surface tracking-tight">{event.title}</h1>
 				<p class="text-body-md text-on-surface-variant leading-relaxed">{event.description}</p>
+			</div>
+
+			<!-- compact version of the desktop date, time and venue metadata -->
+			<div class="rounded-xl border border-surface-glass-border bg-surface-container divide-y divide-surface-glass-border">
+				<div class="flex items-start gap-3 p-3.5"><CalendarClock class="w-4.5 h-4.5 text-primary mt-0.5 shrink-0" /><span><span class="block text-label-badge uppercase tracking-wider text-on-surface-variant">Date &amp; duration</span><span class="block text-body-sm font-semibold text-on-surface pt-1">{fmtDate(event.startsAt)} – {fmtDate(event.endsAt ?? event.startsAt)} · {agendaDays.length} day{agendaDays.length === 1 ? '' : 's'}</span></span></div>
+				<div class="flex items-start gap-3 p-3.5"><Clock class="w-4.5 h-4.5 text-primary mt-0.5 shrink-0" /><span><span class="block text-label-badge uppercase tracking-wider text-on-surface-variant">Summit hours</span><span class="block text-body-sm font-semibold text-on-surface pt-1">{fmtTime(event.startsAt)} – {event.endsAt ? fmtTime(event.endsAt) : 'Late'} · West Africa Time</span></span></div>
+				<div class="flex items-start gap-3 p-3.5"><MapPin class="w-4.5 h-4.5 text-primary mt-0.5 shrink-0" /><span class="min-w-0"><span class="block text-label-badge uppercase tracking-wider text-on-surface-variant">Physical hub</span><span class="block text-body-sm font-semibold text-on-surface pt-1 truncate">{event.venue}, {event.city}</span></span></div>
 			</div>
 
 			<!-- host -->
@@ -682,8 +685,8 @@
 							<span class="text-body-sm text-on-surface-variant">{event.city}</span>
 						</div>
 					</div>
-					<button class="px-3 py-1.5 rounded-full bg-surface-container-highest text-tertiary text-label-badge flex items-center gap-1 flex-shrink-0 active:scale-95" onclick={() => toast('Map view lives in Explore', 'info')}>
-						<span>Map</span><Navigation class="w-3.5 h-3.5" />
+					<button class="px-3 py-1.5 rounded-full bg-surface-container-highest text-tertiary text-label-badge flex items-center gap-1 flex-shrink-0 active:scale-95" onclick={() => toast('Directions open in your maps node', 'info')}>
+						<span>Directions</span><Navigation class="w-3.5 h-3.5" />
 					</button>
 				</div>
 				<div class="relative w-full h-36 rounded-lg overflow-hidden shadow-inner" style="background: linear-gradient(160deg, #171f33, #0b1120 75%);">
@@ -699,15 +702,31 @@
 				</div>
 			</div>
 
+			<!-- desktop attendance, session, speaker, and day stats -->
+			<div class="rounded-xl border border-surface-glass-border bg-surface-container grid grid-cols-2 divide-x divide-y divide-surface-glass-border">
+				<div class="p-3.5"><span class="font-display text-headline-md font-bold text-on-surface">{event.attendees.toLocaleString()}+</span><span class="block text-label-badge text-on-surface-variant pt-1">Global attendees</span></div>
+				<div class="p-3.5"><span class="font-display text-headline-md font-bold text-on-surface">{event.agenda.length}</span><span class="block text-label-badge text-on-surface-variant pt-1">Tech sessions</span></div>
+				<div class="p-3.5"><span class="font-display text-headline-md font-bold text-on-surface">{event.speakers.length}</span><span class="block text-label-badge text-on-surface-variant pt-1">Verified speakers</span></div>
+				<div class="p-3.5"><span class="font-display text-headline-md font-bold text-on-surface">{agendaDays.length}</span><span class="block text-label-badge text-on-surface-variant pt-1">Summit days</span></div>
+			</div>
+			{#if event.tags.length}
+				<div class="flex flex-col gap-2"><span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Tracks &amp; topics</span><div class="flex flex-wrap gap-2">{#each event.tags as tag (tag)}<span class="px-3 py-1 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface">{tag}</span>{/each}</div></div>
+			{/if}
+
 			<!-- agenda -->
 			{#if event.agenda.length}
 				<div class="flex flex-col gap-space-sm">
 					<div class="flex items-center justify-between">
 						<h2 class="font-display text-headline-md text-on-surface">Event Agenda</h2>
-						<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">{event.agenda.length} sessions</span>
+						<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">{agendaDays.length} days · {event.agenda.length} sessions</span>
+					</div>
+					<div class="flex gap-2 overflow-x-auto -mx-gutter px-gutter pb-1 scrollbar-none">
+						{#each agendaDays as day, i (i)}
+							<button type="button" aria-pressed={agendaDayIdx === i} onclick={() => (agendaDayIdx = i)} class="min-w-[130px] rounded-xl border px-3 py-2 text-left {agendaDayIdx === i ? 'border-primary/40 bg-primary/10' : 'border-surface-glass-border bg-surface-container'}"><span class="block text-body-sm font-semibold text-on-surface">Day {i + 1}: {day[0].title.split(':')[0]}</span><span class="block text-label-badge text-on-surface-variant pt-1">{fmtDate(day[0].start)}</span></button>
+						{/each}
 					</div>
 					<div class="flex flex-col gap-space-xs mt-1">
-						{#each event.agenda as item (item.id)}
+						{#each (agendaDays[agendaDayIdx] ?? []) as item (item.id)}
 							<div class="p-space-md bg-surface-container rounded-xl flex flex-col gap-space-xs shadow-sm">
 								<div class="flex items-center justify-between">
 									<span class="font-code text-label-code text-tertiary flex items-center gap-1">
@@ -736,6 +755,31 @@
 				</div>
 			{/if}
 
+			<!-- speaker roster parity -->
+			{#if event.speakers.length}
+				<section class="flex flex-col gap-space-sm">
+					<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Keynote Speakers</h2><button type="button" onclick={() => toast('Full speaker index ships with the agenda node', 'info')} class="text-label-badge text-primary font-semibold whitespace-nowrap">View all {event.speakers.length + 29}</button></div>
+					<div class="flex gap-3 overflow-x-auto -mx-gutter px-gutter pb-1 scrollbar-none">
+						{#each event.speakers.slice(0, 3) as person, i (person.id)}
+							<div class="w-56 shrink-0 rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
+								<div class="relative"><Cover cover={{ from: '#1e293b', to: '#0b1326', icon: 'pen-tool' }} class="w-full h-28 grayscale" iconClass="w-8 h-8 text-white/25" /><span class="absolute top-2 right-2 px-2 py-0.5 rounded bg-surface-base/85 text-label-badge text-on-surface">{['Keynote', 'Architect', 'Panelist'][i % 3]}</span></div>
+								<div class="p-3 flex items-center gap-2.5"><Avatar name={person.name} color={person.avatarColor} size="sm" /><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface truncate">{person.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{person.bio ?? person.city}</span><span class="block text-label-badge text-on-surface-variant pt-1">@{person.handle}</span></span></div>
+							</div>
+						{/each}
+					</div>
+				</section>
+			{/if}
+
+			<!-- compact mobile version of the desktop floorplan guide -->
+			<section class="flex flex-col gap-space-sm">
+				<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Hall A &amp; B Floorplan</h2><span class="text-label-badge text-on-surface-variant">Venue guide</span></div>
+				<div class="grid grid-cols-2 gap-2">
+					<div class="rounded-xl border border-surface-glass-border bg-surface-container p-3 flex flex-col gap-2"><span class="text-body-sm font-semibold text-on-surface">Hall A · Main Stage</span><span class="text-label-badge text-on-surface-variant">Keynotes · 1,200 seats · Live stream ops</span><span class="flex items-center gap-1.5 text-label-badge text-on-surface-variant"><span class="w-2 h-2 rounded-full bg-primary"></span>Main stage podia</span></div>
+					<div class="rounded-xl border border-surface-glass-border bg-surface-container p-3 flex flex-col gap-2"><span class="text-body-sm font-semibold text-on-surface">Hall B · Labs</span><span class="text-label-badge text-on-surface-variant">Hardware sandbox · 40 developer pods</span><div class="grid grid-cols-3 gap-1 pt-1">{#each Array(6) as _, i (i)}<span class="h-5 rounded border {i === 2 ? 'border-primary/60 bg-primary/15' : 'border-surface-glass-border bg-surface-container-high'}"></span>{/each}</div></div>
+				</div>
+				<div class="rounded-xl bg-surface-container-low border border-surface-glass-border px-3 py-2.5 flex flex-col gap-2 text-label-badge text-on-surface-variant"><span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>Turnstiles open 08:00 AM daily</span><span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span>NFC &amp; dynamic QR issued at Gate 1</span></div>
+			</section>
+
 			<!-- tiers -->
 			<div class="flex flex-col gap-space-sm">
 				<div class="flex items-center justify-between">
@@ -743,6 +787,10 @@
 					<span class="text-label-badge text-accent-emerald uppercase tracking-wider flex items-center gap-1">
 						<Lock class="w-3.5 h-3.5" /> Instant Mint
 					</span>
+				</div>
+				<div class="rounded-xl bg-surface-container-low border border-surface-glass-border p-3">
+					<div class="flex items-center justify-between gap-2 text-label-badge"><span class="text-on-surface-variant">Inventory status</span><span class="font-code text-on-surface">{soldPct}% sold · {leftAll} minimum remaining</span></div>
+					<div class="h-1.5 rounded-full bg-surface-container-highest overflow-hidden mt-2"><div class="h-full rounded-full bg-primary" style="width: {soldPct}%"></div></div>
 				</div>
 				{#each event.tiers as t (t.id)}
 					{@const soldOut = t.capacity - t.sold <= 0}
@@ -767,6 +815,7 @@
 							<div class="flex items-center justify-between">
 								<div class="flex items-center gap-space-xs">
 									<span class="text-body-lg text-on-surface font-semibold">{t.name}</span>
+									{#if t.id === recommendedId}<span class="px-2 py-0.5 rounded-full bg-primary text-on-primary text-label-badge">Recommended</span>{/if}
 									<span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-primary text-label-badge">Available</span>
 								</div>
 								<span class="font-code text-label-code text-on-surface font-semibold">{formatMoney(t.price, currency.value)}</span>
@@ -787,6 +836,23 @@
 					{/if}
 				{/each}
 			</div>
+
+			<!-- desktop promo code and complete price breakdown parity -->
+			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-space-sm">
+				<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Promo &amp; total</h2><span class="text-label-badge text-on-surface-variant">Secure checkout</span></div>
+				{#if appliedPromo}
+					<div class="flex items-center justify-between gap-2 rounded-lg bg-accent-emerald/10 border border-accent-emerald/20 px-3 py-2.5"><span class="flex items-center gap-1.5 text-label-badge text-accent-emerald"><CircleCheck class="w-4 h-4" />{appliedPromo} applied</span><span class="font-code text-body-sm font-bold text-accent-emerald">−{formatMoney(discount, currency.value)}</span></div>
+				{:else}
+					<div class="flex gap-2"><input bind:value={promoInput} aria-label="Promo code" placeholder="PROMO CODE" class="flex-1 min-w-0 h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border font-code text-label-code text-on-surface uppercase placeholder:text-outline-variant focus:outline-none focus:border-primary/50" onkeydown={(e) => { if (e.key === 'Enter') applyPromo(); }} /><button type="button" onclick={applyPromo} class="h-11 px-4 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm font-semibold text-on-surface">Apply</button></div>
+				{/if}
+				<div class="flex flex-col gap-2 border-t border-surface-glass-border pt-3">
+					<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">{qty}× {tier.name}</span><span class="font-code text-on-surface">{formatMoney(base, currency.value)}</span></div>
+					<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Network protocol &amp; VAT</span><span class="font-code text-on-surface">{formatMoney(fee, currency.value)}</span></div>
+					{#if discount > 0}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Partner pass incentive</span><span class="font-code font-bold text-accent-emerald">−{formatMoney(discount, currency.value)}</span></div>{/if}
+					<div class="flex items-center justify-between gap-2 border-t border-surface-glass-border pt-3"><span class="text-body-md font-semibold text-on-surface">Total payable</span><span class="font-display text-headline-md font-bold text-on-surface">{formatMoney(totalPayable, currency.value)}</span></div>
+				</div>
+				<div class="flex flex-col gap-1.5 border-t border-surface-glass-border pt-3 text-label-badge text-on-surface-variant"><span class="flex items-center gap-2"><Lock class="w-3.5 h-3.5 text-accent-emerald" />256-bit SSL encrypted checkout</span><span class="flex items-center gap-2"><ShieldCheck class="w-3.5 h-3.5 text-accent-emerald" />Dynamic HMAC anti-clone ticket</span><span class="flex items-center gap-2"><BadgeCheck class="w-3.5 h-3.5 text-accent-emerald" />Paystack &amp; Flutterwave rails</span></div>
+			</section>
 
 			<!-- policies accordion -->
 			{#if policyItems.length}
@@ -813,12 +879,12 @@
 		</div>
 
 		<!-- sticky dock -->
-		<div class="fixed bottom-0 left-0 right-0 z-40 bg-surface-container-high/90 backdrop-blur-2xl p-space-md shadow-2xl md:left-20">
+		<div class="fixed bottom-0 left-0 right-0 z-40 bg-surface-container-high/90 backdrop-blur-2xl p-space-md pb-safe shadow-2xl md:left-20">
 			<div class="max-w-md mx-auto flex items-center justify-between gap-space-md">
 				<div class="flex flex-col">
 					<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Total Amount</span>
 					<div class="flex items-baseline gap-1">
-						<span class="font-display text-headline-lg-mobile text-on-surface font-bold tracking-tight">{tier.price === 0 ? 'Free' : formatMoney(total, currency.value)}</span>
+						<span class="font-display text-headline-lg-mobile text-on-surface font-bold tracking-tight">{totalPayable === 0 ? 'Free' : formatMoney(totalPayable, currency.value)}</span>
 						<span class="text-body-sm text-on-surface-variant font-medium">({qty} {tier.name})</span>
 					</div>
 				</div>

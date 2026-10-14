@@ -19,18 +19,26 @@ export const handle: Handle = async ({ event, resolve }) => {
 				handle: profile?.handle ?? 'you',
 				name: profile?.name ?? (user.email?.split('@')[0] || 'Explorer'),
 				role: 'attendee',
-				avatarUrl: profile?.avatar_url ?? null
+				avatarUrl: profile?.avatar_url ?? null,
+				usernameChangedAt: profile?.username_changed_at ?? null
 			};
 		}
 	} else if (event.cookies.get('owltside_demo_session')) {
 		const me = demo.me;
+		let demoProfile: { name?: string; username?: string; usernameChangedAt?: string | null } = {};
+		try {
+			demoProfile = JSON.parse(event.cookies.get('owltside_demo_profile') ?? '{}');
+		} catch {
+			/* ignore a malformed local demo profile */
+		}
 		event.locals.session = {
 			userId: me.id,
 			email: 'ada@owltside.app',
-			handle: me.handle,
-			name: me.name,
+			handle: demoProfile.username ?? me.handle,
+			name: demoProfile.name ?? me.name,
 			role: 'attendee',
 			avatarUrl: null,
+			usernameChangedAt: demoProfile.usernameChangedAt ?? null,
 			demo: true
 		};
 	}

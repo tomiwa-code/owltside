@@ -171,7 +171,7 @@
 	</div>
 </header>
 
-<main class="flex-1 flex flex-col relative w-full pt-16 pb-safe bg-surface min-h-dvh">
+<main class="flex-1 flex flex-col relative w-full pt-mobile-header pb-safe bg-surface min-h-dvh">
 	<div class="flex flex-col w-full px-gutter md:max-w-lg md:mx-auto pb-space-xl">
 		<div class="flex flex-col items-center text-center mt-space-lg mb-space-md">
 			<div class="w-14 h-14 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center mb-space-sm glow-primary">

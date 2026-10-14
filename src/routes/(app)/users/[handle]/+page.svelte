@@ -15,7 +15,7 @@
 
 <TopBar back title={`@${profile.handle}`} subtitle="Community profile" />
 
-<main class="flex flex-col relative w-full pt-16 pb-28 md:pb-16 bg-surface min-h-dvh">
+<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
 	<div class="flex flex-col w-full md:max-w-3xl md:mx-auto">
 		<div class="relative w-full h-36 overflow-hidden">
 			<div class="w-full h-full" style="background: linear-gradient(140deg, {profile.avatarColor}33 0%, #0b1326 80%), linear-gradient(#131b2e, #0b1120);"></div>

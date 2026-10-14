@@ -8,7 +8,7 @@
 	import { toast } from '$lib/state/toast.svelte';
 	import Cover from './Cover.svelte';
 
-	let { event, width = 'w-[260px]' }: { event: EventItem; width?: string } = $props();
+	let { event, width = 'w-full' }: { event: EventItem; width?: string } = $props();
 
 	const minPrice = $derived(Math.min(...event.tiers.map((t) => t.price)));
 	const free = $derived(minPrice === 0);

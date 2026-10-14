@@ -548,7 +548,7 @@
 	</div>
 </header>
 
-<main class="flex flex-col relative w-full pt-16 pb-safe bg-surface min-h-dvh">
+<main class="flex flex-col relative w-full pt-mobile-header pb-safe bg-surface min-h-dvh">
 	<div class="flex flex-col w-full md:max-w-2xl md:mx-auto pb-36">
 		<!-- step header -->
 		<div class="px-gutter pt-space-xs pb-space-sm flex flex-col gap-space-xs">
@@ -704,14 +704,23 @@
 					</label>
 				{/each}
 				{#if method === 'card'}
-					<div class="mt-1 p-3 rounded-lg bg-surface-container-low border border-surface-glass-border flex flex-col gap-2">
+					<div class="mt-1 p-3 rounded-lg bg-surface-container-low border border-surface-glass-border flex flex-col gap-3">
 						<span class="flex items-center gap-2 text-on-surface font-code text-label-code">
 							<CreditCard class="w-4.5 h-4.5 text-on-surface-variant" /> Card {data.paystack ? 'charged via Paystack checkout' : 'vault (demo)'}
 						</span>
-						<div class="flex gap-2">
-							<input readonly value="5399 •••• •••• 8820" class="flex-1 bg-surface-container border border-surface-glass-border px-3 py-2 rounded font-code text-label-code text-on-surface focus:outline-none" />
-							<input readonly value="09/27" class="w-20 bg-surface-container border border-surface-glass-border px-3 py-2 rounded font-code text-label-code text-on-surface text-center focus:outline-none" />
-							<input readonly type="password" value="123" class="w-16 bg-surface-container border border-surface-glass-border px-3 py-2 rounded font-code text-label-code text-on-surface text-center focus:outline-none" />
+						<label class="flex flex-col gap-1 text-label-badge text-on-surface-variant">
+							Card number
+							<input readonly aria-label="Card number" value="5399 •••• •••• 8820" class="w-full bg-surface-container border border-surface-glass-border px-3 py-2.5 rounded font-code text-body-sm text-on-surface focus:outline-none" />
+						</label>
+						<div class="grid grid-cols-2 gap-3">
+							<label class="flex flex-col gap-1 text-label-badge text-on-surface-variant">
+								MM/YY
+								<input readonly aria-label="Expiry date, month and year" value="09/27" class="w-full bg-surface-container border border-surface-glass-border px-3 py-2.5 rounded font-code text-body-sm text-on-surface focus:outline-none" />
+							</label>
+							<label class="flex flex-col gap-1 text-label-badge text-on-surface-variant">
+								CVV
+								<input readonly aria-label="Card security code" type="password" value="123" class="w-full bg-surface-container border border-surface-glass-border px-3 py-2.5 rounded font-code text-body-sm text-on-surface focus:outline-none" />
+							</label>
 						</div>
 					</div>
 				{/if}
@@ -758,7 +767,7 @@
 	</div>
 
 	<!-- sticky pay dock -->
-	<div class="fixed bottom-0 inset-x-0 z-40 bg-surface/90 backdrop-blur-xl px-gutter py-3 border-t border-surface-glass-border md:left-20">
+	<div class="fixed bottom-0 inset-x-0 z-40 bg-surface/90 backdrop-blur-xl px-gutter py-3 pb-safe border-t border-surface-glass-border md:left-20">
 		<div class="max-w-md mx-auto flex items-center gap-3">
 			<div class="flex flex-col min-w-0">
 				<span class="text-label-badge text-on-surface-variant uppercase">Total</span>

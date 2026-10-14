@@ -283,11 +283,11 @@
 				<span>Scanner_Terminal</span>
 			</span>
 			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-3">Ticket Scanner & Gate Control</h1>
-			<p class="text-body-md text-on-surface-variant mt-2">Arm this terminal with a staff token, then verify HMAC passes online or offline at {gate}.</p>
+			<p class="text-body-md text-on-surface-variant mt-2">Arm this terminal with a staff token, then verify HMAC passes while connected or offline at {gate}.</p>
 		</div>
 		<div class="flex items-center gap-3 flex-wrap">
 			<span class="h-10 px-3.5 rounded-lg flex items-center gap-2 border {online ? 'border-accent-emerald/25 bg-accent-emerald/5 text-accent-emerald' : 'border-accent-amber/30 bg-accent-amber/5 text-accent-amber'} {MONO}">
-				{#if online}<Wifi class="w-3.5 h-3.5" /> Online{:else}<WifiOff class="w-3.5 h-3.5" /> Offline{/if}
+				{#if online}<Wifi class="w-3.5 h-3.5" /> Connected{:else}<WifiOff class="w-3.5 h-3.5" /> Offline{/if}
 				{#if queue.length > 0}<span class="text-accent-amber">• {queue.length} queued</span>{/if}
 			</span>
 			<a href="/organizer" class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors">
@@ -375,7 +375,7 @@
 
 				<div class="flex items-center justify-between rounded-lg px-4 py-2.5 border mt-5 {online ? 'bg-accent-emerald/5 border-accent-emerald/25' : 'bg-accent-amber/5 border-accent-amber/30'}">
 					<span class="flex items-center gap-2 text-body-sm {online ? 'text-accent-emerald' : 'text-accent-amber'}">
-						{#if online}<Wifi class="w-4 h-4" /> Online — scans sync instantly{:else}<WifiOff class="w-4 h-4" /> Offline — scans queued locally{/if}
+						{#if online}<Wifi class="w-4 h-4" /> Connected — scans sync instantly{:else}<WifiOff class="w-4 h-4" /> Offline — scans queued locally{/if}
 					</span>
 					{#if queue.length > 0}
 						<span class="{MONO} text-accent-amber">{queue.length} queued</span>
@@ -531,8 +531,8 @@
 </div>
 
 <div class="md:hidden">
-<main class="flex flex-col relative w-full pt-3 pb-28 md:pb-16 bg-surface min-h-dvh">
-	<header class="fixed top-0 left-0 w-full z-30 bg-surface/85 backdrop-blur-xl border-b border-surface-glass-border">
+<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
+	<header class="fixed top-0 left-0 w-full z-30 bg-surface/85 backdrop-blur-xl border-b border-surface-glass-border pt-safe">
 		<div class="flex items-center px-gutter h-16 md:max-w-3xl md:mx-auto w-full gap-2">
 			<button
 				onclick={() => (phase === 'scan' ? (phase = 'pin') : goto('/organizer'))}
@@ -555,7 +555,7 @@
 		</div>
 	</header>
 
-	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md pt-20">
+	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md pt-space-sm">
 		{#if phase === 'pin'}
 			<!-- security pills -->
 			<div class="flex items-center justify-center gap-2 flex-wrap">
@@ -649,7 +649,7 @@
 			<!-- connectivity -->
 			<div class="flex items-center justify-between rounded-xl px-space-md py-2.5 border {online ? 'bg-accent-emerald/5 border-accent-emerald/25' : 'bg-accent-amber/5 border-accent-amber/30'}">
 				<span class="flex items-center gap-2 text-body-sm {online ? 'text-accent-emerald' : 'text-accent-amber'}">
-					{#if online}<Wifi class="w-4 h-4" /> Online — scans sync instantly{:else}<WifiOff class="w-4 h-4" /> Offline — scans queued locally{/if}
+					{#if online}<Wifi class="w-4 h-4" /> Connected — scans sync instantly{:else}<WifiOff class="w-4 h-4" /> Offline — scans queued locally{/if}
 				</span>
 				{#if queue.length > 0}
 					<span class="text-label-badge text-accent-amber">{queue.length} queued</span>

@@ -39,14 +39,18 @@
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
-	/* ── desktop discovery extras ───────────────────────────── */
-	let viewMode = $state<'grid' | 'map' | 'timeline'>('grid');
-	let zone = $state('');
-	let maxPrice = $state(250_000);
-	let freeOnlyDesk = $state(false);
-	let gateQR = $state(true);
-	let gateBio = $state(false);
-	let gateTurnstile = $state(false);
+	/* ── shared discovery state (desktop sidebar + mobile filter sheet) ── */
+	const params = $derived(page.url.searchParams);
+	const view = $derived(params.get('view') ?? 'list');
+	const viewMode = $derived<'grid' | 'map' | 'timeline'>(
+		view === 'map' ? 'map' : view === 'timeline' || view === 'calendar' ? 'timeline' : 'grid'
+	);
+	let zone = $state(params.get('zone') ?? '');
+	let maxPrice = $state(Number(params.get('maxPrice') ?? 250_000));
+	let freeOnlyDesk = $state(params.get('freeOnly') === '1' || params.get('free') === '1');
+	let gateQR = $state(params.get('gateQR') !== '0');
+	let gateBio = $state(params.get('gateBio') === '1');
+	let gateTurnstile = $state(params.get('gateTurnstile') === '1');
 	let activeRange = $state<'today' | 'tomorrow' | 'weekend' | 'custom' | null>(null);
 	let visible = $state(6);
 
@@ -106,12 +110,54 @@
 				label: categories.find((c) => c.id === cat)?.label ?? cat,
 				clear: () => apply({ category: null })
 			});
-		if (zone) chips.push({ label: zone.split(',')[0], clear: () => (zone = '') });
+		if (zone)
+			chips.push({
+				label: zone.split(',')[0],
+				clear: () => {
+					zone = '';
+					apply({ zone: null });
+				}
+			});
 		if (maxPrice < 250_000)
-			chips.push({ label: `Under ${formatMoney(maxPrice)}`, clear: () => (maxPrice = 250_000) });
-		if (freeOnlyDesk) chips.push({ label: 'Free Only', clear: () => (freeOnlyDesk = false) });
-		if (params.get('free'))
-			chips.push({ label: 'Free Events', clear: () => apply({ free: null }) });
+			chips.push({
+				label: `Under ${formatMoney(maxPrice)}`,
+				clear: () => {
+					maxPrice = 250_000;
+					apply({ maxPrice: null });
+				}
+			});
+		if (freeOnlyDesk)
+			chips.push({
+				label: 'Free Only',
+				clear: () => {
+					freeOnlyDesk = false;
+					apply({ free: null });
+				}
+			});
+		if (gateBio)
+			chips.push({
+				label: 'Biometric gate',
+				clear: () => {
+					gateBio = false;
+					apply({ gateBio: null });
+				}
+			});
+		if (gateTurnstile)
+			chips.push({
+				label: 'Turnstile gate',
+				clear: () => {
+					gateTurnstile = false;
+					apply({ gateTurnstile: null });
+				}
+			});
+		if (!gateQR)
+			chips.push({
+				label: 'No QR gate',
+				clear: () => {
+					gateQR = true;
+					apply({ gateQR: null });
+				}
+			});
 		if (params.get('q')) chips.push({ label: `“${params.get('q')}”`, clear: () => onSearch('') });
 		if (params.get('from'))
 			chips.push({
@@ -133,18 +179,50 @@
 	];
 	const cardLabels = ['Access Pass', 'Tier 1 Entry', 'Early Bird', 'Admission', 'Executive Pass', 'Day Access'];
 
-	const params = $derived(page.url.searchParams);
-	const view = $derived(params.get('view') ?? 'list');
-
 	let query = $state(params.get('q') ?? '');
 	let showFilters = $state(false);
 
-	// local filter draft inside the sheet
+	// Mobile sheet draft; synced from the live desktop/shared filters each time it opens.
 	let fCategory = $state<CategoryId>((params.get('category') as CategoryId) ?? 'all');
-	let fFree = $state(params.get('free') === '1');
+	let fFree = $state(freeOnlyDesk);
 	let fFrom = $state(params.get('from') ?? '');
 	let fTo = $state(params.get('to') ?? '');
 	let fSort = $state(params.get('sort') ?? 'date');
+	let fZone = $state(zone);
+	let fMaxPrice = $state(maxPrice);
+	let fGateQR = $state(gateQR);
+	let fGateBio = $state(gateBio);
+	let fGateTurnstile = $state(gateTurnstile);
+
+	function syncFilterDrafts() {
+		fCategory = (params.get('category') as CategoryId) ?? 'all';
+		fFree = freeOnlyDesk || params.get('free') === '1';
+		fFrom = params.get('from') ?? '';
+		fTo = params.get('to') ?? '';
+		fSort = params.get('sort') ?? 'date';
+		fZone = zone;
+		fMaxPrice = maxPrice;
+		fGateQR = gateQR;
+		fGateBio = gateBio;
+		fGateTurnstile = gateTurnstile;
+	}
+
+	function openFilters() {
+		syncFilterDrafts();
+		showFilters = true;
+	}
+
+	function setDraftRange(r: 'today' | 'tomorrow' | 'weekend') {
+		const now = new Date();
+		const start = new Date(now);
+		if (r === 'tomorrow') start.setDate(start.getDate() + 1);
+		if (r === 'weekend') start.setDate(start.getDate() + ((6 - start.getDay() + 7) % 7));
+		const end = new Date(start);
+		if (r === 'weekend') end.setDate(end.getDate() + 1);
+		fFrom = iso(start);
+		fTo = iso(end);
+		activeRange = r;
+	}
 
 	const key = $derived(`events:explore:${params.toString()}`);
 	const results = useQuery<EventItem[]>(
@@ -160,10 +238,15 @@
 
 	const activeCount = $derived(
 		(params.get('category') ? 1 : 0) +
-			(params.get('free') ? 1 : 0) +
+			(freeOnlyDesk ? 1 : 0) +
 			(params.get('from') ? 1 : 0) +
 			(params.get('to') ? 1 : 0) +
-			(params.get('sort') ? 1 : 0)
+			(params.get('sort') ? 1 : 0) +
+			(zone ? 1 : 0) +
+			(maxPrice < 250_000 ? 1 : 0) +
+			(gateBio ? 1 : 0) +
+			(gateTurnstile ? 1 : 0) +
+			(!gateQR ? 1 : 0)
 	);
 
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -182,20 +265,58 @@
 		goto(`/explore?${p.toString()}`, { keepFocus: true });
 	}
 
+	function clearFilters() {
+		zone = '';
+		maxPrice = 250_000;
+		freeOnlyDesk = false;
+		gateQR = true;
+		gateBio = false;
+		gateTurnstile = false;
+		activeRange = null;
+		visible = 6;
+		query = '';
+		apply({
+			category: null,
+			q: null,
+			free: null,
+			from: null,
+			to: null,
+			sort: null,
+			zone: null,
+			maxPrice: null,
+			gateQR: null,
+			gateBio: null,
+			gateTurnstile: null,
+			view: null
+		});
+	}
+
 	function applySheet() {
 		showFilters = false;
+		zone = fZone;
+		maxPrice = fMaxPrice;
+		freeOnlyDesk = fFree;
+		gateQR = fGateQR;
+		gateBio = fGateBio;
+		gateTurnstile = fGateTurnstile;
+		visible = 6;
 		apply({
 			category: fCategory === 'all' ? null : fCategory,
 			free: fFree ? '1' : null,
 			from: fFrom || null,
 			to: fTo || null,
-			sort: fSort === 'date' ? null : fSort
+			sort: fSort === 'date' ? null : fSort,
+			zone: fZone || null,
+			maxPrice: fMaxPrice >= 250_000 ? null : String(fMaxPrice),
+			gateQR: fGateQR ? null : '0',
+			gateBio: fGateBio ? '1' : null,
+			gateTurnstile: fGateTurnstile ? '1' : null
 		});
 	}
 
 	const byDate = $derived.by(() => {
 		const map = new Map<string, EventItem[]>();
-		for (const e of [...events].sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt))) {
+		for (const e of [...shown].sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt))) {
 			const d = new Date(e.startsAt).toLocaleDateString('en-NG', { weekday: 'long', month: 'long', day: 'numeric' });
 			map.set(d, [...(map.get(d) ?? []), e]);
 		}
@@ -281,7 +402,7 @@
 				] as [typeof viewMode, any, string][]) as [id, Icon, label]}
 					<button
 						type="button"
-						onclick={() => (viewMode = id)}
+						onclick={() => apply({ view: id === 'grid' ? null : id })}
 						class="h-9 px-3 rounded-md flex items-center gap-2 text-body-sm transition-colors
 							{viewMode === id ? 'bg-surface-container-high text-on-surface font-semibold' : 'text-on-surface-variant hover:text-on-surface'}"
 					>
@@ -303,16 +424,7 @@
 				</span>
 				<button
 					type="button"
-					onclick={() => {
-						zone = '';
-						maxPrice = 250_000;
-						freeOnlyDesk = false;
-						gateQR = true;
-						gateBio = false;
-						gateTurnstile = false;
-						activeRange = null;
-						apply({ category: null, free: null, from: null, to: null });
-					}}
+					onclick={clearFilters}
 					class="text-body-sm text-on-surface-variant underline underline-offset-4 hover:text-on-surface"
 				>
 					Reset All
@@ -612,7 +724,7 @@
 		<button
 			aria-label="Open filters"
 			class="relative w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface"
-			onclick={() => (showFilters = true)}
+			onclick={openFilters}
 		>
 			<SlidersHorizontal class="w-5 h-5" />
 			{#if activeCount > 0}
@@ -622,49 +734,56 @@
 	{/snippet}
 </TopBar>
 
-<main class="flex flex-col relative w-full pt-16 pb-28 md:pb-16 bg-surface min-h-dvh">
+<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
 	<div class="flex flex-col w-full md:max-w-5xl md:mx-auto">
 		<div class="px-space-md py-space-sm bg-surface sticky top-16 z-30">
 			<SearchBar value={query} oninput={onSearch} />
 			<div class="flex items-center justify-between pt-space-sm">
 				<div class="flex items-center gap-space-xs overflow-x-auto pb-1 scrollbar-none">
 					<button
-						class="flex items-center gap-1 px-3 py-1.5 rounded-full text-label-badge transition-all {view === 'list' ? 'bg-primary text-on-primary font-semibold' : 'text-on-surface-variant hover:text-on-surface'}"
+						class="flex items-center gap-1 px-3 py-1.5 rounded-full text-label-badge transition-all {viewMode === 'grid' ? 'bg-primary text-on-primary font-semibold' : 'text-on-surface-variant hover:text-on-surface'}"
 						onclick={() => apply({ view: null })}
 					>
 						<List class="w-4 h-4" /><span>List</span>
 					</button>
 					<button
-						class="flex items-center gap-1 px-3 py-1.5 rounded-full text-label-badge transition-all {view === 'map' ? 'bg-primary text-on-primary font-semibold' : 'text-on-surface-variant hover:text-on-surface'}"
+						class="flex items-center gap-1 px-3 py-1.5 rounded-full text-label-badge transition-all {viewMode === 'map' ? 'bg-primary text-on-primary font-semibold' : 'text-on-surface-variant hover:text-on-surface'}"
 						onclick={() => apply({ view: 'map' })}
 					>
 						<MapIcon class="w-4 h-4" /><span>Map</span>
 					</button>
 					<button
-						class="flex items-center gap-1 px-3 py-1.5 rounded-full text-label-badge transition-all {view === 'calendar' ? 'bg-primary text-on-primary font-semibold' : 'text-on-surface-variant hover:text-on-surface'}"
-						onclick={() => apply({ view: 'calendar' })}
+						class="flex items-center gap-1 px-3 py-1.5 rounded-full text-label-badge transition-all {viewMode === 'timeline' ? 'bg-primary text-on-primary font-semibold' : 'text-on-surface-variant hover:text-on-surface'}"
+						onclick={() => apply({ view: 'timeline' })}
 					>
 						<CalendarDays class="w-4 h-4" /><span>Calendar</span>
 					</button>
 				</div>
 			</div>
 			{#if activeCount > 0 || params.get('q')}
-				<div class="flex items-center justify-between mt-2 px-space-md py-2 bg-surface-container-low rounded-xl">
-					<div class="flex items-center gap-2 min-w-0">
-						<span class="w-2 h-2 rounded-full bg-accent-emerald animate-pulse shrink-0"></span>
-						<span class="text-body-sm text-on-surface-variant truncate">
-							Filtering: <span class="text-on-surface font-medium">{params.get('q') ?? ''} {params.get('category') ?? ''} {params.get('free') ? '• Free only' : ''}</span>
+				<div class="mt-2 rounded-xl bg-surface-container-low border border-surface-glass-border px-3 py-2.5">
+					<div class="flex items-center justify-between gap-2">
+						<span class="flex items-center gap-2 text-label-badge text-on-surface-variant">
+							<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>
+							{activeCount} active {activeCount === 1 ? 'filter' : 'filters'}
 						</span>
+						<button class="text-primary text-label-badge underline shrink-0" onclick={clearFilters}>Clear all</button>
 					</div>
-					<button class="text-primary text-label-badge underline shrink-0" onclick={() => { query = ''; goto('/explore'); }}>Clear All</button>
+					<div class="flex flex-wrap gap-1.5 pt-2">
+						{#each activeChips as chip (chip.label)}
+							<button class="h-7 px-2 rounded-full bg-surface-container-high text-label-badge text-on-surface flex items-center gap-1" onclick={chip.clear}>
+								{chip.label}<X class="w-3 h-3 text-on-surface-variant" />
+							</button>
+						{/each}
+					</div>
 				</div>
 			{/if}
 		</div>
 
 		<div class="px-gutter pt-space-md flex flex-col gap-space-lg">
-			{#if view === 'list'}
+				{#if viewMode === 'grid'}
 				<div class="flex flex-col gap-space-md w-full">
-					{#each events as event (event.id)}
+					{#each shown as event (event.id)}
 						<ExploreCard {event} />
 					{:else}
 						<EmptyState title="Nothing on the radar" sub="Loosen the filters or try another vibe.">
@@ -672,7 +791,7 @@
 						</EmptyState>
 					{/each}
 				</div>
-			{:else if view === 'calendar'}
+				{:else if viewMode === 'timeline'}
 				<div class="flex flex-col gap-space-lg">
 					{#each byDate as [date, list] (date)}
 						<div class="flex flex-col gap-space-xs">
@@ -691,7 +810,7 @@
 				<!-- stylized map -->
 				<div class="relative rounded-2xl overflow-hidden border border-surface-glass-border h-[420px]" style="background: linear-gradient(160deg, #131b2e, #0b1120 70%);">
 					<div class="absolute inset-0 opacity-30" style="background-image: linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px); background-size: 36px 36px;"></div>
-					{#each events.slice(0, 6) as event, i (event.id)}
+					{#each shown.slice(0, 6) as event, i (event.id)}
 						{@const pos = [[18, 26], [62, 18], [40, 48], [74, 62], [24, 70], [55, 80]][i]}
 						<a
 							href="/events/{event.slug}"
@@ -702,9 +821,17 @@
 							<span class="px-2 py-0.5 rounded bg-surface-container-lowest/90 backdrop-blur text-label-badge text-on-surface whitespace-nowrap">{event.venue}</span>
 						</a>
 					{/each}
-					<span class="absolute bottom-3 left-3 font-code text-label-code text-outline">LAGOS GRID • {events.length} EVENTS</span>
+					<span class="absolute bottom-3 left-3 font-code text-label-code text-outline">LAGOS GRID • {displayed.length} EVENTS</span>
 				</div>
 			{/if}
+			<div class="flex flex-col items-center gap-3 pt-1">
+				<span class="text-label-badge text-on-surface-variant">Showing {viewMode === 'map' ? Math.min(displayed.length, 6) : shown.length} of {displayed.length} events</span>
+				{#if viewMode !== 'map' && visible < displayed.length}
+					<button type="button" class="h-11 px-6 rounded-full bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2" onclick={() => (visible += 6)}>
+						<RefreshCw class="w-4 h-4" /> Load more events
+					</button>
+				{/if}
+			</div>
 		</div>
 	</div>
 </main>
@@ -726,7 +853,13 @@
 		</div>
 		<div class="flex flex-col gap-space-xs">
 			<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Dates</span>
-			<div class="grid grid-cols-2 gap-2">
+			<div class="flex flex-wrap gap-2">
+				{#each [['today', 'Today'], ['tomorrow', 'Tomorrow'], ['weekend', 'Weekend']] as [id, label]}
+					<button type="button" class="h-9 px-3 rounded-full border text-label-badge {activeRange === id ? 'border-primary bg-primary/10 text-primary' : 'border-surface-glass-border bg-surface-container-low text-on-surface-variant'}" onclick={() => setDraftRange(id as 'today' | 'tomorrow' | 'weekend')}>{label}</button>
+				{/each}
+				<button type="button" class="h-9 px-3 rounded-full border border-surface-glass-border bg-surface-container-low text-label-badge text-on-surface-variant" onclick={() => { fFrom = ''; fTo = ''; activeRange = null; }}>Any date</button>
+			</div>
+			<div class="grid grid-cols-2 gap-2 pt-1">
 				<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
 					From
 					<input type="date" bind:value={fFrom} class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />
@@ -737,10 +870,43 @@
 				</label>
 			</div>
 		</div>
+		<div class="flex flex-col gap-space-xs">
+			<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Zone &amp; Location</span>
+			<select bind:value={fZone} aria-label="Zone and location" class="h-11 px-3 rounded-lg bg-surface-container-low border border-surface-glass-border text-body-md text-on-surface focus:outline-none focus:border-primary/50">
+				<option value="">All Nigeria</option>
+				<option value="Victoria Island, Lagos">Victoria Island, Lagos</option>
+				<option value="Ikoyi, Lagos">Ikoyi, Lagos</option>
+				<option value="Yaba, Lagos">Yaba, Lagos</option>
+				<option value="Gbagada, Lagos">Gbagada, Lagos</option>
+				<option value="Onikan, Lagos">Onikan, Lagos</option>
+			</select>
+		</div>
+		<div class="flex flex-col gap-2">
+			<span class="text-label-badge text-on-surface-variant uppercase tracking-wider flex items-center justify-between"><span>Maximum ticket value</span><span class="text-on-surface">{formatMoney(fMaxPrice)}</span></span>
+			<input type="range" min="0" max="250000" step="5000" bind:value={fMaxPrice} aria-label="Maximum ticket value" class="w-full accent-[#c0c1ff]" />
+			<div class="flex justify-between text-label-badge text-on-surface-variant"><span>{formatMoney(0)}</span><span>{formatMoney(250_000)}</span></div>
+		</div>
 		<label class="flex items-center justify-between bg-surface-container-low border border-surface-glass-border rounded-lg p-3 cursor-pointer">
 			<span class="text-body-md text-on-surface">Free events only</span>
 			<input type="checkbox" bind:checked={fFree} class="w-4 h-4 accent-[#c0c1ff]" />
 		</label>
+		<div class="flex flex-col gap-space-xs">
+			<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Gate clearance type</span>
+			{#each [
+				{ key: 'qr', title: 'Instant QR node', sub: 'Offline cryptographically signed' },
+				{ key: 'bio', title: 'Biometric fast-pass', sub: 'Hardware terminal gate sync' },
+				{ key: 'turnstile', title: 'General turnstile', sub: 'Standard RFID badge or code' }
+			] as gate (gate.key)}
+				<label class="flex items-start gap-3 rounded-xl bg-surface-container-low border border-surface-glass-border p-3 cursor-pointer">
+					<input type="checkbox" class="mt-0.5 w-4 h-4 accent-[#c0c1ff]" checked={gate.key === 'qr' ? fGateQR : gate.key === 'bio' ? fGateBio : fGateTurnstile} onchange={() => {
+						if (gate.key === 'qr') fGateQR = !fGateQR;
+						else if (gate.key === 'bio') fGateBio = !fGateBio;
+						else fGateTurnstile = !fGateTurnstile;
+					}} />
+					<span><span class="block text-body-sm text-on-surface">{gate.title}</span><span class="block text-label-badge text-on-surface-variant pt-0.5">{gate.sub}</span></span>
+				</label>
+			{/each}
+		</div>
 		<div class="flex flex-col gap-space-xs">
 			<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Sort by</span>
 			<div class="flex flex-wrap gap-2">

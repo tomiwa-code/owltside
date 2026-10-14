@@ -89,7 +89,7 @@
 						? 'border-l-primary bg-surface-container-high'
 						: 'border-l-transparent hover:bg-surface-container-high/60'}"
 			>
-				<Avatar name={c.peer.name} color={c.peer.avatarColor} size="md" online={!!c.online} />
+				<Avatar name={c.peer.name} color={c.peer.avatarColor} size="md" />
 				<span class="flex-1 min-w-0">
 					<span class="flex items-center justify-between gap-2">
 						<span class="flex items-center gap-1.5 min-w-0">

@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
+		BadgeCheck,
 		Bell,
 		MessageSquare,
 		ChevronDown,
@@ -25,11 +26,13 @@
 	import SearchBar from '$components/SearchBar.svelte';
 	import SectionHeader from '$components/SectionHeader.svelte';
 	import Avatar from '$components/Avatar.svelte';
+	import QrPass from '$components/QrPass.svelte';
 	import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 	import { categories } from '$components/iconMap';
 	import { useQuery } from '$lib/state/query.svelte';
+	import { follows, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
-	import type { CategoryId, EventItem } from '$lib/types';
+	import type { CategoryId, EventItem, Ticket } from '$lib/types';
 
 	let { data } = $props();
 
@@ -51,9 +54,36 @@
 			.sort((a, b) => (a.trendingRank ?? 99) - (b.trendingRank ?? 99))
 			.slice(0, 3)
 	);
+	const curated = $derived(
+		[...list].sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt)).slice(0, 4)
+	);
+	const verifiedOrganizers = $derived.by(() => {
+		const map = new Map<string, { id: string; name: string; events: number; attended: number }>();
+		for (const event of list) {
+			if (!event.organizer.verified) continue;
+			const current = map.get(event.organizer.id) ?? {
+				id: event.organizer.id,
+				name: event.organizer.name,
+				events: 0,
+				attended: 0
+			};
+			current.events += 1;
+			current.attended += event.attendees;
+			map.set(event.organizer.id, current);
+		}
+		return [...map.values()].sort((a, b) => b.events - a.events).slice(0, 3);
+	});
+	const activeTicket = $derived((data.tickets as Ticket[] | undefined)?.find((ticket) => ticket.status === 'valid'));
+	const following = (id: string) => follows.value.includes(id);
+	const compact = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
 
 	let category = $state<CategoryId>('all');
-	const rail = $derived(category === 'all' ? list : list.filter((e) => e.category === category));
+	const rail = $derived(
+		[...list]
+			.filter((event) => category === 'all' || event.category === category)
+			.sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt))
+			.slice(0, 12)
+	);
 
 	let search = $state('');
 	let showPwaBanner = $state(true);
@@ -86,18 +116,11 @@
 <div class="md:hidden">
 <header class="fixed top-0 inset-x-0 z-50 bg-surface/80 backdrop-blur-xl pt-safe md:left-20">
 	<div class="h-16 px-gutter md:max-w-5xl md:mx-auto flex items-center justify-between gap-space-sm">
-		<div class="flex items-center gap-space-sm">
-			<img src="/logo.png" alt="Owltside" class="h-7 w-auto object-contain" />
-			<div class="flex flex-col">
-				<span class="font-display text-headline-md text-on-surface tracking-tight leading-none">Owltside</span>
-				<span class="text-label-badge text-on-surface-variant leading-none pt-0.5">Home</span>
-			</div>
-		</div>
+		<a href="/home" aria-label="Owltside home" class="flex items-center gap-space-sm">
+			<img src="/owl-icon.png" alt="Owltside logo" class="h-9 w-9 object-contain" />
+			<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Home</span>
+		</a>
 		<div class="flex items-center gap-space-xs">
-			<span class="inline-flex items-center gap-1 bg-surface-container px-2 py-1 rounded-full">
-				<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>
-				<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Online</span>
-			</span>
 			<a href="/notifications" aria-label="Notifications" class="relative w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface transition-colors">
 				<Bell class="w-5 h-5" />
 				{#if data.unread > 0}
@@ -114,7 +137,7 @@
 	</div>
 </header>
 
-<main class="flex flex-col relative w-full pt-16 pb-28 md:pb-16 bg-surface min-h-dvh">
+<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
 	<div class="flex flex-col w-full px-margin md:max-w-5xl md:mx-auto pb-space-xl gap-space-lg">
 		<!-- location + currency + search -->
 		<div class="flex flex-col gap-space-sm pt-space-xs">
@@ -122,7 +145,7 @@
 				<div class="flex items-center gap-space-xs">
 					<Navigation class="w-5 h-5 text-primary" fill="currentColor" fill-opacity="0.2" />
 					<button class="flex items-center gap-1 text-on-surface text-body-sm hover:text-primary transition-colors" onclick={() => toast('Location picker ships with the map view', 'info')}>
-						<span class="font-semibold">Lagos & Online</span>
+						<span class="font-semibold">Lagos</span>
 						<ChevronDown class="w-4 h-4 text-on-surface-variant" />
 					</button>
 				</div>
@@ -168,10 +191,7 @@
 		<div class="flex flex-col gap-space-xs">
 			<div class="flex items-center justify-between">
 				<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Explore Channels</span>
-				<span class="text-label-badge text-primary flex items-center gap-0.5">
-					<span>Live Now</span>
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-ping inline-block"></span>
-				</span>
+
 			</div>
 			<div class="flex gap-2 overflow-x-auto pb-1 pt-1 -mx-margin px-margin scrollbar-none">
 				{#each categories as cat (cat.id)}
@@ -220,6 +240,71 @@
 				<div class="flex flex-col gap-space-xs">
 					{#each trending as event, i (event.id)}
 						<EventRow {event} rank={i + 1} />
+					{/each}
+				</div>
+			</div>
+		{/if}
+
+		<!-- desktop curated feed parity -->
+		{#if curated.length}
+			<div class="flex flex-col gap-space-sm">
+				<SectionHeader title="Curated For You" sub="A handpicked shortlist from the live feed">
+					{#snippet icon()}<Sparkles class="w-4.5 h-4.5" />{/snippet}
+				</SectionHeader>
+				<div class="flex flex-col gap-space-xs">
+					{#each curated as event (event.id)}
+						<EventRow {event} />
+					{/each}
+				</div>
+			</div>
+		{/if}
+
+		<!-- desktop active pass parity -->
+		<div class="rounded-2xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-space-sm">
+			<div class="flex items-center justify-between gap-2">
+				<span class="font-display text-headline-md text-on-surface">Your Active Pass</span>
+				<span class="text-label-badge uppercase tracking-wider {activeTicket ? 'text-accent-emerald' : 'text-on-surface-variant'}">{activeTicket ? 'Passport OK' : 'No active pass'}</span>
+			</div>
+			{#if activeTicket}
+				<p class="text-body-sm text-on-surface-variant">{activeTicket.eventTitle} · {activeTicket.tierName}</p>
+				<div class="flex justify-center py-2"><QrPass code={activeTicket.code} /></div>
+				<div class="flex items-center justify-between gap-2 rounded-xl bg-surface-container-low px-3 py-2.5">
+					<span class="text-label-badge text-on-surface-variant">Gate pass code</span>
+					<span class="font-code text-label-code text-on-surface">{activeTicket.code}</span>
+				</div>
+				<a href="/tickets/{activeTicket.id}" class="h-11 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center gap-2">
+					<QrCode class="w-4 h-4" /> Open live dynamic QR
+				</a>
+			{:else}
+				<p class="text-body-sm text-on-surface-variant">Reserve a seat and your rotating, offline-ready HMAC pass will appear here.</p>
+				<a href="/explore" class="h-11 rounded-full bg-surface-container-high text-on-surface text-body-sm font-semibold flex items-center justify-center">Browse events</a>
+			{/if}
+		</div>
+
+		<!-- desktop verified-organizer follow controls parity -->
+		{#if verifiedOrganizers.length}
+			<div class="rounded-2xl border border-surface-glass-border bg-surface-container p-space-md">
+				<div class="flex items-center justify-between gap-2">
+					<h2 class="font-display text-headline-md text-on-surface">Verified Organizers</h2>
+					<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Lagos</span>
+				</div>
+				<div class="flex flex-col gap-3 pt-space-sm">
+					{#each verifiedOrganizers as org (org.id)}
+						<div class="flex items-center gap-3">
+							<div class="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-display font-bold shrink-0">{org.name.split(/\\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('')}</div>
+							<div class="flex-1 min-w-0">
+								<span class="flex items-center gap-1 text-body-sm font-semibold text-on-surface truncate">{org.name}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" /></span>
+								<span class="block text-label-badge text-on-surface-variant">{org.events} Events · {compact(org.attended)} Attended</span>
+							</div>
+							<button
+								aria-pressed={following(org.id)}
+								onclick={() => {
+									const added = toggleIn(follows, org.id);
+									toast(added ? `Following ${org.name}` : `Unfollowed ${org.name}`, 'info');
+								}}
+								class="h-9 px-3 rounded-full border text-label-badge font-semibold shrink-0 {following(org.id) ? 'border-primary/30 bg-primary/10 text-primary' : 'border-surface-glass-border bg-surface-container-high text-on-surface'}"
+							>{following(org.id) ? 'Following' : 'Follow'}</button>
+						</div>
 					{/each}
 				</div>
 			</div>

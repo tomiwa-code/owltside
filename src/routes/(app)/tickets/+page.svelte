@@ -42,20 +42,19 @@
 		data.tickets
 	);
 
-	// ── mobile wallet state (unchanged) ──
-	let tab = $state<'upcoming' | 'past'>('upcoming');
+	// One shared vault selection drives both desktop and mobile tabs.
+	let tab = $state<'upcoming' | 'past' | 'archived'>('upcoming');
 
 	const all = $derived(tickets.data ?? []);
 	const upcoming = $derived(all.filter((t) => t.status === 'valid' && new Date(t.eventStartsAt) > new Date()));
 	const past = $derived(all.filter((t) => !upcoming.includes(t)));
-	const shown = $derived(tab === 'upcoming' ? upcoming : past);
-
-	// ── desktop vault state ──
-	let deskTab = $state<'upcoming' | 'past' | 'archived'>('upcoming');
-	let selectedId = $state('');
-
 	const pastDesk = $derived(past.filter((t) => t.status === 'used'));
 	const archived = $derived(past.filter((t) => t.status !== 'used'));
+	const shown = $derived(tab === 'upcoming' ? upcoming : tab === 'past' ? pastDesk : archived);
+
+	// ── desktop vault state ──
+	const deskTab = $derived(tab);
+	let selectedId = $state('');
 	const deskList = $derived(deskTab === 'upcoming' ? upcoming : deskTab === 'past' ? pastDesk : archived);
 	const selected = $derived(all.find((t) => t.id === selectedId) ?? upcoming[0] ?? all[0]);
 
@@ -219,7 +218,7 @@
 				] as [id, label]}
 					<button
 						class="h-9 rounded-md flex items-center justify-center text-body-sm transition-colors {deskTab === id ? 'bg-surface-container-highest text-on-surface font-semibold' : 'text-on-surface-variant hover:text-on-surface'}"
-						onclick={() => (deskTab = id as typeof deskTab)}
+						onclick={() => (tab = id as typeof tab)}
 					>
 						{label}
 					</button>
@@ -475,7 +474,7 @@
 <div class="md:hidden">
 	<TopBar title="Ticket Wallet" subtitle="Offline gate passes" />
 
-	<main class="flex flex-col relative w-full pt-16 pb-28 md:pb-16 bg-surface min-h-dvh">
+	<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
 		<div class="flex flex-col w-full px-margin md:max-w-2xl md:mx-auto pb-10 gap-space-md pt-space-sm">
 			<!-- offline pill -->
 			<div class="flex items-center justify-between bg-surface-container-high px-space-md py-2.5 rounded-full shadow-sm">
@@ -494,25 +493,36 @@
 					<span class="text-label-badge text-accent-emerald">SECURE</span>
 				</span>
 			</div>
+			<div class="grid grid-cols-3 gap-2">
+				<div class="rounded-xl border border-surface-glass-border bg-surface-container p-3 flex flex-col gap-1"><CloudCheck class="w-4 h-4 text-accent-emerald" /><span class="text-label-badge text-on-surface">Vault synced</span></div>
+				<div class="rounded-xl border border-surface-glass-border bg-surface-container p-3 flex flex-col gap-1"><Database class="w-4 h-4 text-primary" /><span class="text-label-badge text-on-surface">Local cache ready</span></div>
+				<div class="rounded-xl border border-surface-glass-border bg-surface-container p-3 flex flex-col gap-1"><Lock class="w-4 h-4 text-primary" /><span class="text-label-badge text-on-surface">HMAC · 30s</span></div>
+			</div>
 
-			<!-- segmented tabs -->
-			<div class="bg-surface-container-lowest p-1 rounded-full flex items-center shadow-inner">
+			<!-- shared three-bucket vault tabs -->
+			<div class="bg-surface-container-lowest p-1 rounded-2xl grid grid-cols-3 gap-1 shadow-inner">
 				<button
-					class="flex-1 py-2 rounded-full text-label-badge transition-all duration-200 flex items-center justify-center gap-1.5 {tab === 'upcoming' ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}"
+					class="min-w-0 py-2 rounded-xl text-label-badge transition-all duration-200 flex flex-col items-center justify-center gap-1 {tab === 'upcoming' ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}"
 					onclick={() => (tab = 'upcoming')}
 				>
-					<TicketIcon class="w-4 h-4" /> Upcoming ({upcoming.length})
+					<span class="flex items-center gap-1"><TicketIcon class="w-3.5 h-3.5" />Upcoming</span><span class="font-code text-[10px]">{upcoming.length}</span>
 				</button>
 				<button
-					class="flex-1 py-2 rounded-full text-label-badge transition-all duration-200 flex items-center justify-center gap-1.5 {tab === 'past' ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}"
+					class="min-w-0 py-2 rounded-xl text-label-badge transition-all duration-200 flex flex-col items-center justify-center gap-1 {tab === 'past' ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}"
 					onclick={() => (tab = 'past')}
 				>
-					<History class="w-4 h-4" /> Past ({past.length})
+					<span class="flex items-center gap-1"><History class="w-3.5 h-3.5" />Past</span><span class="font-code text-[10px]">{pastDesk.length}</span>
+				</button>
+				<button
+					class="min-w-0 py-2 rounded-xl text-label-badge transition-all duration-200 flex flex-col items-center justify-center gap-1 {tab === 'archived' ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}"
+					onclick={() => (tab = 'archived')}
+				>
+					<span class="flex items-center gap-1"><Database class="w-3.5 h-3.5" />Archived</span><span class="font-code text-[10px]">{archived.length}</span>
 				</button>
 			</div>
 
 			{#each shown as ticket (ticket.id)}
-				{@const isPast = tab === 'past'}
+				{@const isPast = tab !== 'upcoming'}
 				<button
 					class="relative bg-surface-raised rounded-xl overflow-hidden shadow-xl text-left w-full hover:bg-surface-container-high transition-colors {isPast ? 'opacity-70' : ''}"
 					onclick={() => goto(`/tickets/${ticket.id}`)}
@@ -540,7 +550,7 @@
 					</div>
 				</button>
 			{:else}
-				<EmptyState title={tab === 'upcoming' ? 'No upcoming passes' : 'No history yet'} sub="Grab a pass and it will mint here instantly with a rotating gate QR.">
+				<EmptyState title={tab === 'upcoming' ? 'No upcoming passes' : tab === 'past' ? 'No scanned passes' : 'Nothing archived'} sub="Your wallet keeps active, scanned, and refunded or transferred passes in separate vault tabs.">
 					{#snippet icon()}<TicketIcon class="w-6 h-6" />{/snippet}
 					{#snippet action()}
 						<a href="/explore" class="h-11 px-6 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center">Explore events</a>

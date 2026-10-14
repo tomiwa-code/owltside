@@ -17,5 +17,16 @@ export const actions: Actions = {
 			if (error) return fail(400, { error: error.message, email });
 		}
 		redirect(303, `/auth/verify?email=${encodeURIComponent(email)}`);
+	},
+	google: async ({ cookies, url }) => {
+		const db = createSupabase(cookies);
+		if (!db) return fail(503, { error: 'Google sign-in is unavailable until the Google provider is configured.' });
+		const { data, error } = await db.auth.signInWithOAuth({
+			provider: 'google',
+			options: { redirectTo: `${url.origin}/auth/callback?next=${encodeURIComponent('/home')}` }
+		});
+		if (error) return fail(400, { error: error.message });
+		if (!data.url) return fail(502, { error: 'Google sign-in did not return an authorization URL.' });
+		redirect(303, data.url);
 	}
 };
