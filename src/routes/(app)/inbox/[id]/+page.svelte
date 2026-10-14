@@ -9,7 +9,6 @@
 		CalendarDays,
 		Lock,
 		MoreVertical,
-		Phone,
 		Search,
 		Send,
 		ShieldCheck,
@@ -145,19 +144,21 @@
 		<!-- chat panel -->
 		<section class="rounded-xl border border-surface-glass-border bg-surface-container flex flex-col overflow-hidden max-h-[calc(100dvh-8rem)] lg:sticky lg:top-24">
 			<div class="p-4 flex items-center gap-4 border-b border-surface-glass-border">
-				<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="lg" />
+				<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="shrink-0 hover:opacity-90 transition-opacity">
+					<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="lg" />
+				</a>
 				<div class="flex-1 min-w-0">
 					<span class="flex items-center gap-2 min-w-0">
-						<span class="font-display text-headline-md text-on-surface truncate">{conv.peer.name}</span>{#if conv.peer.verified}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" />{/if}
+						<a href="/users/{conv.peer.handle}" class="font-display text-headline-md text-on-surface truncate hover:underline hover:text-primary transition-colors">{conv.peer.name}</a>{#if conv.peer.verified}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" />{/if}
 					</span>
-					<span class="block text-body-sm text-on-surface-variant truncate pt-0.5">{conv.peer.bio ?? `@${conv.peer.handle}`}</span>
+					<a href="/users/{conv.peer.handle}" class="block text-body-sm text-on-surface-variant truncate pt-0.5 hover:text-primary hover:underline transition-colors">{conv.peer.bio ?? `@${conv.peer.handle}`}</a>
 				</div>
 				<div class="flex items-center gap-1 shrink-0">
-					{#each [Phone, CalendarDays, MoreVertical] as Icon, i (i)}
+					{#each [CalendarDays, MoreVertical] as Icon, i (i)}
 						<button
 							type="button"
 							aria-label="Session action"
-							onclick={() => toast('Call & schedule rails ship with the comms node v2', 'info')}
+							onclick={() => toast('Schedule rails ship with the comms node v2', 'info')}
 							class="w-10 h-10 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
 						>
 							<Icon class="w-4.5 h-4.5" />
@@ -202,7 +203,7 @@
 						</div>
 					{:else}
 						<div class="flex items-end gap-3 self-start max-w-[80%]">
-							<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="xs" />
+							<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="shrink-0 hover:opacity-90 transition-opacity"><Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="xs" /></a>
 							<div class="flex flex-col gap-1 min-w-0">
 								<div class="bg-surface-container-low border border-surface-glass-border text-on-surface p-4 rounded-xl rounded-bl-sm shadow-sm">
 									<p class="text-body-md leading-relaxed">{m.body}</p>
@@ -310,7 +311,7 @@
 <div class="md:hidden">
 <TopBar back title={conv.peer.name} subtitle={conv.peer.verified ? 'Verified organiser' : `@${conv.peer.handle}`}>
 	{#snippet right()}
-		<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="sm" />
+		<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="hover:opacity-90 transition-opacity"><Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="sm" /></a>
 	{/snippet}
 </TopBar>
 
@@ -329,13 +330,13 @@
 			<a href="/events/pulse-ai-summit-lagos" aria-label="Open event brief" class="h-9 px-3 rounded-full bg-primary/10 text-primary text-label-badge font-semibold flex items-center gap-1 shrink-0">Open <ArrowUpRight class="w-3.5 h-3.5" /></a>
 		</div>
 		<div class="mx-gutter mt-2 flex gap-2">
-			{#each [{ icon: Phone, label: 'Call' }, { icon: CalendarDays, label: 'Schedule' }] as action (action.label)}
-				{@const Icon = action.icon}
-				<button type="button" class="h-10 flex-1 rounded-xl bg-surface-container border border-surface-glass-border text-on-surface-variant flex items-center justify-center gap-2 text-label-badge" onclick={() => toast('Call & schedule rails ship with the comms node v2', 'info')}>
-					<Icon class="w-4 h-4" />{action.label}
-				</button>
-			{/each}
-		</div>
+				{#each [{ icon: CalendarDays, label: 'Schedule' }] as action (action.label)}
+					{@const Icon = action.icon}
+					<button type="button" class="h-10 flex-1 rounded-xl bg-surface-container border border-surface-glass-border text-on-surface-variant flex items-center justify-center gap-2 text-label-badge" onclick={() => toast('Schedule rails ship with the comms node v2', 'info')}>
+						<Icon class="w-4 h-4" />{action.label}
+					</button>
+				{/each}
+			</div>
 
 		<div bind:this={scroller} class="flex flex-col gap-space-md px-margin pt-space-xs overflow-y-auto flex-1 max-h-[calc(100dvh-18rem)]">
 			{#each messages.data ?? [] as m, i (m.id)}
@@ -352,7 +353,7 @@
 					</div>
 				{:else}
 					<div class="flex items-end gap-space-xs max-w-[88%] self-start">
-						<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="xs" />
+						<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="shrink-0 hover:opacity-90 transition-opacity"><Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="xs" /></a>
 						<div class="flex flex-col gap-1 min-w-0">
 							<div class="bg-surface-container-low text-on-surface p-space-md rounded-2xl rounded-bl-xs shadow-sm">
 								<p class="text-body-md leading-relaxed">{m.body}</p>
