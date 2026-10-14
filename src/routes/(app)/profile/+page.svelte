@@ -27,12 +27,14 @@
 	import { page } from '$app/state';
 	import { bookmarks, follows, toggleIn } from '$lib/state/prefs.svelte';
 	import { profileAppearance, profileDraft } from '$lib/state/profile.svelte';
+	import { appSettings } from '$lib/state/settings.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { fmtDate, fmtTime } from '$lib/utils/dates';
 	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 
 	let { data } = $props();
 	const session = $derived(page.data.session);
+	const isFullyVerified = $derived(!!session && Object.values(appSettings.value.verification).every(Boolean));
 	const hasProfileDraft = $derived(profileDraft.value.hasChanges);
 	const name = $derived(hasProfileDraft ? profileDraft.value.name : (data.profile?.name ?? session?.name ?? 'Guest Explorer'));
 	const handle = $derived(hasProfileDraft ? profileDraft.value.username : (data.profile?.handle ?? session?.handle ?? 'guest'));
@@ -307,7 +309,7 @@
 					<span class="min-w-0 pt-1">
 						<span class="flex items-center flex-wrap gap-2">
 							<span class="font-display text-headline-lg text-on-surface tracking-tight">{name}</span>
-							{#if session}<BadgeCheck class="w-5 h-5 text-tertiary shrink-0" aria-label="Verified member" />{/if}
+							{#if isFullyVerified}<BadgeCheck class="w-5 h-5 text-tertiary shrink-0" aria-label="Verified member" />{/if}
 							{#if !session}
 								<span class="px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant {MONO}">Guest</span>
 							{/if}
@@ -562,7 +564,7 @@
 				<div class="mt-3 flex flex-col">
 					<div class="flex items-center flex-wrap gap-2">
 							<h1 class="font-display text-headline-lg-mobile text-on-surface tracking-tight">{name}</h1>
-						{#if session}<BadgeCheck class="w-5 h-5 text-tertiary shrink-0" aria-label="Verified member" />{/if}
+						{#if isFullyVerified}<BadgeCheck class="w-5 h-5 text-tertiary shrink-0" aria-label="Verified member" />{/if}
 						{#if !session}
 							<span class="px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-label-badge">Guest</span>
 						{/if}
