@@ -19,12 +19,10 @@
 		ChevronLeft,
 		ChevronRight,
 		MapPin,
-		QrCode,
 		Radio,
 		Search,
 		ShieldCheck
 	} from '@lucide/svelte';
-	import QRCode from 'qrcode';
 	import Avatar from './Avatar.svelte';
 	import Carousel from './Carousel.svelte';
 	import EventCard from './EventCard.svelte';
@@ -33,9 +31,8 @@
 	import { useQuery } from '$lib/state/query.svelte';
 	import { bookmarks, currency, follows, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
-	import { fmtDate, fmtTime, fmtDateFull, secondsLeftInWindow } from '$lib/utils/dates';
+	import { fmtDate, fmtTime, fmtDateFull } from '$lib/utils/dates';
 	import { formatMoney } from '$lib/utils/money';
-	import { signToken } from '$lib/utils/qr';
 	import type { CategoryId, EventItem, Ticket } from '$lib/types';
 
 	let {
@@ -90,7 +87,7 @@
 		return [...map.values()].sort((a, b) => b.events - a.events).slice(0, 3);
 	});
 
-	/* ── active pass (rotating HMAC QR) ─────────────────────────────────── */
+	/* ── header ticket status ─────────────────────────────────── */
 	const tickets = useQuery<Ticket[]>(
 		'tickets:desktop-home',
 		async () => {
@@ -101,29 +98,6 @@
 		initialTickets
 	);
 	const ticket = $derived((tickets.data ?? []).find((t) => t.status === 'valid'));
-
-	let qrUrl = $state('');
-	$effect(() => {
-		const code = ticket?.code;
-		if (!code) return;
-		let cancelled = false;
-		void signToken(code)
-			.then((payload) =>
-				QRCode.toDataURL(payload, { margin: 1, width: 200, color: { dark: '#0b1120', light: '#ffffff' } })
-			)
-			.then((url) => {
-				if (!cancelled) qrUrl = url;
-			});
-		return () => {
-			cancelled = true;
-		};
-	});
-
-	let seconds = $state(secondsLeftInWindow());
-	$effect(() => {
-		const iv = setInterval(() => (seconds = secondsLeftInWindow()), 1000);
-		return () => clearInterval(iv);
-	});
 
 	/* ── helpers ────────────────────────────────────────────────────────── */
 	const minPrice = (e: EventItem) => Math.min(...e.tiers.map((t) => t.price));
@@ -470,69 +444,6 @@
 
 		<!-- right rail -->
 		<aside class="flex flex-col gap-6 min-w-0">
-			<!-- active pass -->
-			{#if ticket}
-				<div class="rounded-2xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-4">
-					<div class="flex items-center justify-between gap-3">
-						<span class="flex items-center gap-2">
-							<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
-							<span class="{MONO} text-on-surface-variant">Your Active Pass</span>
-						</span>
-						<span class="{MONO} text-accent-emerald">Passport_OK</span>
-					</div>
-					<div class="flex items-center justify-between gap-3">
-						<span class="{MONO} text-on-surface-variant">Protocol_ID</span>
-						<span class="font-code text-label-badge text-on-surface">{ticket.code}</span>
-					</div>
-					<h3 class="font-display text-headline-md text-on-surface leading-tight">{ticket.eventTitle}</h3>
-					<div class="rounded-lg bg-surface-base border border-surface-glass-border p-3.5 grid grid-cols-[1fr_auto] gap-3 items-center">
-						<div class="min-w-0">
-							<span class="{MONO} text-on-surface-variant">Gate Designation</span>
-							<div class="text-body-md font-semibold text-on-surface truncate pt-1">Gate 2 • {ticket.tierName}</div>
-						</div>
-						<div class="text-right">
-							<span class="{MONO} text-on-surface-variant">Security</span>
-							<div class="font-code text-label-badge font-bold text-accent-emerald pt-1">HMAC VALID</div>
-						</div>
-					</div>
-					<div class="rounded-lg bg-surface-base border border-surface-glass-border p-3.5 flex items-center gap-4">
-						{#if qrUrl}
-							<img src={qrUrl} alt="Rotating ticket QR code" class="w-20 h-20 rounded bg-white p-1 shrink-0" />
-						{:else}
-							<div class="w-20 h-20 rounded bg-white/10 animate-pulse shrink-0"></div>
-						{/if}
-						<div class="flex flex-col gap-1 min-w-0">
-							<span class="{MONO} text-on-surface-variant">Dynamic Key:</span>
-							<span class="font-code text-label-badge text-on-surface truncate">
-								SHA256:{ticket.code.slice(3, 7).toLowerCase()}…{ticket.code.slice(-3)}
-							</span>
-							<span class="font-code text-[11px] text-on-surface-variant">Refreshes in {seconds}s</span>
-						</div>
-					</div>
-					<a
-						href="/tickets/{ticket.id}"
-						class="h-11 rounded-lg bg-primary text-on-primary font-semibold text-body-sm flex items-center justify-center gap-2 hover:bg-primary-container transition-colors glow-primary"
-					>
-						<QrCode class="w-4 h-4" />
-						<span>Open Live Dynamic QR</span>
-					</a>
-				</div>
-			{:else}
-				<div class="rounded-2xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-3">
-					<span class="flex items-center gap-2">
-						<span class="w-1.5 h-1.5 rounded-full bg-outline-variant"></span>
-						<span class="{MONO} text-on-surface-variant">Your Active Pass</span>
-					</span>
-					<p class="text-body-sm text-on-surface-variant">No gate pass linked to this node yet. Reserve a seat to mint a rotating HMAC pass.</p>
-					<a
-						href="/explore"
-						class="h-10 rounded-lg bg-surface-container-high text-on-surface text-body-sm font-semibold flex items-center justify-center hover:bg-primary hover:text-on-primary transition-colors"
-					>
-						Browse Events
-					</a>
-				</div>
-			{/if}
-
 			<!-- verified organizers -->
 			<div class="rounded-2xl border border-surface-glass-border bg-surface-container p-5">
 				<div class="flex items-center justify-between gap-3">

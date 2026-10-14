@@ -4,6 +4,7 @@
 	 * source — themed with the Evently Pulse tokens from `src/app.css`.
 	 */
 	import { BadgeCheck, Search, SlidersHorizontal } from '@lucide/svelte';
+	import { goto } from '$app/navigation';
 	import Avatar from './Avatar.svelte';
 	import { fmtDate, fmtRelative, fmtTime } from '$lib/utils/dates';
 	import type { Conversation } from '$lib/types';
@@ -81,19 +82,29 @@
 
 	<div class="flex-1 overflow-y-auto divide-y divide-surface-glass-border">
 		{#each list as c (c.id)}
-			<a
-				href="/inbox/{c.id}"
+			<div
+				role="link"
+				tabindex="0"
 				aria-current={c.id === activeId ? 'true' : undefined}
-				class="flex items-start gap-3 p-4 transition-colors border-l-2
+				class="flex items-start gap-3 p-4 transition-colors border-l-2 cursor-pointer
 					{c.id === activeId
 						? 'border-l-primary bg-surface-container-high'
 						: 'border-l-transparent hover:bg-surface-container-high/60'}"
+				onclick={() => goto(`/inbox/${c.id}`)}
+				onkeydown={(e) => e.key === 'Enter' && goto(`/inbox/${c.id}`)}
 			>
-				<Avatar name={c.peer.name} color={c.peer.avatarColor} size="md" />
-				<span class="flex-1 min-w-0">
+				<a
+					href="/users/{c.peer.handle}"
+					aria-label="View {c.peer.name}'s profile"
+					class="shrink-0 hover:opacity-90 transition-opacity"
+					onclick={(e) => e.stopPropagation()}
+				>
+					<Avatar name={c.peer.name} color={c.peer.avatarColor} size="md" />
+				</a>
+				<div class="flex-1 min-w-0">
 					<span class="flex items-center justify-between gap-2">
 						<span class="flex items-center gap-1.5 min-w-0">
-							<span class="text-body-md font-semibold text-on-surface truncate">{c.peer.name}</span>{#if c.peer.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}
+							<a href="/users/{c.peer.handle}" aria-label="View {c.peer.name}'s profile" class="text-body-md font-semibold text-on-surface truncate hover:underline hover:text-primary transition-colors" onclick={(e) => e.stopPropagation()}>{c.peer.name}</a>{#if c.peer.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}
 						</span>
 						<span class="flex items-center gap-1.5 shrink-0">
 							<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant">{timeLabel(c.lastAt)}</span>
@@ -106,8 +117,8 @@
 						</span>
 					</span>
 					<span class="block text-body-sm text-on-surface-variant truncate pt-1.5">{c.lastMessage}</span>
-				</span>
-			</a>
+				</div>
+			</div>
 		{:else}
 			<p class="p-6 text-body-sm text-on-surface-variant text-center">No threads match this filter.</p>
 		{/each}

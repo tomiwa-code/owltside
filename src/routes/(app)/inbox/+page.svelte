@@ -236,15 +236,20 @@
 		{#if inboxView === 'messages'}
 		<div class="flex flex-col px-space-md gap-space-xs pb-4">
 			{#each list as conv (conv.id)}
-				<a
-					href="/inbox/{conv.id}"
-					class="group relative flex items-center gap-3.5 p-3 rounded-2xl bg-surface-container hover:bg-surface-bright active:scale-[0.99] transition-all"
+				<div
+					role="link"
+					tabindex="0"
+					class="group relative flex items-center gap-3.5 p-3 rounded-2xl bg-surface-container hover:bg-surface-bright active:scale-[0.99] transition-all cursor-pointer"
+					onclick={() => goto(`/inbox/${conv.id}`)}
+					onkeydown={(e) => e.key === 'Enter' && goto(`/inbox/${conv.id}`)}
 				>
-					<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="lg" />
-					<span class="flex-1 min-w-0">
+					<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="shrink-0 hover:opacity-90 transition-opacity" onclick={(e) => e.stopPropagation()}>
+						<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="lg" />
+					</a>
+					<div class="flex-1 min-w-0">
 						<span class="flex items-center justify-between gap-2">
 							<span class="flex items-center gap-1.5 min-w-0">
-								<span class="text-body-md text-on-surface font-semibold truncate">{conv.peer.name}</span>{#if conv.peer.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}
+								<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="text-body-md text-on-surface font-semibold truncate hover:underline hover:text-primary transition-colors" onclick={(e) => e.stopPropagation()}>{conv.peer.name}</a>{#if conv.peer.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}
 							</span>
 							<span class="text-body-sm text-outline shrink-0">{fmtRelative(conv.lastAt)}</span>
 						</span>
@@ -255,8 +260,8 @@
 								<span class="min-w-5 h-5 px-1.5 rounded-full bg-primary text-on-primary text-[11px] font-bold flex items-center justify-center shrink-0">{conv.unread}</span>
 							{/if}
 						</span>
-					</span>
-				</a>
+					</div>
+				</div>
 			{:else}
 				<EmptyState title="No conversations" sub="Message an organiser from any event page.">
 					{#snippet icon()}<MessageSquare class="w-6 h-6" />{/snippet}

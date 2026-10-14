@@ -25,14 +25,13 @@
 	import HeroCard from '$components/HeroCard.svelte';
 	import SearchBar from '$components/SearchBar.svelte';
 	import SectionHeader from '$components/SectionHeader.svelte';
-	import Avatar from '$components/Avatar.svelte';
-	import QrPass from '$components/QrPass.svelte';
-	import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
+import Avatar from '$components/Avatar.svelte';
+import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 	import { categories } from '$components/iconMap';
 	import { useQuery } from '$lib/state/query.svelte';
 	import { follows, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
-	import type { CategoryId, EventItem, Ticket } from '$lib/types';
+	import type { CategoryId, EventItem } from '$lib/types';
 
 	let { data } = $props();
 
@@ -75,7 +74,6 @@
 		}
 		return [...map.values()].sort((a, b) => b.events - a.events).slice(0, 3);
 	});
-	const activeTicket = $derived((data.tickets as Ticket[] | undefined)?.find((ticket) => ticket.status === 'valid'));
 	const following = (id: string) => follows.value.includes(id);
 	const compact = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
 
@@ -260,28 +258,6 @@
 				</div>
 			</div>
 		{/if}
-
-		<!-- desktop active pass parity -->
-		<div class="rounded-2xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-space-sm">
-			<div class="flex items-center justify-between gap-2">
-				<span class="font-display text-headline-md text-on-surface">Your Active Pass</span>
-				<span class="text-label-badge uppercase tracking-wider {activeTicket ? 'text-accent-emerald' : 'text-on-surface-variant'}">{activeTicket ? 'Passport OK' : 'No active pass'}</span>
-			</div>
-			{#if activeTicket}
-				<p class="text-body-sm text-on-surface-variant">{activeTicket.eventTitle} · {activeTicket.tierName}</p>
-				<div class="flex justify-center py-2"><QrPass code={activeTicket.code} /></div>
-				<div class="flex items-center justify-between gap-2 rounded-xl bg-surface-container-low px-3 py-2.5">
-					<span class="text-label-badge text-on-surface-variant">Gate pass code</span>
-					<span class="font-code text-label-code text-on-surface">{activeTicket.code}</span>
-				</div>
-				<a href="/tickets/{activeTicket.id}" class="h-11 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center gap-2">
-					<QrCode class="w-4 h-4" /> Open live dynamic QR
-				</a>
-			{:else}
-				<p class="text-body-sm text-on-surface-variant">Reserve a seat and your rotating, offline-ready HMAC pass will appear here.</p>
-				<a href="/explore" class="h-11 rounded-full bg-surface-container-high text-on-surface text-body-sm font-semibold flex items-center justify-center">Browse events</a>
-			{/if}
-		</div>
 
 		<!-- desktop verified-organizer follow controls parity -->
 		{#if verifiedOrganizers.length}
