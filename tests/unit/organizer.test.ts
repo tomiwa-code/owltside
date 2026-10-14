@@ -8,6 +8,7 @@ const payload: WizardPayload = {
 	category: 'conferences',
 	tags: ['Tech'],
 	startsAt: new Date(Date.now() + 86_400_000).toISOString(),
+	endsAt: new Date(Date.now() + 2 * 86_400_000).toISOString(),
 	venue: 'Test Venue',
 	city: 'Lagos',
 	description: 'A test event.',
@@ -25,6 +26,7 @@ describe('demoSource.createEvent', () => {
 	it('creates a slug, assigns tier ids and stores the event', async () => {
 		const event = await demoSource.createEvent('demo', payload);
 		expect(event.slug).toBe('test-launch-night');
+		expect(event.endsAt).toBe(payload.endsAt);
 		expect(event.tiers).toHaveLength(2);
 		expect(event.tiers[0]).toMatchObject({ id: 'tier-0', name: 'Regular', sold: 0 });
 		expect(event.gates?.[0].name).toBe('Gate 1');

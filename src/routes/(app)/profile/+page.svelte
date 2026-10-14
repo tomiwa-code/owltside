@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
 	import {
 		BadgeCheck,
 		Bell,
@@ -21,13 +22,25 @@
 	import Sheet from '$components/Sheet.svelte';
 	import { page } from '$app/state';
 	import { follows } from '$lib/state/prefs.svelte';
+	import { profileAppearance, profileDraft } from '$lib/state/profile.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { fmtDate, fmtTime } from '$lib/utils/dates';
 
 	let { data } = $props();
 	const session = $derived(page.data.session);
-	const name = $derived(session?.name ?? 'Guest Explorer');
-	const handle = $derived(session?.handle ?? 'guest');
+	const hasProfileDraft = $derived(profileDraft.value.hasChanges);
+	const name = $derived(hasProfileDraft ? profileDraft.value.name : (data.profile?.name ?? session?.name ?? 'Guest Explorer'));
+	const handle = $derived(hasProfileDraft ? profileDraft.value.username : (data.profile?.handle ?? session?.handle ?? 'guest'));
+	const bio = $derived(hasProfileDraft ? profileDraft.value.bio : (data.profile?.bio ?? 'Chasing good sound and good software across Lagos.'));
+	const city = $derived(hasProfileDraft ? profileDraft.value.city : (data.profile?.city ?? 'Lagos'));
+	const profileLink = $derived(hasProfileDraft ? profileDraft.value.link : (data.profile?.link ?? ''));
+	const interests = $derived(hasProfileDraft ? profileDraft.value.interests : (data.profile?.interests ?? []));
+	const avatarPhoto = $derived(profileAppearance.value.avatarData || data.profile?.avatarUrl || session?.avatarUrl || null);
+	const bannerPhoto = $derived(profileAppearance.value.bannerData || data.profile?.bannerUrl || null);
+	const avatarImageStyle = $derived(`transform: scale(${profileAppearance.value.avatarZoom}); object-position: 50% ${profileAppearance.value.avatarCropY}%;`);
+	const bannerImageStyle = $derived(`transform: scale(${profileAppearance.value.bannerZoom}); object-position: 50% ${profileAppearance.value.bannerCropY}%;`);
+	const lastUsernameChange = $derived(profileDraft.value.usernameChangedAt ?? data.profile?.usernameChangedAt ?? session?.usernameChangedAt ?? null);
+	const usernameCooldownDays = $derived(lastUsernameChange ? Math.max(0, Math.ceil((new Date(lastUsernameChange).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000))) : 0);
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
@@ -37,8 +50,14 @@
 
 	let calendarOpen = $state(false);
 	let editOpen = $state(false);
-	let editName = $state(name);
-	let editBio = $state('Chasing good sound and good software across Lagos.');
+	let editName = $state('');
+	let editUsername = $state('');
+	let editBio = $state('');
+	let editCity = $state('');
+	let editLink = $state('');
+	let editInterests = $state<string[]>([]);
+	let editError = $state('');
+	const interestChoices = ['Afrobeats', 'Amapiano', 'Live music', 'Nightlife', 'Tech', 'Art & design', 'Comedy', 'Food', 'Fashion', 'Film', 'Workshops', 'Fitness'];
 
 	// month grid for the current month
 	const now = new Date();
@@ -104,6 +123,81 @@
 			toast(label, 'info');
 		}
 	}
+
+	function openEdit() {
+		editName = name;
+		editUsername = handle;
+		editBio = bio;
+		editCity = city;
+		editLink = profileLink;
+		editInterests = [...interests];
+		editError = '';
+		editOpen = true;
+	}
+
+	function toggleInterest(interest: string) {
+		editInterests = editInterests.includes(interest)
+			? editInterests.filter((item) => item !== interest)
+			: [...editInterests, interest].slice(0, 12);
+	}
+
+	async function handleImageUpload(event: Event, kind: 'avatar' | 'banner') {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		if (!file.type.startsWith('image/')) {
+			toast('Choose an image file to upload.', 'error');
+			return;
+		}
+		try {
+			const bitmap = await createImageBitmap(file);
+			const maxDimension = kind === 'avatar' ? 1200 : 1800;
+			const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+			const canvas = document.createElement('canvas');
+			canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+			canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+			const context = canvas.getContext('2d');
+			if (!context) throw new Error('Image canvas is unavailable');
+			context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+			bitmap.close();
+			const image = canvas.toDataURL('image/jpeg', 0.82);
+			if (kind === 'avatar') profileAppearance.value.avatarData = image;
+			else profileAppearance.value.bannerData = image;
+			toast(`${kind === 'avatar' ? 'Profile photo' : 'Banner'} uploaded. Adjust the crop before saving.`, 'success');
+		} catch {
+			toast('This image could not be resized on your device.', 'error');
+		} finally {
+			input.value = '';
+		}
+	}
+
+	function handleProfileEnhance() {
+		return async ({ result, update }: { result: any; update: () => Promise<void> }) => {
+			await update();
+			if (result.type === 'success') {
+				const saved = result.data as { success?: boolean; name?: string; username?: string; bio?: string; city?: string; link?: string; interests?: string[]; usernameChangedAt?: string | null };
+				if (saved.success) {
+					profileDraft.value = {
+						hasChanges: true,
+						name: saved.name ?? editName,
+						username: saved.username ?? editUsername,
+						bio: saved.bio ?? editBio,
+						city: saved.city ?? editCity,
+						link: saved.link ?? editLink,
+						interests: saved.interests ?? editInterests,
+						usernameChangedAt: saved.usernameChangedAt ?? profileDraft.value.usernameChangedAt
+					};
+					editError = '';
+					editOpen = false;
+					toast('Profile updated', 'success');
+				} else {
+					editError = 'Your profile could not be saved.';
+				}
+			} else if (result.type === 'failure') {
+				editError = (result.data as { error?: string })?.error ?? 'Your profile could not be saved.';
+			}
+		};
+	}
 </script>
 
 <svelte:head><title>Profile • Owltside</title></svelte:head>
@@ -149,7 +243,7 @@
 				<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">GATE_PASS_ACTIVE</span>
 			</div>
 			<a href="/profile" aria-label="Your profile" class="shrink-0">
-				<Avatar name={name} size="sm" />
+				<Avatar name={name} src={avatarPhoto} imageStyle={avatarImageStyle} size="sm" />
 			</a>
 		</div>
 	</header>
@@ -171,7 +265,7 @@
 			<button class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={share}>
 				<Share2 class="w-4 h-4 text-on-surface-variant" /><span>Share Profile</span>
 			</button>
-			<button class="h-10 px-4 rounded-lg flex items-center gap-2 bg-on-surface text-surface-base text-body-sm font-semibold hover:opacity-90 transition-opacity" onclick={() => (editOpen = true)}>
+			<button class="h-10 px-4 rounded-lg flex items-center gap-2 bg-on-surface text-surface-base text-body-sm font-semibold hover:opacity-90 transition-opacity" onclick={openEdit}>
 				<Edit class="w-4 h-4" /><span>Edit Profile</span>
 			</button>
 		</div>
@@ -179,19 +273,17 @@
 
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8">
 		<section class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
-			<div class="relative h-32" style="background: linear-gradient(140deg, #312e81 0%, #1e1b4b 45%, #0b1326 100%);">
+			<div class="relative h-32 overflow-hidden" style="background: linear-gradient(140deg, #312e81 0%, #1e1b4b 45%, #0b1326 100%);">
+				{#if bannerPhoto}<img src={bannerPhoto} alt="Profile banner" class="absolute inset-0 w-full h-full object-cover" style={bannerImageStyle} />{/if}
 				<div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-surface-container"></div>
-				<span class="absolute top-3 left-4 flex items-center gap-2 bg-surface-base/50 backdrop-blur-md px-3 py-1.5 rounded-full {MONO} text-accent-emerald">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> PWA Sync
-				</span>
-				<span class="absolute top-3 right-4 {MONO} text-on-surface-variant">Node 0x7E3 • Lagos</span>
+				<span class="absolute top-3 right-4 {MONO} text-on-surface-variant">Node 0x7E3 • {city}</span>
 			</div>
 			<div class="px-6 pb-6 flex flex-wrap items-start gap-6 justify-between">
 				<span class="flex items-start gap-5 -mt-10 relative min-w-0">
 					<span class="relative shrink-0">
 						<span class="block w-24 h-24 rounded-full overflow-hidden shadow-2xl p-0.5 bg-gradient-to-tr from-primary to-accent-emerald">
 							<span class="block w-full h-full rounded-full bg-surface-container flex items-center justify-center">
-								<Avatar name={name} size="xl" />
+								<Avatar name={name} src={avatarPhoto} imageStyle={avatarImageStyle} size="xl" />
 							</span>
 						</span>
 						{#if session}
@@ -210,15 +302,13 @@
 							{:else}
 								<span class="px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant {MONO}">Guest</span>
 							{/if}
-							<span class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface-container-high border border-surface-glass-border text-on-surface-variant {MONO}">
-								<WifiOff class="w-3 h-3 text-accent-emerald" /> Ticket Vault Ready
-							</span>
 						</span>
-						<span class="{MONO} text-outline block mt-1.5">@{handle} • Lagos & Global Remote</span>
-						<span class="block text-body-md text-on-surface-variant mt-2 leading-relaxed max-w-xl">{editBio}</span>
+						<span class="{MONO} text-outline block mt-1.5">@{handle} • {city}</span>
+						<span class="block text-body-md text-on-surface-variant mt-2 leading-relaxed max-w-xl">{bio}</span>
+						{#if interests.length}<span class="flex flex-wrap gap-1.5 mt-2">{#each interests as interest (interest)}<span class="text-label-badge px-2 py-1 rounded-full bg-primary/10 text-primary">{interest}</span>{/each}</span>{/if}
 						<span class="flex items-center gap-4 mt-2.5 flex-wrap">
 							<span class="inline-flex items-center gap-1.5 {MONO} text-tertiary"><Globe class="w-3.5 h-3.5" /> owltside.app/@{handle}</span>
-							<span class="inline-flex items-center gap-1.5 {MONO} text-on-surface-variant"><Link2 class="w-3.5 h-3.5" /> @{handle}</span>
+							{#if profileLink}<a href={profileLink} target="_blank" rel="noreferrer" class="inline-flex items-center gap-1.5 {MONO} text-on-surface-variant hover:text-primary"><Link2 class="w-3.5 h-3.5" /> {profileLink}</a>{:else}<span class="inline-flex items-center gap-1.5 {MONO} text-on-surface-variant"><Link2 class="w-3.5 h-3.5" /> @{handle}</span>{/if}
 						</span>
 					</span>
 				</span>
@@ -429,16 +519,12 @@
 		</div>
 	</header>
 
-	<main class="flex flex-col relative w-full pt-16 pb-28 md:pb-16 bg-surface min-h-dvh">
+	<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
 		<div class="flex flex-col w-full relative md:max-w-3xl md:mx-auto">
 			<!-- cover -->
-			<div class="relative w-full h-44 overflow-hidden">
-				<div class="w-full h-full" style="background: linear-gradient(140deg, #312e81 0%, #1e1b4b 45%, #0b1326 100%);"></div>
+			<div class="relative w-full h-44 overflow-hidden" style="background: linear-gradient(140deg, #312e81 0%, #1e1b4b 45%, #0b1326 100%);">
+				{#if bannerPhoto}<img src={bannerPhoto} alt="Profile banner" class="absolute inset-0 w-full h-full object-cover" style={bannerImageStyle} />{/if}
 				<div class="absolute inset-0 bg-gradient-to-b from-surface/20 via-surface/60 to-surface"></div>
-				<div class="absolute top-3 left-4 flex items-center gap-2 bg-surface-container/70 backdrop-blur-md px-3 py-1.5 rounded-full shadow-md">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>
-					<span class="font-code text-label-code text-accent-emerald tracking-wide uppercase">PWA Sync</span>
-				</div>
 			</div>
 
 			<div class="px-gutter -mt-14 relative z-10 flex flex-col">
@@ -446,7 +532,7 @@
 					<div class="relative">
 						<div class="w-24 h-24 rounded-full overflow-hidden shadow-2xl p-0.5 bg-gradient-to-tr from-primary to-accent-emerald">
 							<div class="w-full h-full rounded-full bg-surface-container flex items-center justify-center">
-								<Avatar name={name} size="xl" />
+								<Avatar name={name} src={avatarPhoto} imageStyle={avatarImageStyle} size="xl" />
 							</div>
 						</div>
 						{#if session}
@@ -455,9 +541,6 @@
 							</span>
 						{/if}
 					</div>
-					<span class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high text-on-surface-variant text-label-badge shadow-sm mb-2">
-						<WifiOff class="w-3.5 h-3.5 text-accent-emerald" /> Ticket Vault Ready
-					</span>
 				</div>
 
 				<div class="mt-3 flex flex-col">
@@ -471,18 +554,17 @@
 							<span class="px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-label-badge">Guest</span>
 						{/if}
 					</div>
-					<p class="font-code text-label-code text-outline mt-0.5">@{handle} • Lagos & Global Remote</p>
+					<p class="font-code text-label-code text-outline mt-0.5">@{handle} • {city}</p>
 				</div>
 
-				<p class="text-body-md text-on-surface-variant mt-2.5 leading-relaxed">{editBio}</p>
+				<p class="text-body-md text-on-surface-variant mt-2.5 leading-relaxed">{bio}</p>
+				{#if interests.length}<div class="flex flex-wrap gap-1.5 mt-2">{#each interests as interest (interest)}<span class="text-label-badge px-2 py-1 rounded-full bg-primary/10 text-primary">{interest}</span>{/each}</div>{/if}
 
 				<div class="flex items-center gap-4 mt-2.5 flex-wrap">
 					<span class="inline-flex items-center gap-1 text-label-badge text-tertiary">
 						<Globe class="w-3.5 h-3.5" /> owltside.app/@{handle}
 					</span>
-					<span class="inline-flex items-center gap-1 text-label-badge text-on-surface-variant">
-						<Link2 class="w-3.5 h-3.5" /> @{handle}
-					</span>
+					{#if profileLink}<a href={profileLink} target="_blank" rel="noreferrer" class="inline-flex items-center gap-1 text-label-badge text-on-surface-variant hover:text-primary"><Link2 class="w-3.5 h-3.5" /> {profileLink}</a>{:else}<span class="inline-flex items-center gap-1 text-label-badge text-on-surface-variant"><Link2 class="w-3.5 h-3.5" /> @{handle}</span>{/if}
 				</div>
 
 				<!-- stats -->
@@ -503,7 +585,7 @@
 
 				<!-- actions -->
 				<div class="grid grid-cols-12 gap-2 mt-3.5">
-					<button class="col-span-5 h-11 px-3 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm" onclick={() => (editOpen = true)}>
+					<button class="col-span-5 h-11 px-3 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm" onclick={openEdit}>
 						<Edit class="w-4 h-4" /><span>Edit Profile</span>
 					</button>
 					<button class="col-span-4 h-11 px-3 rounded-full bg-primary-container text-on-primary-container text-label-badge flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all" onclick={() => (calendarOpen = !calendarOpen)}>
@@ -567,18 +649,78 @@
 
 <Sheet open={editOpen} title="Edit profile" close={() => (editOpen = false)}>
 	{#snippet footer()}
-		<button class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md" onclick={() => { editOpen = false; toast('Profile updated', 'success'); }}>
+		<button type="submit" form="profile-edit-form" class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md">
 			Save changes
 		</button>
 	{/snippet}
-	<div class="flex flex-col gap-space-md">
-		<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
-			Display name
-			<input bind:value={editName} class="h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />
-		</label>
-		<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
-			Bio
-			<textarea bind:value={editBio} rows="3" class="px-4 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline"></textarea>
-		</label>
-	</div>
+	<form id="profile-edit-form" method="POST" action="?/updateProfile" enctype="multipart/form-data" use:enhance={handleProfileEnhance} class="flex flex-col gap-space-md">
+		{#if editError}<p class="rounded-lg bg-error/10 border border-error/30 px-3 py-2 text-body-sm text-error" role="alert">{editError}</p>{/if}
+
+		<section class="rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3">
+			<h3 class="text-body-sm font-semibold text-on-surface mb-3">Profile photo</h3>
+			<div class="flex items-center gap-3">
+				<Avatar name={editName || name} src={avatarPhoto} imageStyle={avatarImageStyle} size="xl" />
+				<label class="inline-flex items-center justify-center h-10 px-4 rounded-full border border-surface-glass-border text-body-sm font-medium text-on-surface hover:bg-surface-container-high cursor-pointer">
+					Choose photo
+					<input type="file" accept="image/*" class="sr-only" aria-label="Upload profile photo" onchange={(event) => handleImageUpload(event, 'avatar')} />
+				</label>
+			</div>
+			<div class="grid grid-cols-2 gap-3 mt-3">
+				<label class="text-xs text-on-surface-variant">Zoom / resize<input type="range" min="1" max="2" step="0.05" bind:value={profileAppearance.value.avatarZoom} class="block w-full mt-1 accent-primary" /></label>
+				<label class="text-xs text-on-surface-variant">Vertical crop<input type="range" min="0" max="100" step="1" bind:value={profileAppearance.value.avatarCropY} class="block w-full mt-1 accent-primary" /></label>
+			</div>
+		</section>
+
+		<section class="rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3">
+			<h3 class="text-body-sm font-semibold text-on-surface mb-3">Profile banner</h3>
+			<div class="relative h-24 rounded-lg overflow-hidden bg-gradient-to-r from-primary/50 via-[#312e81] to-surface-base">
+				{#if bannerPhoto}<img src={bannerPhoto} alt="Banner crop preview" class="absolute inset-0 w-full h-full object-cover" style={bannerImageStyle} />{/if}
+			</div>
+			<label class="inline-flex items-center justify-center h-10 px-4 mt-3 rounded-full border border-surface-glass-border text-body-sm font-medium text-on-surface hover:bg-surface-container-high cursor-pointer">
+				Choose banner
+				<input type="file" accept="image/*" class="sr-only" aria-label="Upload profile banner" onchange={(event) => handleImageUpload(event, 'banner')} />
+			</label>
+			<div class="grid grid-cols-2 gap-3 mt-3">
+				<label class="text-xs text-on-surface-variant">Zoom / resize<input type="range" min="1" max="2.5" step="0.05" bind:value={profileAppearance.value.bannerZoom} class="block w-full mt-1 accent-primary" /></label>
+				<label class="text-xs text-on-surface-variant">Vertical crop<input type="range" min="0" max="100" step="1" bind:value={profileAppearance.value.bannerCropY} class="block w-full mt-1 accent-primary" /></label>
+			</div>
+		</section>
+
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+			<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
+				Full name
+				<input name="name" bind:value={editName} required minlength="2" maxlength="80" autocomplete="name" class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />
+			</label>
+			<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
+				Username
+				<span class="relative flex items-center"><span class="absolute left-3 text-on-surface-variant">@</span><input name="username" bind:value={editUsername} readonly={usernameCooldownDays > 0} required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]+" autocomplete="username" class="w-full h-11 pl-8 pr-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline read-only:opacity-60" /></span>
+				<span class="text-xs text-on-surface-variant">{#if usernameCooldownDays > 0}You can change this again in {usernameCooldownDays} days.{:else}Usernames can be changed once every 30 days.{/if}</span>
+			</label>
+			<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant sm:col-span-2">
+				Bio <span class="text-xs">{editBio.length}/200</span>
+				<textarea name="bio" bind:value={editBio} rows="3" maxlength="200" class="px-3 py-2.5 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline"></textarea>
+			</label>
+			<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
+				City
+				<input name="city" bind:value={editCity} maxlength="80" autocomplete="address-level2" placeholder="Lagos" class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />
+			</label>
+			<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
+				Link
+				<input name="link" bind:value={editLink} type="text" inputmode="url" placeholder="https://your-site.com" class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />
+			</label>
+		</div>
+
+		<fieldset>
+			<legend class="text-body-sm font-semibold text-on-surface mb-2">Interests</legend>
+			<div class="flex flex-wrap gap-2">
+				{#each interestChoices as interest (interest)}
+					<label class="cursor-pointer">
+						<input type="checkbox" name="interests" value={interest} checked={editInterests.includes(interest)} onchange={() => toggleInterest(interest)} class="sr-only" />
+						<span class="block px-3 py-1.5 rounded-full border text-body-sm {editInterests.includes(interest) ? 'border-primary bg-primary/15 text-primary' : 'border-surface-glass-border bg-surface-container-high text-on-surface-variant'}">{interest}</span>
+					</label>
+				{/each}
+			</div>
+			<p class="text-xs text-on-surface-variant mt-2">Choose up to 12 interests to personalize event discovery.</p>
+		</fieldset>
+	</form>
 </Sheet>

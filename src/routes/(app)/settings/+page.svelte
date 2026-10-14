@@ -18,10 +18,12 @@
 		WifiOff
 	} from '@lucide/svelte';
 	import TopBar from '$components/TopBar.svelte';
+	import SettingsDetails from '$components/SettingsDetails.svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import CurrencyPill from '$components/CurrencyPill.svelte';
 	import { page } from '$app/state';
 	import { toast } from '$lib/state/toast.svelte';
+	import { appSettings } from '$lib/state/settings.svelte';
 
 	let { data } = $props();
 	const session = $derived(page.data.session);
@@ -29,8 +31,6 @@
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
 	let role = $state<'attendee' | 'guest' | 'organizer'>('attendee');
-	let pushEnabled = $state(true);
-	let offlineWallet = $state(true);
 
 	const roles = [
 		{ id: 'attendee', label: 'Attendee', icon: Ticket, sub: 'Wallet, drops & gate passes' },
@@ -240,10 +240,10 @@
 						</span>
 						<button
 							role="switch"
-							aria-checked={pushEnabled}
+							aria-checked={appSettings.value.notifications.pushEnabled}
 							aria-label="Push notifications"
-							class="w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors {pushEnabled ? 'bg-primary-container border-primary/50 text-on-primary-container' : 'bg-surface-bright border-surface-glass-border text-transparent'}"
-							onclick={() => (pushEnabled = !pushEnabled)}
+							class="w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors {appSettings.value.notifications.pushEnabled ? 'bg-primary-container border-primary/50 text-on-primary-container' : 'bg-surface-bright border-surface-glass-border text-transparent'}"
+							onclick={() => (appSettings.value.notifications.pushEnabled = !appSettings.value.notifications.pushEnabled)}
 						>
 							<CheckCheck class="w-3 h-3" />
 						</button>
@@ -258,10 +258,10 @@
 						</span>
 						<button
 							role="switch"
-							aria-checked={offlineWallet}
+							aria-checked={appSettings.value.storage.offlineMode}
 							aria-label="Offline wallet cache"
-							class="w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors {offlineWallet ? 'bg-primary-container border-primary/50 text-on-primary-container' : 'bg-surface-bright border-surface-glass-border text-transparent'}"
-							onclick={() => (offlineWallet = !offlineWallet)}
+							class="w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors {appSettings.value.storage.offlineMode ? 'bg-primary-container border-primary/50 text-on-primary-container' : 'bg-surface-bright border-surface-glass-border text-transparent'}"
+							onclick={() => (appSettings.value.storage.offlineMode = !appSettings.value.storage.offlineMode)}
 						>
 							<CheckCheck class="w-3 h-3" />
 						</button>
@@ -320,6 +320,10 @@
 		</div>
 	</div>
 
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pb-10">
+		<SettingsDetails />
+	</div>
+
 	<footer class="mt-4 border-t border-surface-glass-border">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
 			<span class="flex items-center gap-3">
@@ -339,9 +343,15 @@
 </div>
 
 <div class="md:hidden">
-	<TopBar back title="Settings" subtitle="Identity, preferences & security" />
+	<TopBar back title="Settings" subtitle="Identity, preferences & security">
+		{#snippet right()}
+			<button aria-label="Sync preferences" onclick={() => toast('Preferences synced to mesh node 0x7E3', 'success')} class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container">
+				<RefreshCw class="w-4.5 h-4.5" />
+			</button>
+		{/snippet}
+	</TopBar>
 
-	<main class="flex-1 flex flex-col relative w-full pt-16 pb-28 md:pb-16 bg-surface min-h-dvh">
+	<main class="flex-1 flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
 		<div class="flex flex-col w-full md:max-w-2xl md:mx-auto pb-10">
 			<!-- snapshot -->
 			<section class="px-margin pt-space-sm pb-space-md">
@@ -419,14 +429,14 @@
 						<p class="text-body-md text-on-surface font-medium">Push notifications</p>
 						<p class="text-body-sm text-on-surface-variant">Drops, gate updates & replies</p>
 					</div>
-					<input type="checkbox" bind:checked={pushEnabled} class="w-5 h-5 accent-[#c0c1ff]" />
+					<input type="checkbox" checked={appSettings.value.notifications.pushEnabled} onchange={() => (appSettings.value.notifications.pushEnabled = !appSettings.value.notifications.pushEnabled)} class="w-5 h-5 accent-[#c0c1ff]" />
 				</label>
 				<label class="flex items-center justify-between bg-surface-container rounded-xl p-4 cursor-pointer">
 					<div>
 						<p class="text-body-md text-on-surface font-medium flex items-center gap-1.5"><WifiOff class="w-4 h-4 text-accent-emerald" /> Offline wallet cache</p>
 						<p class="text-body-sm text-on-surface-variant">Keep HMAC passes on-device</p>
 					</div>
-					<input type="checkbox" bind:checked={offlineWallet} class="w-5 h-5 accent-[#c0c1ff]" />
+					<input type="checkbox" checked={appSettings.value.storage.offlineMode} onchange={() => (appSettings.value.storage.offlineMode = !appSettings.value.storage.offlineMode)} class="w-5 h-5 accent-[#c0c1ff]" />
 				</label>
 			</section>
 
@@ -458,6 +468,19 @@
 				{/if}
 			</section>
 
+			<!-- active desktop session-node registry parity -->
+			<section class="px-margin mb-space-lg flex flex-col gap-space-xs">
+				<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Active Session Nodes</h2><span class="{MONO} text-on-surface-variant">Mesh Registry</span></div>
+				<div class="flex flex-col gap-2">
+					{#each sessionNodes as [name, sub, ms], i}
+						<div class="flex items-center justify-between gap-3 rounded-xl border border-surface-glass-border bg-surface-container px-4 py-3">
+							<span class="flex items-center gap-2.5 min-w-0"><span class="w-2 h-2 rounded-full shrink-0 {i === 0 ? 'bg-primary glow-primary' : 'bg-accent-emerald'}"></span><span class="min-w-0"><span class="block text-body-sm font-medium text-on-surface truncate">{name}</span><span class="block text-label-badge text-on-surface-variant truncate">{sub}</span></span></span>
+							<span class="{MONO} text-on-surface-variant shrink-0">{ms}</span>
+						</div>
+					{/each}
+				</div>
+			</section>
+
 			<!-- security -->
 			<section class="px-margin flex flex-col gap-space-xs">
 				<h2 class="font-display text-headline-md text-on-surface flex items-center gap-1.5">
@@ -472,7 +495,19 @@
 						<p class="text-body-sm text-on-surface-variant">256-bit TLS • rotating HMAC gate tokens • PWA v1.0</p>
 					</div>
 				</div>
+				<div class="flex flex-col gap-2 rounded-xl border border-surface-glass-border bg-surface-container p-4">
+					{#each securityRows as [label, value]}
+						<div class="flex items-center justify-between gap-3 text-body-sm"><span class="{MONO} text-on-surface-variant">{label}</span><span class="{MONO} text-on-surface">{value}</span></div>
+					{/each}
+				</div>
+				<div class="flex items-center justify-between gap-3 rounded-xl border border-surface-glass-border bg-surface-container-high px-4 py-3">
+					<span class="flex items-center gap-2 min-w-0 {MONO} text-on-surface-variant"><ShieldCheck class="w-4 h-4 text-accent-emerald shrink-0" />Secure channel: RSA-4096 / TLS 1.3</span>
+					<span class="{MONO} text-outline-variant shrink-0">v2.4.1</span>
+				</div>
 			</section>
+		</div>
+		<div class="px-margin pb-10">
+			<SettingsDetails />
 		</div>
 	</main>
 </div>

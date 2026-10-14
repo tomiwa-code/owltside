@@ -31,9 +31,9 @@
 
 <svelte:head><title>{data.event.title} • Manage • Owltside</title></svelte:head>
 
-<main class="flex flex-col relative w-full pt-3 pb-28 md:pb-16 bg-surface min-h-dvh">
+<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
 	<!-- top bar -->
-	<header class="fixed top-0 left-0 w-full z-30 bg-surface/85 backdrop-blur-xl border-b border-surface-glass-border">
+	<header class="fixed top-0 left-0 w-full z-30 bg-surface/85 backdrop-blur-xl border-b border-surface-glass-border pt-safe">
 		<div class="flex items-center px-gutter h-16 md:max-w-3xl md:mx-auto w-full gap-2">
 			<a href="/organizer" aria-label="Back to console" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface transition-colors">
 				<ArrowLeft class="w-5.5 h-5.5" />
@@ -48,7 +48,7 @@
 		</div>
 	</header>
 
-	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md pt-18">
+	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md pt-space-sm">
 		<!-- mini stats -->
 		<div class="grid grid-cols-3 gap-2">
 			<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-3 text-center">

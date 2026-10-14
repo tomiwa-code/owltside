@@ -36,10 +36,12 @@ code paths switch to the live backend — no component changes.
    - `003_functions.sql` — signup trigger, conversation preview trigger, atomic `create_order` RPC
    - `004_realtime.sql` — realtime publication for chat + notifications
    - `005_seed.sql` — starter profiles/events
+   - `006_organizer.sql` — gate config, check-ins and organizer policies
+   - `007_profile_editing.sql` — banner, interests and 30-day username cooldown fields
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
-Auth is email OTP (`signInWithOtp` + `verifyOtp`) via `@supabase/ssr` cookies.
+Auth is email OTP (`signInWithOtp` + `verifyOtp`) via `@supabase/ssr` cookies. Google sign-in uses Supabase OAuth; enable the Google provider and add `/auth/callback` to the allowed redirect URLs.
 Chat uses **Supabase Realtime channels** on `messages` inserts (no separate
 socket server); demo mode falls back to `useQuery(refetchInterval)` polling.
 

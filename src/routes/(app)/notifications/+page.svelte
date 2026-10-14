@@ -24,7 +24,6 @@
 	import EmptyState from '$components/EmptyState.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import { useQuery, queryClient } from '$lib/state/query.svelte';
-	import { toast } from '$lib/state/toast.svelte';
 	import { fmtRelative, fmtTime } from '$lib/utils/dates';
 	import type { NotificationItem } from '$lib/types';
 
@@ -39,37 +38,10 @@
 		data.items
 	);
 
-	// ── mobile activity-hub state (unchanged) ──
-	let filter = $state<'all' | 'gate' | 'drops' | 'messages'>('all');
-
-	const kindToFilter: Record<NotificationItem['kind'], string> = {
-		ticket: 'gate',
-		system: 'gate',
-		event: 'drops',
-		promo: 'drops',
-		social: 'messages'
-	};
-	const iconFor: Record<NotificationItem['kind'], any> = {
-		ticket: QrCode,
-		system: Settings2,
-		event: Flame,
-		promo: Ticket,
-		social: MessageSquare
-	};
-	const colorFor: Record<NotificationItem['kind'], string> = {
-		ticket: 'bg-tertiary-container text-on-tertiary-container',
-		system: 'bg-surface-container-highest text-on-surface',
-		event: 'bg-secondary-container text-on-secondary-container',
-		promo: 'bg-primary-container text-on-primary-container',
-		social: 'bg-accent-emerald/20 text-accent-emerald'
-	};
-
-	const list = $derived((items.data ?? []).filter((n) => filter === 'all' || kindToFilter[n.kind] === filter));
-	const unread = $derived((items.data ?? []).filter((n) => !n.read).length);
-
-	// ── desktop audit-stream state ──
+	// Desktop and mobile share filter, dismissal, and delivery-preference state.
 	let deskFilter = $state<'all' | 'tickets' | 'security' | 'events' | 'organizers'>('all');
 	let dismissed = $state<string[]>([]);
+	let showMobilePrefs = $state(false);
 
 	const kindToDesk: Record<NotificationItem['kind'], Exclude<typeof deskFilter, 'all'>> = {
 		ticket: 'tickets',
@@ -247,7 +219,7 @@
 			<button
 				class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors"
 				aria-label="Alert preferences"
-				onclick={() => toast('Alert routing rails ship with the audit node v2', 'info')}
+				onclick={() => document.getElementById('delivery-pipelines')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
 			>
 				<SlidersHorizontal class="w-4 h-4" />
 			</button>
@@ -299,7 +271,7 @@
 				</div>
 			</section>
 
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5">
+			<section id="delivery-pipelines" class="rounded-xl border border-surface-glass-border bg-surface-container p-5">
 				<div class="flex items-center justify-between">
 					<span class="{MONO} text-on-surface-variant">Delivery_Pipelines</span>
 					<Network class="w-4 h-4 text-on-surface-variant" />
@@ -428,59 +400,100 @@
 </div>
 
 <div class="md:hidden">
-	<TopBar title="Activity Hub" subtitle="Passes, drops & messages" />
+	<TopBar title="Activity Hub" subtitle="Passes, drops & messages">
+		{#snippet right()}
+			<button aria-label="Delivery preferences" aria-expanded={showMobilePrefs} onclick={() => (showMobilePrefs = !showMobilePrefs)} class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container">
+				<SlidersHorizontal class="w-5 h-5" />
+			</button>
+		{/snippet}
+	</TopBar>
 
-	<main class="flex-1 flex flex-col relative w-full pt-16 pb-28 md:pb-16 bg-surface min-h-dvh">
+	<main class="flex-1 flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
 		<div class="flex flex-col w-full md:max-w-2xl md:mx-auto pb-8">
-			<div class="px-space-md pt-space-md pb-space-sm flex items-center justify-between">
-				<div class="flex items-center gap-space-xs">
+			<div class="px-space-md pt-space-md pb-space-sm flex items-center justify-between gap-2">
+				<div class="flex items-center gap-space-xs min-w-0">
 					<span class="font-display text-headline-md text-on-surface">Activity Hub</span>
-					{#if unread > 0}
-						<span class="px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container text-label-badge tracking-wider">{unread} NEW</span>
+					{#if deskUnread > 0}
+						<span class="px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container text-label-badge tracking-wider shrink-0">{deskUnread} NEW</span>
 					{/if}
 				</div>
 				<form method="POST" action="?/markAll" use:enhance={() => async ({ result }) => {
 					if (result.type === 'success') queryClient.invalidate('notifications');
 				}}>
-					<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-high hover:bg-surface-bright text-primary text-body-sm transition-all active:scale-95">
-						<CheckCheck class="w-4 h-4" /><span>Mark all as read</span>
+					<button disabled={deskUnread === 0} class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-high hover:bg-surface-bright text-primary text-body-sm transition-all active:scale-95 disabled:opacity-40 whitespace-nowrap">
+						<CheckCheck class="w-4 h-4" /><span>Mark all read</span>
 					</button>
 				</form>
 			</div>
 
 			<div class="w-full overflow-x-auto px-space-md py-space-xs flex gap-space-xs scrollbar-none">
-				{#each [['all', 'All Notifications'], ['gate', 'Gate & Passes'], ['drops', 'Event Drops'], ['messages', 'Messages']] as [id, label]}
+				{#each deskChips as [id, label, count]}
 					<button
-						class="whitespace-nowrap px-4 py-2 rounded-full text-body-sm transition-all {filter === id ? 'bg-primary-container text-on-primary font-medium shadow-sm' : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'}"
-						onclick={() => (filter = id as typeof filter)}
+						class="whitespace-nowrap flex items-center gap-2 px-3.5 py-2 rounded-full text-label-badge transition-all {deskFilter === id ? 'bg-primary-container text-on-primary-container font-medium shadow-sm' : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'}"
+						onclick={() => (deskFilter = id)}
 					>
-						{label}
+						<span>{label}</span><span class="font-code text-[10px] opacity-75">{count}</span>
 					</button>
 				{/each}
 			</div>
 
-			<div class="flex flex-col gap-space-sm px-space-md mt-space-md">
-				{#each list as n (n.id)}
-					{@const Icon = iconFor[n.kind]}
-					<div class="relative p-space-md rounded-xl bg-surface-container transition-all hover:bg-surface-container-high">
-						<div class="flex items-start gap-space-sm">
-							<div class="relative shrink-0">
-								<div class="w-11 h-11 rounded-full flex items-center justify-center shadow-md {colorFor[n.kind]}">
-									<Icon class="w-6 h-6" />
-								</div>
-								{#if !n.read}
-									<span class="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-tertiary ring-2 ring-surface-container animate-pulse"></span>
-								{/if}
-							</div>
-							<div class="flex-1 min-w-0">
-								<div class="flex items-center justify-between gap-2">
-									<span class="font-display text-body-lg font-bold text-on-surface truncate">{n.title}</span>
-									<span class="shrink-0 text-body-sm text-on-surface-variant">{fmtRelative(n.at)}</span>
-								</div>
-								<p class="text-body-md text-on-surface-variant mt-1">{n.body}</p>
-							</div>
-						</div>
+			<div class="px-space-md mt-space-sm flex flex-col gap-space-sm">
+				<section class="rounded-2xl border border-surface-glass-border bg-surface-container p-space-md">
+					<div class="flex items-center justify-between gap-2">
+						<span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Telemetry status</span>
+						<span class="flex items-center gap-1.5 text-label-badge text-accent-emerald"><span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>Synced</span>
 					</div>
+					<div class="grid grid-cols-2 gap-2 pt-3">
+						<div class="rounded-xl bg-surface-container-high border border-surface-glass-border p-3"><span class="font-code text-headline-md text-on-surface">{pad2(deskUnread)}</span><span class="block text-label-badge text-on-surface-variant pt-1">Pending unread</span></div>
+						<div class="rounded-xl bg-surface-container-high border border-surface-glass-border p-3"><span class="font-code text-headline-md text-on-surface">{pad2(deskWeek)}</span><span class="block text-label-badge text-on-surface-variant pt-1">Recorded 7 days</span></div>
+					</div>
+					<div class="flex items-center justify-between pt-3 text-label-badge text-on-surface-variant"><span>Mesh queue flow</span><span class="font-code">4.2 msg/sec</span></div>
+					<div class="flex items-end gap-1 h-8 pt-1" aria-hidden="true">{#each meshBars as height, i}<span class="flex-1 rounded-sm {i === 6 ? 'bg-primary' : i === 5 ? 'bg-primary/50' : 'bg-surface-container-highest'}" style="height: {height}%"></span>{/each}</div>
+				</section>
+
+				{#if showMobilePrefs}
+					<section class="rounded-2xl border border-surface-glass-border bg-surface-container p-space-md">
+						<div class="flex items-center justify-between gap-2"><span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Delivery pipelines</span><Network class="w-4 h-4 text-primary" /></div>
+						<div class="flex flex-col gap-2 pt-3">
+							{#each pipes as p}
+								{@const PIcon = p.icon}
+								<div class="flex items-center gap-3 rounded-xl border border-surface-glass-border bg-surface-container-high px-3 py-2.5">
+									<span class="w-9 h-9 rounded-lg bg-surface-container-highest flex items-center justify-center shrink-0"><PIcon class="w-4 h-4 text-on-surface-variant" /></span>
+									<span class="flex-1 min-w-0"><span class="block text-body-sm font-medium text-on-surface">{p.label}</span><span class="block text-label-badge text-on-surface-variant">{p.sub}</span></span>
+									<button type="button" role="switch" aria-checked={p.on} aria-label={p.label} onclick={() => (p.on = !p.on)} class="w-11 h-6 rounded-full p-0.5 transition-colors {p.on ? 'bg-primary' : 'bg-surface-container-highest'}"><span class="block w-5 h-5 rounded-full bg-white transition-transform {p.on ? 'translate-x-5' : ''}"></span></button>
+								</div>
+							{/each}
+						</div>
+						<div class="flex items-center justify-between pt-3 text-label-badge text-on-surface-variant"><span>Latency SLA</span><span class="font-code">&lt; 180ms Guaranteed</span></div>
+						<div class="mt-3 rounded-xl bg-surface-container-high px-3 py-2.5 flex items-center gap-2 text-label-badge text-on-surface-variant"><ShieldCheck class="w-4 h-4 text-accent-emerald" />Secure channel: RSA-4096 / TLS 1.3</div>
+					</section>
+				{/if}
+			</div>
+
+			<div class="flex flex-col gap-space-md px-space-md mt-space-md">
+				{#each deskGroups as group (group.key)}
+					<section class="flex flex-col gap-space-xs">
+						<div class="flex items-center justify-between px-1"><span class="flex items-center gap-2 text-label-badge uppercase tracking-wider text-on-surface"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span>{group.label}</span><span class="text-label-badge text-on-surface-variant">{group.right}</span></div>
+						{#each group.rows as n (n.id)}
+							{@const meta = deskMeta[n.kind]}
+							{@const Icon = meta.icon}
+							<article class="relative p-space-md pr-12 rounded-xl bg-surface-container border border-surface-glass-border border-l-[3px] transition-all {n.read ? 'border-l-transparent' : 'border-l-primary'}">
+								<button class="absolute top-2 right-2 w-9 h-9 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-surface-container-high" aria-label="Dismiss notification" onclick={() => (dismissed = [...dismissed, n.id])}><X class="w-4 h-4" /></button>
+								<div class="flex items-start gap-3">
+									<span class="w-10 h-10 rounded-xl bg-surface-container-high border border-surface-glass-border flex items-center justify-center shrink-0"><Icon class="w-5 h-5 text-primary" /></span>
+									<div class="flex-1 min-w-0">
+										<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-label-badge"><span class="text-on-surface-variant uppercase tracking-wider">{meta.code}</span><span class="text-outline-variant">{meta.source}</span>{#if meta.tag}<span class="text-accent-emerald">· {meta.tag}</span>{/if}</div>
+										<h3 class="font-display text-body-md font-bold text-on-surface mt-1">{n.title}</h3>
+										<p class="text-body-sm text-on-surface-variant mt-1">{n.body}</p>
+										<div class="flex items-center justify-between gap-2 mt-3 flex-wrap">
+											{#if meta.action}<a href={meta.action.href} class="h-9 px-3 rounded-lg {meta.action.solid ? 'bg-primary text-on-primary' : 'bg-surface-container-high border border-surface-glass-border text-on-surface'} text-label-badge font-semibold flex items-center">{meta.action.label}</a>{/if}
+											<span class="text-label-badge text-on-surface-variant">{deskTime(n)}</span>
+										</div>
+									</div>
+								</div>
+							</article>
+						{/each}
+					</section>
 				{:else}
 					<EmptyState title="All quiet" sub="New passes, drops and replies will land here.">
 						{#snippet icon()}<Bell class="w-6 h-6" />{/snippet}

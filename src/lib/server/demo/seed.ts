@@ -169,7 +169,7 @@ export const events: EventItem[] = [
 			{ id: 'tier-general', name: 'General', price: 15_000, sold: 1_140, capacity: 1_300, benefits: 'Beach access + one drink' },
 			{ id: 'tier-vip', name: 'VIP Deck', price: 40_000, sold: 190, capacity: 200, benefits: 'Raised deck, open bar till 9pm' }
 		],
-		faqs: [{ q: 'Can I pay at the gate?', a: 'Only if passes remain — online is guaranteed.' }],
+		faqs: [{ q: 'Can I pay at the gate?', a: 'Only if passes remain — advance purchase is guaranteed.' }],
 		policies: ['18+ only', 'No outside food or drinks'],
 		trendingRank: 4,
 		viewsToday: 1_870,

@@ -7,7 +7,7 @@
 	 * unless `railOnDesktop` is false — routes with their own desktop top bar
 	 * (the desktop home feed) keep it mobile-only.
 	 */
-	let { railOnDesktop = true }: { railOnDesktop?: boolean } = $props();
+	let { railOnDesktop = true, mobileHidden = false }: { railOnDesktop?: boolean; mobileHidden?: boolean } = $props();
 
 	const items = [
 		{ href: '/home', label: 'Home', icon: Sparkles },
@@ -24,9 +24,11 @@
 
 <nav
 	class="fixed bottom-0 inset-x-0 z-50 pb-safe bg-surface/80 backdrop-blur-xl border-t border-surface-glass-border
-		{railOnDesktop
-			? 'md:inset-x-auto md:left-0 md:top-0 md:bottom-0 md:w-20 md:border-t-0 md:border-r md:pt-safe'
-			: 'md:hidden'}"
+		{mobileHidden
+			? 'hidden md:hidden'
+			: railOnDesktop
+				? 'md:inset-x-auto md:left-0 md:top-0 md:bottom-0 md:w-20 md:border-t-0 md:border-r md:pt-safe'
+				: 'md:hidden'}"
 	aria-label="Primary"
 >
 	<div class="flex justify-around items-center h-16 px-space-xs md:h-full md:flex-col md:justify-start md:gap-2 md:pt-6">

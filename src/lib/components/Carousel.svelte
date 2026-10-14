@@ -19,7 +19,7 @@
 	let embla: EmblaCarouselType | undefined = $state();
 
 	$effect(() => {
-		if (!viewport) return;
+		if (!viewport || items.length === 0) return;
 		const api = EmblaCarousel(viewport, { align: 'start', loop: false, ...options });
 		embla = api;
 		return () => {
@@ -33,10 +33,10 @@
 	}
 </script>
 
-<div class="overflow-hidden {cls}">
-	<div bind:this={viewport} class="flex gap-space-sm touch-pan-y px-margin -mx-margin md:px-0 md:mx-0">
+<div class="w-full overflow-hidden {cls}" role="region" aria-label="Event slides">
+	<div bind:this={viewport} class="flex gap-space-sm touch-pan-y px-margin -mx-margin md:px-0 md:mx-0" style="touch-action: pan-y pinch-zoom;">
 		{#each items as item, i (i)}
-			<div class="snap-start shrink-0">{@render children(item, i)}</div>
+			<div class="snap-start shrink-0 w-[min(82vw,320px)] sm:w-[280px] h-full">{@render children(item, i)}</div>
 		{/each}
 	</div>
 </div>

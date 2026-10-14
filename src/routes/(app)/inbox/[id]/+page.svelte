@@ -146,16 +146,13 @@
 		<!-- chat panel -->
 		<section class="rounded-xl border border-surface-glass-border bg-surface-container flex flex-col overflow-hidden max-h-[calc(100dvh-8rem)] lg:sticky lg:top-24">
 			<div class="p-4 flex items-center gap-4 border-b border-surface-glass-border">
-				<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="lg" online={!!conv.online} />
+				<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="lg" />
 				<div class="flex-1 min-w-0">
 					<span class="flex items-center gap-2 min-w-0">
 						<span class="font-display text-headline-md text-on-surface truncate">{conv.peer.name}</span>
 						{#if conv.peer.verified}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" />{/if}
 					</span>
-					<span class="block text-body-sm text-on-surface-variant truncate pt-0.5">
-						{conv.peer.bio ?? `@${conv.peer.handle}`} •
-						<span class="{MONO} {conv.online ? 'text-accent-emerald' : 'text-on-surface-variant'}">{conv.online ? 'Online' : 'Away'}</span>
-					</span>
+					<span class="block text-body-sm text-on-surface-variant truncate pt-0.5">{conv.peer.bio ?? `@${conv.peer.handle}`}</span>
 				</div>
 				<div class="flex items-center gap-1 shrink-0">
 					{#each [Phone, Video, CalendarDays, MoreVertical] as Icon, i (i)}
@@ -315,20 +312,34 @@
 <div class="md:hidden">
 <TopBar back title={conv.peer.name} subtitle={conv.peer.verified ? 'Verified organiser' : `@${conv.peer.handle}`}>
 	{#snippet right()}
-		<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="sm" online={!!conv.online} />
+		<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="sm" />
 	{/snippet}
 </TopBar>
 
-<main class="flex flex-col flex-1 relative w-full pt-16 bg-surface min-h-dvh">
+<main class="flex flex-col flex-1 relative w-full pt-mobile-header bg-surface min-h-dvh">
 	<div class="flex flex-col w-full md:max-w-2xl md:mx-auto flex-1 pb-28 md:pb-24">
-		<div class="flex justify-center mt-space-xs">
-			<span class="inline-flex items-center gap-1.5 px-space-md py-1 rounded-full bg-surface-container-lowest text-on-surface-variant text-label-badge">
-				<Lock class="w-3.5 h-3.5 text-primary" /> End-to-end encrypted session • OWLTSIDE Mesh Gateway
+		<div class="flex justify-center mt-space-xs px-gutter">
+			<span class="inline-flex items-center gap-1.5 px-space-md py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant text-label-badge text-center">
+				<Lock class="w-3.5 h-3.5 text-primary shrink-0" /> End-to-end encrypted session • OWLTSIDE Mesh Gateway
 			</span>
+		</div>
+		<div class="mx-gutter mt-2 rounded-xl bg-surface-container-low border border-surface-glass-border p-3 flex items-center justify-between gap-2">
+			<span class="min-w-0">
+				<span class="block text-label-badge text-on-surface-variant">EVENT BRIEF</span>
+				<span class="block text-body-sm text-on-surface font-medium truncate">Pulse AI &amp; Web Summit 2025 · Keynote session</span>
+			</span>
+			<a href="/events/pulse-ai-summit-lagos" aria-label="Open event brief" class="h-9 px-3 rounded-full bg-primary/10 text-primary text-label-badge font-semibold flex items-center gap-1 shrink-0">Open <ArrowUpRight class="w-3.5 h-3.5" /></a>
+		</div>
+		<div class="mx-gutter mt-2 flex gap-2">
+			{#each [Phone, Video, CalendarDays] as Icon, i (i)}
+				<button type="button" class="h-10 flex-1 rounded-xl bg-surface-container border border-surface-glass-border text-on-surface-variant flex items-center justify-center gap-2 text-label-badge" onclick={() => toast('Call & schedule rails ship with the comms node v2', 'info')}>
+					<Icon class="w-4 h-4" />{i === 0 ? 'Call' : i === 1 ? 'Video' : 'Schedule'}
+				</button>
+			{/each}
 		</div>
 
 		<div bind:this={scroller} class="flex flex-col gap-space-md px-margin pt-space-xs overflow-y-auto flex-1 max-h-[calc(100dvh-16rem)]">
-			{#each messages.data ?? [] as m (m.id)}
+			{#each messages.data ?? [] as m, i (m.id)}
 				{@const mine = m.senderId === meId}
 				{#if mine}
 					<div class="flex flex-col items-end gap-1 max-w-[88%] self-end">
@@ -351,6 +362,19 @@
 						</div>
 					</div>
 				{/if}
+				{#if i === 1 && conv.peer.verified}
+					<div class="self-end w-full max-w-[92%] rounded-xl border border-surface-glass-border bg-surface-container-low overflow-hidden">
+						<div class="px-3 py-2.5 flex items-center justify-between gap-2 border-b border-surface-glass-border">
+							<span class="flex items-center gap-2 text-label-badge font-semibold text-on-surface"><ShieldCheck class="w-4 h-4 text-primary" /> VIP Speaker Access</span>
+							<span class="text-label-badge text-tertiary">Verified</span>
+						</div>
+						<div class="px-3 py-3 flex items-center justify-between gap-2">
+							<span><span class="block text-label-badge text-on-surface-variant">Pass identifier</span><span class="block text-body-sm font-semibold text-on-surface pt-1">Hall A · Stage 01</span></span>
+							<span class="text-right"><span class="block font-code text-label-badge text-on-surface">#SPK-9902</span><span class="block text-label-badge text-on-surface-variant pt-1">Fast-Pass Gate 2</span></span>
+						</div>
+						<a href="/tickets" class="border-t border-surface-glass-border px-3 py-2.5 bg-surface-base/40 text-primary text-label-badge font-semibold flex items-center justify-center gap-1">View gate pass <ArrowRight class="w-3.5 h-3.5" /></a>
+					</div>
+				{/if}
 			{/each}
 		</div>
 	</div>
@@ -367,6 +391,12 @@
 			}}
 		class="fixed bottom-0 inset-x-0 z-40 bg-surface/90 backdrop-blur-xl border-t border-surface-glass-border px-gutter py-3 pb-safe md:left-20"
 	>
+		<div class="max-w-2xl mx-auto mb-2 flex gap-2 overflow-x-auto scrollbar-none">
+			<span class="flex items-center gap-1.5 text-label-badge text-on-surface-variant shrink-0"><Zap class="w-3.5 h-3.5 text-accent-amber" /> Suggested:</span>
+			{#each suggested as suggestion (suggestion)}
+				<button type="button" onclick={() => (body = suggestion)} class="h-8 px-3 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface whitespace-nowrap shrink-0">{suggestion}</button>
+			{/each}
+		</div>
 		<div class="max-w-2xl mx-auto flex items-center gap-2">
 			<input
 				name="body"

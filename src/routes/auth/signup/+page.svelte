@@ -5,9 +5,7 @@
 		AtSign,
 		BadgeCheck,
 		Compass,
-		KeyRound,
 		Lock,
-		MoonStar,
 		ShieldCheck,
 		User,
 		UserPlus
@@ -16,7 +14,9 @@
 	let { form } = $props();
 	let email = $state('');
 	let name = $state('');
+	let username = $state('');
 	let terms = $state(false);
+	let ageConfirmed = $state(false);
 	const valid = $derived(/^\S+@\S+\.\S+$/.test(email));
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
@@ -43,7 +43,7 @@
 					<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
 					<span class="{MONO} text-on-surface-variant">Auth_Protocol // Onboard // NGA-LOS-01</span>
 				</div>
-				<h1 class="font-display text-display-hero text-on-surface">Join the night side.</h1>
+				<img src="/logo-stacked.png" alt="Owltside" class="w-52 max-h-48 object-contain self-start" />
 				<p class="text-body-lg text-on-surface-variant max-w-md">
 					One account for discovery, instant passes and offline gate entry. Passwordless
 					from day one — your mailbox is the only key the door needs.
@@ -107,6 +107,15 @@
 					</div>
 
 					<div class="flex flex-col gap-1.5">
+						<label class="{MONO} text-on-surface-variant" for="username-input-desktop">Username</label>
+						<div class="relative flex items-center">
+							<AtSign class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
+							<input id="username-input-desktop" name="username" type="text" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]+" placeholder="adaobi" bind:value={username} class="w-full h-12 bg-surface-base border border-surface-glass-border text-on-surface text-body-md rounded-lg pl-10 pr-4 placeholder:text-outline-variant focus:outline-none focus:border-primary/50 focus:bg-surface-container-low transition-colors" />
+						</div>
+						<p class="text-xs text-on-surface-variant">3–24 letters, numbers, or underscores.</p>
+					</div>
+
+					<div class="flex flex-col gap-1.5">
 						<label class="{MONO} text-on-surface-variant flex items-center justify-between" for="email-input-desktop">
 							<span>Email Address</span>
 							<span class="text-accent-emerald opacity-0 transition-opacity {valid ? 'opacity-100' : ''}">Valid</span>
@@ -132,11 +141,12 @@
 					</div>
 
 					<label class="flex items-start gap-2.5 cursor-pointer select-none">
-						<input type="checkbox" bind:checked={terms} required class="mt-0.5 w-4 h-4 rounded accent-[#c0c1ff]" />
-						<span class="text-body-sm text-on-surface-variant">
-							I agree to the <span class="text-primary font-medium">Terms</span> and
-							<span class="text-primary font-medium">Privacy Policy</span>, and I'm 18 or older.
-						</span>
+						<input type="checkbox" name="terms" value="accepted" bind:checked={terms} required class="mt-0.5 w-4 h-4 rounded accent-[#c0c1ff]" />
+						<span class="text-body-sm text-on-surface-variant">I agree to the <a href="/legal#terms" class="text-primary font-medium underline">Terms</a> and <a href="/legal#privacy" class="text-primary font-medium underline">Privacy Policy</a>.</span>
+					</label>
+					<label class="flex items-start gap-2.5 cursor-pointer select-none">
+						<input type="checkbox" name="ageConfirmed" value="confirmed" bind:checked={ageConfirmed} required class="mt-0.5 w-4 h-4 rounded accent-[#c0c1ff]" />
+						<span class="text-body-sm text-on-surface-variant">I am 18 years or older.</span>
 					</label>
 
 					{#if form?.error}
@@ -150,40 +160,17 @@
 
 					<button
 						class="w-full h-12 rounded-lg bg-primary text-on-primary text-body-md font-semibold flex items-center justify-center gap-2 transition-colors hover:bg-primary-container glow-primary disabled:opacity-40"
-						disabled={!terms}
+						disabled={!terms || !ageConfirmed}
 						type="submit"
 					>
 						<UserPlus class="w-4 h-4" />
 						<span>Create Account</span>
 					</button>
+					<button type="submit" formaction="?/google" formnovalidate disabled={!terms || !ageConfirmed} class="w-full h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md font-semibold flex items-center justify-center gap-2 hover:border-primary/40 disabled:opacity-40">
+						<svg class="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.9C6.2 7.3 8.9 5 12 5z" fill="#EA4335"></path><path d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5.1 3.7-8.8z" fill="#4285F4"></path><path d="M5.3 14.7c-.2-.7-.4-1.5-.4-2.4s.2-1.7.4-2.4L1.6 7c-.8 1.6-1.3 3.4-1.3 5.3s.5 3.7 1.3 5.3l3.7-2.9z" fill="#FBBC05"></path><path d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.3-6.7-5.3L1.6 16C3.5 19.8 7.4 23 12 23z" fill="#34A853"></path></svg>
+						Continue with Google
+					</button>
 				</form>
-
-				<div class="relative flex items-center justify-center">
-					<div class="w-full h-[1px] bg-surface-glass-border"></div>
-					<span class="absolute bg-surface-base px-3 {MONO} text-on-surface-variant">Or Continue With</span>
-				</div>
-
-				<div class="grid grid-cols-3 gap-3">
-					<button class="h-12 bg-surface-container border border-surface-glass-border hover:border-primary/40 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-colors text-on-surface" type="button" aria-label="Sign up with Google">
-						<svg class="w-5 h-5" viewBox="0 0 24 24">
-							<path d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.9C6.2 7.3 8.9 5 12 5z" fill="#EA4335"></path>
-							<path d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5.1 3.7-8.8z" fill="#4285F4"></path>
-							<path d="M5.3 14.7c-.2-.7-.4-1.5-.4-2.4s.2-1.7.4-2.4L1.6 7c-.8 1.6-1.3 3.4-1.3 5.3s.5 3.7 1.3 5.3l3.7-2.9z" fill="#FBBC05"></path>
-							<path d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.3-6.7-5.3L1.6 16C3.5 19.8 7.4 23 12 23z" fill="#34A853"></path>
-						</svg>
-						<span class="text-label-badge text-on-surface-variant">Google</span>
-					</button>
-					<button class="h-12 bg-surface-container border border-surface-glass-border hover:border-primary/40 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-colors text-on-surface" type="button" aria-label="Sign up with Apple">
-						<svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
-							<path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.32-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.68 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.88c.61-.74 1.02-1.77.91-2.8-.88.04-1.95.59-2.58 1.33-.56.64-1.04 1.69-.91 2.7.99.08 1.98-.5 2.58-1.23z"></path>
-						</svg>
-						<span class="text-label-badge text-on-surface-variant">Apple</span>
-					</button>
-					<button class="h-12 bg-surface-container border border-surface-glass-border hover:border-primary/40 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-colors text-on-surface" type="button" aria-label="Sign up with Passkey">
-						<KeyRound class="w-5 h-5" />
-						<span class="text-label-badge text-on-surface-variant">Passkey</span>
-					</button>
-				</div>
 
 				<a href="/home" class="w-full h-12 rounded-lg bg-surface-container border border-surface-glass-border hover:border-primary/40 transition-colors text-on-surface-variant flex items-center justify-between px-4">
 					<span class="flex items-center gap-2">
@@ -232,18 +219,15 @@
 			</a>
 			<h1 class="font-display text-headline-md font-semibold text-on-surface truncate">Create account</h1>
 		</div>
-		<img src="/logo.png" alt="Owltside" class="h-6 w-auto object-contain opacity-90" />
+		<img src="/owl-icon.png" alt="Owltside logo" class="h-7 w-7 object-contain opacity-90" />
 	</div>
 </header>
 
-<main class="flex-1 flex flex-col relative w-full pt-16 pb-safe bg-surface min-h-dvh">
+<main class="flex-1 flex flex-col relative w-full pt-mobile-header pb-safe bg-surface min-h-dvh">
 	<div class="flex flex-col w-full px-gutter md:max-w-lg md:mx-auto pb-space-xl">
 		<div class="relative w-full rounded-xl bg-surface-container border border-surface-glass-border p-space-lg mt-space-sm mb-space-md">
 			<div class="flex flex-col items-center text-center">
-				<div class="relative flex items-center justify-center w-14 h-14 rounded-full bg-[#222a3d] border border-surface-glass-border mb-space-sm">
-					<MoonStar class="w-7 h-7 text-on-surface" />
-				</div>
-				<p class="font-display text-headline-lg-mobile text-on-surface font-semibold">Join the night side</p>
+				<img src="/logo-stacked.png" alt="Owltside" class="w-36 max-h-28 object-contain mb-space-sm" />
 				<p class="text-body-sm text-outline max-w-[280px] mt-0.5">
 					One account for discovery, instant passes and offline gate entry.
 				</p>
@@ -265,6 +249,15 @@
 						class="w-full h-12 bg-surface-base border border-surface-glass-border text-on-surface text-body-md rounded-lg pl-11 pr-4 focus:outline-none focus:border-outline transition-colors"
 					/>
 				</div>
+			</div>
+
+			<div class="flex flex-col gap-1.5">
+				<label class="text-label-badge uppercase tracking-wider text-outline" for="username-input">Username</label>
+				<div class="relative flex items-center">
+					<AtSign class="absolute left-3.5 w-5 h-5 text-outline pointer-events-none" />
+					<input id="username-input" name="username" type="text" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]+" placeholder="adaobi" bind:value={username} class="w-full h-12 bg-surface-base border border-surface-glass-border text-on-surface text-body-md rounded-lg pl-11 pr-4 focus:outline-none focus:border-outline transition-colors" />
+				</div>
+				<p class="text-body-sm text-outline">3–24 letters, numbers, or underscores.</p>
 			</div>
 
 			<div class="flex flex-col gap-1.5">
@@ -291,11 +284,12 @@
 			</div>
 
 			<label class="flex items-start gap-2.5 cursor-pointer select-none">
-				<input type="checkbox" bind:checked={terms} required class="mt-0.5 w-4 h-4 rounded accent-[#c0c1ff]" />
-				<span class="text-body-sm text-on-surface-variant">
-					I agree to the <span class="text-primary font-medium">Terms</span> and
-					<span class="text-primary font-medium">Privacy Policy</span>, and I'm 18 or older.
-				</span>
+				<input type="checkbox" name="terms" value="accepted" bind:checked={terms} required class="mt-0.5 w-4 h-4 rounded accent-[#c0c1ff]" />
+				<span class="text-body-sm text-on-surface-variant">I agree to the <a href="/legal#terms" class="text-primary font-medium underline">Terms</a> and <a href="/legal#privacy" class="text-primary font-medium underline">Privacy Policy</a>.</span>
+			</label>
+			<label class="flex items-start gap-2.5 cursor-pointer select-none">
+				<input type="checkbox" name="ageConfirmed" value="confirmed" bind:checked={ageConfirmed} required class="mt-0.5 w-4 h-4 rounded accent-[#c0c1ff]" />
+				<span class="text-body-sm text-on-surface-variant">I am 18 years or older.</span>
 			</label>
 
 			{#if form?.error}
@@ -303,11 +297,15 @@
 			{/if}
 
 			<button
-				disabled={!terms}
+				disabled={!terms || !ageConfirmed}
 				class="relative w-full h-12 rounded-lg bg-primary-fixed text-surface-base text-body-lg font-semibold flex items-center justify-center gap-space-xs transition-all active:scale-[0.98] hover:bg-white disabled:opacity-40"
 				type="submit"
 			>
 				<span>Create Account</span>
+			</button>
+			<button type="submit" formaction="?/google" formnovalidate disabled={!terms || !ageConfirmed} class="w-full h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md font-semibold flex items-center justify-center gap-2 hover:border-primary/40 disabled:opacity-40">
+				<svg class="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.9C6.2 7.3 8.9 5 12 5z" fill="#EA4335"></path><path d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5.1 3.7-8.8z" fill="#4285F4"></path><path d="M5.3 14.7c-.2-.7-.4-1.5-.4-2.4s.2-1.7.4-2.4L1.6 7c-.8 1.6-1.3 3.4-1.3 5.3s.5 3.7 1.3 5.3l3.7-2.9z" fill="#FBBC05"></path><path d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.3-6.7-5.3L1.6 16C3.5 19.8 7.4 23 12 23z" fill="#34A853"></path></svg>
+				Continue with Google
 			</button>
 		</form>
 

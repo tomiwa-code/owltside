@@ -18,9 +18,17 @@
 			) &&
 			!page.url.pathname.startsWith('/tickets/')
 	);
+	const hideMobileBottomNav = $derived(
+		page.url.pathname === '/checkout' ||
+			page.url.pathname.startsWith('/checkout/') ||
+			page.url.pathname === '/organizer/create' ||
+			page.url.pathname.startsWith('/organizer/create/') ||
+			page.url.pathname.startsWith('/inbox/') ||
+			(/^\/events\/[^/]+$/.test(page.url.pathname))
+	);
 </script>
 
 <div class="md:pl-20" class:md:pl-0={fullBleedDesktop}>
 	{@render children()}
-	<BottomNav railOnDesktop={!fullBleedDesktop} />
+	<BottomNav railOnDesktop={!fullBleedDesktop} mobileHidden={hideMobileBottomNav} />
 </div>

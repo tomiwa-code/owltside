@@ -7,6 +7,7 @@ export interface Session {
 	name: string;
 	role: 'attendee' | 'organizer' | 'guest';
 	avatarUrl?: string | null;
+	usernameChangedAt?: string | null;
 	demo?: boolean;
 }
 
@@ -19,6 +20,9 @@ export interface Profile {
 	bio?: string | null;
 	link?: string | null;
 	city?: string | null;
+	bannerUrl?: string | null;
+	interests?: string[];
+	usernameChangedAt?: string | null;
 	verified?: boolean;
 	followers: number;
 	following: number;
@@ -194,6 +198,7 @@ export interface WizardPayload {
 	category: CategoryId;
 	tags: string[];
 	startsAt: string;
+	endsAt?: string;
 	venue: string;
 	city: string;
 	description: string;

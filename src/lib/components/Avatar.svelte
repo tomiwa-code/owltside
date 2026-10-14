@@ -3,14 +3,14 @@
 		name,
 		color = '#8083ff',
 		src = null,
-		size = 'md',
-		online = false
+		imageStyle = '',
+		size = 'md'
 	}: {
 		name: string;
 		color?: string;
 		src?: string | null;
+		imageStyle?: string;
 		size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
-		online?: boolean;
 	} = $props();
 
 	const sizes = {
@@ -32,7 +32,7 @@
 
 <div class="relative shrink-0 {sizes[size]}">
 	{#if src}
-		<img src={src} alt={name} class="w-full h-full rounded-full object-cover ring-1 ring-surface-glass-border" />
+		<img src={src} alt={name} style={imageStyle} class="w-full h-full rounded-full object-cover ring-1 ring-surface-glass-border" />
 	{:else}
 		<div
 			class="w-full h-full rounded-full flex items-center justify-center font-semibold text-on-primary-container ring-1 ring-surface-glass-border"
@@ -40,8 +40,5 @@
 		>
 			{initials}
 		</div>
-	{/if}
-	{#if online}
-		<span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-accent-emerald ring-2 ring-surface-base"></span>
 	{/if}
 </div>
