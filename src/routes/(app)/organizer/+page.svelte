@@ -156,9 +156,6 @@
 				<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, venues…</span>
 				<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
 			</span>
-			<span class="hidden xl:flex items-center gap-1.5 h-9 px-3 rounded-lg border border-surface-glass-border {MONO} text-on-surface-variant shrink-0">
-				<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> Secure_Node
-			</span>
 			<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
 				<Bell class="w-4.5 h-4.5" />
 				<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
@@ -547,12 +544,9 @@
 				<div class="flex items-center gap-space-sm min-w-0">
 					<div class="relative flex-shrink-0">
 						<Avatar name={page.data.session?.name ?? 'Ada Obi'} size="md" />
-						<span class="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent-emerald text-surface-container-lowest">
-							<BadgeCheck class="w-3 h-3" />
-						</span>
 					</div>
 					<div class="flex flex-col min-w-0">
-						<h1 class="font-display text-headline-md text-on-surface truncate">{page.data.session?.name ?? 'Ada Obi'}</h1>
+						<h1 class="font-display text-headline-md text-on-surface truncate flex items-center gap-1.5">{page.data.session?.name ?? 'Ada Obi'}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" aria-label="Verified member" /></h1>
 						<div class="flex items-center gap-1.5 mt-0.5">
 							<span class="rounded-full bg-surface-container-highest px-2 py-0.5 text-label-badge text-on-surface uppercase border border-outline-variant/20">Organizer Role</span>
 							<span class="w-1 h-1 rounded-full bg-outline-variant"></span>

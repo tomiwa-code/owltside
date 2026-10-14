@@ -151,7 +151,7 @@
 			<a href="/home" class="flex items-center gap-2.5 shrink-0">
 				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
 				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
-				<span class="{MONO} text-tertiary border border-tertiary/25 bg-tertiary/10 rounded px-1.5 py-0.5">Secure_Node</span>
+
 			</a>
 			<nav class="flex items-center gap-1" aria-label="Primary">
 				{#each [

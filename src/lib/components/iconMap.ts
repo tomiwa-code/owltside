@@ -6,6 +6,7 @@ import {
 	Landmark,
 	Music,
 	PenTool,
+	Sparkles,
 	Terminal,
 	UtensilsCrossed,
 	Warehouse,
@@ -36,13 +37,13 @@ export const categoryIcons = {
 	nightlife: 'disc-3'
 } as const;
 
-export const categories: { id: string; label: string }[] = [
-	{ id: 'all', label: 'All Vibes' },
-	{ id: 'tech', label: 'Tech & AI' },
-	{ id: 'music', label: 'Music & Concerts' },
-	{ id: 'design', label: 'Design & Art' },
-	{ id: 'conferences', label: 'Conferences' },
-	{ id: 'workshops', label: 'Workshops' },
-	{ id: 'food', label: 'Food & Drink' },
-	{ id: 'nightlife', label: 'Nightlife' }
+export const categories: { id: string; label: string; icon: LucideIcon }[] = [
+	{ id: 'all', label: 'All Vibes', icon: Sparkles },
+	{ id: 'nightlife', label: 'Nightlife', icon: Disc3 },
+	{ id: 'tech', label: 'Tech & AI', icon: BrainCircuit },
+	{ id: 'music', label: 'Music & Concerts', icon: Music },
+	{ id: 'design', label: 'Design & Arts', icon: Brush },
+	{ id: 'conferences', label: 'Conferences', icon: Landmark },
+	{ id: 'workshops', label: 'Workshops', icon: Terminal },
+	{ id: 'food', label: 'Food & Drink', icon: UtensilsCrossed }
 ];

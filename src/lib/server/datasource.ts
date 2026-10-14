@@ -5,7 +5,9 @@ import type {
 	Conversation,
 	EventFilters,
 	EventItem,
+	EventSpeaker,
 	Message,
+	MessageRequest,
 	NotificationItem,
 	Order,
 	OrganizerPayload,
@@ -17,6 +19,21 @@ import * as demo from './demo/seed';
 import { newTicketCode } from '$lib/utils/qr';
 
 const demoMeId = 'u-ada';
+
+type DemoPrivateConversation = {
+	id: string;
+	requesterId: string;
+	organizerId: string;
+	requester: Profile;
+	organizer: Profile;
+	lastMessage: string;
+	lastAt: string;
+	requesterUnread: number;
+	organizerUnread: number;
+};
+
+const demoPrivateConversations: DemoPrivateConversation[] = [];
+const demoPrivateNotifications = new Map<string, NotificationItem[]>();
 
 const CANNED: Record<string, string[]> = {
 	'u-amina': [
@@ -59,7 +76,12 @@ export interface DataSource {
 	getMessages(conversationId: string): Promise<Message[]>;
 	getNotifications(userId: string): Promise<NotificationItem[]>;
 	getProfile(handle: string): Promise<Profile | undefined>;
+	searchProfiles(handlePrefix: string): Promise<Profile[]>;
 	getProfileEvents(profileId: string): Promise<EventItem[]>;
+	createMessageRequest(requesterId: string, eventSlug: string, body: string): Promise<MessageRequest>;
+	getIncomingMessageRequests(organizerId: string): Promise<MessageRequest[]>;
+	getEventMessageRequest(requesterId: string, eventId: string): Promise<MessageRequest | undefined>;
+	respondToMessageRequest(organizerId: string, requestId: string, accept: boolean): Promise<MessageRequest>;
 	createOrder(userId: string, eventSlug: string, items: CheckoutItem[]): Promise<OrderResult>;
 	sendMessage(conversationId: string, senderId: string, body: string): Promise<Message>;
 	markConversationRead(conversationId: string): Promise<void>;
@@ -119,22 +141,130 @@ export const demoSource: DataSource = {
 	async getTickets() {
 		return [...demo.tickets];
 	},
-	async getConversations() {
-		return [...demo.conversations];
+	async getConversations(userId = 'demo') {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		const seeded = uid === demoMeId ? [...demo.conversations] : [];
+		const dynamic = demoPrivateConversations
+			.filter((c) => c.requesterId === uid || c.organizerId === uid)
+			.map((c) => ({
+				id: c.id,
+				peer: c.requesterId === uid ? c.organizer : c.requester,
+				lastMessage: c.lastMessage,
+				lastAt: c.lastAt,
+				unread: c.requesterId === uid ? c.requesterUnread : c.organizerUnread
+			}));
+		return [...seeded, ...dynamic].sort((a, b) => +new Date(b.lastAt) - +new Date(a.lastAt));
 	},
 	async getMessages(conversationId) {
 		return [...(demo.messages[conversationId] ?? [])];
 	},
-	async getNotifications() {
-		return [...demo.notifications];
+	async getNotifications(userId = 'demo') {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		return [...demo.notifications, ...(demoPrivateNotifications.get(uid) ?? [])]
+			.sort((a, b) => +new Date(b.at) - +new Date(a.at));
 	},
 	async getProfile(handle) {
 		return Object.values(demo.people).find((p) => p.handle === handle);
+	},
+	async searchProfiles(handlePrefix) {
+		const prefix = handlePrefix.replace(/^@/, '').toLowerCase();
+		if (!prefix) return [];
+		return Object.values(demo.people)
+			.filter((profile) => profile.handle.toLowerCase().startsWith(prefix))
+			.slice(0, 8);
 	},
 	async getProfileEvents(profileId) {
 		return demo.events.filter(
 			(e) => e.organizer?.id === profileId || e.speakers?.some((s) => s?.id === profileId)
 		);
+	},
+	async createMessageRequest(requesterId, eventSlug, body) {
+		const uid = requesterId === 'demo' ? demoMeId : requesterId;
+		const event = demo.events.find((item) => item.slug === eventSlug);
+		if (!event) throw new Error('Event not found');
+		if (event.organizer.id === uid) throw new Error('You cannot message yourself');
+		const requester = Object.values(demo.people).find((profile) => profile.id === uid);
+		if (!requester) throw new Error('Your profile could not be loaded');
+		const active = demo.messageRequests.find((item) => item.eventId === event.id && item.requester.id === uid && (item.status === 'pending' || item.status === 'accepted'));
+		if (active) return active;
+		const request: MessageRequest = {
+			id: `mr-${Math.random().toString(36).slice(2, 10)}`,
+			eventId: event.id,
+			eventSlug: event.slug,
+			eventTitle: event.title,
+			requester,
+			organizer: event.organizer,
+			body: body.trim(),
+			createdAt: new Date().toISOString(),
+			status: 'pending'
+		};
+		demo.messageRequests.unshift(request);
+		return request;
+	},
+	async getIncomingMessageRequests(organizerId) {
+		const uid = organizerId === 'demo' ? demoMeId : organizerId;
+		return demo.messageRequests
+			.filter((request) => request.organizer.id === uid && request.status === 'pending')
+			.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+	},
+	async getEventMessageRequest(requesterId, eventId) {
+		const uid = requesterId === 'demo' ? demoMeId : requesterId;
+		return [...demo.messageRequests]
+			.filter((request) => request.eventId === eventId && request.requester.id === uid)
+			.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))[0];
+	},
+	async respondToMessageRequest(organizerId, requestId, accept) {
+		const uid = organizerId === 'demo' ? demoMeId : organizerId;
+		const request = demo.messageRequests.find((item) => item.id === requestId);
+		if (!request || request.organizer.id !== uid) throw new Error('Message request not found');
+		if (request.status !== 'pending') throw new Error('This request has already been answered');
+		if (!accept) {
+			request.status = 'declined';
+			return request;
+		}
+
+		let conversationId = request.requester.id === demoMeId
+			? demo.conversations.find((conversation) => conversation.peer.id === request.organizer.id)?.id
+			: undefined;
+		let dynamic = demoPrivateConversations.find((conversation) => conversation.requesterId === request.requester.id && conversation.organizerId === request.organizer.id);
+		if (!conversationId) {
+			if (!dynamic) {
+				dynamic = {
+					id: `c-${Math.random().toString(36).slice(2, 10)}`,
+					requesterId: request.requester.id,
+					organizerId: request.organizer.id,
+					requester: request.requester,
+					organizer: request.organizer,
+					lastMessage: '',
+					lastAt: new Date().toISOString(),
+					requesterUnread: 0,
+					organizerUnread: 0
+				};
+				demoPrivateConversations.push(dynamic);
+				demo.messages[dynamic.id] = [];
+			}
+			conversationId = dynamic.id;
+		}
+		const message: Message = {
+			id: `m-${Math.random().toString(36).slice(2, 10)}`,
+			conversationId,
+			senderId: request.requester.id,
+			body: request.body,
+			sentAt: new Date().toISOString()
+		};
+		(demo.messages[conversationId] ??= []).push(message);
+		const seeded = demo.conversations.find((conversation) => conversation.id === conversationId);
+		if (seeded) {
+			seeded.lastMessage = message.body;
+			seeded.lastAt = message.sentAt;
+		} else if (dynamic) {
+			dynamic.lastMessage = message.body;
+			dynamic.lastAt = message.sentAt;
+			dynamic.organizerUnread += 1;
+		}
+		request.status = 'accepted';
+		request.conversationId = conversationId;
+		return request;
 	},
 	async createOrder(userId, eventSlug, items) {
 		const event = demo.events.find((e) => e.slug === eventSlug);
@@ -191,13 +321,21 @@ export const demoSource: DataSource = {
 				conv.lastMessage = m.body;
 				conv.lastAt = m.sentAt;
 			}
+			const dynamic = demoPrivateConversations.find((c) => c.id === m.conversationId);
+			if (dynamic) {
+				dynamic.lastMessage = m.body;
+				dynamic.lastAt = m.sentAt;
+				dynamic.requesterUnread = m.senderId === dynamic.organizerId ? dynamic.requesterUnread + 1 : dynamic.requesterUnread;
+				dynamic.organizerUnread = m.senderId === dynamic.requesterId ? dynamic.organizerUnread + 1 : dynamic.organizerUnread;
+			}
 		};
 		push(msg);
 
 		// Demo "realtime": the peer types back after a human-ish delay.
 		if (senderId === demoMeId) {
 			const conv = demo.conversations.find((c) => c.id === conversationId);
-			const peerId = conv?.peer.id ?? 'u-support';
+			const dynamic = demoPrivateConversations.find((c) => c.id === conversationId);
+			const peerId = conv?.peer.id ?? (dynamic ? (senderId === dynamic.requesterId ? dynamic.organizerId : dynamic.requesterId) : 'u-support');
 			const reply = cannedReply(peerId, body);
 			setTimeout(() => {
 				push({
@@ -214,6 +352,11 @@ export const demoSource: DataSource = {
 	async markConversationRead(conversationId) {
 		const conv = demo.conversations.find((c) => c.id === conversationId);
 		if (conv) conv.unread = 0;
+		const dynamic = demoPrivateConversations.find((c) => c.id === conversationId);
+		if (dynamic) {
+			dynamic.requesterUnread = 0;
+			dynamic.organizerUnread = 0;
+		}
 	},
 	async markAllNotificationsRead() {
 		demo.notifications.forEach((n) => (n.read = true));
@@ -309,7 +452,23 @@ export const demoSource: DataSource = {
 			cover: payload.cover,
 			description: payload.description,
 			organizer,
-			speakers: payload.speakers.map((id) => demo.people[id]).filter(Boolean),
+			speakers: payload.speakers.map((speaker, index) => {
+				const profile = Object.values(demo.people).find((person) => person.id === speaker.id || person.handle === speaker.handle);
+				return {
+					...(profile ?? {
+						id: speaker.id ?? `speaker-${index}`,
+						handle: speaker.handle ?? '',
+						avatarColor: speaker.avatarColor ?? '#8083ff',
+						followers: speaker.followers ?? 0,
+						following: speaker.following ?? 0
+					}),
+					name: speaker.name,
+					role: speaker.role,
+					bio: speaker.bio ?? profile?.bio,
+					invited: speaker.invited,
+					displayOnly: speaker.displayOnly
+				};
+			}),
 			agenda: payload.agenda.map((a, i) => ({ id: `ag-${i}`, ...a })),
 			tiers: payload.tiers.map((t, i) => ({ id: `tier-${i}`, sold: 0, ...t })),
 			faqs: [],
@@ -319,6 +478,20 @@ export const demoSource: DataSource = {
 			attendees: 0
 		};
 		demo.events.push(event);
+		for (const speaker of event.speakers) {
+			if (!speaker.invited || speaker.displayOnly || !speaker.id || speaker.id === organizer.id) continue;
+			const inviteeNotifications = demoPrivateNotifications.get(speaker.id) ?? [];
+			inviteeNotifications.unshift({
+				id: `n-${Math.random().toString(36).slice(2, 10)}`,
+				kind: 'event',
+				title: `Speaker invitation · ${event.title}`,
+				body: `${organizer.name} invited you as ${speaker.role ?? 'a speaker'} for this event.`,
+				href: `/events/${event.slug}`,
+				at: new Date().toISOString(),
+				read: false
+			});
+			demoPrivateNotifications.set(speaker.id, inviteeNotifications);
+		}
 		return event;
 	}
 };
@@ -378,6 +551,35 @@ const toProfile = (r: Row): Profile => ({
 	following: r.following ?? 0
 });
 
+const toEventSpeaker = (r: Row, index: number): EventSpeaker => ({
+	id: r.id ?? `speaker-${index}`,
+	handle: r.handle ?? '',
+	name: r.name ?? 'Guest speaker',
+	avatarColor: r.avatarColor ?? r.avatar_color ?? '#8083ff',
+	avatarUrl: r.avatarUrl ?? r.avatar_url ?? null,
+	bio: r.bio ?? r.role,
+	city: r.city,
+	verified: !!r.verified,
+	followers: r.followers ?? 0,
+	following: r.following ?? 0,
+	role: r.role,
+	invited: !!r.invited,
+	displayOnly: !!r.displayOnly
+});
+
+const toMessageRequest = (r: Row): MessageRequest => ({
+	id: r.id,
+	eventId: r.event_id,
+	eventSlug: r.event?.slug ?? r.event_slug,
+	eventTitle: r.event?.title ?? r.event_title,
+	requester: toProfile(r.requester),
+	organizer: toProfile(r.organizer),
+	body: r.body,
+	createdAt: r.created_at,
+	status: r.status,
+	conversationId: r.conversation_id ?? undefined
+});
+
 const toEvent = (r: Row, organizer: Profile): EventItem => ({
 	id: r.id,
 	slug: r.slug,
@@ -391,7 +593,7 @@ const toEvent = (r: Row, organizer: Profile): EventItem => ({
 	cover: r.cover,
 	description: r.description ?? '',
 	organizer,
-	speakers: r.speakers ?? [],
+	speakers: (r.speakers ?? []).map((speaker: Row, index: number) => toEventSpeaker(speaker, index)),
 	agenda: r.agenda ?? [],
 	tiers: r.tiers ?? [],
 	gates: r.gates ?? [],
@@ -449,12 +651,12 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 		async getConversations(userId) {
 			const { data, error } = await db
 				.from('conversations')
-				.select('*, peer:profiles!conversations_peer_id_fkey(*)')
+				.select('*, user:profiles!conversations_user_id_fkey(*), peer:profiles!conversations_peer_id_fkey(*)')
 				.or(`user_id.eq.${userId},peer_id.eq.${userId}`);
 			if (error) throw error;
 			return (data ?? []).map((r: Row) => ({
 				id: r.id,
-				peer: toProfile(r.peer_id === userId ? r.user : r.peer),
+				peer: toProfile(r.user_id === userId ? r.peer : r.user),
 				lastMessage: r.last_message ?? '',
 				lastAt: r.last_at,
 				unread: r.unread ?? 0
@@ -487,6 +689,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				kind: r.kind,
 				title: r.title,
 				body: r.body,
+				href: r.href ?? undefined,
 				at: r.at,
 				read: !!r.read
 			}));
@@ -496,6 +699,13 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (error) throw error;
 			return data ? toProfile(data) : undefined;
 		},
+		async searchProfiles(handlePrefix) {
+			const prefix = handlePrefix.replace(/^@/, '').toLowerCase();
+			if (!prefix) return [];
+			const { data, error } = await db.from('profiles').select('*').ilike('handle', `${prefix}%`).order('handle').limit(8);
+			if (error) throw error;
+			return (data ?? []).map(toProfile);
+		},
 		async getProfileEvents(profileId) {
 			const { data, error } = await db
 				.from('events')
@@ -504,6 +714,72 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				.order('starts_at');
 			if (error) throw error;
 			return (data ?? []).map((r) => toEvent(r, toProfile(r.organizer)));
+		},
+		async createMessageRequest(requesterId, eventSlug, body) {
+			const { data: event, error: eventError } = await db
+				.from('events')
+				.select('id,slug,title,organizer_id')
+				.eq('slug', eventSlug)
+				.maybeSingle();
+			if (eventError) throw eventError;
+			if (!event) throw new Error('Event not found');
+			if (event.organizer_id === requesterId) throw new Error('You cannot message yourself');
+			const requestSelect = '*, requester:profiles!message_requests_requester_id_fkey(*), organizer:profiles!message_requests_organizer_id_fkey(*), event:events!message_requests_event_id_fkey(slug,title)';
+			const { data: existing, error: existingError } = await db
+				.from('message_requests')
+				.select(requestSelect)
+				.eq('event_id', event.id)
+				.eq('requester_id', requesterId)
+				.in('status', ['pending', 'accepted'])
+				.order('created_at', { ascending: false })
+				.limit(1)
+				.maybeSingle();
+			if (existingError) throw existingError;
+			if (existing) return toMessageRequest(existing);
+			const { data, error } = await db
+				.from('message_requests')
+				.insert({ event_id: event.id, requester_id: requesterId, organizer_id: event.organizer_id, body: body.trim() })
+				.select(requestSelect)
+				.single();
+			if (error) throw error;
+			return toMessageRequest(data);
+		},
+		async getIncomingMessageRequests(organizerId) {
+			const { data, error } = await db
+				.from('message_requests')
+				.select('*, requester:profiles!message_requests_requester_id_fkey(*), organizer:profiles!message_requests_organizer_id_fkey(*), event:events!message_requests_event_id_fkey(slug,title)')
+				.eq('organizer_id', organizerId)
+				.eq('status', 'pending')
+				.order('created_at', { ascending: false });
+			if (error) throw error;
+			return (data ?? []).map(toMessageRequest);
+		},
+		async getEventMessageRequest(requesterId, eventId) {
+			const { data, error } = await db
+				.from('message_requests')
+				.select('*, requester:profiles!message_requests_requester_id_fkey(*), organizer:profiles!message_requests_organizer_id_fkey(*), event:events!message_requests_event_id_fkey(slug,title)')
+				.eq('requester_id', requesterId)
+				.eq('event_id', eventId)
+				.order('created_at', { ascending: false })
+				.limit(1)
+				.maybeSingle();
+			if (error) throw error;
+			return data ? toMessageRequest(data) : undefined;
+		},
+		async respondToMessageRequest(organizerId, requestId, accept) {
+			const { error: responseError } = await db.rpc('respond_to_message_request', {
+				p_request_id: requestId,
+				p_accept: accept
+			});
+			if (responseError) throw responseError;
+			const { data, error } = await db
+				.from('message_requests')
+				.select('*, requester:profiles!message_requests_requester_id_fkey(*), organizer:profiles!message_requests_organizer_id_fkey(*), event:events!message_requests_event_id_fkey(slug,title)')
+				.eq('id', requestId)
+				.eq('organizer_id', organizerId)
+				.single();
+			if (error) throw error;
+			return toMessageRequest(data);
 		},
 		async createOrder(userId, eventSlug, items) {
 			const { data, error } = await db.rpc('create_order', {

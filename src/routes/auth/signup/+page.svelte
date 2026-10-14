@@ -36,7 +36,7 @@
 			<div class="relative flex items-center gap-2.5">
 				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
 				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
-				<span class="{MONO} text-tertiary border border-tertiary/25 bg-tertiary/10 rounded px-1.5 py-0.5">Secure_Node</span>
+
 			</div>
 			<div class="relative flex-1 flex flex-col justify-center gap-6">
 				<div class="flex items-center gap-2">

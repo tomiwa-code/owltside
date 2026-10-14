@@ -72,12 +72,14 @@
 	const curatedPages = $derived(Math.max(1, Math.ceil(curated.length / 3)));
 
 	const organizers = $derived(() => {
-		const map = new Map<string, { name: string; events: number; attended: number; id: string }>();
+		const map = new Map<string, { name: string; handle: string; avatarColor: string; events: number; attended: number; id: string }>();
 		for (const e of events) {
 			if (!e.organizer.verified) continue;
 			const cur = map.get(e.organizer.id) ?? {
 				id: e.organizer.id,
+				handle: e.organizer.handle,
 				name: e.organizer.name,
+				avatarColor: e.organizer.avatarColor,
 				events: 0,
 				attended: 0
 			};
@@ -160,8 +162,8 @@
 	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
 		<div class="{WRAP} h-16 flex items-center gap-5">
 			<a href="/home" aria-label="Owltside home" class="flex items-center gap-2.5 shrink-0">
-				<img src="/owl-icon.png" alt="Owltside logo" class="w-8 h-8 object-contain" />
-				<span class="{MONO} text-tertiary border border-tertiary/25 bg-tertiary/10 rounded px-1.5 py-0.5">Secure_Node</span>
+				<img src="/logo.png" alt="Owltside logo" class="h-6 w-auto object-contain" />
+
 			</a>
 			<nav class="flex items-center gap-1" aria-label="Primary">
 				{#each nav as item (item.href)}
@@ -229,6 +231,7 @@
 		</div>
 		<div class="flex flex-wrap items-center gap-2 pt-7">
 			{#each categories as cat (cat.id)}
+				{@const CategoryIcon = cat.icon}
 				<button
 					onclick={() => {
 						category = cat.id as CategoryId;
@@ -240,6 +243,7 @@
 							? 'bg-primary text-on-primary font-semibold shadow-sm glow-primary'
 							: 'bg-surface-container text-on-surface-variant hover:text-on-surface border border-surface-glass-border'}"
 				>
+					<CategoryIcon class="w-4 h-4 shrink-0" />
 					{cat.label}
 				</button>
 			{/each}
@@ -538,18 +542,13 @@
 				<div class="flex flex-col gap-4 pt-4">
 					{#each organizers() as org (org.id)}
 						<div class="flex items-center gap-3">
-							<div class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border flex items-center justify-center font-display font-bold text-primary shrink-0">
-								{org.name.split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('')}
-							</div>
-							<div class="flex-1 min-w-0">
-								<span class="flex items-center gap-1 min-w-0">
-									<span class="text-body-md font-semibold text-on-surface truncate">{org.name}</span>
-									<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />
+							<a href="/users/{org.handle}" aria-label="View {org.name}'s profile" class="flex flex-1 min-w-0 items-center gap-3 rounded-lg hover:bg-surface-container-high/60 transition-colors">
+								<Avatar name={org.name} color={org.avatarColor} size="md" />
+								<span class="flex-1 min-w-0">
+									<span class="flex items-center gap-1 min-w-0"><span class="text-body-md font-semibold text-on-surface truncate">{org.name}</span><BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" /></span>
+									<span class="block text-body-sm text-on-surface-variant truncate">{org.events} Events • {compact(org.attended)} Attended</span>
 								</span>
-								<span class="block text-body-sm text-on-surface-variant truncate">
-									{org.events} Events • {compact(org.attended)} Attended
-								</span>
-							</div>
+							</a>
 							<button
 								onclick={() => {
 									const added = toggleIn(follows, org.id);

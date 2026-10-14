@@ -258,9 +258,6 @@
 				<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, venues…</span>
 				<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
 			</span>
-			<span class="hidden xl:flex items-center gap-1.5 h-9 px-3 rounded-lg border border-surface-glass-border {MONO} text-on-surface-variant shrink-0">
-				<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> Secure_Node
-			</span>
 			<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
 				<Bell class="w-4.5 h-4.5" />
 				<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>

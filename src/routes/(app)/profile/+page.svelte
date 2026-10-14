@@ -3,6 +3,7 @@
 	import {
 		BadgeCheck,
 		Bell,
+		BookmarkCheck,
 		CalendarDays,
 		ChevronLeft,
 		ChevronRight,
@@ -19,9 +20,10 @@
 		WifiOff
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
+	import SavedEventsList from '$components/SavedEventsList.svelte';
 	import Sheet from '$components/Sheet.svelte';
 	import { page } from '$app/state';
-	import { follows } from '$lib/state/prefs.svelte';
+	import { bookmarks, follows } from '$lib/state/prefs.svelte';
 	import { profileAppearance, profileDraft } from '$lib/state/profile.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { fmtDate, fmtTime } from '$lib/utils/dates';
@@ -44,6 +46,9 @@
 	const usernameCooldownDays = $derived(lastUsernameChange ? Math.max(0, Math.ceil((new Date(lastUsernameChange).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000))) : 0);
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
+
+	const savedEvents = $derived((data.events ?? []).filter((event) => bookmarks.value.includes(event.id)));
+	let profileTab = $state<'calendar' | 'saved'>('calendar');
 
 	const upcoming = $derived(
 		(data.tickets ?? []).filter((t) => t.status === 'valid' && new Date(t.eventStartsAt) > new Date())
@@ -212,7 +217,7 @@
 			<a href="/home" class="flex items-center gap-2.5 shrink-0">
 				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
 				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
-				<span class="{MONO} text-tertiary border border-tertiary/25 bg-tertiary/10 rounded px-1.5 py-0.5">Secure_Node</span>
+
 			</a>
 			<nav class="flex items-center gap-1" aria-label="Primary">
 				{#each [
@@ -287,18 +292,14 @@
 								<Avatar name={name} src={avatarPhoto} imageStyle={avatarImageStyle} size="xl" />
 							</span>
 						</span>
-						{#if session}
-							<span class="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-md">
-								<BadgeCheck class="w-4 h-4" />
-							</span>
-						{/if}
 					</span>
 					<span class="min-w-0 pt-1">
 						<span class="flex items-center flex-wrap gap-2">
 							<span class="font-display text-headline-lg text-on-surface tracking-tight">{name}</span>
+							{#if session}<BadgeCheck class="w-5 h-5 text-tertiary shrink-0" aria-label="Verified member" />{/if}
 							{#if session}
 								<span class="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary-container text-on-primary-container {MONO}">
-									<BadgeCheck class="w-3 h-3" /> Verified Member
+									Verified Member
 								</span>
 							{:else}
 								<span class="px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant {MONO}">Guest</span>
@@ -329,6 +330,15 @@
 		</section>
 	</div>
 
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-5">
+		<div role="tablist" aria-label="Profile sections" class="inline-flex items-center gap-1 rounded-full border border-surface-glass-border bg-surface-container p-1">
+			<button type="button" role="tab" aria-selected={profileTab === 'calendar'} onclick={() => (profileTab = 'calendar')} class="h-10 px-4 rounded-full text-body-sm font-semibold flex items-center gap-2 transition-colors {profileTab === 'calendar' ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:text-on-surface'}"><CalendarDays class="w-4 h-4" />Calendar</button>
+			<button type="button" role="tab" aria-selected={profileTab === 'saved'} onclick={() => (profileTab = 'saved')} class="h-10 px-4 rounded-full text-body-sm font-semibold flex items-center gap-2 transition-colors {profileTab === 'saved' ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:text-on-surface'}"><BookmarkCheck class="w-4 h-4" />Saved <span class="font-code text-label-badge">{savedEvents.length}</span></button>
+		</div>
+	</div>
+	{#if profileTab === 'saved'}
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6"><SavedEventsList events={savedEvents} /></div>
+	{:else}
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 grid lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px] gap-6 items-start">
 		<div class="flex flex-col gap-6 min-w-0">
 			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
@@ -492,6 +502,7 @@
 		</div>
 	</div>
 
+	{/if}
 	<footer class="mt-4 border-t border-surface-glass-border">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
 			<span class="flex items-center gap-3">
@@ -536,20 +547,16 @@
 								<Avatar name={name} src={avatarPhoto} imageStyle={avatarImageStyle} size="xl" />
 							</div>
 						</div>
-						{#if session}
-							<span class="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-md">
-								<BadgeCheck class="w-4 h-4" />
-							</span>
-						{/if}
 					</div>
 				</div>
 
 				<div class="mt-3 flex flex-col">
 					<div class="flex items-center flex-wrap gap-2">
-						<h1 class="font-display text-headline-lg-mobile text-on-surface tracking-tight">{name}</h1>
+							<h1 class="font-display text-headline-lg-mobile text-on-surface tracking-tight">{name}</h1>
+						{#if session}<BadgeCheck class="w-5 h-5 text-tertiary shrink-0" aria-label="Verified member" />{/if}
 						{#if session}
 							<span class="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary-container text-on-primary-container text-label-badge">
-								<BadgeCheck class="w-3 h-3" /> Verified Member
+								Verified Member
 							</span>
 						{:else}
 							<span class="px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-label-badge">Guest</span>
@@ -597,6 +604,13 @@
 					</button>
 				</div>
 
+				<div role="tablist" aria-label="Profile sections" class="grid grid-cols-2 gap-1 mt-4 rounded-full border border-surface-glass-border bg-surface-container-low p-1">
+					<button type="button" role="tab" aria-selected={profileTab === 'calendar'} onclick={() => (profileTab = 'calendar')} class="h-10 rounded-full text-body-sm font-semibold flex items-center justify-center gap-2 transition-colors {profileTab === 'calendar' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}"><CalendarDays class="w-4 h-4" />Calendar</button>
+					<button type="button" role="tab" aria-selected={profileTab === 'saved'} onclick={() => (profileTab = 'saved')} class="h-10 rounded-full text-body-sm font-semibold flex items-center justify-center gap-2 transition-colors {profileTab === 'saved' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}"><BookmarkCheck class="w-4 h-4" />Saved <span class="font-code text-label-badge">{savedEvents.length}</span></button>
+				</div>
+				{#if profileTab === 'saved'}
+					<div class="mt-4 pb-6"><SavedEventsList events={savedEvents} /></div>
+				{:else}
 				<!-- calendar popover -->
 				{#if calendarOpen}
 					<div class="mt-3 bg-surface-container-high rounded-2xl p-4 shadow-xl transition-all">
@@ -643,6 +657,7 @@
 						<p class="text-body-sm text-on-surface-variant">No upcoming passes — the city is waiting.</p>
 					{/each}
 				</div>
+				{/if}
 			</div>
 		</div>
 	</main>

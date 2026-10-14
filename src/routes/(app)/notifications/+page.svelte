@@ -161,7 +161,7 @@
 			<a href="/home" class="flex items-center gap-2.5 shrink-0">
 				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
 				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
-				<span class="{MONO} text-tertiary border border-tertiary/25 bg-tertiary/10 rounded px-1.5 py-0.5">Secure_Node</span>
+
 			</a>
 			<nav class="flex items-center gap-1" aria-label="Primary">
 				{#each [
@@ -354,7 +354,7 @@
 										<div class="flex items-center gap-3 mt-3">
 											{#if meta.action}
 												<a
-													href={meta.action.href}
+href={n.href ?? meta.action.href}
 													class="h-9 px-4 rounded-md flex items-center text-body-sm transition-colors {meta.action.solid ? 'bg-primary-container text-on-primary-container hover:bg-primary/30' : 'bg-surface-container-high border border-surface-glass-border text-on-surface hover:bg-surface-bright'}"
 												>
 													{meta.action.label}
@@ -486,7 +486,7 @@
 										<h3 class="font-display text-body-md font-bold text-on-surface mt-1">{n.title}</h3>
 										<p class="text-body-sm text-on-surface-variant mt-1">{n.body}</p>
 										<div class="flex items-center justify-between gap-2 mt-3 flex-wrap">
-											{#if meta.action}<a href={meta.action.href} class="h-9 px-3 rounded-lg {meta.action.solid ? 'bg-primary text-on-primary' : 'bg-surface-container-high border border-surface-glass-border text-on-surface'} text-label-badge font-semibold flex items-center">{meta.action.label}</a>{/if}
+											{#if meta.action}<a href={n.href ?? meta.action.href} class="h-9 px-3 rounded-lg {meta.action.solid ? 'bg-primary text-on-primary' : 'bg-surface-container-high border border-surface-glass-border text-on-surface'} text-label-badge font-semibold flex items-center">{meta.action.label}</a>{/if}
 											<span class="text-label-badge text-on-surface-variant">{deskTime(n)}</span>
 										</div>
 									</div>

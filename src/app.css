@@ -265,6 +265,13 @@
 		--spacing-space-xl: 2rem;
 		--radius-xl: 0.65rem;
 	}
+
+	/* Prevent mobile Safari from zooming the page when a small-text control gets focus. */
+	input:not([type='button']):not([type='submit']):not([type='reset']):not([type='checkbox']):not([type='radio']):not([type='range']):not([type='hidden']):not([type='file']):not([type='image']):not([type='color']),
+	textarea,
+	select {
+		font-size: max(16px, 1em);
+	}
 }
 
 /* The organizer route is gated on the server too; this removes desktop header

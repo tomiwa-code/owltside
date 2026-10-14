@@ -40,6 +40,7 @@
 		Trash2,
 		TrendingUp,
 		UserPlus,
+		X,
 		Zap
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
@@ -48,6 +49,8 @@
 	import { fmtDate } from '$lib/utils/dates';
 	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 	import { toast } from '$lib/state/toast.svelte';
+	import { categories } from '$components/iconMap';
+	import type { Profile, WizardSpeaker } from '$lib/types';
 
 	let { form } = $props();
 
@@ -62,17 +65,9 @@
 	let venue = $state('The Civic Centre');
 	let city = $state('Lagos');
 	let description = $state('');
-	let tags = $state<string[]>(['AI & Machine Learning', 'Networking']);
-	const tagPool = [
-		'Music',
-		'Art',
-		'AI & Machine Learning',
-		'Wellness',
-		'Food & Drink',
-		'Community',
-		'Networking',
-		'Pop-up Market'
-	];
+	let selectedCategory = $state('tech');
+	let customCategory = $state('');
+	const categoryOptions = categories.filter((category) => category.id !== 'all');
 
 	let tiers = $state([
 		{ name: 'Early Bird Access', price: 25000, capacity: 300, benefits: 'Front-row seating', editing: false },
@@ -93,13 +88,27 @@
 		}
 	]);
 	let dayIdx = $state(0);
-	const stagePool = ['Mainstage Hall A', 'Tech Hall B', 'Breakout Rooms'];
-	let newSession = $state({ time: '12:00', title: '', stage: 'Mainstage Hall A' });
+	let newSession = $state({ time: '12:00', title: '', stage: '' });
 
 	let gates = $state([
 		{ name: 'Fast-Pass Turnstiles', staff: 4 },
 		{ name: 'VIP & Press Entrance', staff: 2 }
 	]);
+	let roster = $state<WizardSpeaker[]>([]);
+	let showInviteDialog = $state(false);
+	let inviteName = $state('');
+	let inviteRole = $state('');
+	let inviteMatches = $state<Profile[]>([]);
+	let selectedInvitee = $state<Profile | null>(null);
+	let searchingProfiles = $state(false);
+	let inviteError = $state('');
+	let profileSearchSequence = 0;
+	let displaySpeakerSequence = 0;
+	const inviteCanSubmit = $derived(
+		inviteName.trim().length >= 2 &&
+		inviteRole.trim().length >= 2 &&
+		(!inviteName.trim().startsWith('@') || selectedInvitee?.handle.toLowerCase() === inviteName.trim().slice(1).toLowerCase())
+	);
 
 	/* ── derived ─────────────────────────────────────────────── */
 	const stepMeta: Record<number, { title: string; sub: string }> = {
@@ -109,9 +118,14 @@
 		4: { title: 'Gate Ops & Verification', sub: 'Configure lanes, staff and offline verification' },
 		5: { title: 'Review & Launch', sub: 'Final checks before going live' }
 	};
+	const categoryLabel = $derived(
+		selectedCategory === 'custom'
+			? customCategory.trim()
+			: (categoryOptions.find((category) => category.id === selectedCategory)?.label ?? '')
+	);
 	const canContinue = $derived(
 		step === 1
-			? title.trim().length >= 3 && date !== '' && dateEnd !== '' && dateEnd >= date && venue.trim() !== ''
+			? title.trim().length >= 3 && date !== '' && dateEnd !== '' && dateEnd >= date && venue.trim() !== '' && categoryLabel.length >= 2
 			: true
 	);
 	let allowOverride = $state(true);
@@ -124,7 +138,9 @@
 	const draftJson = $derived(
 		JSON.stringify({
 			title: title.trim(),
-			tags,
+			category: selectedCategory === 'custom' ? categoryLabel : selectedCategory,
+			tags: categoryLabel ? [categoryLabel] : [],
+			speakers: roster,
 			date,
 			dateEnd,
 			venue: venue.trim(),
@@ -146,29 +162,6 @@
 	let showComposer = $state(false);
 	let gateEdit = $state(-1);
 
-	const roster = [
-		{
-			name: 'Dr. Amina Bello',
-			org: 'SaharaTech',
-			role: 'VP AI Research, SaharaTech',
-			bio: 'Pioneering neuro-symbolic reasoning models across multi-chain systems.',
-			tag: '1 Keynote'
-		},
-		{
-			name: 'Alex Rivera',
-			org: 'OrbitNode',
-			role: 'OrbitNode Core',
-			bio: 'Maintainer of low-level bytecode verifiers for high-throughput chains.',
-			tag: '1 Deep Dive'
-		},
-		{
-			name: 'Chinelo Okeke',
-			org: 'KoraCloud',
-			role: 'Founder, KoraCloud',
-			bio: 'Scalable data mesh architectures for peer-to-peer event coordination.',
-			tag: '1 Showcase'
-		}
-	];
 	const sessionDesc = [
 		'Autonomous protocol negotiation and agentic tool invocation benchmarks across multi-chain primitives.',
 		'Deterministic JIT compilation, cold start mitigation, and verifiable proof-of-replication pipelines.',
@@ -209,11 +202,52 @@
 	}
 
 	/* ── helpers ─────────────────────────────────────────────── */
-	function toggleTag(t: string) {
-		if (tags.includes(t)) tags = tags.filter((x) => x !== t);
-		else if (tags.length < 4) tags = [...tags, t];
-		else toast('Max 4 tags selected', 'info');
+	function openInviteDialog() {
+		inviteName = ''; inviteRole = ''; inviteMatches = []; selectedInvitee = null; inviteError = '';
+		showInviteDialog = true;
 	}
+
+	async function searchInviteProfiles() {
+		const typedName = inviteName.trim();
+		const handle = typedName.startsWith('@') ? typedName.slice(1).toLowerCase() : '';
+		const sequence = ++profileSearchSequence;
+		inviteMatches = []; inviteError = '';
+		if (handle.length < 2) { searchingProfiles = false; return; }
+		searchingProfiles = true;
+		try {
+			const response = await fetch(`/api/profiles/search?q=${encodeURIComponent(handle)}`);
+			if (!response.ok) throw new Error('Profile lookup is unavailable. Try again.');
+			const profiles = (await response.json()) as Profile[];
+			if (sequence === profileSearchSequence) inviteMatches = profiles;
+		} catch (error) {
+			if (sequence === profileSearchSequence) inviteError = error instanceof Error ? error.message : 'Profile lookup is unavailable.';
+		} finally {
+			if (sequence === profileSearchSequence) searchingProfiles = false;
+		}
+	}
+
+	function selectInvitee(profile: Profile) { selectedInvitee = profile; inviteName = `@${profile.handle}`; inviteMatches = []; inviteError = ''; }
+
+	function addSpeaker() {
+		const name = inviteName.trim(); const role = inviteRole.trim();
+		if (!name || role.length < 2) { inviteError = 'Enter a name and role to continue.'; return; }
+		if (name.startsWith('@')) {
+			const handle = name.slice(1).toLowerCase();
+			if (!selectedInvitee || selectedInvitee.handle.toLowerCase() !== handle) { inviteError = 'Choose a matching Owltside profile before sending an invite.'; return; }
+			if (roster.some((speaker) => speaker.handle?.toLowerCase() === handle && speaker.invited)) { inviteError = `An invite for @${handle} is already in this roster.`; return; }
+			const profile = selectedInvitee;
+			roster = [...roster, { id: profile.id, handle: profile.handle, name: profile.name, avatarColor: profile.avatarColor, bio: profile.bio ?? '', role, org: `@${profile.handle}`, tag: role.slice(0, 24), displayOnly: false, invited: true, followers: profile.followers, following: profile.following, city: profile.city }];
+			toast(`Invite for @${profile.handle} queued for event publication`, 'success');
+		} else {
+			if (roster.some((speaker) => speaker.name.toLowerCase() === name.toLowerCase())) { inviteError = 'A speaker with that name is already in this roster.'; return; }
+			roster = [...roster, { id: `display-${Date.now()}-${++displaySpeakerSequence}`, name, avatarColor: '#8083ff', bio: '', role, org: 'Display only · no profile linked', tag: role.slice(0, 24), displayOnly: true, invited: false }];
+			toast(`${name} added as a display-only speaker`, 'success');
+		}
+		showInviteDialog = false;
+	}
+
+	function removeSpeaker(speaker: WizardSpeaker) { roster = roster.filter((item) => item !== speaker); }
+
 	function next() {
 		if (!canContinue) return;
 		step = Math.min(5, step + 1);
@@ -237,10 +271,10 @@
 		dayIdx = days.length - 1;
 	}
 	function addSession() {
-		if (!newSession.title.trim()) return;
+		if (!newSession.title.trim() || !newSession.stage.trim()) { toast('Add a session title and room or stage name', 'info'); return; }
 		const d = days[dayIdx];
-		d.sessions = [...d.sessions, { ...newSession, title: newSession.title.trim() }];
-		newSession = { ...newSession, title: '' };
+		d.sessions = [...d.sessions, { ...newSession, title: newSession.title.trim(), stage: newSession.stage.trim() }];
+		newSession = { ...newSession, title: '', stage: '' };
 	}
 </script>
 
@@ -283,10 +317,6 @@
 					<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, venues…</span>
 					<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
 				</a>
-				<span class="hidden xl:flex items-center gap-2 h-10 px-3 border border-surface-glass-border rounded-lg">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>
-					<span class="{MONO} text-on-surface">Secure_Node</span>
-				</span>
 				<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
 					<Bell class="w-4.5 h-4.5" />
 					<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
@@ -386,23 +416,12 @@
 					</div>
 
 					<div class="flex flex-col gap-2">
-						<span class="{MONO} text-on-surface-variant">Sector Taxonomy (Select up to 4)</span>
-						<div class="flex flex-wrap gap-2 pt-1">
-							{#each tagPool as t (t)}
-								<button
-									type="button"
-									onclick={() => toggleTag(t)}
-									aria-pressed={tags.includes(t)}
-									class="px-3.5 py-2 rounded-lg text-body-sm flex items-center gap-1.5 transition-colors border
-										{tags.includes(t)
-											? 'bg-primary text-on-primary border-primary font-semibold'
-											: 'bg-surface-container-high text-on-surface-variant border-surface-glass-border hover:text-on-surface'}"
-								>
-									<span>{t}</span>
-									{#if tags.includes(t)}<Check class="w-3.5 h-3.5" />{:else}<Plus class="w-3.5 h-3.5" />{/if}
-								</button>
-							{/each}
-						</div>
+						<label for="event-category-desktop" class="{MONO} text-on-surface-variant">Category</label>
+						<select id="event-category-desktop" bind:value={selectedCategory} class="w-full h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50">
+							{#each categoryOptions as category (category.id)}<option value={category.id}>{category.label}</option>{/each}
+							<option value="custom">Custom category…</option>
+						</select>
+						{#if selectedCategory === 'custom'}<input type="text" bind:value={customCategory} maxlength="48" placeholder="Enter a custom category" class="w-full h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50" />{/if}
 					</div>
 
 					<div class="flex flex-col gap-0">
@@ -606,7 +625,7 @@
 						<div class="relative rounded-lg overflow-hidden border border-surface-glass-border">
 							<Cover cover={demoCover} class="w-full h-44" iconClass="w-12 h-12 text-white/30" />
 							<div class="absolute top-3 left-3 flex items-center gap-2">
-								<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{tags[0] ?? 'Tech & AI'}</span>
+								<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{categoryLabel || 'Tech & AI'}</span>
 								<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{city} WAT</span>
 							</div>
 							<div class="absolute top-3 right-3 hidden xl:flex flex-col gap-1 w-40 rounded-lg border border-surface-glass-border bg-surface-base/85 backdrop-blur-md p-2.5">
@@ -770,10 +789,6 @@
 					<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, venues…</span>
 					<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
 				</a>
-				<span class="hidden xl:flex items-center gap-2 h-10 px-3 border border-surface-glass-border rounded-lg">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>
-					<span class="{MONO} text-on-surface">Secure_Node</span>
-				</span>
 				<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
 					<Bell class="w-4.5 h-4.5" />
 					<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
@@ -878,7 +893,7 @@
 					<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-3">
 						<div class="flex items-center gap-2 flex-wrap">
 							<span class="font-code text-body-md font-bold text-on-surface">{timeRange(s.time)}</span>
-							<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">{s.stage}</span>
+							<input type="text" bind:value={s.stage} aria-label="Room or stage for {s.title}" class="max-w-56 px-2 py-1 rounded bg-surface-container-high border border-surface-glass-border text-on-surface-variant {MONO} focus:outline-none focus:border-primary/50" />
 							<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">{sessionTypes[i % sessionTypes.length]}</span>
 							<button
 								type="button"
@@ -893,11 +908,10 @@
 							<h3 class="font-display text-headline-md text-on-surface leading-tight">{s.title}</h3>
 							<p class="text-body-sm text-on-surface-variant pt-1">{sessionDesc[i % sessionDesc.length]}</p>
 						</div>
-						<div class="rounded-lg bg-surface-base border border-surface-glass-border px-4 py-3 flex items-center gap-3">
-							<Avatar name={roster[i % roster.length].name} size="xs" />
-							<span class="text-body-md font-semibold text-on-surface">{roster[i % roster.length].name}</span>
-							<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant">• {roster[i % roster.length].role}</span>
-						</div>
+						{#if roster.length}
+							{@const speaker = roster[i % roster.length]}
+							<div class="rounded-lg bg-surface-base border border-surface-glass-border px-4 py-3 flex items-center gap-3"><Avatar name={speaker.name} size="xs" /><span class="text-body-md font-semibold text-on-surface">{speaker.name}</span><span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant">• {speaker.role}</span></div>
+						{:else}<p class="text-body-sm text-on-surface-variant">Speakers can be added below.</p>{/if}
 					</div>
 				{:else}
 					<p class="text-body-sm text-on-surface-variant rounded-xl border border-dashed border-outline-variant/50 p-6">No sessions on this day yet — add the first block below.</p>
@@ -907,9 +921,7 @@
 					<div class="rounded-xl border border-surface-glass-border bg-surface-container-low p-5 grid grid-cols-[110px_1fr] gap-3">
 						<input type="time" bind:value={newSession.time} class="px-3 h-11 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50" />
 						<input type="text" bind:value={newSession.title} placeholder="Session title" class="px-3 h-11 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50" />
-						<select bind:value={newSession.stage} class="col-span-2 px-3 h-11 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50">
-							{#each stagePool as s (s)}<option value={s}>{s}</option>{/each}
-						</select>
+						<input type="text" bind:value={newSession.stage} placeholder="Room or stage name" aria-label="Room or stage name" class="col-span-2 px-3 h-11 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50" />
 						<button type="button" onclick={addSession} class="col-span-2 h-11 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center gap-2 glow-primary">
 							<Plus class="w-4 h-4" /> Add session
 						</button>
@@ -923,29 +935,22 @@
 				<div class="flex flex-col gap-4 pt-2">
 					<div class="flex items-end justify-between gap-4">
 						<div>
-							<h2 class="font-display text-headline-lg text-on-surface">Confirmed Roster</h2>
-							<p class="text-body-sm text-on-surface-variant pt-1">Speaker metadata automatically generates decentralized proof-of-attendance badges.</p>
+							<h2 class="font-display text-headline-lg text-on-surface">Speaker/Performer</h2>
+							<p class="text-body-sm text-on-surface-variant pt-1">Add verified Owltside profiles to queue invitations, or list performers by name only.</p>
 						</div>
-						<button type="button" onclick={() => toast('Invite flow opens with the speaker portal', 'info')} class="h-10 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors shrink-0">
-							<UserPlus class="w-4 h-4" /> Invite Speaker
+						<button type="button" onclick={openInviteDialog} class="h-10 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors shrink-0">
+							<UserPlus class="w-4 h-4" /> Invite
 						</button>
 					</div>
 					<div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
-						{#each roster as person (person.name)}
+						{#each roster as person (person.id ?? person.name)}
 							<div class="rounded-xl border border-surface-glass-border bg-surface-container p-4 flex flex-col gap-3">
-								<div class="flex items-center gap-3 min-w-0">
-									<Avatar name={person.name} size="md" />
-									<div class="min-w-0">
-										<span class="text-body-md font-semibold text-on-surface block truncate">{person.name}</span>
-										<span class="text-body-sm text-on-surface-variant block truncate">{person.org}</span>
-									</div>
-								</div>
-								<p class="text-body-sm text-on-surface-variant line-clamp-2">{person.bio}</p>
-								<div class="flex items-center justify-between gap-2 mt-auto">
-									<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">{person.tag}</span>
-									<BadgeCheck class="w-4 h-4 text-on-surface-variant" />
-								</div>
+								<div class="flex items-center gap-3 min-w-0"><Avatar name={person.name} color={person.avatarColor} size="md" /><div class="min-w-0 flex-1"><span class="text-body-md font-semibold text-on-surface block truncate">{person.name}</span><span class="text-body-sm text-on-surface-variant block truncate">{person.role}</span></div><button type="button" aria-label="Remove {person.name}" onclick={() => removeSpeaker(person)} class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-surface-container-high"><X class="w-4 h-4" /></button></div>
+								{#if person.bio}<p class="text-body-sm text-on-surface-variant line-clamp-2">{person.bio}</p>{/if}
+								<span class="self-start {MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">{person.invited ? `Invite pending · @${person.handle}` : 'Display only'}</span>
 							</div>
+						{:else}
+							<p class="col-span-full rounded-xl border border-dashed border-outline-variant/50 p-6 text-body-sm text-on-surface-variant">No speakers or performers added yet. Use Invite to add an Owltside profile or a display-only name.</p>
 						{/each}
 					</div>
 				</div>
@@ -1194,10 +1199,6 @@
 					<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, venues…</span>
 					<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
 				</a>
-				<span class="hidden xl:flex items-center gap-2 h-10 px-3 border border-surface-glass-border rounded-lg">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>
-					<span class="{MONO} text-on-surface">Secure_Node</span>
-				</span>
 				<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
 					<Bell class="w-4.5 h-4.5" />
 					<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
@@ -1286,7 +1287,7 @@
 							<span class="{MONO} bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded">Mainnet Protocol 1.4</span>
 						</div>
 						<div class="absolute inset-x-0 bottom-0 p-6">
-							<span class="{MONO} text-tertiary">{(tags[0] ?? 'Annual Tech & Sound').toUpperCase()} SUMMIT</span>
+							<span class="{MONO} text-tertiary">{(categoryLabel || 'Event').toUpperCase()} SUMMIT</span>
 							<h2 class="font-display text-headline-lg md:text-[32px] leading-tight text-on-surface pt-2">{title || 'Untitled node'}</h2>
 							<span class="flex flex-wrap items-center gap-4 pt-2 text-body-sm text-on-surface-variant">
 								<span class="flex items-center gap-1.5"><CalendarDays class="w-4 h-4 text-primary" /> {fmtDate(date)} – {fmtDate(dateEnd)}</span>
@@ -1404,7 +1405,7 @@
 								<span class="w-8 h-8 rounded-lg bg-surface-container-high border border-surface-glass-border font-code text-label-badge text-on-surface flex items-center justify-center shrink-0">3</span>
 								<span class="min-w-0">
 									<span class="text-body-lg font-semibold text-on-surface block truncate">Curated Agenda &amp; Talent</span>
-									<span class="text-body-sm text-on-surface-variant block pt-0.5">{days.length} Days • {sessionCount} Interactive Panels • 6 Verified Headliners</span>
+									<span class="text-body-sm text-on-surface-variant block pt-0.5">{days.length} Days • {sessionCount} Scheduled Sessions • {roster.length} Speakers/Performers</span>
 								</span>
 							</span>
 							<button type="button" onclick={() => { step = 3; scrollTo({ top: 0 }); }} class="h-9 px-3.5 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors shrink-0">
@@ -1412,22 +1413,11 @@
 							</button>
 						</div>
 						<div class="grid sm:grid-cols-3 gap-3 border-t border-surface-glass-border pt-4">
-							{#each roster.slice(0, 2) as person (person.name)}
-								<div class="rounded-lg bg-surface-container-low border border-surface-glass-border px-4 py-3 flex items-center gap-3 min-w-0">
-									<Avatar name={person.name} size="xs" />
-									<span class="min-w-0">
-										<span class="text-body-md font-semibold text-on-surface block truncate">{person.name}</span>
-										<span class="text-body-sm text-on-surface-variant block truncate">{person.role}</span>
-									</span>
-								</div>
+							{#each roster.slice(0, 2) as person (person.id ?? person.name)}
+								<div class="rounded-lg bg-surface-container-low border border-surface-glass-border px-4 py-3 flex items-center gap-3 min-w-0"><Avatar name={person.name} size="xs" /><span class="min-w-0"><span class="text-body-md font-semibold text-on-surface block truncate">{person.name}</span><span class="text-body-sm text-on-surface-variant block truncate">{person.role}</span></span></div>
 							{/each}
-							<div class="rounded-lg bg-surface-container-low border border-surface-glass-border px-4 py-3 flex items-center gap-3 min-w-0">
-								<span class="w-7 h-7 rounded-full bg-surface-container-high border border-surface-glass-border font-code text-label-badge text-on-surface-variant flex items-center justify-center shrink-0">+4</span>
-								<span class="min-w-0">
-									<span class="text-body-md font-semibold text-on-surface block">4 More Artists</span>
-									<span class="text-body-sm text-on-surface-variant block">Contract Signed</span>
-								</span>
-							</div>
+							{#if roster.length > 2}<div class="rounded-lg bg-surface-container-low border border-surface-glass-border px-4 py-3 flex items-center gap-3 min-w-0"><span class="w-7 h-7 rounded-full bg-surface-container-high border border-surface-glass-border font-code text-label-badge text-on-surface-variant flex items-center justify-center shrink-0">+{roster.length - 2}</span><span class="text-body-sm text-on-surface-variant">More speakers/performers</span></div>{/if}
+							{#if roster.length === 0}<p class="text-body-sm text-on-surface-variant col-span-full">No speakers or performers added yet.</p>{/if}
 						</div>
 					</div>
 
@@ -1673,18 +1663,12 @@
 						class="w-full px-4 py-3.5 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-lg focus:outline-none focus:border-outline"
 					/>
 					<div class="flex flex-col gap-2 pt-1">
-						<div class="flex items-center justify-between">
-							<span class="text-body-sm text-on-surface-variant">Category & Community Tags</span>
-							<span class="text-label-badge text-on-surface-variant">Max 4 Selected</span>
-						</div>
-						<div class="flex flex-wrap gap-2">
-							{#each tagPool as t (t)}
-								<button
-									class="px-3 py-1.5 rounded-full text-body-sm border transition-all {tags.includes(t) ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container-high border-outline-variant/30 text-on-surface-variant'}"
-									onclick={() => toggleTag(t)}
-								>{t}</button>
-							{/each}
-						</div>
+						<label for="event-category-mobile" class="text-body-sm text-on-surface-variant">Category</label>
+						<select id="event-category-mobile" bind:value={selectedCategory} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline">
+							{#each categoryOptions as category (category.id)}<option value={category.id}>{category.label}</option>{/each}
+							<option value="custom">Custom category…</option>
+						</select>
+						{#if selectedCategory === 'custom'}<input type="text" bind:value={customCategory} maxlength="48" placeholder="Enter a custom category" class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />{/if}
 					</div>
 				</div>
 
@@ -1814,18 +1798,14 @@
 						+ Day
 					</button>
 				</div>
-				<div class="flex flex-wrap gap-1.5">
-					{#each stagePool as s (s)}
-						<span class="px-2.5 py-1 rounded-full bg-surface-container-high border border-outline-variant/20 text-label-badge text-on-surface-variant">{s}</span>
-					{/each}
-				</div>
+				<p class="text-label-badge text-on-surface-variant">Type a room or stage name for each session.</p>
 				<div class="flex flex-col gap-2">
 					{#each days[dayIdx].sessions as s, i (i)}
 						<div class="flex items-start gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md">
 							<span class="font-code text-body-md text-primary pt-0.5 w-14 flex-shrink-0">{s.time}</span>
 							<div class="flex flex-col flex-1 min-w-0">
 								<span class="text-body-md text-on-surface font-medium">{s.title}</span>
-								<span class="text-body-sm text-on-surface-variant">{s.stage}</span>
+								<input type="text" bind:value={s.stage} aria-label="Room or stage for {s.title}" class="w-full mt-1 px-2 py-1 rounded bg-surface-container-high border border-surface-glass-border text-on-surface-variant text-body-sm focus:outline-none focus:border-primary/50" />
 							</div>
 							<button aria-label="Remove session" class="text-on-surface-variant hover:text-error" onclick={() => (days[dayIdx].sessions = days[dayIdx].sessions.filter((_, j) => j !== i))}>
 								<Trash2 class="w-4 h-4" />
@@ -1838,17 +1818,17 @@
 				<div class="rounded-xl bg-surface-container-low border border-dashed border-outline-variant/50 p-space-md grid grid-cols-[80px_1fr] gap-2">
 					<input type="time" bind:value={newSession.time} class="px-3 py-2.5 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md" />
 					<input type="text" bind:value={newSession.title} placeholder="Session title" class="px-3 py-2.5 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />
-					<select bind:value={newSession.stage} class="col-span-2 px-3 py-2.5 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md">
-						{#each stagePool as s (s)}<option value={s}>{s}</option>{/each}
-					</select>
+					<input type="text" bind:value={newSession.stage} placeholder="Room or stage name" aria-label="Room or stage name" class="col-span-2 px-3 py-2.5 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md" />
 					<button class="col-span-2 h-10 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center gap-1.5" onclick={addSession}>
 						<Plus class="w-4 h-4" /> Add session
 					</button>
 				</div>
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-space-sm">
-					<div class="flex items-center justify-between gap-2"><span><span class="block font-display text-headline-md text-on-surface">Confirmed Roster</span><span class="block text-label-badge text-on-surface-variant pt-1">Speaker metadata powers attendance badges</span></span><button type="button" aria-label="Invite speaker" onclick={() => toast('Invite flow opens with the speaker portal', 'info')} class="h-9 px-3 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface flex items-center gap-1"><UserPlus class="w-3.5 h-3.5" />Invite</button></div>
-					{#each roster as person (person.name)}
-						<div class="rounded-xl bg-surface-container-low border border-surface-glass-border p-3 flex items-start gap-3"><Avatar name={person.name} size="sm" /><span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface truncate">{person.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{person.role}</span><span class="block text-label-badge text-on-surface-variant pt-1">{person.bio}</span></span><BadgeCheck class="w-4 h-4 text-accent-emerald shrink-0" /></div>
+					<div class="flex items-center justify-between gap-2"><span><span class="block font-display text-headline-md text-on-surface">Speaker/Performer</span><span class="block text-label-badge text-on-surface-variant pt-1">Role and invitation status appear in the event lineup</span></span><button type="button" aria-label="Invite speaker or performer" onclick={openInviteDialog} class="h-9 px-3 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface flex items-center gap-1"><UserPlus class="w-3.5 h-3.5" />Invite</button></div>
+					{#each roster as person (person.id ?? person.name)}
+						<div class="rounded-xl bg-surface-container-low border border-surface-glass-border p-3 flex items-start gap-3"><Avatar name={person.name} color={person.avatarColor} size="sm" /><span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface truncate">{person.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{person.role}</span><span class="block text-label-badge text-on-surface-variant pt-1">{person.invited ? `Invite pending · @${person.handle}` : 'Display only'}</span>{#if person.bio}<span class="block text-label-badge text-on-surface-variant pt-1">{person.bio}</span>{/if}</span><button type="button" aria-label="Remove {person.name}" onclick={() => removeSpeaker(person)} class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error shrink-0"><X class="w-4 h-4" /></button></div>
+					{:else}
+						<p class="rounded-xl border border-dashed border-outline-variant/50 p-6 text-body-sm text-on-surface-variant">No speakers or performers added yet.</p>
 					{/each}
 				</section>
 			</div>
@@ -2022,3 +2002,25 @@
 	</nav>
 </main>
 </div>
+
+{#if showInviteDialog}
+	<div class="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm p-4 flex items-center justify-center">
+		<div role="dialog" aria-modal="true" aria-labelledby="speaker-invite-title" class="w-full max-w-lg rounded-2xl border border-surface-glass-border bg-surface-container shadow-2xl p-5 sm:p-6 flex flex-col gap-4">
+			<div class="flex items-start justify-between gap-4"><div><h2 id="speaker-invite-title" class="font-display text-headline-md text-on-surface">Add Speaker/Performer</h2><p class="text-body-sm text-on-surface-variant pt-1">Enter an @username to invite a profile, or a plain name for display only.</p></div><button type="button" aria-label="Close invite dialog" onclick={() => (showInviteDialog = false)} class="w-9 h-9 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high"><X class="w-4 h-4" /></button></div>
+			<label class="flex flex-col gap-2 text-label-badge text-on-surface-variant">Name or username<input type="text" bind:value={inviteName} oninput={() => { selectedInvitee = null; void searchInviteProfiles(); }} autocomplete="off" placeholder="@username or speaker name" class="w-full h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-body-md text-on-surface focus:outline-none focus:border-primary/50" /></label>
+			{#if inviteName.trim().startsWith('@') && inviteName.trim().length > 2}
+				<div class="rounded-xl border border-surface-glass-border bg-surface-container-low p-2 max-h-52 overflow-y-auto">
+					{#if searchingProfiles}<p class="px-3 py-4 text-body-sm text-on-surface-variant">Searching profiles…</p>
+					{:else if inviteMatches.length}
+						{#each inviteMatches as profile (profile.id)}<button type="button" onclick={() => selectInvitee(profile)} class="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-surface-container-high"><Avatar name={profile.name} color={profile.avatarColor} size="sm" /><span class="min-w-0 flex-1"><span class="block text-body-sm font-semibold text-on-surface truncate">{profile.name}</span><span class="block text-label-badge text-on-surface-variant truncate">@{profile.handle}{profile.city ? ` · ${profile.city}` : ''}</span></span>{#if selectedInvitee?.id === profile.id}<Check class="w-4 h-4 text-accent-emerald" />{/if}</button>{/each}
+					{:else if inviteError}<p class="px-3 py-4 text-body-sm text-error">{inviteError}</p>
+					{:else}<p class="px-3 py-4 text-body-sm text-on-surface-variant">No matching profiles. Choose a profile to queue an invite.</p>{/if}
+				</div>
+			{/if}
+			<label class="flex flex-col gap-2 text-label-badge text-on-surface-variant">Role for this event<input type="text" bind:value={inviteRole} maxlength="80" placeholder="e.g. Keynote speaker, DJ, performer" class="w-full h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-body-md text-on-surface focus:outline-none focus:border-primary/50" /></label>
+			{#if inviteError && !(inviteName.trim().startsWith('@') && inviteName.trim().length > 2 && !inviteMatches.length)}<p class="text-body-sm text-error">{inviteError}</p>{/if}
+			<p class="text-label-badge text-on-surface-variant">Profile invites are notified when the event is published. Plain names are not linked to an account.</p>
+			<div class="flex justify-end gap-2 pt-1"><button type="button" onclick={() => (showInviteDialog = false)} class="h-10 px-4 rounded-lg border border-surface-glass-border text-body-sm text-on-surface-variant hover:bg-surface-container-high">Cancel</button><button type="button" disabled={!inviteCanSubmit} onclick={addSpeaker} class="h-10 px-4 rounded-lg bg-primary text-on-primary text-body-sm font-semibold disabled:opacity-40">{inviteName.trim().startsWith('@') ? 'Queue invite' : 'Add display name'}</button></div>
+		</div>
+	</div>
+{/if}
