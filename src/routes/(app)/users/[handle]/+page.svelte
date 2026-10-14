@@ -1,10 +1,13 @@
 <script lang="ts">
-	import { BadgeCheck, Globe, UserPlus, UserCheck, Mic, CalendarDays, Crown } from '@lucide/svelte';
+	import { BadgeCheck, Globe, UserPlus, UserCheck, Users, Mic, CalendarDays, Crown } from '@lucide/svelte';
+
 	import Avatar from '$components/Avatar.svelte';
 	import Chip from '$components/Chip.svelte';
 	import EventRow from '$components/EventRow.svelte';
+	import Sheet from '$components/Sheet.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import { follows, toggleIn } from '$lib/state/prefs.svelte';
+	import { mockProfiles } from '$lib/data/mock-profiles';
 	import { toast } from '$lib/state/toast.svelte';
 	import type { EventItem } from '$lib/types';
 
@@ -14,6 +17,10 @@
 
 	type ProfileCategory = 'all' | 'organized' | 'roles';
 	let category = $state('all' as ProfileCategory);
+	let followersOpen = $state(false);
+	let followingOpen = $state(false);
+	let followersProfiles = $derived(mockProfiles.slice().reverse());
+	let followingProfiles = $derived(mockProfiles.slice(0, 4));
 
 	const organizedEvents = $derived(data.events.filter((event) => event.organizer?.id === profile.id));
 	const roleEvents = $derived(
@@ -85,14 +92,14 @@
 			</div>
 
 			<div class="grid grid-cols-2 gap-2 bg-surface-container-low rounded-xl p-3 shadow-md">
-				<div class="flex flex-col items-center">
+				<button type="button" onclick={() => (followersOpen = true)} class="flex flex-col items-center rounded-lg hover:bg-surface-container transition-colors py-1 active:scale-[0.98]">
 					<span class="font-display text-headline-md text-primary font-semibold">{profile.followers.toLocaleString()}</span>
 					<span class="text-label-badge text-on-surface-variant tracking-wider uppercase">Followers</span>
-				</div>
-				<div class="flex flex-col items-center">
+				</button>
+				<button type="button" onclick={() => (followingOpen = true)} class="flex flex-col items-center rounded-lg hover:bg-surface-container transition-colors py-1 active:scale-[0.98]">
 					<span class="font-display text-headline-md text-on-surface font-semibold">{profile.following.toLocaleString()}</span>
 					<span class="text-label-badge text-on-surface-variant tracking-wider uppercase">Following</span>
-				</div>
+				</button>
 			</div>
 
 			{#if data.events.length}
@@ -174,3 +181,36 @@
 		</div>
 	</div>
 </main>
+
+<Sheet open={followersOpen} title="Followers • {profile.followers.toLocaleString()}" close={() => (followersOpen = false)}>
+	<div class="flex flex-col gap-3 pt-2">
+		<p class="text-body-sm text-on-surface-variant flex items-center gap-1.5"><Users class="w-4 h-4" /> People following {profile.name}</p>
+		{#each followersProfiles as prof (prof.id)}
+			<a href="/users/{prof.handle}" onclick={() => (followersOpen = false)} class="flex items-center gap-3 rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3 hover:bg-surface-container-high transition-colors">
+				<Avatar name={prof.name} color={prof.avatarColor} size="md" />
+				<span class="flex-1 min-w-0">
+					<span class="block text-body-md font-semibold text-on-surface truncate flex items-center gap-1">{prof.name} {#if prof.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}</span>
+					<span class="block text-body-sm text-on-surface-variant truncate">@{prof.handle} • {prof.city}</span>
+				</span>
+				<span class="text-label-badge px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant border border-surface-glass-border shrink-0">{prof.followers.toLocaleString()} followers</span>
+			</a>
+		{/each}
+	</div>
+</Sheet>
+
+<Sheet open={followingOpen} title="Following • {profile.following.toLocaleString()}" close={() => (followingOpen = false)}>
+	<div class="flex flex-col gap-3 pt-2">
+		<p class="text-body-sm text-on-surface-variant flex items-center gap-1.5"><Users class="w-4 h-4" /> People followed by {profile.name}</p>
+		{#each followingProfiles as prof (prof.id)}
+			<a href="/users/{prof.handle}" onclick={() => (followingOpen = false)} class="flex items-center gap-3 rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3 hover:bg-surface-container-high transition-colors">
+				<Avatar name={prof.name} color={prof.avatarColor} size="md" />
+				<span class="flex-1 min-w-0">
+					<span class="block text-body-md font-semibold text-on-surface truncate flex items-center gap-1">{prof.name} {#if prof.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}</span>
+					<span class="block text-body-sm text-on-surface-variant truncate">@{prof.handle} • {prof.city}</span>
+				</span>
+				<button type="button" class="text-label-badge px-3 py-1.5 rounded-full bg-primary text-on-primary font-semibold shrink-0" onclick={(e) => { e.preventDefault(); toggleIn(follows, prof.id); }}>{follows.value.includes(prof.id) ? 'Following' : 'Follow'}</button>
+			</a>
+		{/each}
+	</div>
+</Sheet>
+

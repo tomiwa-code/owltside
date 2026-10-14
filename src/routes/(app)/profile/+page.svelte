@@ -17,13 +17,15 @@
 		Settings2,
 		Share2,
 		ShieldCheck,
+		Users,
 		WifiOff
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import SavedEventsList from '$components/SavedEventsList.svelte';
 	import Sheet from '$components/Sheet.svelte';
+	import { mockProfiles } from '$lib/data/mock-profiles';
 	import { page } from '$app/state';
-	import { bookmarks, follows } from '$lib/state/prefs.svelte';
+	import { bookmarks, follows, toggleIn } from '$lib/state/prefs.svelte';
 	import { profileAppearance, profileDraft } from '$lib/state/profile.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { fmtDate, fmtTime } from '$lib/utils/dates';
@@ -63,6 +65,15 @@
 	let editLink = $state('');
 	let editInterests = $state<string[]>([]);
 	let editError = $state('');
+	let followersOpen = $state(false);
+	let followingOpen = $state(false);
+
+	let followingProfiles = $derived.by(() => {
+		const followed = new Set(follows.value);
+		const matched = mockProfiles.filter((p) => followed.has(p.id));
+		return matched.length ? matched : mockProfiles.slice(0, 4);
+	});
+	let followersProfiles = $derived(mockProfiles.slice().reverse());
 	const interestChoices = ['Afrobeats', 'Amapiano', 'Live music', 'Nightlife', 'Tech', 'Art & design', 'Comedy', 'Food', 'Fashion', 'Film', 'Workshops', 'Fitness'];
 
 	// month grid for the current month
@@ -297,11 +308,7 @@
 						<span class="flex items-center flex-wrap gap-2">
 							<span class="font-display text-headline-lg text-on-surface tracking-tight">{name}</span>
 							{#if session}<BadgeCheck class="w-5 h-5 text-tertiary shrink-0" aria-label="Verified member" />{/if}
-							{#if session}
-								<span class="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary-container text-on-primary-container {MONO}">
-									Verified Member
-								</span>
-							{:else}
+							{#if !session}
 								<span class="px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant {MONO}">Guest</span>
 							{/if}
 						</span>
@@ -315,16 +322,18 @@
 					</span>
 				</span>
 				<span class="flex items-center gap-3 flex-wrap">
-					{#each [
-						[upcoming.length + (data.tickets?.length ?? 0), 'Tickets', true],
-						[follows.value.length + 86, 'Following', false],
-						[342, 'Followers', false]
-					] as [value, label, accent]}
-						<span class="rounded-lg border border-surface-glass-border bg-surface-container-high/60 px-6 py-3 text-center">
-							<span class="block font-display text-headline-md font-semibold {accent ? 'text-primary' : 'text-on-surface'}">{value}</span>
-							<span class="{MONO} text-on-surface-variant block mt-0.5">{label}</span>
-						</span>
-					{/each}
+					<span class="rounded-lg border border-surface-glass-border bg-surface-container-high/60 px-6 py-3 text-center">
+						<span class="block font-display text-headline-md font-semibold text-primary">{upcoming.length + (data.tickets?.length ?? 0)}</span>
+						<span class="{MONO} text-on-surface-variant block mt-0.5">Tickets</span>
+					</span>
+					<button type="button" onclick={() => (followingOpen = true)} class="rounded-lg border border-surface-glass-border bg-surface-container-high/60 px-6 py-3 text-center hover:bg-surface-container-high transition-colors text-left">
+						<span class="block font-display text-headline-md font-semibold text-on-surface">{follows.value.length + 86}</span>
+						<span class="{MONO} text-on-surface-variant block mt-0.5">Following</span>
+					</button>
+					<button type="button" onclick={() => (followersOpen = true)} class="rounded-lg border border-surface-glass-border bg-surface-container-high/60 px-6 py-3 text-center hover:bg-surface-container-high transition-colors text-left">
+						<span class="block font-display text-headline-md font-semibold text-on-surface">342</span>
+						<span class="{MONO} text-on-surface-variant block mt-0.5">Followers</span>
+					</button>
 				</span>
 			</div>
 		</section>
@@ -554,11 +563,7 @@
 					<div class="flex items-center flex-wrap gap-2">
 							<h1 class="font-display text-headline-lg-mobile text-on-surface tracking-tight">{name}</h1>
 						{#if session}<BadgeCheck class="w-5 h-5 text-tertiary shrink-0" aria-label="Verified member" />{/if}
-						{#if session}
-							<span class="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary-container text-on-primary-container text-label-badge">
-								Verified Member
-							</span>
-						{:else}
+						{#if !session}
 							<span class="px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-label-badge">Guest</span>
 						{/if}
 					</div>
@@ -577,15 +582,15 @@
 
 				<!-- stats -->
 				<div class="grid grid-cols-3 gap-2 mt-4 bg-surface-container-low rounded-xl p-3 shadow-md">
-					<button class="flex flex-col items-center justify-center p-1 rounded-lg hover:bg-surface-container transition-colors group active:scale-95">
+					<div class="flex flex-col items-center justify-center p-1 rounded-lg">
 						<span class="font-display text-headline-md text-primary font-semibold">{upcoming.length + (data.tickets?.length ?? 0)}</span>
 						<span class="text-label-badge text-on-surface-variant tracking-wider uppercase">Tickets</span>
-					</button>
-					<button class="flex flex-col items-center justify-center p-1 rounded-lg hover:bg-surface-container transition-colors group active:scale-95">
+					</div>
+					<button type="button" onclick={() => (followingOpen = true)} class="flex flex-col items-center justify-center p-1 rounded-lg hover:bg-surface-container transition-colors active:scale-95">
 						<span class="font-display text-headline-md text-on-surface font-semibold">{follows.value.length + 86}</span>
 						<span class="text-label-badge text-on-surface-variant tracking-wider uppercase">Following</span>
 					</button>
-					<button class="flex flex-col items-center justify-center p-1 rounded-lg hover:bg-surface-container transition-colors group active:scale-95">
+					<button type="button" onclick={() => (followersOpen = true)} class="flex flex-col items-center justify-center p-1 rounded-lg hover:bg-surface-container transition-colors active:scale-95">
 						<span class="font-display text-headline-md text-on-surface font-semibold">342</span>
 						<span class="text-label-badge text-on-surface-variant tracking-wider uppercase">Followers</span>
 					</button>
@@ -743,4 +748,39 @@
 			<p class="text-xs text-on-surface-variant mt-2">Choose up to 12 interests to personalize event discovery.</p>
 		</fieldset>
 	</form>
+</Sheet>
+
+<Sheet open={followersOpen} title="Followers • 342" close={() => (followersOpen = false)}>
+	<div class="flex flex-col gap-3 pt-2">
+		<p class="text-body-sm text-on-surface-variant flex items-center gap-1.5"><Users class="w-4 h-4" /> People following you</p>
+		{#each followersProfiles as prof (prof.id)}
+			<a href="/users/{prof.handle}" onclick={() => (followersOpen = false)} class="flex items-center gap-3 rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3 hover:bg-surface-container-high transition-colors">
+				<Avatar name={prof.name} color={prof.avatarColor} size="md" />
+				<span class="flex-1 min-w-0 text-left">
+					<span class="block text-body-md font-semibold text-on-surface truncate flex items-center gap-1">{prof.name} {#if prof.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}</span>
+					<span class="block text-body-sm text-on-surface-variant truncate">@{prof.handle} • {prof.city}</span>
+				</span>
+				<span class="text-label-badge px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant border border-surface-glass-border shrink-0">{prof.followers.toLocaleString()} followers</span>
+			</a>
+		{/each}
+	</div>
+</Sheet>
+
+<Sheet open={followingOpen} title="Following • {follows.value.length + 86}" close={() => (followingOpen = false)}>
+	<div class="flex flex-col gap-3 pt-2">
+		<p class="text-body-sm text-on-surface-variant flex items-center gap-1.5"><Users class="w-4 h-4" /> People you follow</p>
+		{#each followingProfiles as prof (prof.id)}
+			<a href="/users/{prof.handle}" onclick={() => (followingOpen = false)} class="flex items-center gap-3 rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3 hover:bg-surface-container-high transition-colors">
+				<Avatar name={prof.name} color={prof.avatarColor} size="md" />
+				<span class="flex-1 min-w-0 text-left">
+					<span class="block text-body-md font-semibold text-on-surface truncate flex items-center gap-1">{prof.name} {#if prof.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}</span>
+					<span class="block text-body-sm text-on-surface-variant truncate">@{prof.handle} • {prof.city}</span>
+				</span>
+				<button type="button" class="text-label-badge px-3 py-1.5 rounded-full bg-primary text-on-primary font-semibold shrink-0" onclick={(e) => { e.preventDefault(); toggleIn(follows, prof.id); }}>{follows.value.includes(prof.id) ? 'Following' : 'Follow'}</button>
+			</a>
+		{/each}
+		{#if followingProfiles.length === 0}
+			<p class="text-body-sm text-on-surface-variant text-center py-6">You are not following anyone yet.</p>
+		{/if}
+	</div>
 </Sheet>
