@@ -1,14 +1,46 @@
 <script lang="ts">
-	import { BadgeCheck, Globe, UserPlus, UserCheck } from '@lucide/svelte';
+	import { BadgeCheck, Globe, UserPlus, UserCheck, Mic, CalendarDays, Crown } from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
+	import Chip from '$components/Chip.svelte';
 	import EventRow from '$components/EventRow.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import { follows, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
+	import type { EventItem } from '$lib/types';
 
 	let { data } = $props();
 	const profile = $derived(data.profile);
 	const following = $derived(follows.value.includes(profile.id));
+
+	type ProfileCategory = 'all' | 'organized' | 'roles';
+	let category = $state('all' as ProfileCategory);
+
+	const organizedEvents = $derived(data.events.filter((event) => event.organizer?.id === profile.id));
+	const roleEvents = $derived(
+		data.events.filter((event) => {
+			if (event.organizer?.id === profile.id) return false;
+			return event.speakers.some(
+				(speaker) =>
+					speaker.id === profile.id &&
+					!speaker.displayOnly &&
+					(!speaker.invited || speaker.inviteStatus === 'accepted')
+			);
+		})
+	);
+
+	const filtered = $derived(
+		category === 'organized' ? organizedEvents : category === 'roles' ? roleEvents : data.events
+	);
+
+	const heading = $derived(
+		category === 'organized' ? 'Organized Events' : category === 'roles' ? 'Event Roles' : 'Events & sessions'
+	);
+
+	function speakerFor(event: EventItem) {
+		return event.speakers.find(
+			(speaker) => speaker.id === profile.id && (!speaker.invited || speaker.inviteStatus === 'accepted')
+		);
+	}
 </script>
 
 <svelte:head><title>{profile.name} • Owltside</title></svelte:head>
@@ -64,14 +96,79 @@
 			</div>
 
 			{#if data.events.length}
+				<div class="flex flex-col gap-space-xs">
+					<div class="flex items-center justify-between">
+						<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">{heading}</span>
+						<span class="text-label-badge text-outline-variant">{filtered.length} total</span>
+					</div>
+					<div class="flex gap-2 overflow-x-auto pb-1 -mx-gutter px-gutter scrollbar-none">
+						<Chip label={`All · ${data.events.length}`} icon={CalendarDays} active={category === 'all'} onclick={() => (category = 'all')} />
+						<Chip label={`Organized · ${organizedEvents.length}`} icon={Crown} active={category === 'organized'} onclick={() => (category = 'organized')} />
+						<Chip label={`Event Roles · ${roleEvents.length}`} icon={Mic} active={category === 'roles'} onclick={() => (category = 'roles')} />
+					</div>
+				</div>
+
+				{#if category === 'all'}
+					{#if organizedEvents.length}
+						<div class="flex flex-col gap-space-xs pb-2">
+							<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Organized</span>
+							{#each organizedEvents as event (event.id)}
+								{@const profileSpeaker = speakerFor(event)}
+								<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Organizer'} />
+							{/each}
+						</div>
+					{/if}
+					<div class="flex flex-col gap-space-xs pb-6">
+						<span class="flex items-center gap-1.5 text-label-badge text-on-surface-variant uppercase tracking-wider">
+							<Mic class="w-3.5 h-3.5" /> Event Roles {#if roleEvents.length}<span class="text-outline-variant normal-case tracking-normal">· {roleEvents.length} accepted</span>{/if}
+						</span>
+						{#if roleEvents.length}
+							{#each roleEvents as event (event.id)}
+								{@const profileSpeaker = speakerFor(event)}
+								<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Speaker'} />
+							{/each}
+						{:else}
+							<p class="text-body-sm text-on-surface-variant bg-surface-container rounded-xl p-4 border border-surface-glass-border">
+								No accepted event roles yet - when {profile.name} accepts a speaker invitation, the role will appear here for anyone viewing this profile.
+							</p>
+						{/if}
+					</div>
+				{:else if category === 'organized'}
+					<div class="flex flex-col gap-space-xs pb-6">
+						{#if organizedEvents.length}
+							{#each organizedEvents as event (event.id)}
+								{@const profileSpeaker = speakerFor(event)}
+								<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Organizer'} />
+							{/each}
+						{:else}
+							<p class="text-body-sm text-on-surface-variant bg-surface-container rounded-xl p-4 border border-surface-glass-border">No organized events yet.</p>
+						{/if}
+					</div>
+				{:else}
+					<div class="flex flex-col gap-space-xs pb-6">
+						{#if roleEvents.length}
+							{#each roleEvents as event (event.id)}
+								{@const profileSpeaker = speakerFor(event)}
+								<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Speaker'} />
+							{/each}
+						{:else}
+							<p class="text-body-sm text-on-surface-variant bg-surface-container rounded-xl p-4 border border-surface-glass-border">
+								No accepted event roles yet - when {profile.name} accepts a speaker invitation, the role will appear here for anyone viewing this profile.
+							</p>
+						{/if}
+					</div>
+				{/if}
+			{:else}
 				<div class="flex flex-col gap-space-xs pb-6">
 					<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Events & sessions</span>
-					{#each data.events as event (event.id)}
-						{@const profileSpeaker = event.speakers.find((speaker) =>
-							speaker.id === profile.id && (!speaker.invited || speaker.inviteStatus === 'accepted')
-						)}
-						<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : undefined} />
-					{/each}
+					<p class="text-body-sm text-on-surface-variant">No events yet.</p>
+					<div class="flex gap-2 overflow-x-auto pb-1 -mx-gutter px-gutter scrollbar-none">
+						<Chip label="All · 0" icon={CalendarDays} active={category === 'all'} onclick={() => (category = 'all')} />
+						<Chip label="Event Roles · 0" icon={Mic} active={category === 'roles'} onclick={() => (category = 'roles')} />
+					</div>
+					<p class="text-body-sm text-on-surface-variant bg-surface-container rounded-xl p-4 border border-surface-glass-border">
+						No accepted event roles yet - when this member accepts a speaker invitation, the role will appear here for anyone viewing this profile.
+					</p>
 				</div>
 			{/if}
 		</div>
