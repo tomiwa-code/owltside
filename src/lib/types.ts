@@ -28,9 +28,12 @@ export interface Profile {
 	following: number;
 }
 
+export type SpeakerInviteStatus = 'pending' | 'accepted' | 'declined';
+
 export interface EventSpeaker extends Profile {
 	role?: string;
 	invited?: boolean;
+	inviteStatus?: SpeakerInviteStatus;
 	displayOnly?: boolean;
 }
 

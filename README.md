@@ -40,6 +40,7 @@ code paths switch to the live backend — no component changes.
    - `007_profile_editing.sql` — banner, interests and 30-day username cooldown fields
    - `008_message_requests.sql` — organizer first-contact requests, RLS, and the accept-to-chat RPC
    - `009_speaker_invite_notifications.sql` — delivers role-specific notifications to invited profiles
+   - `010_speaker_invite_responses.sql` — lets invitees accept or decline event roles for their public profiles
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
