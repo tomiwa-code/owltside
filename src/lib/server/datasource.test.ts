@@ -72,7 +72,7 @@ describe('demo datasource', () => {
 		expect((await demoSource.getMessages(accepted.conversationId!)).map((message) => message.body)).toContain('Hello about the event');
 	});
 
-	it('notifies selected speaker profiles with their event role, not display-only names', async () => {
+	it('lets an invitee accept a role and shows it on their public profile', async () => {
 		const event = await demoSource.createEvent('u-ada', {
 			title: 'Speaker Invite Notification Test',
 			category: 'community gathering',
@@ -95,5 +95,15 @@ describe('demo datasource', () => {
 		expect(invite?.body).toContain('Panel moderator');
 		expect(invite?.href).toBe(`/events/${event.slug}`);
 		expect((await demoSource.getNotifications('u-ada')).some((notification) => notification.title.includes(event.title))).toBe(false);
+		expect((await demoSource.getProfileEvents('u-segun')).some((profileEvent) => profileEvent.id === event.id)).toBe(false);
+		await expect(demoSource.respondToSpeakerInvite('u-ada', event.slug, true)).rejects.toThrow('Speaker invitation not found');
+
+		expect(await demoSource.respondToSpeakerInvite('u-segun', event.slug, true)).toBe('accepted');
+		const profileEvent = (await demoSource.getProfileEvents('u-segun')).find((item) => item.id === event.id);
+		expect(profileEvent?.speakers.find((speaker) => speaker.id === 'u-segun')).toMatchObject({
+			role: 'Panel moderator',
+			inviteStatus: 'accepted'
+		});
+		await expect(demoSource.respondToSpeakerInvite('u-segun', event.slug, false)).rejects.toThrow('already been answered');
 	});
 });

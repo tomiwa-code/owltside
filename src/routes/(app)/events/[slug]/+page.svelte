@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
 		ArrowRight,
@@ -27,6 +27,7 @@
 	import Avatar from '$components/Avatar.svelte';
 	import Cover from '$components/Cover.svelte';
 	import Stepper from '$components/Stepper.svelte';
+	import SpeakerInviteNotice from '$components/SpeakerInviteNotice.svelte';
 	import { bookmarks, follows, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { countdownLabel, fmtDate, fmtDateFull, fmtTime } from '$lib/utils/dates';
@@ -42,6 +43,13 @@
 	);
 	const session = $derived(page.data.session);
 	const isOrganizer = $derived(session?.userId === event.organizer.id);
+	const visibleSpeakers = $derived(event.speakers.filter((speaker) => !speaker.invited || speaker.inviteStatus === 'accepted'));
+	const currentSpeakerInvite = $derived(
+		event.speakers.find((speaker) => speaker.id === session?.userId && speaker.invited && !speaker.displayOnly) ?? null
+	);
+	const speakerInviteStatus = $derived(currentSpeakerInvite?.inviteStatus ?? 'pending');
+	const showSpeakerInviteNotice = $derived(!!currentSpeakerInvite && speakerInviteStatus !== 'declined');
+	let speakerInviteResponding = $state(false);
 	let messageRequest = $state<MessageRequest | null>(null);
 	$effect(() => { messageRequest = data.messageRequest ?? null; });
 	let showMessageDialog = $state(false);
@@ -135,6 +143,26 @@
 			messageError = error instanceof Error ? error.message : 'Your request could not be sent';
 		} finally {
 			messageSending = false;
+		}
+	}
+
+	async function respondToSpeakerInvite(accept: boolean) {
+		if (!session || !currentSpeakerInvite || speakerInviteResponding) return;
+		speakerInviteResponding = true;
+		try {
+			const response = await fetch(`/api/events/${encodeURIComponent(event.slug)}/speaker-invite`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ accept })
+			});
+			const result = await response.json();
+			if (!response.ok) throw new Error(result.error ?? 'Your invitation response could not be saved');
+			await invalidateAll();
+			toast(accept ? 'Speaker invitation accepted' : 'Speaker invitation declined', 'success');
+		} catch (error) {
+			toast(error instanceof Error ? error.message : 'Your invitation response could not be saved', 'error');
+		} finally {
+			speakerInviteResponding = false;
 		}
 	}
 
@@ -371,12 +399,11 @@
 			</section>
 
 			<!-- stats -->
-			<div class="rounded-xl border border-surface-glass-border bg-surface-container grid grid-cols-2 lg:grid-cols-4 divide-x divide-surface-glass-border">
+			<div class="rounded-xl border border-surface-glass-border bg-surface-container grid grid-cols-3 divide-x divide-surface-glass-border">
 				{#each [
 					[`${event.attendees.toLocaleString()}+`, 'Global Engineers'],
-					[`${event.agenda.length}`, 'Tech Sessions'],
-					[`${event.speakers.length}`, 'Speakers/Performers'],
-					[`${agendaDays.length}`, 'Summit Days']
+					[`${visibleSpeakers.length}`, 'Speaker/Performer'],
+					[`${agendaDays.length}`, 'Day(s)']
 				] as [value, label]}
 					<div class="p-5 flex flex-col gap-1">
 						<span class="font-display text-headline-lg text-on-surface font-bold">{value}</span>
@@ -420,11 +447,12 @@
 								</span>
 							</div>
 							<h3 class="font-display text-headline-md text-on-surface leading-tight">{item.title}</h3>
-							{#if event.speakers[i % Math.max(1, event.speakers.length)]}
+							{#if visibleSpeakers.length}
+								{@const previewSpeaker = visibleSpeakers[i % visibleSpeakers.length]}
 								<div class="rounded-lg bg-surface-base border border-surface-glass-border px-4 py-2.5 flex items-center gap-3">
-									<Avatar name={event.speakers[i % event.speakers.length].name} size="xs" />
-									<span class="text-body-sm font-semibold text-on-surface">{event.speakers[i % event.speakers.length].name}</span>
-									<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant truncate">• {event.speakers[i % event.speakers.length].role ?? event.speakers[i % event.speakers.length].bio ?? (event.speakers[i % event.speakers.length].handle ? `@${event.speakers[i % event.speakers.length].handle}` : 'Guest performer')}</span>
+									<Avatar name={previewSpeaker.name} size="xs" />
+									<span class="text-body-sm font-semibold text-on-surface">{previewSpeaker.name}</span>
+									<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant truncate">• {previewSpeaker.role ?? previewSpeaker.bio ?? (previewSpeaker.handle ? `@${previewSpeaker.handle}` : 'Guest performer')}</span>
 								</div>
 							{/if}
 						</div>
@@ -433,68 +461,43 @@
 			{/if}
 
 			<!-- speakers -->
-			{#if event.speakers.length}
+			{#if visibleSpeakers.length || showSpeakerInviteNotice}
 				<section class="flex flex-col gap-4">
 					<div class="flex items-center justify-between gap-4">
 						<h2 class="font-display text-headline-lg text-on-surface border-l-2 border-primary pl-3">Speaker/Performer</h2>
-						<button type="button" onclick={() => toast('Full speaker index ships with the agenda node', 'info')} class="text-body-sm text-primary font-semibold hover:underline flex items-center gap-1 shrink-0">
-							View All {event.speakers.length} Speakers/Performers <ArrowRight class="w-3.5 h-3.5" />
-						</button>
+						{#if visibleSpeakers.length}
+							<button type="button" onclick={() => toast('Full speaker index ships with the agenda node', 'info')} class="text-body-sm text-primary font-semibold hover:underline flex items-center gap-1 shrink-0">
+								View All {visibleSpeakers.length} speaker profiles <ArrowRight class="w-3.5 h-3.5" />
+							</button>
+						{/if}
 					</div>
-					<div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
-						{#each event.speakers.slice(0, 3) as person, i (person.id)}
-							<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
-								<div class="relative">
-									<Cover cover={{ from: '#1e293b', to: '#0b1326', icon: 'pen-tool' }} class="w-full h-40 grayscale" iconClass="w-10 h-10 text-white/25" />
-									<span class="{MONO} absolute top-3 right-3 bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{['Keynote', 'Architect', 'Panelist'][i % 3]}</span>
+					{#if showSpeakerInviteNotice && currentSpeakerInvite}
+						<SpeakerInviteNotice
+							speaker={currentSpeakerInvite}
+							status={speakerInviteStatus}
+							busy={speakerInviteResponding}
+							onRespond={respondToSpeakerInvite}
+						/>
+					{/if}
+					{#if visibleSpeakers.length}
+						<div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+							{#each visibleSpeakers.slice(0, 3) as person, i (person.id)}
+								<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
+									<div class="relative">
+										<Cover cover={{ from: '#1e293b', to: '#0b1326', icon: 'pen-tool' }} class="w-full h-40 grayscale" iconClass="w-10 h-10 text-white/25" />
+										<span class="{MONO} absolute top-3 right-3 bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{['Keynote', 'Architect', 'Panelist'][i % 3]}</span>
+									</div>
+									<div class="p-4 flex flex-col gap-1">
+										<span class="text-body-md font-semibold text-on-surface truncate">{person.name}</span>
+										<span class="text-body-sm text-on-surface-variant truncate">{person.role ?? person.bio ?? person.city ?? 'Performer'}</span>
+										<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant pt-1">{person.handle ? `@${person.handle}` : 'Display only'}</span>
+									</div>
 								</div>
-								<div class="p-4 flex flex-col gap-1">
-									<span class="text-body-md font-semibold text-on-surface truncate">{person.name}</span>
-									<span class="text-body-sm text-on-surface-variant truncate">{person.role ?? person.bio ?? person.city ?? 'Performer'}</span>
-									<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant pt-1">{person.handle ? `@${person.handle}` : 'Display only'}</span>
-								</div>
-							</div>
-						{/each}
-					</div>
+							{/each}
+						</div>
+					{/if}
 				</section>
 			{/if}
-
-			<!-- floorplan -->
-			<section class="flex flex-col gap-4">
-				<div class="flex items-center justify-between gap-4">
-					<h2 class="font-display text-headline-lg text-on-surface border-l-2 border-primary pl-3">Hall A &amp; B Floorplan Guide</h2>
-					<span class="{MONO} text-on-surface-variant">Interactive SVG Map</span>
-				</div>
-				<div class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-					<div class="grid md:grid-cols-[1fr_auto_1fr] gap-4 items-stretch">
-						<div class="rounded-lg border border-surface-glass-border bg-surface-container-low p-4 flex flex-col gap-3">
-							<span class="text-body-md font-semibold text-on-surface">HALL A – MAIN STAGE</span>
-							<span class="text-body-sm text-on-surface-variant">Keynotes • 1,200 Seats • Live Stream Ops</span>
-							<span class="mt-auto flex items-center gap-2 text-body-sm text-on-surface-variant">
-								<span class="w-2.5 h-2.5 rounded-full bg-primary"></span> Main Stage Podia
-							</span>
-						</div>
-						<span class="{MONO} text-on-surface-variant hidden md:flex items-center [writing-mode:vertical-rl] rotate-180">Service Corridor</span>
-						<div class="rounded-lg border border-surface-glass-border bg-surface-container-low p-4 flex flex-col gap-3">
-							<span class="text-body-md font-semibold text-on-surface">HALL B – HACKATHON &amp; LABS</span>
-							<span class="text-body-sm text-on-surface-variant">Hardware Sandbox • 40 Developer Pods</span>
-							<div class="grid grid-cols-3 gap-2 mt-auto">
-								{#each Array(6) as _, i (i)}
-									<span class="h-8 rounded border {i === 2 ? 'border-primary/60 bg-primary/15' : 'border-surface-glass-border bg-surface-container'}"></span>
-								{/each}
-							</div>
-						</div>
-					</div>
-					<div class="flex flex-wrap items-center justify-between gap-3 border-t border-surface-glass-border mt-5 pt-4">
-						<span class="flex items-center gap-1.5 {MONO} text-on-surface-variant">
-							<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span> Turnstiles Open: 08:00 AM Daily
-						</span>
-						<span class="flex items-center gap-1.5 {MONO} text-on-surface-variant">
-							<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> NFC &amp; Dynamic QR Wristband Issued at Gate 1
-						</span>
-					</div>
-				</div>
-			</section>
 
 			<!-- policies -->
 			<section class="flex flex-col gap-3">
@@ -784,12 +787,11 @@
 				</div>
 			</div>
 
-			<!-- desktop attendance, session, speaker, and day stats -->
-			<div class="rounded-xl border border-surface-glass-border bg-surface-container grid grid-cols-2 divide-x divide-y divide-surface-glass-border">
+			<!-- event stats -->
+			<div class="rounded-xl border border-surface-glass-border bg-surface-container grid grid-cols-3 divide-x divide-surface-glass-border">
 				<div class="p-3.5"><span class="font-display text-headline-md font-bold text-on-surface">{event.attendees.toLocaleString()}+</span><span class="block text-label-badge text-on-surface-variant pt-1">Global attendees</span></div>
-				<div class="p-3.5"><span class="font-display text-headline-md font-bold text-on-surface">{event.agenda.length}</span><span class="block text-label-badge text-on-surface-variant pt-1">Tech sessions</span></div>
-				<div class="p-3.5"><span class="font-display text-headline-md font-bold text-on-surface">{event.speakers.length}</span><span class="block text-label-badge text-on-surface-variant pt-1">Verified speakers</span></div>
-				<div class="p-3.5"><span class="font-display text-headline-md font-bold text-on-surface">{agendaDays.length}</span><span class="block text-label-badge text-on-surface-variant pt-1">Summit days</span></div>
+				<div class="p-3.5"><span class="font-display text-headline-md font-bold text-on-surface">{visibleSpeakers.length}</span><span class="block text-label-badge text-on-surface-variant pt-1">Speaker/Performer</span></div>
+				<div class="p-3.5"><span class="font-display text-headline-md font-bold text-on-surface">{agendaDays.length}</span><span class="block text-label-badge text-on-surface-variant pt-1">Day(s)</span></div>
 			</div>
 			{#if event.tags.length}
 				<div class="flex flex-col gap-2"><span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Tracks &amp; topics</span><div class="flex flex-wrap gap-2">{#each event.tags as tag (tag)}<span class="px-3 py-1 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface">{tag}</span>{/each}</div></div>
@@ -820,7 +822,7 @@
 								</div>
 								<span class="font-display text-headline-md text-on-surface">{item.title}</span>
 								{#each item.speakerIds ?? [] as sid}
-									{@const sp = event.speakers.find((s) => s.id === sid)}
+									{@const sp = visibleSpeakers.find((s) => s.id === sid)}
 									{#if sp}
 										<div class="flex items-center gap-space-sm pt-space-xs mt-space-xs bg-surface-container-low p-2 rounded-lg">
 											<Avatar name={sp.name} color={sp.avatarColor} size="md" />
@@ -838,29 +840,32 @@
 			{/if}
 
 			<!-- speaker roster parity -->
-			{#if event.speakers.length}
+			{#if visibleSpeakers.length || showSpeakerInviteNotice}
 				<section class="flex flex-col gap-space-sm">
-					<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Speaker/Performer</h2><button type="button" onclick={() => toast('Full speaker index ships with the agenda node', 'info')} class="text-label-badge text-primary font-semibold whitespace-nowrap">View all {event.speakers.length}</button></div>
-					<div class="flex gap-3 overflow-x-auto -mx-gutter px-gutter pb-1 scrollbar-none">
-						{#each event.speakers.slice(0, 3) as person, i (person.id)}
-							<div class="w-56 shrink-0 rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
-								<div class="relative"><Cover cover={{ from: '#1e293b', to: '#0b1326', icon: 'pen-tool' }} class="w-full h-28 grayscale" iconClass="w-8 h-8 text-white/25" /><span class="absolute top-2 right-2 px-2 py-0.5 rounded bg-surface-base/85 text-label-badge text-on-surface">{['Keynote', 'Architect', 'Panelist'][i % 3]}</span></div>
-								<div class="p-3 flex items-center gap-2.5"><Avatar name={person.name} color={person.avatarColor} size="sm" /><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface truncate">{person.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{person.role ?? person.bio ?? person.city ?? 'Performer'}</span><span class="block text-label-badge text-on-surface-variant pt-1">{person.handle ? `@${person.handle}` : 'Display only'}</span></span></div>
-							</div>
-						{/each}
+					<div class="flex items-center justify-between gap-2">
+						<h2 class="font-display text-headline-md text-on-surface">Speaker/Performer</h2>
+						{#if visibleSpeakers.length}<button type="button" onclick={() => toast('Full speaker index ships with the agenda node', 'info')} class="text-label-badge text-primary font-semibold whitespace-nowrap">View all {visibleSpeakers.length}</button>{/if}
 					</div>
+					{#if showSpeakerInviteNotice && currentSpeakerInvite}
+						<SpeakerInviteNotice
+							speaker={currentSpeakerInvite}
+							status={speakerInviteStatus}
+							busy={speakerInviteResponding}
+							onRespond={respondToSpeakerInvite}
+						/>
+					{/if}
+					{#if visibleSpeakers.length}
+						<div class="flex gap-3 overflow-x-auto -mx-gutter px-gutter pb-1 scrollbar-none">
+							{#each visibleSpeakers.slice(0, 3) as person, i (person.id)}
+								<div class="w-56 shrink-0 rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
+									<div class="relative"><Cover cover={{ from: '#1e293b', to: '#0b1326', icon: 'pen-tool' }} class="w-full h-28 grayscale" iconClass="w-8 h-8 text-white/25" /><span class="absolute top-2 right-2 px-2 py-0.5 rounded bg-surface-base/85 text-label-badge text-on-surface">{['Keynote', 'Architect', 'Panelist'][i % 3]}</span></div>
+									<div class="p-3 flex items-center gap-2.5"><Avatar name={person.name} color={person.avatarColor} size="sm" /><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface truncate">{person.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{person.role ?? person.bio ?? person.city ?? 'Performer'}</span><span class="block text-label-badge text-on-surface-variant pt-1">{person.handle ? `@${person.handle}` : 'Display only'}</span></span></div>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				</section>
 			{/if}
-
-			<!-- compact mobile version of the desktop floorplan guide -->
-			<section class="flex flex-col gap-space-sm">
-				<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Hall A &amp; B Floorplan</h2><span class="text-label-badge text-on-surface-variant">Venue guide</span></div>
-				<div class="grid grid-cols-2 gap-2">
-					<div class="rounded-xl border border-surface-glass-border bg-surface-container p-3 flex flex-col gap-2"><span class="text-body-sm font-semibold text-on-surface">Hall A · Main Stage</span><span class="text-label-badge text-on-surface-variant">Keynotes · 1,200 seats · Live stream ops</span><span class="flex items-center gap-1.5 text-label-badge text-on-surface-variant"><span class="w-2 h-2 rounded-full bg-primary"></span>Main stage podia</span></div>
-					<div class="rounded-xl border border-surface-glass-border bg-surface-container p-3 flex flex-col gap-2"><span class="text-body-sm font-semibold text-on-surface">Hall B · Labs</span><span class="text-label-badge text-on-surface-variant">Hardware sandbox · 40 developer pods</span><div class="grid grid-cols-3 gap-1 pt-1">{#each Array(6) as _, i (i)}<span class="h-5 rounded border {i === 2 ? 'border-primary/60 bg-primary/15' : 'border-surface-glass-border bg-surface-container-high'}"></span>{/each}</div></div>
-				</div>
-				<div class="rounded-xl bg-surface-container-low border border-surface-glass-border px-3 py-2.5 flex flex-col gap-2 text-label-badge text-on-surface-variant"><span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>Turnstiles open 08:00 AM daily</span><span class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span>NFC &amp; dynamic QR issued at Gate 1</span></div>
-			</section>
 
 			<!-- tiers -->
 			<div class="flex flex-col gap-space-sm">

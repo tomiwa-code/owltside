@@ -7,7 +7,7 @@
 	import { currency } from '$lib/state/prefs.svelte';
 	import Cover from './Cover.svelte';
 
-	let { event, rank }: { event: EventItem; rank?: number } = $props();
+	let { event, rank, roleLabel }: { event: EventItem; rank?: number; roleLabel?: string } = $props();
 	const minPrice = $derived(Math.min(...event.tiers.map((t) => t.price)));
 </script>
 
@@ -30,6 +30,7 @@
 			{#if event.organizer.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}
 		</span>
 		<span class="text-label-badge text-on-surface-variant truncate">{fmtDate(event.startsAt)} • {event.venue}</span>
+		{#if roleLabel}<span class="text-label-badge text-tertiary font-semibold truncate pt-0.5">{roleLabel}</span>{/if}
 		<span class="flex items-center gap-2 pt-0.5">
 			<span class="text-label-badge text-primary font-bold">{minPrice === 0 ? 'Free' : formatMoney(minPrice, currency.value)}</span>
 			<span class="text-label-badge text-outline-variant">• {event.viewsToday.toLocaleString()} views today</span>

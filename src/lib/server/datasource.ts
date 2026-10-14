@@ -12,6 +12,7 @@ import type {
 	Order,
 	OrganizerPayload,
 	Profile,
+	SpeakerInviteStatus,
 	Ticket,
 	WizardPayload
 } from '$lib/types';
@@ -78,6 +79,7 @@ export interface DataSource {
 	getProfile(handle: string): Promise<Profile | undefined>;
 	searchProfiles(handlePrefix: string): Promise<Profile[]>;
 	getProfileEvents(profileId: string): Promise<EventItem[]>;
+	respondToSpeakerInvite(inviteeId: string, eventSlug: string, accept: boolean): Promise<SpeakerInviteStatus>;
 	createMessageRequest(requesterId: string, eventSlug: string, body: string): Promise<MessageRequest>;
 	getIncomingMessageRequests(organizerId: string): Promise<MessageRequest[]>;
 	getEventMessageRequest(requesterId: string, eventId: string): Promise<MessageRequest | undefined>;
@@ -175,8 +177,22 @@ export const demoSource: DataSource = {
 	},
 	async getProfileEvents(profileId) {
 		return demo.events.filter(
-			(e) => e.organizer?.id === profileId || e.speakers?.some((s) => s?.id === profileId)
+			(event) => event.organizer?.id === profileId || event.speakers?.some((speaker) =>
+				speaker?.id === profileId &&
+				!speaker.displayOnly &&
+				(speaker.invited ? speaker.inviteStatus === 'accepted' : speaker.inviteStatus !== 'declined')
+			)
 		);
+	},
+	async respondToSpeakerInvite(inviteeId, eventSlug, accept) {
+		const uid = inviteeId === 'demo' ? demoMeId : inviteeId;
+		const event = demo.events.find((item) => item.slug === eventSlug);
+		if (!event) throw new Error('Event not found');
+		const speaker = event.speakers.find((item) => item.id === uid && item.invited && !item.displayOnly);
+		if (!speaker) throw new Error('Speaker invitation not found');
+		if ((speaker.inviteStatus ?? 'pending') !== 'pending') throw new Error('This speaker invitation has already been answered');
+		speaker.inviteStatus = accept ? 'accepted' : 'declined';
+		return speaker.inviteStatus;
 	},
 	async createMessageRequest(requesterId, eventSlug, body) {
 		const uid = requesterId === 'demo' ? demoMeId : requesterId;
@@ -466,6 +482,7 @@ export const demoSource: DataSource = {
 					role: speaker.role,
 					bio: speaker.bio ?? profile?.bio,
 					invited: speaker.invited,
+					inviteStatus: speaker.invited ? 'pending' : undefined,
 					displayOnly: speaker.displayOnly
 				};
 			}),
@@ -564,6 +581,7 @@ const toEventSpeaker = (r: Row, index: number): EventSpeaker => ({
 	following: r.following ?? 0,
 	role: r.role,
 	invited: !!r.invited,
+	inviteStatus: r.inviteStatus ?? (r.invited ? 'pending' : undefined),
 	displayOnly: !!r.displayOnly
 });
 
@@ -710,10 +728,26 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			const { data, error } = await db
 				.from('events')
 				.select('*, organizer:profiles(*)')
-				.eq('organizer_id', profileId)
 				.order('starts_at');
 			if (error) throw error;
-			return (data ?? []).map((r) => toEvent(r, toProfile(r.organizer)));
+			return (data ?? [])
+				.map((row) => toEvent(row, toProfile(row.organizer)))
+				.filter((event) => event.organizer.id === profileId || event.speakers.some((speaker) =>
+					speaker.id === profileId &&
+					!speaker.displayOnly &&
+					(speaker.invited ? speaker.inviteStatus === 'accepted' : speaker.inviteStatus !== 'declined')
+				));
+		},
+		async respondToSpeakerInvite(_inviteeId, eventSlug, accept) {
+			const { data, error } = await db.rpc('respond_to_event_speaker_invite', {
+				p_event_slug: eventSlug,
+				p_accept: accept
+			});
+			if (error) throw error;
+			if (data?.status !== 'accepted' && data?.status !== 'declined') {
+				throw new Error('The speaker invitation response could not be saved');
+			}
+			return data.status;
 		},
 		async createMessageRequest(requesterId, eventSlug, body) {
 			const { data: event, error: eventError } = await db
@@ -912,7 +946,10 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 					city: payload.city,
 					cover: payload.cover,
 					description: payload.description,
-					speakers: payload.speakers,
+					speakers: payload.speakers.map((speaker) => ({
+						...speaker,
+						inviteStatus: speaker.invited ? 'pending' : undefined
+					})),
 					agenda: payload.agenda.map((a, i) => ({ id: `ag-${i}`, ...a })),
 					tiers: payload.tiers.map((t, i) => ({ id: `tier-${i}`, sold: 0, ...t })),
 					gates: payload.gates

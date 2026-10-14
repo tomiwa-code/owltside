@@ -67,7 +67,10 @@
 				<div class="flex flex-col gap-space-xs pb-6">
 					<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Events & sessions</span>
 					{#each data.events as event (event.id)}
-						<EventRow {event} />
+						{@const profileSpeaker = event.speakers.find((speaker) =>
+							speaker.id === profile.id && (!speaker.invited || speaker.inviteStatus === 'accepted')
+						)}
+						<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : undefined} />
 					{/each}
 				</div>
 			{/if}
