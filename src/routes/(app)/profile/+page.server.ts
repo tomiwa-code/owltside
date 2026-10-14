@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { getSource } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
+import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, cookies }) => {
@@ -30,7 +31,7 @@ export const actions: Actions = {
 		if (name.length < 2 || name.length > 80) return fail(400, { error: 'Full name must be between 2 and 80 characters.' });
 		if (!/^[a-z0-9_]{3,24}$/.test(username)) return fail(400, { error: 'Username must use 3–24 letters, numbers, or underscores.' });
 		if (bio.length > 200) return fail(400, { error: 'Bio must be 200 characters or fewer.' });
-		if (city.length > 80) return fail(400, { error: 'City must be 80 characters or fewer.' });
+		if (!(NIGERIAN_STATES as readonly string[]).includes(city)) return fail(400, { error: 'Choose a Nigerian state from the list.' });
 		if (selectedInterests.length > 12) return fail(400, { error: 'Choose up to 12 interests.' });
 		if (link && !/^https?:\/\//i.test(link)) link = `https://${link}`;
 		if (link) {

@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import BottomNav from '$components/BottomNav.svelte';
 
-	let { children } = $props();
+	let { children, data } = $props();
 
 	/**
 	 * Routes whose desktop (md+) design source carries its own full-width top
@@ -28,7 +28,7 @@
 	);
 </script>
 
-<div class="md:pl-20" class:md:pl-0={fullBleedDesktop}>
+<div class="md:pl-20" class:md:pl-0={fullBleedDesktop} data-operating-identity={data.operatingIdentity ?? 'attendee'}>
 	{@render children()}
-	<BottomNav railOnDesktop={!fullBleedDesktop} mobileHidden={hideMobileBottomNav} />
+	<BottomNav railOnDesktop={!fullBleedDesktop} mobileHidden={hideMobileBottomNav} operatingIdentity={data.operatingIdentity ?? 'attendee'} />
 </div>

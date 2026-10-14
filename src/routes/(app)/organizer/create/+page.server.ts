@@ -2,6 +2,8 @@ import { getSource } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
 import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
+import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
+import { OPERATING_IDENTITY_COOKIE } from '$lib/constants/operating-identity';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -14,7 +16,7 @@ const draftSchema = z.object({
 	date: z.string().min(8, 'Pick a date'),
 	dateEnd: z.string().min(8, 'Pick an end date'),
 	venue: z.string().min(2, 'Add a venue'),
-	city: z.string().min(2).default('Lagos'),
+	city: z.enum(NIGERIAN_STATES).default('Lagos'),
 	description: z.string().max(600).default(''),
 	tiers: z
 		.array(
@@ -44,6 +46,7 @@ const draftSchema = z.object({
 
 export const actions: Actions = {
 	create: async ({ request, cookies, locals }) => {
+		if (cookies.get(OPERATING_IDENTITY_COOKIE) !== 'organizer') redirect(303, '/settings?identity=organizer-required');
 		const form = await request.formData();
 		let raw: unknown;
 		try {

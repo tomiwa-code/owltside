@@ -1,6 +1,7 @@
 import { getSource } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
 import { error, json } from '@sveltejs/kit';
+import { OPERATING_IDENTITY_COOKIE } from '$lib/constants/operating-identity';
 import { z } from 'zod';
 import type { RequestHandler } from './$types';
 
@@ -12,6 +13,7 @@ const body = z.object({
 });
 
 export const POST: RequestHandler = async ({ request, locals, cookies }) => {
+	if (cookies.get(OPERATING_IDENTITY_COOKIE) !== 'organizer') error(403, 'Organizer identity required');
 	const userId = locals.session?.userId ?? 'demo';
 	const source = getSource(createSupabase(cookies));
 	const organizer = await source.getOrganizer(userId);

@@ -2,6 +2,7 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import Toasts from '$components/Toasts.svelte';
+	import PullToRefresh from '$components/PullToRefresh.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
 
 	let { children } = $props();
@@ -9,7 +10,7 @@
 	$effect(() => {
 		const preferences = appSettings.value.accessibility;
 		document.documentElement.dataset.theme = preferences.appearance;
-		document.documentElement.dataset.textSize = preferences.largerText ? 'large' : preferences.textSize;
+		document.documentElement.style.zoom = `${Math.min(150, Math.max(25, preferences.pageSize || 100))}%`;
 		document.documentElement.dataset.reduceMotion = String(preferences.reduceMotion);
 		document.documentElement.dataset.screenReaderLabels = String(preferences.screenReaderLabels);
 	});
@@ -27,5 +28,6 @@
 
 <div class="min-h-dvh bg-surface-base text-on-surface font-body">
 	{@render children()}
+	<PullToRefresh />
 	<Toasts />
 </div>

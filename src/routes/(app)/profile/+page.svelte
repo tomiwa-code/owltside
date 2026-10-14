@@ -25,6 +25,7 @@
 	import { profileAppearance, profileDraft } from '$lib/state/profile.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { fmtDate, fmtTime } from '$lib/utils/dates';
+	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 
 	let { data } = $props();
 	const session = $derived(page.data.session);
@@ -128,7 +129,7 @@
 		editName = name;
 		editUsername = handle;
 		editBio = bio;
-		editCity = city;
+		editCity = (NIGERIAN_STATES as readonly string[]).includes(city) ? city : 'Lagos';
 		editLink = profileLink;
 		editInterests = [...interests];
 		editError = '';
@@ -702,7 +703,11 @@
 			</label>
 			<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
 				City
-				<input name="city" bind:value={editCity} maxlength="80" autocomplete="address-level2" placeholder="Lagos" class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />
+				<select name="city" bind:value={editCity} required autocomplete="address-level1" class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline">
+					{#each NIGERIAN_STATES as state (state)}
+						<option value={state}>{state} State</option>
+					{/each}
+				</select>
 			</label>
 			<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
 				Link
