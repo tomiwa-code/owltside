@@ -3,6 +3,7 @@ import type {
 	Conversation,
 	EventItem,
 	Message,
+	MessageRequest,
 	NotificationItem,
 	Order,
 	Profile,
@@ -517,6 +518,8 @@ export const conversations: Conversation[] = [
 		unread: 0
 	}
 ];
+
+export const messageRequests: MessageRequest[] = [];
 
 export const messages: Record<string, Message[]> = {
 	'c-amina': [

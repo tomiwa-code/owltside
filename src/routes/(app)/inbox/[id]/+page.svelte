@@ -85,7 +85,7 @@
 			<a href="/home" class="flex items-center gap-2.5 shrink-0">
 				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
 				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
-				<span class="{MONO} text-tertiary border border-tertiary/25 bg-tertiary/10 rounded px-1.5 py-0.5">Secure_Node</span>
+
 			</a>
 			<nav class="flex items-center gap-1" aria-label="Primary">
 				{#each [
@@ -148,8 +148,7 @@
 				<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="lg" />
 				<div class="flex-1 min-w-0">
 					<span class="flex items-center gap-2 min-w-0">
-						<span class="font-display text-headline-md text-on-surface truncate">{conv.peer.name}</span>
-						{#if conv.peer.verified}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" />{/if}
+						<span class="font-display text-headline-md text-on-surface truncate">{conv.peer.name}</span>{#if conv.peer.verified}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" />{/if}
 					</span>
 					<span class="block text-body-sm text-on-surface-variant truncate pt-0.5">{conv.peer.bio ?? `@${conv.peer.handle}`}</span>
 				</div>

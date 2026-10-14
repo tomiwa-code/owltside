@@ -28,6 +28,28 @@ export interface Profile {
 	following: number;
 }
 
+export interface EventSpeaker extends Profile {
+	role?: string;
+	invited?: boolean;
+	displayOnly?: boolean;
+}
+
+export interface WizardSpeaker {
+	id?: string;
+	handle?: string;
+	name: string;
+	avatarColor?: string;
+	bio?: string;
+	role: string;
+	org?: string;
+	tag?: string;
+	displayOnly?: boolean;
+	invited?: boolean;
+	followers?: number;
+	following?: number;
+	city?: string | null;
+}
+
 export interface TicketTier {
 	id: string;
 	name: string;
@@ -50,7 +72,7 @@ export interface EventItem {
 	id: string;
 	slug: string;
 	title: string;
-	category: CategoryId;
+	category: string;
 	tags: string[];
 	startsAt: string; // ISO
 	endsAt?: string;
@@ -59,7 +81,7 @@ export interface EventItem {
 	cover: CoverArt;
 	description: string;
 	organizer: Profile;
-	speakers: Profile[];
+	speakers: EventSpeaker[];
 	agenda: AgendaItem[];
 	tiers: TicketTier[];
 	faqs: { q: string; a: string }[];
@@ -114,6 +136,19 @@ export interface Conversation {
 	online?: boolean;
 }
 
+export interface MessageRequest {
+	id: string;
+	eventId: string;
+	eventSlug: string;
+	eventTitle: string;
+	requester: Profile;
+	organizer: Profile;
+	body: string;
+	createdAt: string;
+	status: 'pending' | 'accepted' | 'declined';
+	conversationId?: string;
+}
+
 export interface Message {
 	id: string;
 	conversationId: string;
@@ -127,6 +162,7 @@ export interface NotificationItem {
 	kind: 'ticket' | 'event' | 'social' | 'system' | 'promo';
 	title: string;
 	body: string;
+	href?: string;
 	at: string;
 	read: boolean;
 }
@@ -195,7 +231,7 @@ export interface OrganizerPayload {
 
 export interface WizardPayload {
 	title: string;
-	category: CategoryId;
+	category: string;
 	tags: string[];
 	startsAt: string;
 	endsAt?: string;
@@ -205,6 +241,6 @@ export interface WizardPayload {
 	cover: CoverArt;
 	tiers: Array<{ name: string; price: number; capacity: number; benefits?: string }>;
 	agenda: Array<{ start: string; title: string; location?: string }>;
-	speakers: string[];
+	speakers: WizardSpeaker[];
 	gates: GateConfig[];
 }

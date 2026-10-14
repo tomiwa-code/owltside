@@ -1,5 +1,6 @@
 <script lang="ts">
-	let { label, active = false, onclick }: { label: string; active?: boolean; onclick?: () => void } = $props();
+	import type { LucideIcon } from '@lucide/svelte';
+	let { label, icon, active = false, onclick }: { label: string; icon?: LucideIcon; active?: boolean; onclick?: () => void } = $props();
 </script>
 
 <button
@@ -10,5 +11,9 @@
 			? 'bg-primary text-on-primary font-semibold shadow-sm'
 			: 'bg-surface-container text-on-surface-variant hover:text-on-surface'}"
 >
+	{#if icon}
+		{@const Icon = icon}
+		<Icon class="w-4 h-4 shrink-0" />
+	{/if}
 	<span>{label}</span>
 </button>

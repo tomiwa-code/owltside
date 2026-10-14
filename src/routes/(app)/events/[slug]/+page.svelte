@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import {
 		ArrowRight,
 		BadgeCheck,
@@ -12,6 +13,7 @@
 		Flame,
 		Lock,
 		MapPin,
+		MessageSquare,
 		Mic,
 		Navigation,
 		Search,
@@ -30,9 +32,22 @@
 	import { countdownLabel, fmtDate, fmtDateFull, fmtTime } from '$lib/utils/dates';
 	import { formatMoney } from '$lib/utils/money';
 	import { currency } from '$lib/state/prefs.svelte';
+	import type { MessageRequest } from '$lib/types';
+	import { categories } from '$components/iconMap';
 
 	let { data } = $props();
 	const event = $derived(data.event);
+	const categoryLabel = $derived(
+		categories.find((category) => category.id === event.category)?.label ?? event.category.replaceAll('_', ' ')
+	);
+	const session = $derived(page.data.session);
+	const isOrganizer = $derived(session?.userId === event.organizer.id);
+	let messageRequest = $state<MessageRequest | null>(null);
+	$effect(() => { messageRequest = data.messageRequest ?? null; });
+	let showMessageDialog = $state(false);
+	let messageDraft = $state('');
+	let messageError = $state('');
+	let messageSending = $state(false);
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
@@ -78,6 +93,51 @@
 	});
 	const sessionId = $derived(`0x${event.id.replace(/[^a-z0-9]/gi, '').slice(0, 5).toUpperCase() || 'P4I5M'}`);
 
+	function contactOrganizer() {
+		if (!session) {
+			void goto('/auth/login');
+			return;
+		}
+		if (isOrganizer) {
+			toast('You are the organizer of this event', 'info');
+			return;
+		}
+		if (messageRequest?.status === 'accepted' && messageRequest.conversationId) {
+			void goto(`/inbox/${messageRequest.conversationId}`);
+			return;
+		}
+		if (messageRequest?.status === 'pending') {
+			toast('Your message request is waiting for the organizer', 'info');
+			return;
+		}
+		messageDraft = '';
+		messageError = '';
+		showMessageDialog = true;
+	}
+
+	async function sendMessageRequest() {
+		const body = messageDraft.trim();
+		if (!body || messageSending) return;
+		messageSending = true;
+		messageError = '';
+		try {
+			const response = await fetch('/api/message-requests', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ eventSlug: event.slug, body })
+			});
+			const result = await response.json();
+			if (!response.ok) throw new Error(result.error ?? 'Your request could not be sent');
+			messageRequest = result.request as MessageRequest;
+			showMessageDialog = false;
+			toast('Message request sent to the organizer', 'success');
+		} catch (error) {
+			messageError = error instanceof Error ? error.message : 'Your request could not be sent';
+		} finally {
+			messageSending = false;
+		}
+	}
+
 	function applyPromo() {
 		const code = promoInput.trim().toUpperCase();
 		if (code === 'TECHCOMMUNITY' || code === 'OWL10') {
@@ -120,7 +180,7 @@
 			<a href="/home" class="flex items-center gap-2.5 shrink-0">
 				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
 				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
-				<span class="{MONO} text-tertiary border border-tertiary/25 bg-tertiary/10 rounded px-1.5 py-0.5">Secure_Node</span>
+
 			</a>
 			<nav class="flex items-center gap-1" aria-label="Primary">
 				{#each [
@@ -185,12 +245,12 @@
 		<div class="absolute inset-x-0 bottom-0">
 			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pb-8 flex flex-col gap-4">
 				<div class="flex items-center gap-2 flex-wrap">
-					<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded">{event.category.replace('_', ' ')}</span>
+					<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded">{categoryLabel}</span>
 					<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded">{agendaDays.length}-Day Summit</span>
 					<span class="{MONO} bg-primary text-on-primary px-2.5 py-1 rounded">{leftAll} VIP Left</span>
 					{#if event.organizer.verified}
 						<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded flex items-center gap-1.5">
-							<BadgeCheck class="w-3.5 h-3.5 text-accent-emerald" /> Verified Organizer
+							Verified Organizer
 						</span>
 					{/if}
 				</div>
@@ -198,16 +258,18 @@
 				<p class="text-body-lg text-on-surface-variant max-w-2xl line-clamp-2">{event.description}</p>
 				<div class="flex flex-wrap items-center justify-between gap-4 pt-1">
 					<span class="flex items-center gap-3 min-w-0">
-						<Avatar name={event.organizer.name} size="md" />
-						<span class="min-w-0">
-							<span class="flex items-center gap-1.5 min-w-0">
-								<span class="text-body-md font-semibold text-on-surface truncate">{event.organizer.name}</span>
-								{#if event.organizer.verified}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" />{/if}
+						<a href="/users/{event.organizer.handle}" class="flex items-center gap-3 min-w-0 rounded-lg hover:bg-surface-container-high/40 transition-colors">
+							<Avatar name={event.organizer.name} color={event.organizer.avatarColor} size="md" />
+							<span class="min-w-0">
+								<span class="flex items-center gap-1.5 min-w-0">
+									<span class="text-body-md font-semibold text-on-surface truncate">{event.organizer.name}</span>
+									{#if event.organizer.verified}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" />{/if}
+								</span>
+								<span class="block text-body-sm text-on-surface-variant truncate pt-0.5">
+									{event.organizer.followers.toLocaleString()} followers • {event.organizer.bio ?? 'Verified host node'}
+								</span>
 							</span>
-							<span class="block text-body-sm text-on-surface-variant truncate pt-0.5">
-								{event.organizer.followers.toLocaleString()} followers • {event.organizer.bio ?? 'Verified host node'}
-							</span>
-						</span>
+						</a>
 					</span>
 					<span class="flex items-center gap-2">
 						<button
@@ -223,6 +285,17 @@
 						>
 							{following ? 'Following' : '+ Follow'}
 						</button>
+						{#if !session}
+							<a href="/auth/login" class="h-10 px-4 rounded-lg text-body-sm font-semibold flex items-center gap-2 bg-surface-container border border-surface-glass-border text-on-surface hover:border-primary/50 transition-colors"><MessageSquare class="w-4 h-4" />Message organizer</a>
+						{:else if isOrganizer}
+							<span class="h-10 px-4 rounded-lg text-body-sm font-semibold flex items-center gap-2 bg-surface-container-high text-on-surface-variant"><MessageSquare class="w-4 h-4" />Your event</span>
+						{:else if messageRequest?.status === 'accepted' && messageRequest.conversationId}
+							<a href="/inbox/{messageRequest.conversationId}" class="h-10 px-4 rounded-lg text-body-sm font-semibold flex items-center gap-2 bg-primary text-on-primary"><MessageSquare class="w-4 h-4" />Continue chat</a>
+						{:else if messageRequest?.status === 'pending'}
+							<button type="button" disabled class="h-10 px-4 rounded-lg text-body-sm font-semibold flex items-center gap-2 bg-surface-container-high text-on-surface-variant opacity-80"><MessageSquare class="w-4 h-4" />Request sent</button>
+						{:else}
+							<button type="button" onclick={contactOrganizer} class="h-10 px-4 rounded-lg text-body-sm font-semibold flex items-center gap-2 bg-surface-container border border-surface-glass-border text-on-surface hover:border-primary/50 transition-colors"><MessageSquare class="w-4 h-4" />{messageRequest?.status === 'declined' ? 'Request again' : 'Message organizer'}</button>
+						{/if}
 						<button type="button" aria-label="Share event" onclick={share} class="w-10 h-10 rounded-lg bg-surface-container border border-surface-glass-border text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors">
 							<Share2 class="w-4 h-4" />
 						</button>
@@ -302,7 +375,7 @@
 				{#each [
 					[`${event.attendees.toLocaleString()}+`, 'Global Engineers'],
 					[`${event.agenda.length}`, 'Tech Sessions'],
-					[`${event.speakers.length}`, 'Verified Speakers'],
+					[`${event.speakers.length}`, 'Speakers/Performers'],
 					[`${agendaDays.length}`, 'Summit Days']
 				] as [value, label]}
 					<div class="p-5 flex flex-col gap-1">
@@ -351,7 +424,7 @@
 								<div class="rounded-lg bg-surface-base border border-surface-glass-border px-4 py-2.5 flex items-center gap-3">
 									<Avatar name={event.speakers[i % event.speakers.length].name} size="xs" />
 									<span class="text-body-sm font-semibold text-on-surface">{event.speakers[i % event.speakers.length].name}</span>
-									<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant truncate">• {event.speakers[i % event.speakers.length].bio ?? event.speakers[i % event.speakers.length].handle}</span>
+									<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant truncate">• {event.speakers[i % event.speakers.length].role ?? event.speakers[i % event.speakers.length].bio ?? (event.speakers[i % event.speakers.length].handle ? `@${event.speakers[i % event.speakers.length].handle}` : 'Guest performer')}</span>
 								</div>
 							{/if}
 						</div>
@@ -363,9 +436,9 @@
 			{#if event.speakers.length}
 				<section class="flex flex-col gap-4">
 					<div class="flex items-center justify-between gap-4">
-						<h2 class="font-display text-headline-lg text-on-surface border-l-2 border-primary pl-3">Keynote Speakers</h2>
+						<h2 class="font-display text-headline-lg text-on-surface border-l-2 border-primary pl-3">Speaker/Performer</h2>
 						<button type="button" onclick={() => toast('Full speaker index ships with the agenda node', 'info')} class="text-body-sm text-primary font-semibold hover:underline flex items-center gap-1 shrink-0">
-							View All {event.speakers.length + 29} Speakers <ArrowRight class="w-3.5 h-3.5" />
+							View All {event.speakers.length} Speakers/Performers <ArrowRight class="w-3.5 h-3.5" />
 						</button>
 					</div>
 					<div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -377,8 +450,8 @@
 								</div>
 								<div class="p-4 flex flex-col gap-1">
 									<span class="text-body-md font-semibold text-on-surface truncate">{person.name}</span>
-									<span class="text-body-sm text-on-surface-variant truncate">{person.bio ?? person.city}</span>
-									<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant pt-1">@{person.handle}</span>
+									<span class="text-body-sm text-on-surface-variant truncate">{person.role ?? person.bio ?? person.city ?? 'Performer'}</span>
+									<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant pt-1">{person.handle ? `@${person.handle}` : 'Display only'}</span>
 								</div>
 							</div>
 						{/each}
@@ -650,15 +723,13 @@
 				<a href="/users/{event.organizer.handle}" class="flex items-center gap-space-sm min-w-0">
 					<div class="relative flex-shrink-0">
 						<Avatar name={event.organizer.name} color={event.organizer.avatarColor} size="lg" />
-						{#if event.organizer.verified}
-							<span class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-primary flex items-center justify-center text-on-primary">
-								<BadgeCheck class="w-3 h-3" />
-							</span>
-						{/if}
 					</div>
 					<div class="flex flex-col min-w-0">
 						<span class="text-label-badge text-primary-fixed-dim uppercase tracking-wider">Host & Curator</span>
-						<span class="font-display text-headline-md text-on-surface truncate">{event.organizer.name}</span>
+						<span class="flex items-center gap-1.5 min-w-0">
+							<span class="font-display text-headline-md text-on-surface truncate">{event.organizer.name}</span>
+							{#if event.organizer.verified}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" />{/if}
+						</span>
 						<span class="text-body-sm text-on-surface-variant truncate">{event.organizer.followers.toLocaleString()} followers</span>
 					</div>
 				</a>
@@ -671,6 +742,17 @@
 				>
 					{following ? 'Following' : 'Follow'}
 				</button>
+				{#if !session}
+					<a href="/auth/login" aria-label="Sign in to message organizer" class="h-10 px-3 rounded-full bg-surface-bright text-on-surface text-body-sm font-semibold flex items-center gap-1.5 shrink-0"><MessageSquare class="w-4 h-4" />Message</a>
+				{:else if isOrganizer}
+					<span class="h-10 px-3 rounded-full bg-surface-bright text-on-surface-variant text-body-sm font-semibold flex items-center gap-1.5 shrink-0"><MessageSquare class="w-4 h-4" />Your event</span>
+				{:else if messageRequest?.status === 'accepted' && messageRequest.conversationId}
+					<a href="/inbox/{messageRequest.conversationId}" class="h-10 px-3 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-1.5 shrink-0"><MessageSquare class="w-4 h-4" />Chat</a>
+				{:else if messageRequest?.status === 'pending'}
+					<button type="button" disabled class="h-10 px-3 rounded-full bg-surface-bright text-on-surface-variant text-body-sm font-semibold flex items-center gap-1.5 shrink-0"><MessageSquare class="w-4 h-4" />Sent</button>
+				{:else}
+					<button type="button" onclick={contactOrganizer} class="h-10 px-3 rounded-full bg-surface-bright text-on-surface text-body-sm font-semibold flex items-center gap-1.5 shrink-0"><MessageSquare class="w-4 h-4" />Message</button>
+				{/if}
 			</div>
 
 			<!-- venue -->
@@ -758,12 +840,12 @@
 			<!-- speaker roster parity -->
 			{#if event.speakers.length}
 				<section class="flex flex-col gap-space-sm">
-					<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Keynote Speakers</h2><button type="button" onclick={() => toast('Full speaker index ships with the agenda node', 'info')} class="text-label-badge text-primary font-semibold whitespace-nowrap">View all {event.speakers.length + 29}</button></div>
+					<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Speaker/Performer</h2><button type="button" onclick={() => toast('Full speaker index ships with the agenda node', 'info')} class="text-label-badge text-primary font-semibold whitespace-nowrap">View all {event.speakers.length}</button></div>
 					<div class="flex gap-3 overflow-x-auto -mx-gutter px-gutter pb-1 scrollbar-none">
 						{#each event.speakers.slice(0, 3) as person, i (person.id)}
 							<div class="w-56 shrink-0 rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
 								<div class="relative"><Cover cover={{ from: '#1e293b', to: '#0b1326', icon: 'pen-tool' }} class="w-full h-28 grayscale" iconClass="w-8 h-8 text-white/25" /><span class="absolute top-2 right-2 px-2 py-0.5 rounded bg-surface-base/85 text-label-badge text-on-surface">{['Keynote', 'Architect', 'Panelist'][i % 3]}</span></div>
-								<div class="p-3 flex items-center gap-2.5"><Avatar name={person.name} color={person.avatarColor} size="sm" /><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface truncate">{person.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{person.bio ?? person.city}</span><span class="block text-label-badge text-on-surface-variant pt-1">@{person.handle}</span></span></div>
+								<div class="p-3 flex items-center gap-2.5"><Avatar name={person.name} color={person.avatarColor} size="sm" /><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface truncate">{person.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{person.role ?? person.bio ?? person.city ?? 'Performer'}</span><span class="block text-label-badge text-on-surface-variant pt-1">{person.handle ? `@${person.handle}` : 'Display only'}</span></span></div>
 							</div>
 						{/each}
 					</div>
@@ -806,34 +888,33 @@
 							</div>
 							<span class="font-code text-label-code text-on-surface-variant line-through">{formatMoney(t.price, currency.value)}</span>
 						</div>
-					{:else}
-						<button
-							class="p-space-md rounded-xl flex flex-col gap-space-xs cursor-pointer shadow-sm active:scale-[0.99] transition-all text-left w-full
-								{selected ? 'bg-surface-container-high border border-outline-variant' : 'bg-surface-container'}"
-							onclick={() => (tierId = t.id)}
-						>
-							<div class="flex items-center justify-between">
-								<div class="flex items-center gap-space-xs">
-									<span class="text-body-lg text-on-surface font-semibold">{t.name}</span>
-									{#if t.id === recommendedId}<span class="px-2 py-0.5 rounded-full bg-primary text-on-primary text-label-badge">Recommended</span>{/if}
-									<span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-primary text-label-badge">Available</span>
-								</div>
-								<span class="font-code text-label-code text-on-surface font-semibold">{formatMoney(t.price, currency.value)}</span>
-							</div>
-							{#if t.benefits}<p class="text-body-sm text-on-surface-variant">{t.benefits}</p>{/if}
-							<div class="flex items-center justify-between pt-1">
-								<span class="text-label-badge text-tertiary">{t.capacity - t.sold} left</span>
+						{:else}
+							<div class="rounded-xl shadow-sm transition-all {selected ? 'bg-surface-container-high border border-outline-variant' : 'bg-surface-container'}">
+								<button
+									type="button"
+									aria-pressed={selected}
+									class="w-full p-space-md rounded-xl flex flex-col gap-space-xs cursor-pointer active:scale-[0.99] text-left"
+									onclick={() => (tierId = t.id)}
+								>
+									<div class="flex items-center justify-between">
+										<div class="flex items-center gap-space-xs">
+											<span class="text-body-lg text-on-surface font-semibold">{t.name}</span>
+											{#if t.id === recommendedId}<span class="px-2 py-0.5 rounded-full bg-primary text-on-primary text-label-badge">Recommended</span>{/if}
+											<span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-primary text-label-badge">Available</span>
+										</div>
+										<span class="font-code text-label-code text-on-surface font-semibold">{formatMoney(t.price, currency.value)}</span>
+									</div>
+									{#if t.benefits}<p class="text-body-sm text-on-surface-variant">{t.benefits}</p>{/if}
+									<span class="text-label-badge text-tertiary pt-1">{t.capacity - t.sold} left</span>
+								</button>
 								{#if selected}
-									<div class="flex items-center gap-2" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+									<div role="group" aria-label="Ticket quantity" class="px-space-md pb-space-md flex items-center gap-2">
 										<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Tickets</span>
 										<Stepper value={qty} min={1} max={Math.min(6, t.capacity - t.sold)} onchange={(v) => (qty = v)} />
 									</div>
-								{:else}
-									<span class="w-5 h-5 rounded-full border border-outline"></span>
 								{/if}
 							</div>
-						</button>
-					{/if}
+						{/if}
 				{/each}
 			</div>
 
@@ -897,3 +978,28 @@
 	</div>
 </main>
 </div>
+
+{#if showMessageDialog}
+	<div class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+		<button type="button" aria-label="Close message request dialog" class="absolute inset-0 bg-surface-base/80 backdrop-blur-sm" onclick={() => (showMessageDialog = false)}></button>
+		<div role="dialog" aria-modal="true" aria-labelledby="message-request-title" class="relative z-10 w-full max-w-lg rounded-2xl border border-surface-glass-border bg-surface-container p-5 md:p-6 shadow-2xl">
+			<div class="flex items-start gap-3 pb-4">
+				<span class="w-10 h-10 rounded-xl bg-primary/15 text-primary flex items-center justify-center shrink-0"><MessageSquare class="w-5 h-5" /></span>
+				<div class="min-w-0">
+					<h2 id="message-request-title" class="font-display text-headline-md text-on-surface">Message {event.organizer.name}</h2>
+					<p class="text-body-sm text-on-surface-variant pt-1">Your first message is sent as a request about <span class="text-on-surface font-semibold">{event.title}</span>. The chat opens if the organizer accepts.</p>
+				</div>
+			</div>
+			<form onsubmit={(e) => { e.preventDefault(); void sendMessageRequest(); }} class="flex flex-col gap-3">
+				<label for="organizer-message" class="text-label-badge uppercase tracking-wider text-on-surface-variant">Your message</label>
+				<textarea id="organizer-message" bind:value={messageDraft} maxlength="2000" rows="5" placeholder="Introduce yourself and tell the organizer what you’d like to discuss…" class="w-full resize-y min-h-28 rounded-xl border border-surface-glass-border bg-surface-base p-3.5 text-body-md text-on-surface placeholder:text-outline-variant focus:outline-none focus:border-primary/50"></textarea>
+				<div class="flex items-center justify-between gap-3 text-label-badge text-on-surface-variant"><span>Up to 2,000 characters</span><span>{messageDraft.length}/2000</span></div>
+				{#if messageError}<p role="alert" class="rounded-lg border border-error/30 bg-error/10 px-3 py-2 text-body-sm text-error">{messageError}</p>{/if}
+				<div class="flex items-center justify-end gap-2 pt-1">
+					<button type="button" class="h-10 px-4 rounded-full border border-surface-glass-border bg-surface-container-high text-body-sm font-semibold text-on-surface" onclick={() => (showMessageDialog = false)}>Cancel</button>
+					<button type="submit" disabled={!messageDraft.trim() || messageSending} class="h-10 px-4 rounded-full bg-primary text-on-primary text-body-sm font-semibold disabled:opacity-50">{messageSending ? 'Sending…' : 'Send request'}</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}

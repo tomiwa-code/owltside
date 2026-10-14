@@ -27,11 +27,6 @@
 					<div class="w-20 h-20 rounded-full p-0.5 bg-surface">
 						<Avatar name={profile.name} color={profile.avatarColor} size="xl" />
 					</div>
-					{#if profile.verified}
-						<span class="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-md">
-							<BadgeCheck class="w-4 h-4" />
-						</span>
-					{/if}
 				</div>
 				<button
 					class="h-11 px-5 rounded-full flex items-center gap-2 text-body-sm font-semibold active:scale-95 transition-all shadow-md
@@ -46,7 +41,10 @@
 			</div>
 
 			<div>
-				<h1 class="font-display text-headline-lg-mobile text-on-surface tracking-tight">{profile.name}</h1>
+				<h1 class="font-display text-headline-lg-mobile text-on-surface tracking-tight flex items-center gap-2">
+					{profile.name}
+					{#if profile.verified}<BadgeCheck class="w-5 h-5 text-tertiary shrink-0" aria-label="Verified member" />{/if}
+				</h1>
 				<p class="font-code text-label-code text-outline mt-0.5">@{profile.handle} • {profile.city ?? 'Somewhere loud'}</p>
 				{#if profile.bio}<p class="text-body-md text-on-surface-variant mt-2">{profile.bio}</p>{/if}
 				{#if profile.link}

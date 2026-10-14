@@ -58,12 +58,14 @@
 		[...list].sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt)).slice(0, 4)
 	);
 	const verifiedOrganizers = $derived.by(() => {
-		const map = new Map<string, { id: string; name: string; events: number; attended: number }>();
+		const map = new Map<string, { id: string; handle: string; name: string; avatarColor: string; events: number; attended: number }>();
 		for (const event of list) {
 			if (!event.organizer.verified) continue;
 			const current = map.get(event.organizer.id) ?? {
 				id: event.organizer.id,
+				handle: event.organizer.handle,
 				name: event.organizer.name,
+				avatarColor: event.organizer.avatarColor,
 				events: 0,
 				attended: 0
 			};
@@ -117,7 +119,7 @@
 <header class="fixed top-0 inset-x-0 z-50 bg-surface/80 backdrop-blur-xl pt-safe md:left-20">
 	<div class="h-16 px-gutter md:max-w-5xl md:mx-auto flex items-center justify-between gap-space-sm">
 		<a href="/home" aria-label="Owltside home" class="flex items-center gap-space-sm">
-			<img src="/owl-icon.png" alt="Owltside logo" class="h-9 w-9 object-contain" />
+			<img src="/logo.png" alt="Owltside logo" class="h-5 w-auto object-contain" />
 			<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Home</span>
 		</a>
 		<div class="flex items-center gap-space-xs">
@@ -195,7 +197,7 @@
 			</div>
 			<div class="flex gap-2 overflow-x-auto pb-1 pt-1 -mx-margin px-margin scrollbar-none">
 				{#each categories as cat (cat.id)}
-					<Chip label={cat.label} active={category === cat.id} onclick={() => (category = cat.id as CategoryId)} />
+					<Chip label={cat.label} icon={cat.icon} active={category === cat.id} onclick={() => (category = cat.id as CategoryId)} />
 				{/each}
 			</div>
 		</div>
@@ -291,11 +293,13 @@
 				<div class="flex flex-col gap-3 pt-space-sm">
 					{#each verifiedOrganizers as org (org.id)}
 						<div class="flex items-center gap-3">
-							<div class="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-display font-bold shrink-0">{org.name.split(/\\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('')}</div>
-							<div class="flex-1 min-w-0">
-								<span class="flex items-center gap-1 text-body-sm font-semibold text-on-surface truncate">{org.name}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" /></span>
-								<span class="block text-label-badge text-on-surface-variant">{org.events} Events · {compact(org.attended)} Attended</span>
-							</div>
+							<a href="/users/{org.handle}" aria-label="View {org.name}'s profile" class="flex flex-1 min-w-0 items-center gap-3 rounded-lg hover:bg-surface-container-high/60 transition-colors">
+								<Avatar name={org.name} color={org.avatarColor} size="sm" />
+								<span class="flex-1 min-w-0">
+									<span class="flex items-center gap-1 text-body-sm font-semibold text-on-surface truncate">{org.name}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" /></span>
+									<span class="block text-label-badge text-on-surface-variant">{org.events} Events · {compact(org.attended)} Attended</span>
+								</span>
+							</a>
 							<button
 								aria-pressed={following(org.id)}
 								onclick={() => {

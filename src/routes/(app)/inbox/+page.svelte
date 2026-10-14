@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { BadgeCheck, MessageSquare, MessageSquarePlus, Search, Bell, Users, Megaphone, Star, Wifi } from '@lucide/svelte';
+	import { goto } from '$app/navigation';
 	import Avatar from '$components/Avatar.svelte';
 	import DesktopInboxList from '$components/DesktopInboxList.svelte';
+	import MessageRequestCard from '$components/MessageRequestCard.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
 	import TopBar from '$components/TopBar.svelte';
-	import { useQuery } from '$lib/state/query.svelte';
+	import { queryClient, useQuery } from '$lib/state/query.svelte';
 	import { fmtRelative } from '$lib/utils/dates';
 	import { page } from '$app/state';
-	import type { Conversation } from '$lib/types';
+	import type { Conversation, MessageRequest } from '$lib/types';
 
 	let { data } = $props();
 
@@ -20,9 +22,38 @@
 		data.conversations
 	);
 
+	const messageRequests = useQuery<MessageRequest[]>(
+		'message-requests:mine',
+		async () => {
+			const response = await fetch('/api/message-requests');
+			return response.ok ? response.json() : [];
+		},
+		{ staleTime: 10_000, refetchInterval: 20_000 },
+		data.messageRequests ?? []
+	);
+
+	let inboxView = $state<'messages' | 'requests'>('messages');
 	let search = $state('');
 	let filter = $state<'all' | 'unread' | 'organizers' | 'attendees' | 'channels'>('all');
 	const unreadCount = $derived((conversations.data ?? []).reduce((total, conversation) => total + conversation.unread, 0));
+	const requestCount = $derived((messageRequests.data ?? []).length);
+
+	async function respondToRequest(id: string, accept: boolean) {
+		try {
+			const response = await fetch(`/api/message-requests/${encodeURIComponent(id)}/respond`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ accept })
+			});
+			const result = await response.json();
+			if (!response.ok) throw new Error(result.error ?? 'The request could not be updated');
+			queryClient.invalidate('message-requests:mine');
+			queryClient.invalidate('conversations:mine');
+			if (accept && result.request?.conversationId) await goto(`/inbox/${result.request.conversationId}`);
+		} catch (error) {
+			console.error('Message request response failed', error);
+		}
+	}
 
 	const filterDefs: Array<{ id: typeof filter; label: string; icon: typeof MessageSquare }> = [
 		{ id: 'all', label: 'All Messages', icon: MessageSquare },
@@ -56,7 +87,7 @@
 			<a href="/home" class="flex items-center gap-2.5 shrink-0">
 				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
 				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
-				<span class="{MONO} text-tertiary border border-tertiary/25 bg-tertiary/10 rounded px-1.5 py-0.5">Secure_Node</span>
+
 			</a>
 			<nav class="flex items-center gap-1" aria-label="Primary">
 				{#each [
@@ -100,6 +131,10 @@
 				<span class="font-display text-headline-lg text-on-surface">Direct Comms</span>
 				<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{(conversations.data ?? []).length} Sessions</span>
 			</span>
+			<div role="tablist" aria-label="Inbox sections" class="flex items-center gap-1 rounded-full border border-surface-glass-border bg-surface-container p-1">
+				<button type="button" role="tab" aria-selected={inboxView === 'messages'} onclick={() => (inboxView = 'messages')} class="h-9 px-3 rounded-full text-body-sm font-semibold {inboxView === 'messages' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}">Messages</button>
+				<button type="button" role="tab" aria-selected={inboxView === 'requests'} onclick={() => (inboxView = 'requests')} class="h-9 px-3 rounded-full text-body-sm font-semibold {inboxView === 'requests' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}">Requests <span class="ml-1 font-code text-label-badge">{requestCount}</span></button>
+			</div>
 			<span class="flex items-center gap-3 {MONO} text-on-surface-variant">
 				<span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> Latency: 18ms</span>
 				<span class="text-outline-variant">|</span>
@@ -108,6 +143,7 @@
 		</div>
 	</div>
 
+	{#if inboxView === 'messages'}
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-8 grid lg:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[400px_minmax(0,1fr)] gap-6 items-start">
 		<DesktopInboxList items={conversations.data ?? []} />
 		<section class="rounded-xl border border-surface-glass-border bg-surface-container min-h-[420px] flex flex-col items-center justify-center gap-4 p-10 text-center">
@@ -123,6 +159,16 @@
 		</section>
 	</div>
 
+	{:else}
+		<section class="mx-auto w-full max-w-[1000px] px-6 xl:px-10 py-8 flex flex-col gap-4">
+			<div><h2 class="font-display text-headline-lg text-on-surface">Message requests</h2><p class="text-body-sm text-on-surface-variant pt-1">First messages from people contacting you through your event pages.</p></div>
+			{#each messageRequests.data ?? [] as request (request.id)}
+				<MessageRequestCard {request} onRespond={respondToRequest} />
+			{:else}
+				<div class="rounded-xl border border-dashed border-outline-variant/50 p-10 text-center"><h3 class="font-display text-headline-md text-on-surface">No pending requests</h3><p class="text-body-sm text-on-surface-variant pt-2">New contact requests from event pages will appear here.</p></div>
+			{/each}
+		</section>
+	{/if}
 	<footer class="mt-4 border-t border-surface-glass-border">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
 			<span class="flex items-center gap-3">
@@ -147,6 +193,11 @@
 <main class="flex-1 flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
 	<div class="flex flex-col w-full md:max-w-2xl md:mx-auto">
 		<div class="px-space-md py-space-sm bg-surface sticky top-16 z-30">
+			<div role="tablist" aria-label="Inbox sections" class="grid grid-cols-2 gap-1 rounded-full border border-surface-glass-border bg-surface-container-low p-1 mb-3">
+				<button type="button" role="tab" aria-selected={inboxView === 'messages'} onclick={() => (inboxView = 'messages')} class="h-9 rounded-full text-body-sm font-semibold {inboxView === 'messages' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}">Messages</button>
+				<button type="button" role="tab" aria-selected={inboxView === 'requests'} onclick={() => (inboxView = 'requests')} class="h-9 rounded-full text-body-sm font-semibold {inboxView === 'requests' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}">Requests <span class="ml-1 font-code text-label-badge">{requestCount}</span></button>
+			</div>
+			{#if inboxView === 'messages'}
 			<div class="relative flex items-center w-full">
 				<input
 					bind:value={search}
@@ -166,6 +217,7 @@
 					</button>
 				{/each}
 			</div>
+			{/if}
 		</div>
 
 		<div class="px-space-md pt-space-xs pb-space-sm">
@@ -181,6 +233,7 @@
 			</div>
 		</div>
 
+		{#if inboxView === 'messages'}
 		<div class="flex flex-col px-space-md gap-space-xs pb-4">
 			{#each list as conv (conv.id)}
 				<a
@@ -191,8 +244,7 @@
 					<span class="flex-1 min-w-0">
 						<span class="flex items-center justify-between gap-2">
 							<span class="flex items-center gap-1.5 min-w-0">
-								<span class="text-body-md text-on-surface font-semibold truncate">{conv.peer.name}</span>
-								{#if conv.peer.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}
+								<span class="text-body-md text-on-surface font-semibold truncate">{conv.peer.name}</span>{#if conv.peer.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}
 							</span>
 							<span class="text-body-sm text-outline shrink-0">{fmtRelative(conv.lastAt)}</span>
 						</span>
@@ -211,6 +263,15 @@
 				</EmptyState>
 			{/each}
 		</div>
+		{:else}
+			<div class="flex flex-col px-space-md gap-space-sm pb-4">
+				{#each messageRequests.data ?? [] as request (request.id)}
+					<MessageRequestCard {request} onRespond={respondToRequest} />
+				{:else}
+					<div class="rounded-xl border border-dashed border-outline-variant/50 p-8 text-center"><h2 class="font-display text-headline-md text-on-surface">No pending requests</h2><p class="text-body-sm text-on-surface-variant pt-2">Organizer contact requests sent from event pages appear here.</p></div>
+				{/each}
+			</div>
+		{/if}
 	</div>
 </main>
 </div>

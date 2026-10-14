@@ -3,7 +3,7 @@
 	 * Desktop (md+) inbox thread list panel per the "Direct Comms" design
 	 * source — themed with the Evently Pulse tokens from `src/app.css`.
 	 */
-	import { Search, SlidersHorizontal } from '@lucide/svelte';
+	import { BadgeCheck, Search, SlidersHorizontal } from '@lucide/svelte';
 	import Avatar from './Avatar.svelte';
 	import { fmtDate, fmtRelative, fmtTime } from '$lib/utils/dates';
 	import type { Conversation } from '$lib/types';
@@ -93,7 +93,7 @@
 				<span class="flex-1 min-w-0">
 					<span class="flex items-center justify-between gap-2">
 						<span class="flex items-center gap-1.5 min-w-0">
-							<span class="text-body-md font-semibold text-on-surface truncate">{c.peer.name}</span>
+							<span class="text-body-md font-semibold text-on-surface truncate">{c.peer.name}</span>{#if c.peer.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}
 						</span>
 						<span class="flex items-center gap-1.5 shrink-0">
 							<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant">{timeLabel(c.lastAt)}</span>
@@ -104,7 +104,6 @@
 						<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-1.5 py-0.5 rounded truncate">
 							{roleBadge(c)}
 						</span>
-						{#if c.peer.verified}<span class="text-[10px] text-tertiary shrink-0">✓</span>{/if}
 					</span>
 					<span class="block text-body-sm text-on-surface-variant truncate pt-1.5">{c.lastMessage}</span>
 				</span>

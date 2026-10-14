@@ -60,7 +60,7 @@
 			<a href="/home" class="flex items-center gap-2.5 shrink-0">
 				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
 				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
-				<span class="{MONO} text-tertiary border border-tertiary/25 bg-tertiary/10 rounded px-1.5 py-0.5">Secure_Node</span>
+
 			</a>
 			<nav class="flex items-center gap-1" aria-label="Primary">
 				{#each [
@@ -125,15 +125,11 @@
 			<span class="flex items-center gap-4 min-w-0">
 				<span class="relative shrink-0">
 					<Avatar name={session?.name ?? 'Guest Explorer'} size="md" />
-					{#if session}
-						<span class="absolute -bottom-1 -right-1 bg-accent-emerald text-surface w-5 h-5 rounded-full flex items-center justify-center shadow">
-							<BadgeCheck class="w-3.5 h-3.5" />
-						</span>
-					{/if}
 				</span>
 				<span class="min-w-0">
 					<span class="flex items-center gap-2 flex-wrap">
 						<span class="font-display text-headline-md text-on-surface truncate">{session?.name ?? 'Guest Explorer'}</span>
+						{#if session}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" aria-label="Verified member" />{/if}
 						<span class="{MONO} px-2 py-0.5 rounded bg-primary/15 border border-primary/25 text-primary">ID #8921</span>
 					</span>
 					<span class="block text-body-sm text-on-surface-variant mt-0.5 truncate">{session?.email ?? 'browsing as guest'}</span>
@@ -357,15 +353,11 @@
 					<div class="flex items-center gap-space-md relative z-10">
 						<div class="relative">
 							<Avatar name={session?.name ?? 'Guest Explorer'} size="lg" />
-							{#if session}
-								<span class="absolute -bottom-1 -right-1 bg-accent-emerald text-surface text-label-badge w-5 h-5 rounded-full flex items-center justify-center shadow">
-									<BadgeCheck class="w-3.5 h-3.5" />
-								</span>
-							{/if}
 						</div>
 						<div class="flex-1 min-w-0">
 							<div class="flex items-center gap-space-xs">
 								<span class="font-display text-headline-md text-on-surface truncate">{session?.name ?? 'Guest Explorer'}</span>
+								{#if session}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" aria-label="Verified member" />{/if}
 								<span class="bg-primary/20 text-primary text-label-badge px-2 py-0.5 rounded-full">ID #8921</span>
 							</div>
 							<p class="text-body-sm text-on-surface-variant truncate">{session?.email ?? 'browsing as guest'}</p>
