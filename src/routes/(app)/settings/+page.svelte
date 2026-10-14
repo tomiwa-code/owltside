@@ -1,26 +1,35 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import {
+		Accessibility,
 		BadgeCheck,
 		Bell,
 		CheckCheck,
+		ChevronRight,
 		Coins,
-		Megaphone,
+		CreditCard,
+		Database,
+		HelpCircle,
+		LockKeyhole,
 		LogOut,
 		Mail,
+		Megaphone,
 		RefreshCw,
 		Search,
 		ShieldCheck,
 		ArrowLeftRight,
+		Smartphone,
 		Ticket,
 		User,
 		UserRound,
+		Wallet,
 		WifiOff
 	} from '@lucide/svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import SettingsDetails from '$components/SettingsDetails.svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import CurrencyPill from '$components/CurrencyPill.svelte';
+	import Sheet from '$components/Sheet.svelte';
 	import { page } from '$app/state';
 	import { toast } from '$lib/state/toast.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
@@ -47,6 +56,8 @@
 		['Lagos Edge 0x7E3', 'Primary • this device', '12ms'],
 		['Backup Vault NG-01', 'Encrypted mirror', '24ms']
 	];
+
+	let openCategory = $state<string | null>(null);
 </script>
 
 <svelte:head><title>Settings • Owltside</title></svelte:head>
@@ -141,181 +152,77 @@
 		</div>
 	</div>
 
-	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 grid lg:grid-cols-[360px_minmax(0,1fr)] xl:grid-cols-[400px_minmax(0,1fr)] gap-6 items-start">
-		<div class="flex flex-col gap-6 min-w-0">
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<div class="flex items-center justify-between gap-3">
-					<h2 class="font-display text-headline-md text-on-surface">Operating Identity</h2>
-					<span class="{MONO} px-2 py-0.5 rounded bg-primary text-on-primary">{role}</span>
-				</div>
-				<p class="text-body-sm text-on-surface-variant mt-1">Switch views to toggle permissions & venue tools</p>
-				<div class="flex flex-col gap-2.5 mt-4">
-					{#each roles as r (r.id)}
-						{@const RIcon = r.icon}
-						<form method="POST" action="?/setIdentity">
-							<input type="hidden" name="identity" value={r.id} />
-							<button
-								type="submit"
-								class="w-full flex items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors {role === r.id ? 'border-primary/50 bg-primary/10' : 'border-surface-glass-border bg-surface-container-high/50 hover:bg-surface-container-high'}"
-							>
-								<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
-									<RIcon class="w-4 h-4 text-on-surface-variant" />
-								</span>
-								<span class="flex-1 min-w-0">
-									<span class="block text-body-sm font-medium text-on-surface">{r.label}</span>
-									<span class="block text-xs text-on-surface-variant mt-0.5">{r.sub}</span>
-								</span>
-								{#if role === r.id}
-									<span class="w-1.5 h-1.5 rounded-full bg-primary glow-primary shrink-0"></span>
-								{/if}
-							</button>
-						</form>
-					{/each}
-				</div>
-			</section>
-
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<div class="flex items-center justify-between">
-					<h2 class="font-display text-headline-md text-on-surface">Security & About</h2>
-					<ShieldCheck class="w-4 h-4 text-on-surface-variant" />
-				</div>
-				<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-4 mt-4">
-					<span class="w-10 h-10 rounded-full bg-accent-emerald/10 text-accent-emerald flex items-center justify-center shrink-0">
-						<ShieldCheck class="w-5 h-5" />
-					</span>
-					<span class="min-w-0">
-						<span class="block {MONO} text-on-surface">End-to-End Dynamic Protection</span>
-						<span class="block text-body-sm text-on-surface-variant mt-0.5">256-bit TLS • rotating HMAC gate tokens • PWA v1.0</span>
-					</span>
-				</div>
-				<div class="flex flex-col gap-2 mt-4">
-					{#each securityRows as [label, value]}
-						<div class="flex items-center justify-between gap-3 text-body-sm">
-							<span class="{MONO} text-on-surface-variant">{label}</span>
-							<span class="{MONO} text-on-surface">{value}</span>
-						</div>
-					{/each}
-				</div>
-				<div class="flex items-center justify-between gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high px-4 py-3 mt-4">
-					<span class="flex items-center gap-2 min-w-0 {MONO} text-on-surface-variant">
-						<ShieldCheck class="w-4 h-4 text-accent-emerald shrink-0" />
-						Secure_Channel: RSA-4096 / TLS 1.3
-					</span>
-					<span class="{MONO} text-outline-variant shrink-0">v2.4.1</span>
-				</div>
-			</section>
-		</div>
-
-		<div class="flex flex-col gap-6 min-w-0">
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<div class="flex items-center justify-between gap-3">
-					<h2 class="font-display text-headline-md text-on-surface">Preferences</h2>
-					<span class="{MONO} text-on-surface-variant">Terminal_Local</span>
-				</div>
-				<div class="flex flex-col gap-2.5 mt-4">
-					<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3">
-						<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
-							<Coins class="w-4 h-4 text-on-surface-variant" />
-						</span>
-						<span class="flex-1 min-w-0">
-							<span class="block text-body-sm font-medium text-on-surface">Display currency</span>
-							<span class="block text-xs text-on-surface-variant mt-0.5">Prices convert at render time</span>
-						</span>
-						<CurrencyPill />
-					</div>
-					<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3">
-						<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
-							<Bell class="w-4 h-4 text-on-surface-variant" />
-						</span>
-						<span class="flex-1 min-w-0">
-							<span class="block text-body-sm font-medium text-on-surface">Push notifications</span>
-							<span class="block text-xs text-on-surface-variant mt-0.5">Drops, gate updates & replies</span>
-						</span>
-						<button
-							role="switch"
-							aria-checked={appSettings.value.notifications.pushEnabled}
-							aria-label="Push notifications"
-							class="w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors {appSettings.value.notifications.pushEnabled ? 'bg-primary-container border-primary/50 text-on-primary-container' : 'bg-surface-bright border-surface-glass-border text-transparent'}"
-							onclick={() => (appSettings.value.notifications.pushEnabled = !appSettings.value.notifications.pushEnabled)}
-						>
-							<CheckCheck class="w-3 h-3" />
-						</button>
-					</div>
-					<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3">
-						<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
-							<WifiOff class="w-4 h-4 text-accent-emerald" />
-						</span>
-						<span class="flex-1 min-w-0">
-							<span class="block text-body-sm font-medium text-on-surface">Offline wallet cache</span>
-							<span class="block text-xs text-on-surface-variant mt-0.5">Keep HMAC passes on-device</span>
-						</span>
-						<button
-							role="switch"
-							aria-checked={appSettings.value.storage.offlineMode}
-							aria-label="Offline wallet cache"
-							class="w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors {appSettings.value.storage.offlineMode ? 'bg-primary-container border-primary/50 text-on-primary-container' : 'bg-surface-bright border-surface-glass-border text-transparent'}"
-							onclick={() => (appSettings.value.storage.offlineMode = !appSettings.value.storage.offlineMode)}
-						>
-							<CheckCheck class="w-3 h-3" />
-						</button>
-					</div>
-				</div>
-			</section>
-
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<div class="flex items-center justify-between gap-3">
-					<h2 class="font-display text-headline-md text-on-surface">Account</h2>
-					<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-high border border-surface-glass-border text-on-surface-variant">{session ? 'Session Active' : 'Guest Mode'}</span>
-				</div>
-				<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3 mt-4">
-					<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
-						<Mail class="w-4 h-4 text-on-surface-variant" />
-					</span>
-					<span class="flex-1 min-w-0">
-						<span class="block text-body-sm font-medium text-on-surface truncate">{session?.email ?? 'No email (guest)'}</span>
-						<span class="block text-xs text-on-surface-variant mt-0.5">Passwordless sign-in</span>
-					</span>
-					<span class="{MONO} px-2 py-0.5 rounded text-accent-emerald bg-accent-emerald/10 border border-accent-emerald/20 shrink-0">Verified</span>
-				</div>
-				{#if session}
-					<form method="POST" action="?/signout" use:enhance class="mt-3">
-						<button class="w-full h-10 rounded-lg bg-error/10 border border-error/30 text-error text-body-sm font-semibold flex items-center justify-center gap-2 hover:bg-error/15 transition-colors">
-							<LogOut class="w-4 h-4" /><span>Sign out of this node</span>
-						</button>
-					</form>
-				{:else}
-					<a href="/auth/login" class="w-full h-10 mt-3 rounded-lg bg-on-surface text-surface-base text-body-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
-						Sign in
-					</a>
-				{/if}
-			</section>
-
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<div class="flex items-center justify-between gap-3">
-					<h2 class="font-display text-headline-md text-on-surface">Active Session Nodes</h2>
-					<span class="{MONO} text-on-surface-variant">Mesh_Registry</span>
-				</div>
-				<div class="flex flex-col gap-2.5 mt-4">
-					{#each sessionNodes as [name, sub, ms], i}
-						<div class="flex items-center justify-between gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5">
-							<span class="flex items-center gap-2.5 min-w-0">
-								<span class="w-1.5 h-1.5 rounded-full shrink-0 {i === 0 ? 'bg-primary glow-primary' : 'bg-accent-emerald'}"></span>
-								<span class="min-w-0">
-									<span class="block text-body-sm font-medium text-on-surface truncate">{name}</span>
-									<span class="block text-xs text-on-surface-variant truncate">{sub}</span>
-								</span>
-							</span>
-							<span class="{MONO} text-on-surface-variant shrink-0">{ms}</span>
-						</div>
-					{/each}
-				</div>
-			</section>
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6">
+		<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden divide-y divide-surface-glass-border">
+			<button type="button" onclick={() => (openCategory = 'identity')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><ArrowLeftRight class="w-5 h-5 text-primary" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Operating Identity</span><span class="block text-body-sm text-on-surface-variant truncate">Current: {role} • Switch views & venue tools</span></span>
+				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
+			</button>
+			<button type="button" onclick={() => (openCategory = 'preferences')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Bell class="w-5 h-5 text-primary" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Preferences</span><span class="block text-body-sm text-on-surface-variant truncate">Currency • Push notifications • Offline cache</span></span>
+				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
+			</button>
+			<button type="button" onclick={() => (openCategory = 'account')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><User class="w-5 h-5 text-primary" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Account</span><span class="block text-body-sm text-on-surface-variant truncate">{session?.email ?? 'Guest'} • {session ? 'Session active' : 'Guest mode'}</span></span>
+				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
+			</button>
+			<button type="button" onclick={() => (openCategory = 'sessions')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Smartphone class="w-5 h-5 text-primary" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Active Session Nodes</span><span class="block text-body-sm text-on-surface-variant truncate">{sessionNodes.length} nodes • Mesh registry</span></span>
+				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
+			</button>
+			<button type="button" onclick={() => (openCategory = 'securityAbout')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-accent-emerald/10 text-accent-emerald flex items-center justify-center shrink-0"><ShieldCheck class="w-5 h-5" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Security & About</span><span class="block text-body-sm text-on-surface-variant truncate">End-to-end protection • TLS 1.3 • v2.4.1</span></span>
+				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
+			</button>
+			<button type="button" onclick={() => (openCategory = 'verification')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><ShieldCheck class="w-5 h-5 text-primary" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Verification</span><span class="block text-body-sm text-on-surface-variant truncate">Email • Phone • Identity • Payout • Age</span></span>
+				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
+			</button>
+			<button type="button" onclick={() => (openCategory = 'notifications')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Bell class="w-5 h-5 text-primary" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Notifications</span><span class="block text-body-sm text-on-surface-variant truncate">Channels • Delivery • Quiet hours</span></span>
+				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
+			</button>
+			<button type="button" onclick={() => (openCategory = 'privacy')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><UserRound class="w-5 h-5 text-primary" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Privacy</span><span class="block text-body-sm text-on-surface-variant truncate">Profile visibility & data use</span></span>
+				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
+			</button>
+			<button type="button" onclick={() => (openCategory = 'securitySessions')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><LockKeyhole class="w-5 h-5 text-primary" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Security & Sessions</span><span class="block text-body-sm text-on-surface-variant truncate">Biometrics • 2FA • Active sessions</span></span>
+				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
+			</button>
+			<button type="button" onclick={() => (openCategory = 'payments')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><CreditCard class="w-5 h-5 text-primary" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Saved Payment Methods</span><span class="block text-body-sm text-on-surface-variant truncate">Cards on this device • Default & removal</span></span>
+				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
+			</button>
+			<button type="button" onclick={() => (openCategory = 'accessibility')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Accessibility class="w-5 h-5 text-primary" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Accessibility</span><span class="block text-body-sm text-on-surface-variant truncate">Appearance • Motion • Reading comfort • Page size</span></span>
+				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
+			</button>
+			<button type="button" onclick={() => (openCategory = 'offline')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Database class="w-5 h-5 text-primary" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Offline & Storage</span><span class="block text-body-sm text-on-surface-variant truncate">Offline mode • Auto-download • Wallet • Cache</span></span>
+				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
+			</button>
+			<button type="button" onclick={() => (openCategory = 'help')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><HelpCircle class="w-5 h-5 text-primary" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Help & Legal</span><span class="block text-body-sm text-on-surface-variant truncate">Support • Terms • Privacy • Cookies • Licenses</span></span>
+				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
+			</button>
 		</div>
 	</div>
 
-	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pb-10">
-		<SettingsDetails />
-	</div>
+
 
 	<footer class="mt-4 border-t border-surface-glass-border">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
@@ -370,130 +277,185 @@
 				</div>
 			</section>
 
-			<!-- role switcher -->
+			<!-- settings categories as list (mobile) -->
 			<section class="px-margin mb-space-lg">
-				<div class="flex items-center justify-between mb-space-xs">
-					<div>
-						<h2 class="font-display text-headline-md text-on-surface flex items-center gap-1.5">
-							<ArrowLeftRight class="w-5 h-5 text-primary" /> Operating Identity
-						</h2>
-						<p class="text-body-sm text-on-surface-variant">Switch views to toggle permissions & venue tools</p>
-					</div>
-					<span class="text-label-badge bg-primary text-on-primary px-2.5 py-1 rounded-full shadow-sm uppercase">{role}</span>
-				</div>
-				<div class="flex gap-2 overflow-x-auto py-2 -mx-margin px-margin scrollbar-none">
-					{#each roles as r (r.id)}
-						{@const RIcon = r.icon}
-						<form method="POST" action="?/setIdentity" class="shrink-0">
-							<input type="hidden" name="identity" value={r.id} />
-							<button
-								type="submit"
-								class="flex items-center gap-2 px-3.5 py-2 rounded-full transition-all duration-200 {role === r.id ? 'bg-primary text-on-primary shadow-md' : 'bg-surface-container text-on-surface-variant hover:text-on-surface'}"
-							>
-								<RIcon class="w-4.5 h-4.5" />
-								<span class="text-body-sm font-semibold">{r.label}</span>
-							</button>
-						</form>
-					{/each}
-				</div>
-			</section>
-
-			<!-- preferences -->
-			<section class="px-margin mb-space-lg flex flex-col gap-space-xs">
-				<h2 class="font-display text-headline-md text-on-surface flex items-center gap-1.5">
-					<Bell class="w-5 h-5 text-primary" /> Preferences
-				</h2>
-				<div class="flex items-center justify-between bg-surface-container rounded-xl p-4">
-					<div>
-						<p class="text-body-md text-on-surface font-medium">Display currency</p>
-						<p class="text-body-sm text-on-surface-variant">Prices convert at render time</p>
-					</div>
-					<CurrencyPill />
-				</div>
-				<label class="flex items-center justify-between bg-surface-container rounded-xl p-4 cursor-pointer">
-					<div>
-						<p class="text-body-md text-on-surface font-medium">Push notifications</p>
-						<p class="text-body-sm text-on-surface-variant">Drops, gate updates & replies</p>
-					</div>
-					<input type="checkbox" checked={appSettings.value.notifications.pushEnabled} onchange={() => (appSettings.value.notifications.pushEnabled = !appSettings.value.notifications.pushEnabled)} class="w-5 h-5 accent-[#c0c1ff]" />
-				</label>
-				<label class="flex items-center justify-between bg-surface-container rounded-xl p-4 cursor-pointer">
-					<div>
-						<p class="text-body-md text-on-surface font-medium flex items-center gap-1.5"><WifiOff class="w-4 h-4 text-accent-emerald" /> Offline wallet cache</p>
-						<p class="text-body-sm text-on-surface-variant">Keep HMAC passes on-device</p>
-					</div>
-					<input type="checkbox" checked={appSettings.value.storage.offlineMode} onchange={() => (appSettings.value.storage.offlineMode = !appSettings.value.storage.offlineMode)} class="w-5 h-5 accent-[#c0c1ff]" />
-				</label>
-			</section>
-
-			<!-- account -->
-			<section class="px-margin mb-space-lg flex flex-col gap-space-xs">
-				<h2 class="font-display text-headline-md text-on-surface flex items-center gap-1.5">
-					<User class="w-5 h-5 text-primary" /> Account
-				</h2>
-				<div class="flex items-center justify-between bg-surface-container rounded-xl p-4">
-					<div class="flex items-center gap-2 min-w-0">
-						<Mail class="w-4.5 h-4.5 text-on-surface-variant" />
-						<div class="min-w-0">
-							<p class="text-body-md text-on-surface font-medium truncate">{session?.email ?? 'No email (guest)'}</p>
-							<p class="text-body-sm text-on-surface-variant">Passwordless sign-in</p>
-						</div>
-					</div>
-					<span class="text-label-badge text-accent-emerald bg-accent-emerald/10 border border-accent-emerald/20 px-2 py-0.5 rounded-full">Verified</span>
-				</div>
-				{#if session}
-					<form method="POST" action="?/signout" use:enhance>
-						<button class="w-full h-12 rounded-xl bg-error-container/40 border border-error-container text-error font-semibold text-body-md flex items-center justify-center gap-2 active:scale-[0.98]">
-							<LogOut class="w-4.5 h-4.5" /> Sign out
-						</button>
-					</form>
-				{:else}
-					<a href="/auth/login" class="w-full h-12 rounded-xl bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center gap-2 active:scale-[0.98] glow-primary">
-						Sign in
-					</a>
-				{/if}
-			</section>
-
-			<!-- active desktop session-node registry parity -->
-			<section class="px-margin mb-space-lg flex flex-col gap-space-xs">
-				<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Active Session Nodes</h2><span class="{MONO} text-on-surface-variant">Mesh Registry</span></div>
-				<div class="flex flex-col gap-2">
-					{#each sessionNodes as [name, sub, ms], i}
-						<div class="flex items-center justify-between gap-3 rounded-xl border border-surface-glass-border bg-surface-container px-4 py-3">
-							<span class="flex items-center gap-2.5 min-w-0"><span class="w-2 h-2 rounded-full shrink-0 {i === 0 ? 'bg-primary glow-primary' : 'bg-accent-emerald'}"></span><span class="min-w-0"><span class="block text-body-sm font-medium text-on-surface truncate">{name}</span><span class="block text-label-badge text-on-surface-variant truncate">{sub}</span></span></span>
-							<span class="{MONO} text-on-surface-variant shrink-0">{ms}</span>
-						</div>
-					{/each}
+				<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden divide-y divide-surface-glass-border">
+					<button type="button" onclick={() => (openCategory = 'identity')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><ArrowLeftRight class="w-5 h-5 text-primary" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Operating Identity</span><span class="block text-xs text-on-surface-variant truncate">Current: {role}</span></span>
+						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</button>
+					<button type="button" onclick={() => (openCategory = 'preferences')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Bell class="w-5 h-5 text-primary" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Preferences</span><span class="block text-xs text-on-surface-variant truncate">Currency • Push • Offline</span></span>
+						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</button>
+					<button type="button" onclick={() => (openCategory = 'account')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><User class="w-5 h-5 text-primary" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Account</span><span class="block text-xs text-on-surface-variant truncate">{session?.email ?? 'Guest'}</span></span>
+						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</button>
+					<button type="button" onclick={() => (openCategory = 'sessions')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Smartphone class="w-5 h-5 text-primary" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Active Session Nodes</span><span class="block text-xs text-on-surface-variant truncate">{sessionNodes.length} nodes</span></span>
+						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</button>
+					<button type="button" onclick={() => (openCategory = 'securityAbout')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-full bg-accent-emerald/10 text-accent-emerald flex items-center justify-center shrink-0"><ShieldCheck class="w-5 h-5" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Security & About</span><span class="block text-xs text-on-surface-variant truncate">TLS 1.3 • v2.4.1</span></span>
+						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</button>
+					<button type="button" onclick={() => (openCategory = 'verification')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><ShieldCheck class="w-5 h-5 text-primary" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Verification</span><span class="block text-xs text-on-surface-variant truncate">Email • Phone • Identity</span></span>
+						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</button>
+					<button type="button" onclick={() => (openCategory = 'notifications')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Bell class="w-5 h-5 text-primary" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Notifications</span><span class="block text-xs text-on-surface-variant truncate">Channels • Delivery</span></span>
+						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</button>
+					<button type="button" onclick={() => (openCategory = 'privacy')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><UserRound class="w-5 h-5 text-primary" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Privacy</span><span class="block text-xs text-on-surface-variant truncate">Profile visibility</span></span>
+						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</button>
+					<button type="button" onclick={() => (openCategory = 'securitySessions')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><LockKeyhole class="w-5 h-5 text-primary" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Security & Sessions</span><span class="block text-xs text-on-surface-variant truncate">Biometrics • 2FA</span></span>
+						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</button>
+					<button type="button" onclick={() => (openCategory = 'payments')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><CreditCard class="w-5 h-5 text-primary" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Saved Payment Methods</span><span class="block text-xs text-on-surface-variant truncate">Cards on this device</span></span>
+						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</button>
+					<button type="button" onclick={() => (openCategory = 'accessibility')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Accessibility class="w-5 h-5 text-primary" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Accessibility</span><span class="block text-xs text-on-surface-variant truncate">Appearance • Motion</span></span>
+						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</button>
+					<button type="button" onclick={() => (openCategory = 'offline')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Database class="w-5 h-5 text-primary" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Offline & Storage</span><span class="block text-xs text-on-surface-variant truncate">Offline mode • Cache</span></span>
+						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</button>
+					<button type="button" onclick={() => (openCategory = 'help')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><HelpCircle class="w-5 h-5 text-primary" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Help & Legal</span><span class="block text-xs text-on-surface-variant truncate">Support • Terms • Privacy</span></span>
+						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
+					</button>
 				</div>
 			</section>
-
-			<!-- security -->
-			<section class="px-margin flex flex-col gap-space-xs">
-				<h2 class="font-display text-headline-md text-on-surface flex items-center gap-1.5">
-					<ShieldCheck class="w-5 h-5 text-primary" /> Security & About
-				</h2>
-				<div class="bg-surface-container-low rounded-xl p-4 flex items-center gap-3">
-					<span class="w-10 h-10 rounded-full bg-accent-emerald/10 text-accent-emerald flex items-center justify-center flex-shrink-0">
-						<ShieldCheck class="w-5 h-5" />
-					</span>
-					<div>
-						<p class="text-label-badge text-on-surface font-semibold">End-to-End Dynamic Protection</p>
-						<p class="text-body-sm text-on-surface-variant">256-bit TLS • rotating HMAC gate tokens • PWA v1.0</p>
-					</div>
-				</div>
-				<div class="flex flex-col gap-2 rounded-xl border border-surface-glass-border bg-surface-container p-4">
-					{#each securityRows as [label, value]}
-						<div class="flex items-center justify-between gap-3 text-body-sm"><span class="{MONO} text-on-surface-variant">{label}</span><span class="{MONO} text-on-surface">{value}</span></div>
-					{/each}
-				</div>
-				<div class="flex items-center justify-between gap-3 rounded-xl border border-surface-glass-border bg-surface-container-high px-4 py-3">
-					<span class="flex items-center gap-2 min-w-0 {MONO} text-on-surface-variant"><ShieldCheck class="w-4 h-4 text-accent-emerald shrink-0" />Secure channel: RSA-4096 / TLS 1.3</span>
-					<span class="{MONO} text-outline-variant shrink-0">v2.4.1</span>
-				</div>
-			</section>
-		</div>
-		<div class="px-margin pb-10">
-			<SettingsDetails />
 		</div>
 	</main>
 </div>
+
+	<!-- popups for desktop categories -->
+	<Sheet open={openCategory === 'identity'} title="Operating Identity" close={() => (openCategory = null)}>
+		<div class="flex flex-col gap-4">
+			<div class="flex items-center justify-between"><span class="text-body-sm text-on-surface-variant">Current role</span><span class="{MONO} px-2 py-0.5 rounded bg-primary text-on-primary">{role}</span></div>
+			<p class="text-body-sm text-on-surface-variant">Switch views to toggle permissions & venue tools</p>
+			{#each roles as r (r.id)}
+				{@const RIcon = r.icon}
+				<form method="POST" action="?/setIdentity">
+					<input type="hidden" name="identity" value={r.id} />
+					<button type="submit" class="w-full flex items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors {role === r.id ? 'border-primary/50 bg-primary/10' : 'border-surface-glass-border bg-surface-container-high/50 hover:bg-surface-container-high'}">
+						<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0"><RIcon class="w-4 h-4 text-on-surface-variant" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-medium text-on-surface">{r.label}</span><span class="block text-xs text-on-surface-variant mt-0.5">{r.sub}</span></span>
+						{#if role === r.id}<span class="w-1.5 h-1.5 rounded-full bg-primary glow-primary shrink-0"></span>{/if}
+					</button>
+				</form>
+			{/each}
+		</div>
+	</Sheet>
+
+	<Sheet open={openCategory === 'preferences'} title="Preferences" close={() => (openCategory = null)}>
+		<div class="flex flex-col gap-3">
+			<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3">
+				<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0"><Coins class="w-4 h-4 text-on-surface-variant" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-sm font-medium text-on-surface">Display currency</span><span class="block text-xs text-on-surface-variant mt-0.5">Prices convert at render time</span></span>
+				<CurrencyPill />
+			</div>
+			<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3">
+				<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0"><Bell class="w-4 h-4 text-on-surface-variant" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-sm font-medium text-on-surface">Push notifications</span><span class="block text-xs text-on-surface-variant mt-0.5">Drops, gate updates & replies</span></span>
+				<button role="switch" aria-checked={appSettings.value.notifications.pushEnabled} aria-label="Push notifications" class="w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors {appSettings.value.notifications.pushEnabled ? 'bg-primary-container border-primary/50 text-on-primary-container' : 'bg-surface-bright border-surface-glass-border text-transparent'}" onclick={() => (appSettings.value.notifications.pushEnabled = !appSettings.value.notifications.pushEnabled)}><CheckCheck class="w-3 h-3" /></button>
+			</div>
+			<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3">
+				<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0"><WifiOff class="w-4 h-4 text-accent-emerald" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-sm font-medium text-on-surface">Offline wallet cache</span><span class="block text-xs text-on-surface-variant mt-0.5">Keep HMAC passes on-device</span></span>
+				<button role="switch" aria-checked={appSettings.value.storage.offlineMode} aria-label="Offline wallet cache" class="w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors {appSettings.value.storage.offlineMode ? 'bg-primary-container border-primary/50 text-on-primary-container' : 'bg-surface-bright border-surface-glass-border text-transparent'}" onclick={() => (appSettings.value.storage.offlineMode = !appSettings.value.storage.offlineMode)}><CheckCheck class="w-3 h-3" /></button>
+			</div>
+		</div>
+	</Sheet>
+
+	<Sheet open={openCategory === 'account'} title="Account" close={() => (openCategory = null)}>
+		<div class="flex flex-col gap-3">
+			<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3">
+				<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0"><Mail class="w-4 h-4 text-on-surface-variant" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-sm font-medium text-on-surface truncate">{session?.email ?? 'No email (guest)'}</span><span class="block text-xs text-on-surface-variant mt-0.5">Passwordless sign-in</span></span>
+				<span class="{MONO} px-2 py-0.5 rounded text-accent-emerald bg-accent-emerald/10 border border-accent-emerald/20 shrink-0">Verified</span>
+			</div>
+			{#if session}
+				<form method="POST" action="?/signout" use:enhance><button class="w-full h-10 rounded-lg bg-error/10 border border-error/30 text-error text-body-sm font-semibold flex items-center justify-center gap-2 hover:bg-error/15 transition-colors"><LogOut class="w-4 h-4" /><span>Sign out of this node</span></button></form>
+			{:else}
+				<a href="/auth/login" class="w-full h-10 rounded-lg bg-on-surface text-surface-base text-body-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">Sign in</a>
+			{/if}
+		</div>
+	</Sheet>
+
+	<Sheet open={openCategory === 'sessions'} title="Active Session Nodes" close={() => (openCategory = null)}>
+		<div class="flex flex-col gap-2.5">
+			{#each sessionNodes as [name, sub, ms], i}
+				<div class="flex items-center justify-between gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5">
+					<span class="flex items-center gap-2.5 min-w-0"><span class="w-1.5 h-1.5 rounded-full shrink-0 {i === 0 ? 'bg-primary glow-primary' : 'bg-accent-emerald'}"></span><span class="min-w-0"><span class="block text-body-sm font-medium text-on-surface truncate">{name}</span><span class="block text-xs text-on-surface-variant truncate">{sub}</span></span></span>
+					<span class="{MONO} text-on-surface-variant shrink-0">{ms}</span>
+				</div>
+			{/each}
+		</div>
+	</Sheet>
+
+	<Sheet open={openCategory === 'securityAbout'} title="Security & About" close={() => (openCategory = null)}>
+		<div class="flex flex-col gap-4">
+			<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-4">
+				<span class="w-10 h-10 rounded-full bg-accent-emerald/10 text-accent-emerald flex items-center justify-center shrink-0"><ShieldCheck class="w-5 h-5" /></span>
+				<span class="min-w-0"><span class="block {MONO} text-on-surface">End-to-End Dynamic Protection</span><span class="block text-body-sm text-on-surface-variant mt-0.5">256-bit TLS • rotating HMAC gate tokens • PWA v1.0</span></span>
+			</div>
+			<div class="flex flex-col gap-2">
+				{#each securityRows as [label, value]}
+					<div class="flex items-center justify-between gap-3 text-body-sm"><span class="{MONO} text-on-surface-variant">{label}</span><span class="{MONO} text-on-surface">{value}</span></div>
+				{/each}
+			</div>
+			<div class="flex items-center justify-between gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high px-4 py-3">
+				<span class="flex items-center gap-2 min-w-0 {MONO} text-on-surface-variant"><ShieldCheck class="w-4 h-4 text-accent-emerald shrink-0" />Secure_Channel: RSA-4096 / TLS 1.3</span>
+				<span class="{MONO} text-outline-variant shrink-0">v2.4.1</span>
+			</div>
+		</div>
+	</Sheet>
+
+	<Sheet open={openCategory === 'verification'} title="Verification" close={() => (openCategory = null)}>
+		<SettingsDetails category="verification" />
+	</Sheet>
+	<Sheet open={openCategory === 'notifications'} title="Notifications" close={() => (openCategory = null)}>
+		<SettingsDetails category="notifications" />
+	</Sheet>
+	<Sheet open={openCategory === 'privacy'} title="Privacy" close={() => (openCategory = null)}>
+		<SettingsDetails category="privacy" />
+	</Sheet>
+	<Sheet open={openCategory === 'securitySessions'} title="Security & Sessions" close={() => (openCategory = null)}>
+		<SettingsDetails category="security" />
+	</Sheet>
+	<Sheet open={openCategory === 'payments'} title="Saved Payment Methods" close={() => (openCategory = null)}>
+		<SettingsDetails category="payments" />
+	</Sheet>
+	<Sheet open={openCategory === 'accessibility'} title="Accessibility" close={() => (openCategory = null)}>
+		<SettingsDetails category="accessibility" />
+	</Sheet>
+	<Sheet open={openCategory === 'offline'} title="Offline & Storage" close={() => (openCategory = null)}>
+		<SettingsDetails category="offline" />
+	</Sheet>
+	<Sheet open={openCategory === 'help'} title="Help & Legal" close={() => (openCategory = null)}>
+		<SettingsDetails category="help" />
+	</Sheet>
+

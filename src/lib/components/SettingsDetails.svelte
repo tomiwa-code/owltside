@@ -18,6 +18,8 @@
 	import { appSettings, type AppSettings } from '$lib/state/settings.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 
+	let { category }: { category?: string } = $props();
+
 	type NotificationToggle = 'pushEnabled' | 'emailEnabled' | 'smsEnabled' | 'eventReminders' | 'eventUpdates' | 'messages' | 'marketing' | 'quietHours';
 	type PrivacyToggle = keyof AppSettings['privacy'];
 	type CookieToggle = keyof AppSettings['cookies'];
@@ -99,6 +101,7 @@
 </script>
 
 <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 min-w-0">
+	{#if !category || category === 'verification'}
 	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 md:p-6">
 		<div class="flex items-center justify-between gap-3 mb-4">
 			<div>
@@ -123,6 +126,8 @@
 		</div>
 	</section>
 
+	{/if}
+	{#if !category || category === 'notifications'}
 	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 md:p-6">
 		<div class="flex items-center justify-between gap-3 mb-4">
 			<div>
@@ -167,6 +172,8 @@
 		</div>
 	</section>
 
+	{/if}
+	{#if !category || category === 'privacy'}
 	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 md:p-6">
 		<div class="flex items-center justify-between gap-3 mb-4">
 			<div>
@@ -192,6 +199,8 @@
 		<a href="/legal#privacy" class="inline-flex items-center gap-1.5 text-body-sm text-primary hover:underline mt-2">Read the Privacy Policy <ExternalLink class="w-3.5 h-3.5" /></a>
 	</section>
 
+	{/if}
+	{#if !category || category === 'security'}
 	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 md:p-6">
 		<div class="flex items-center justify-between gap-3 mb-4">
 			<div>
@@ -221,6 +230,8 @@
 		</div>
 	</section>
 
+	{/if}
+	{#if !category || category === 'payments'}
 	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 md:p-6">
 		<div class="flex items-center justify-between gap-3 mb-4">
 			<div>
@@ -246,6 +257,8 @@
 		<button type="button" class="mt-3 h-10 px-4 rounded-lg border border-surface-glass-border text-body-sm text-primary hover:bg-surface-container-high" onclick={() => toast('Add a payment method securely during checkout.', 'info')}>Add a payment method</button>
 	</section>
 
+	{/if}
+	{#if !category || category === 'accessibility'}
 	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 md:p-6">
 		<div class="flex items-center justify-between gap-3 mb-4">
 			<div>
@@ -266,6 +279,8 @@
 		</div>
 	</section>
 
+	{/if}
+	{#if !category || category === 'offline'}
 	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 md:p-6">
 		<div class="flex items-center justify-between gap-3 mb-4">
 			<div>
@@ -280,6 +295,8 @@
 		<button type="button" class="mt-3 inline-flex items-center gap-2 text-body-sm text-error hover:underline" onclick={clearOfflineCache}><Trash2 class="w-4 h-4" /> Clear offline cache</button>
 	</section>
 
+	{/if}
+	{#if !category || category === 'help'}
 	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 md:p-6 xl:col-span-2">
 		<div class="flex items-center justify-between gap-3 mb-4">
 			<div>
@@ -302,4 +319,5 @@
 			<a href="mailto:safety@owltside.app?subject=Owltside%20safety" class="flex items-center justify-between gap-2 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3 text-body-sm text-on-surface hover:bg-surface-container-high"><span class="flex items-center gap-2"><Moon class="w-4 h-4 text-primary" /> Safety & accessibility</span><Mail class="w-3.5 h-3.5" /></a>
 		</div>
 	</section>
+	{/if}
 </div>
