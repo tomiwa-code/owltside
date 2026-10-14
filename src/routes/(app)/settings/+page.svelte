@@ -36,6 +36,7 @@
 
 	let { data } = $props();
 	const session = $derived(page.data.session);
+	const isFullyVerified = $derived(!!session && Object.values(appSettings.value.verification).every(Boolean));
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
@@ -140,7 +141,7 @@
 				<span class="min-w-0">
 					<span class="flex items-center gap-2 flex-wrap">
 						<span class="font-display text-headline-md text-on-surface truncate">{session?.name ?? 'Guest Explorer'}</span>
-						{#if session}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" aria-label="Verified member" />{/if}
+						{#if isFullyVerified}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" aria-label="Verified member" />{/if}
 						<span class="{MONO} px-2 py-0.5 rounded bg-primary/15 border border-primary/25 text-primary">ID #8921</span>
 					</span>
 					<span class="block text-body-sm text-on-surface-variant mt-0.5 truncate">{session?.email ?? 'browsing as guest'}</span>
@@ -264,7 +265,7 @@
 						<div class="flex-1 min-w-0">
 							<div class="flex items-center gap-space-xs">
 								<span class="font-display text-headline-md text-on-surface truncate">{session?.name ?? 'Guest Explorer'}</span>
-								{#if session}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" aria-label="Verified member" />{/if}
+								{#if isFullyVerified}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" aria-label="Verified member" />{/if}
 								<span class="bg-primary/20 text-primary text-label-badge px-2 py-0.5 rounded-full">ID #8921</span>
 							</div>
 							<p class="text-body-sm text-on-surface-variant truncate">{session?.email ?? 'browsing as guest'}</p>

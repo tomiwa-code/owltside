@@ -14,7 +14,6 @@
 		IdCard,
 		KeyRound,
 		LayoutGrid,
-		Map,
 		MapPin,
 		Megaphone,
 		Network,
@@ -41,6 +40,7 @@
 	import TopBar from '$components/TopBar.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
 	import { page } from '$app/state';
+	import { appSettings } from '$lib/state/settings.svelte';
 	import { useQuery } from '$lib/state/query.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { formatMoney } from '$lib/utils/money';
@@ -73,6 +73,7 @@
 
 	// ── desktop console state ──
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
+	const isFullyVerified = $derived(!!page.data.session && Object.values(appSettings.value.verification).every(Boolean));
 	let deskPin = $state('8042-99');
 
 	const rejected = $derived((payload?.checkins ?? []).filter((c) => c.result !== 'verified').length);
@@ -469,14 +470,7 @@
 						</span>
 						<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
 					</button>
-					<button class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3 text-left hover:bg-surface-container-high transition-colors" onclick={() => toast('Floorplan sync queued for ' + (mainEvent?.venue ?? 'the venue'), 'info')}>
-						<Map class="w-4 h-4 text-on-surface-variant shrink-0" />
-						<span class="flex-1 min-w-0">
-							<span class="block text-body-sm font-medium text-on-surface">Venue Floorplan Map Sync</span>
-							<span class="block text-xs text-on-surface-variant mt-0.5">Update {mainEvent?.venue ?? 'venue'} Hall 1 booths</span>
-						</span>
-						<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
-					</button>
+
 				</div>
 			</section>
 
@@ -546,7 +540,7 @@
 						<Avatar name={page.data.session?.name ?? 'Ada Obi'} size="md" />
 					</div>
 					<div class="flex flex-col min-w-0">
-						<h1 class="font-display text-headline-md text-on-surface truncate flex items-center gap-1.5">{page.data.session?.name ?? 'Ada Obi'}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" aria-label="Verified member" /></h1>
+						<h1 class="font-display text-headline-md text-on-surface truncate flex items-center gap-1.5">{page.data.session?.name ?? 'Ada Obi'} {#if isFullyVerified}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" aria-label="Verified member" />{/if}</h1>
 						<div class="flex items-center gap-1.5 mt-0.5">
 							<span class="rounded-full bg-surface-container-highest px-2 py-0.5 text-label-badge text-on-surface uppercase border border-outline-variant/20">Organizer Role</span>
 							<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
@@ -785,9 +779,7 @@
 					</div>
 					<ChevronRight class="w-5 h-5 text-outline-variant group-hover:text-on-surface" />
 				</button>
-				<button onclick={() => toast('Floorplan sync queued for ' + (mainEvent?.venue ?? 'the venue'), 'info')} class="flex items-center justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm hover:bg-surface-container-high transition-colors group text-left">
-					<div class="flex items-center gap-space-md min-w-0"><div class="w-10 h-10 rounded-full bg-surface-container-highest border border-outline-variant/30 text-on-surface flex items-center justify-center flex-shrink-0"><Map class="w-5 h-5" /></div><div class="flex flex-col min-w-0"><span class="text-body-lg text-on-surface font-semibold truncate">Venue Floorplan Map Sync</span><span class="text-body-sm text-on-surface-variant truncate">Update {mainEvent?.venue ?? 'venue'} Hall 1 booths</span></div></div><ChevronRight class="w-5 h-5 text-outline-variant group-hover:text-on-surface" />
-				</button>
+
 			</div>
 		</div>
 	</div>
