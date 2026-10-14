@@ -293,15 +293,6 @@
 						<button type="button" class="h-9 px-4 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface text-body-sm font-semibold shrink-0" onclick={openPhone}>Re-verify</button>
 					{/if}
 				</div>
-				<div class="mt-3 rounded-lg bg-surface-base border border-surface-glass-border p-3">
-					<p class="text-label-badge uppercase tracking-wider text-on-surface-variant mb-2">Verification Process:</p>
-					<ol class="list-decimal list-inside text-body-sm text-on-surface-variant space-y-1">
-						<li>Click <span class="font-semibold text-on-surface">Start</span>.</li>
-						<li>Enter your phone number starting with the country code (<span class="font-mono text-on-surface">+234</span>).</li>
-						<li>A 4-digit or 6-digit <span class="font-semibold text-on-surface">One-Time Password (OTP)</span> will be sent to your phone via SMS or WhatsApp.</li>
-						<li>Enter the OTP code into the prompt to confirm ownership.</li>
-					</ol>
-				</div>
 			</div>
 		</div>
 
@@ -324,19 +315,11 @@
 				</div>
 				<div class="mt-3 rounded-lg bg-surface-base border border-surface-glass-border p-3">
 					<p class="text-label-badge uppercase tracking-wider text-on-surface-variant mb-2">Accepted Documents in Nigeria:</p>
-					<div class="flex flex-wrap gap-1.5 mb-3">
+					<div class="flex flex-wrap gap-1.5">
 						{#each ['NIN (National Identification Number / Slip / vNIN)', 'International Passport', "Driver's License", "Permanent Voter's Card (PVC)", "BVN (Bank Verification Number)"] as doc}
 							<span class="text-xs px-2 py-1 rounded-full bg-surface-container-high border border-surface-glass-border text-on-surface-variant">{doc}</span>
 						{/each}
 					</div>
-					<p class="text-label-badge uppercase tracking-wider text-on-surface-variant mb-2">Verification Process:</p>
-					<ol class="list-decimal list-inside text-body-sm text-on-surface-variant space-y-1">
-						<li>Click <span class="font-semibold text-on-surface">Start</span>.</li>
-						<li>Enter your legal name and date of birth exactly as they appear on your official IDs.</li>
-						<li>Enter your ID number (e.g. 11-digit NIN or BVN).</li>
-						<li>Upload a clear photo/scan of your ID document (front and back where applicable).</li>
-						<li><span class="font-semibold text-on-surface">Facial Verification / Liveness Check:</span> You may be asked to take a quick selfie or do a liveness scan (smiling, blinking, or moving your head) to ensure your face matches the ID document.</li>
-					</ol>
 				</div>
 			</div>
 		</div>
@@ -360,16 +343,6 @@
 					{:else}
 						<button type="button" class="h-9 px-4 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface text-body-sm font-semibold shrink-0" onclick={openPayout}>Re-verify</button>
 					{/if}
-				</div>
-				<div class="mt-3 rounded-lg bg-surface-base border border-surface-glass-border p-3">
-					<p class="text-label-badge uppercase tracking-wider text-on-surface-variant mb-2">Verification Process:</p>
-					<ol class="list-decimal list-inside text-body-sm text-on-surface-variant space-y-1">
-						<li>Click <span class="font-semibold text-on-surface">Start</span>.</li>
-						<li>Select your <span class="font-semibold text-on-surface">Bank Name</span> (e.g., GTBank, Access Bank, Zenith, Kuda, Moniepoint, etc.).</li>
-						<li>Enter your <span class="font-semibold text-on-surface">10-digit NUBAN Account Number</span>.</li>
-						<li>The platform will perform an automated account name lookup via NIBSS/Paystack/Flutterwave to verify that the <span class="font-semibold text-on-surface">Account Name matches the Identity Name</span> on your profile.</li>
-						<li>Once confirmed, your settlement details will be saved for payouts.</li>
-					</ol>
 				</div>
 			</div>
 		</div>
