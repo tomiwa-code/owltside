@@ -18,6 +18,7 @@
 		Search,
 		SearchX,
 		SlidersHorizontal,
+		Users,
 		X
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
@@ -30,6 +31,7 @@
 	import TopBar from '$components/TopBar.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
 	import { categories } from '$components/iconMap';
+	import { mockProfiles } from '$lib/data/mock-profiles';
 	import { useQuery } from '$lib/state/query.svelte';
 	import { fmtDate, fmtTime } from '$lib/utils/dates';
 	import { formatMoney } from '$lib/utils/money';
@@ -47,6 +49,10 @@
 	const viewMode = $derived<'grid' | 'map' | 'timeline'>(
 		view === 'map' ? 'map' : view === 'timeline' || view === 'calendar' ? 'timeline' : 'grid'
 	);
+	const searchTab = $derived((params.get('tab') ?? 'events') as 'events' | 'users' | 'venues');
+	function setTab(t: 'events' | 'users' | 'venues') {
+		apply({ tab: t === 'events' ? null : t });
+	}
 	let zone = $state((NIGERIAN_STATES as readonly string[]).includes(requestedZone) ? requestedZone : '');
 	let maxPrice = $state(Number(params.get('maxPrice') ?? 250_000));
 	let freeOnlyDesk = $state(params.get('freeOnly') === '1' || params.get('free') === '1');
@@ -324,6 +330,35 @@
 		}
 		return [...map.entries()];
 	});
+
+	const usersFiltered = $derived(
+		mockProfiles.filter((p) => {
+			if (!query) return true;
+			const q = query.toLowerCase();
+			return `${p.name} ${p.handle} ${p.bio ?? ''} ${p.city ?? ''}`.toLowerCase().includes(q);
+		})
+	);
+	const venues = $derived.by(() => {
+		const map = new Map<string, { venue: string; city: string; count: number; cover: any; events: EventItem[] }>();
+		for (const e of (allEvents.data ?? [])) {
+			const key = `${e.venue}||${e.city}`;
+			const existing = map.get(key);
+			if (existing) {
+				existing.count += 1;
+				existing.events.push(e);
+			} else {
+				map.set(key, { venue: e.venue, city: e.city, count: 1, cover: e.cover, events: [e] });
+			}
+		}
+		return [...map.values()];
+	});
+	const venuesFiltered = $derived(
+		venues.filter((v) => {
+			if (!query) return true;
+			const q = query.toLowerCase();
+			return `${v.venue} ${v.city}`.toLowerCase().includes(q);
+		})
+	);
 </script>
 
 <svelte:head><title>Explore • Owltside</title></svelte:head>
@@ -378,45 +413,70 @@
 		</div>
 	</header>
 
-	<!-- search band -->
+	<!-- search band with tabs -->
 	<div class="border-b border-surface-glass-border bg-surface-container-low/60">
-		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-4 flex flex-wrap items-center gap-4">
-			<label class="relative flex-1 min-w-[280px]">
-				<Search class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-outline-variant pointer-events-none" />
-				<input
-					type="search"
-					placeholder="Search verified events, artists, venues in Nigeria…"
-					value={query}
-					oninput={(e) => onSearch(e.currentTarget.value)}
-					class="w-full h-12 rounded-lg bg-surface-container border border-surface-glass-border pl-11 pr-36 text-body-md text-on-surface placeholder:text-outline-variant focus:outline-none focus:border-primary/50 transition-colors"
-				/>
-				<kbd class="{MONO} absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant border border-surface-glass-border rounded px-2 py-1 bg-surface-container-high">Press / to focus</kbd>
-			</label>
-			<span class="flex items-center gap-2 {MONO} text-on-surface-variant shrink-0">
-				<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
-				{(allEvents.data ?? events).length} Events Located in Nigeria
-			</span>
-			<span class="flex items-center gap-1 p-1 rounded-lg bg-surface-container border border-surface-glass-border shrink-0">
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-4">
+			<!-- tabs above search bar -->
+			<div role="tablist" aria-label="Search categories" class="flex items-center gap-2 pb-3">
 				{#each ([
-					['grid', Grid3x3, 'Grid'],
-					['map', MapIcon, 'Map'],
-					['timeline', CalendarDays, 'Timeline']
-				] as [typeof viewMode, any, string][]) as [id, Icon, label]}
+					['events', Search, 'Events'],
+					['users', Users, 'Users'],
+					['venues', MapPin, 'Venues']
+				] as [string, any, string][]) as [id, Icon, label]}
 					<button
+						role="tab"
+						aria-selected={searchTab === id}
 						type="button"
-						onclick={() => apply({ view: id === 'grid' ? null : id })}
-						class="h-9 px-3 rounded-md flex items-center gap-2 text-body-sm transition-colors
-							{viewMode === id ? 'bg-surface-container-high text-on-surface font-semibold' : 'text-on-surface-variant hover:text-on-surface'}"
+						onclick={() => setTab(id as 'events' | 'users' | 'venues')}
+						class="h-9 px-4 rounded-full flex items-center gap-2 text-body-sm font-semibold transition-colors border {searchTab === id ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container text-on-surface-variant border-surface-glass-border hover:text-on-surface hover:border-primary/30'}"
 					>
 						<Icon class="w-4 h-4" /> {label}
 					</button>
 				{/each}
-			</span>
+			</div>
+			<div class="pb-4 flex flex-wrap items-center gap-4">
+				<label class="relative flex-1 min-w-[280px]">
+					<Search class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-outline-variant pointer-events-none" />
+					<input
+						type="search"
+						placeholder={searchTab === 'users' ? 'Search users by name, handle, or city…' : searchTab === 'venues' ? 'Search venues by name or city…' : 'Search verified events, artists, venues in Nigeria…'}
+						value={query}
+						oninput={(e) => onSearch(e.currentTarget.value)}
+						class="w-full h-12 rounded-lg bg-surface-container border border-surface-glass-border pl-11 pr-36 text-body-md text-on-surface placeholder:text-outline-variant focus:outline-none focus:border-primary/50 transition-colors"
+					/>
+					<kbd class="{MONO} absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant border border-surface-glass-border rounded px-2 py-1 bg-surface-container-high">Press / to focus</kbd>
+				</label>
+				<span class="flex items-center gap-2 {MONO} text-on-surface-variant shrink-0">
+					<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+					{#if searchTab === 'users'}{usersFiltered.length} Users Found
+					{:else if searchTab === 'venues'}{venuesFiltered.length} Venues Found
+					{:else}{(allEvents.data ?? events).length} Events Located in Nigeria{/if}
+				</span>
+				{#if searchTab === 'events'}
+				<span class="flex items-center gap-1 p-1 rounded-lg bg-surface-container border border-surface-glass-border shrink-0">
+					{#each ([
+						['grid', Grid3x3, 'Grid'],
+						['map', MapIcon, 'Map'],
+						['timeline', CalendarDays, 'Timeline']
+					] as [typeof viewMode, any, string][]) as [id, Icon, label]}
+						<button
+							type="button"
+							onclick={() => apply({ view: id === 'grid' ? null : id })}
+							class="h-9 px-3 rounded-md flex items-center gap-2 text-body-sm transition-colors
+								{viewMode === id ? 'bg-surface-container-high text-on-surface font-semibold' : 'text-on-surface-variant hover:text-on-surface'}"
+						>
+							<Icon class="w-4 h-4" /> {label}
+						</button>
+					{/each}
+				</span>
+				{/if}
+			</div>
 		</div>
 	</div>
 
 	<!-- body -->
-	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-8 grid lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)] gap-6 xl:gap-8 items-start">
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-8 {searchTab === 'events' ? 'grid lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)]' : ''} gap-6 xl:gap-8 items-start">
+		{#if searchTab === 'events'}
 		<!-- filters sidebar -->
 		<aside class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-6 lg:sticky lg:top-24">
 			<div class="flex items-center justify-between gap-3">
@@ -537,9 +597,11 @@
 				</div>
 			</div>
 		</aside>
+		{/if}
 
 		<!-- results -->
 		<section class="flex flex-col gap-6 min-w-0">
+			{#if searchTab === 'events'}
 			<!-- active chips + sort -->
 			<div class="rounded-xl border border-surface-glass-border bg-surface-container px-4 py-3 flex flex-wrap items-center gap-3">
 				<span class="{MONO} text-on-surface-variant">Active:</span>
@@ -696,6 +758,74 @@
 					<span class="text-outline-variant">•</span> Chain_State: Synchronized
 				</span>
 			</div>
+			{:else if searchTab === 'users'}
+			<div class="flex flex-col gap-4">
+				<div class="flex items-center justify-between">
+					<h2 class="font-display text-headline-md text-on-surface">Users</h2>
+					<span class="{MONO} text-on-surface-variant">{usersFiltered.length} profiles</span>
+				</div>
+				{#if usersFiltered.length}
+					<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
+						{#each usersFiltered as person (person.id)}
+							<a href="/users/{person.handle}" class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-4 hover:border-primary/40 transition-colors">
+								<div class="flex items-center gap-3">
+									<Avatar name={person.name} color={person.avatarColor} size="md" />
+									<span class="min-w-0">
+										<span class="flex items-center gap-1.5"><span class="text-body-md font-semibold text-on-surface truncate">{person.name}</span>{#if person.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}</span>
+										<span class="block text-body-sm text-on-surface-variant truncate">@{person.handle} {#if person.city}• {person.city}{/if}</span>
+									</span>
+								</div>
+								<p class="text-body-sm text-on-surface-variant line-clamp-2 leading-relaxed">{person.bio ?? 'No bio yet.'}</p>
+								<span class="flex items-center gap-3 text-label-badge text-on-surface-variant">
+									<span>{person.followers.toLocaleString()} followers</span>
+									<span class="w-px h-3 bg-outline-variant/40"></span>
+									<span>{person.following.toLocaleString()} following</span>
+								</span>
+							</a>
+						{/each}
+					</div>
+				{:else}
+					<div class="rounded-xl border border-dashed border-outline-variant/50 p-10 text-center flex flex-col items-center gap-3">
+						<SearchX class="w-8 h-8 text-on-surface-variant" />
+						<p class="text-body-md text-on-surface-variant">No users match “{query}”.</p>
+					</div>
+				{/if}
+			</div>
+			{:else}
+			<div class="flex flex-col gap-4">
+				<div class="flex items-center justify-between">
+					<h2 class="font-display text-headline-md text-on-surface">Venues</h2>
+					<span class="{MONO} text-on-surface-variant">{venuesFiltered.length} venues</span>
+				</div>
+				{#if venuesFiltered.length}
+					<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
+						{#each venuesFiltered as v (`${v.venue}::${v.city}`)}
+							<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden flex flex-col">
+								<div class="relative h-28">
+									<Cover cover={v.cover} class="w-full h-full" />
+									<span class="{MONO} absolute top-3 right-3 bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-1 rounded">{v.count} {v.count === 1 ? 'event' : 'events'}</span>
+								</div>
+								<div class="p-5 flex flex-col gap-2">
+									<span class="flex items-center gap-2 text-body-sm text-on-surface-variant"><MapPin class="w-4 h-4 text-primary" /> {v.city}</span>
+									<h3 class="font-display text-headline-md text-on-surface leading-tight line-clamp-1">{v.venue}</h3>
+									<span class="text-body-sm text-on-surface-variant">{v.count} upcoming {v.count === 1 ? 'gathering' : 'gatherings'} at this hub</span>
+									<div class="flex flex-col gap-1.5 pt-2">
+										{#each v.events.slice(0, 2) as ev (ev.id)}
+											<a href="/events/{ev.slug}" class="text-body-sm text-primary hover:underline truncate">→ {ev.title}</a>
+										{/each}
+									</div>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<div class="rounded-xl border border-dashed border-outline-variant/50 p-10 text-center flex flex-col items-center gap-3">
+						<SearchX class="w-8 h-8 text-on-surface-variant" />
+						<p class="text-body-md text-on-surface-variant">No venues match “{query}”.</p>
+					</div>
+				{/if}
+			</div>
+			{/if}
 		</section>
 	</div>
 
@@ -721,6 +851,7 @@
 <div class="md:hidden">
 <TopBar title="Explore" subtitle="Search, filter, discover">
 	{#snippet right()}
+		{#if searchTab === 'events'}
 		<button
 			aria-label="Open filters"
 			class="relative w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface"
@@ -731,13 +862,33 @@
 				<span class="absolute top-2 right-2 min-w-4 h-4 px-1 rounded-full bg-primary text-on-primary text-[10px] font-bold flex items-center justify-center">{activeCount}</span>
 			{/if}
 		</button>
+		{/if}
 	{/snippet}
 </TopBar>
 
 <main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
 	<div class="flex flex-col w-full md:max-w-5xl md:mx-auto">
 		<div class="px-space-md py-space-sm bg-surface sticky top-16 z-30">
-			<SearchBar value={query} oninput={onSearch} />
+			<!-- tabs above search bar -->
+			<div role="tablist" aria-label="Search categories" class="flex items-center gap-2 pb-3">
+				{#each ([
+					['events', Search, 'Events'],
+					['users', Users, 'Users'],
+					['venues', MapPin, 'Venues']
+				] as [string, any, string][]) as [id, Icon, label]}
+					<button
+						role="tab"
+						aria-selected={searchTab === id}
+						type="button"
+						onclick={() => setTab(id as 'events' | 'users' | 'venues')}
+						class="h-9 px-4 rounded-full flex items-center gap-2 text-body-sm font-semibold transition-colors border {searchTab === id ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container text-on-surface-variant border-surface-glass-border hover:text-on-surface'}"
+					>
+						<Icon class="w-4 h-4" /> {label}
+					</button>
+				{/each}
+			</div>
+			<SearchBar value={query} oninput={onSearch} placeholder={searchTab === 'users' ? 'Search users by name, handle, or city…' : searchTab === 'venues' ? 'Search venues by name or city…' : 'Search artists, tech summits, venues...'} />
+			{#if searchTab === 'events'}
 			<div class="flex items-center justify-between pt-space-sm">
 				<div class="flex items-center gap-space-xs overflow-x-auto pb-1 scrollbar-none">
 					<button
@@ -760,7 +911,8 @@
 					</button>
 				</div>
 			</div>
-			{#if activeCount > 0 || params.get('q')}
+			{/if}
+			{#if searchTab === 'events' && (activeCount > 0 || params.get('q'))}
 				<div class="mt-2 rounded-xl bg-surface-container-low border border-surface-glass-border px-3 py-2.5">
 					<div class="flex items-center justify-between gap-2">
 						<span class="flex items-center gap-2 text-label-badge text-on-surface-variant">
@@ -781,6 +933,7 @@
 		</div>
 
 		<div class="px-gutter pt-space-md flex flex-col gap-space-lg">
+				{#if searchTab === 'events'}
 				{#if viewMode === 'grid'}
 				<div class="flex flex-col gap-space-md w-full">
 					{#each shown as event (event.id)}
@@ -832,7 +985,50 @@
 					</button>
 				{/if}
 			</div>
-		</div>
+				{:else if searchTab === 'users'}
+				<div class="flex flex-col gap-4">
+					<span class="font-code text-label-badge text-on-surface-variant">{usersFiltered.length} users found</span>
+					{#each usersFiltered as person (person.id)}
+						<a href="/users/{person.handle}" class="rounded-xl border border-surface-glass-border bg-surface-container p-4 flex items-center gap-3 hover:border-primary/40 transition-colors">
+							<Avatar name={person.name} color={person.avatarColor} size="md" />
+							<span class="min-w-0 flex-1">
+								<span class="flex items-center gap-1.5"><span class="text-body-md font-semibold text-on-surface truncate">{person.name}</span>{#if person.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}</span>
+								<span class="block text-body-sm text-on-surface-variant truncate">@{person.handle} {#if person.city}• {person.city}{/if}</span>
+								<span class="block text-body-sm text-on-surface-variant truncate pt-1 line-clamp-1">{person.bio}</span>
+							</span>
+						</a>
+					{:else}
+						<EmptyState title="No users found" sub={`No users match “${query}”.`}>
+							{#snippet icon()}<Users class="w-6 h-6" />{/snippet}
+						</EmptyState>
+					{/each}
+				</div>
+				{:else}
+				<div class="flex flex-col gap-4">
+					<span class="font-code text-label-badge text-on-surface-variant">{venuesFiltered.length} venues found</span>
+					{#each venuesFiltered as v (`${v.venue}::${v.city}`)}
+						<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
+							<div class="relative h-20">
+								<Cover cover={v.cover} class="w-full h-full" />
+								<span class="font-code text-label-badge bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-1 rounded absolute top-3 right-3">{v.count} {v.count === 1 ? 'event' : 'events'}</span>
+							</div>
+							<div class="p-4 flex flex-col gap-1">
+								<span class="flex items-center gap-1.5 text-body-sm text-on-surface-variant"><MapPin class="w-4 h-4 text-primary" /> {v.city}</span>
+								<span class="font-display text-body-lg font-semibold text-on-surface">{v.venue}</span>
+								<span class="text-body-sm text-on-surface-variant">{v.count} upcoming gathering{v.count === 1 ? '' : 's'}</span>
+								{#each v.events.slice(0,2) as ev (ev.id)}
+									<a href="/events/{ev.slug}" class="text-body-sm text-primary hover:underline truncate pt-1">→ {ev.title}</a>
+								{/each}
+							</div>
+						</div>
+					{:else}
+						<EmptyState title="No venues found" sub={`No venues match “${query}”.`}>
+							{#snippet icon()}<MapPin class="w-6 h-6" />{/snippet}
+						</EmptyState>
+					{/each}
+				</div>
+				{/if}
+			</div>
 	</div>
 </main>
 
