@@ -30,7 +30,7 @@
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
-	let role = $state<'attendee' | 'guest' | 'organizer'>('attendee');
+	const role = $derived(data.operatingIdentity ?? 'attendee');
 
 	const roles = [
 		{ id: 'attendee', label: 'Attendee', icon: Ticket, sub: 'Wallet, drops & gate passes' },
@@ -156,27 +156,24 @@
 				<div class="flex flex-col gap-2.5 mt-4">
 					{#each roles as r (r.id)}
 						{@const RIcon = r.icon}
-						<button
-							class="flex items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors {role === r.id ? 'border-primary/50 bg-primary/10' : 'border-surface-glass-border bg-surface-container-high/50 hover:bg-surface-container-high'}"
-							onclick={() => {
-								if (r.id === 'organizer') {
-									location.href = '/organizer';
-									return;
-								}
-								role = r.id;
-							}}
-						>
-							<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
-								<RIcon class="w-4 h-4 text-on-surface-variant" />
-							</span>
-							<span class="flex-1 min-w-0">
-								<span class="block text-body-sm font-medium text-on-surface">{r.label}</span>
-								<span class="block text-xs text-on-surface-variant mt-0.5">{r.sub}</span>
-							</span>
-							{#if role === r.id}
-								<span class="w-1.5 h-1.5 rounded-full bg-primary glow-primary shrink-0"></span>
-							{/if}
-						</button>
+						<form method="POST" action="?/setIdentity">
+							<input type="hidden" name="identity" value={r.id} />
+							<button
+								type="submit"
+								class="w-full flex items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors {role === r.id ? 'border-primary/50 bg-primary/10' : 'border-surface-glass-border bg-surface-container-high/50 hover:bg-surface-container-high'}"
+							>
+								<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
+									<RIcon class="w-4 h-4 text-on-surface-variant" />
+								</span>
+								<span class="flex-1 min-w-0">
+									<span class="block text-body-sm font-medium text-on-surface">{r.label}</span>
+									<span class="block text-xs text-on-surface-variant mt-0.5">{r.sub}</span>
+								</span>
+								{#if role === r.id}
+									<span class="w-1.5 h-1.5 rounded-full bg-primary glow-primary shrink-0"></span>
+								{/if}
+							</button>
+						</form>
 					{/each}
 				</div>
 			</section>
@@ -395,19 +392,16 @@
 				<div class="flex gap-2 overflow-x-auto py-2 -mx-margin px-margin scrollbar-none">
 					{#each roles as r (r.id)}
 						{@const RIcon = r.icon}
-						<button
-							class="flex-shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-full transition-all duration-200 {role === r.id ? 'bg-primary text-on-primary shadow-md' : 'bg-surface-container text-on-surface-variant hover:text-on-surface'}"
-							onclick={() => {
-								if (r.id === 'organizer') {
-									location.href = '/organizer';
-									return;
-								}
-								role = r.id;
-							}}
-						>
-							<RIcon class="w-4.5 h-4.5" />
-							<span class="text-body-sm font-semibold">{r.label}</span>
-						</button>
+						<form method="POST" action="?/setIdentity" class="shrink-0">
+							<input type="hidden" name="identity" value={r.id} />
+							<button
+								type="submit"
+								class="flex items-center gap-2 px-3.5 py-2 rounded-full transition-all duration-200 {role === r.id ? 'bg-primary text-on-primary shadow-md' : 'bg-surface-container text-on-surface-variant hover:text-on-surface'}"
+							>
+								<RIcon class="w-4.5 h-4.5" />
+								<span class="text-body-sm font-semibold">{r.label}</span>
+							</button>
+						</form>
 					{/each}
 				</div>
 			</section>

@@ -14,7 +14,6 @@
 		Send,
 		ShieldCheck,
 		Smile,
-		Video,
 		Zap
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
@@ -155,7 +154,7 @@
 					<span class="block text-body-sm text-on-surface-variant truncate pt-0.5">{conv.peer.bio ?? `@${conv.peer.handle}`}</span>
 				</div>
 				<div class="flex items-center gap-1 shrink-0">
-					{#each [Phone, Video, CalendarDays, MoreVertical] as Icon, i (i)}
+					{#each [Phone, CalendarDays, MoreVertical] as Icon, i (i)}
 						<button
 							type="button"
 							aria-label="Session action"
@@ -317,7 +316,7 @@
 </TopBar>
 
 <main class="flex flex-col flex-1 relative w-full pt-mobile-header bg-surface min-h-dvh">
-	<div class="flex flex-col w-full md:max-w-2xl md:mx-auto flex-1 pb-28 md:pb-24">
+	<div class="flex flex-col w-full md:max-w-2xl md:mx-auto flex-1 pb-chat-composer md:pb-24">
 		<div class="flex justify-center mt-space-xs px-gutter">
 			<span class="inline-flex items-center gap-1.5 px-space-md py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant text-label-badge text-center">
 				<Lock class="w-3.5 h-3.5 text-primary shrink-0" /> End-to-end encrypted session • OWLTSIDE Mesh Gateway
@@ -331,14 +330,15 @@
 			<a href="/events/pulse-ai-summit-lagos" aria-label="Open event brief" class="h-9 px-3 rounded-full bg-primary/10 text-primary text-label-badge font-semibold flex items-center gap-1 shrink-0">Open <ArrowUpRight class="w-3.5 h-3.5" /></a>
 		</div>
 		<div class="mx-gutter mt-2 flex gap-2">
-			{#each [Phone, Video, CalendarDays] as Icon, i (i)}
+			{#each [{ icon: Phone, label: 'Call' }, { icon: CalendarDays, label: 'Schedule' }] as action (action.label)}
+				{@const Icon = action.icon}
 				<button type="button" class="h-10 flex-1 rounded-xl bg-surface-container border border-surface-glass-border text-on-surface-variant flex items-center justify-center gap-2 text-label-badge" onclick={() => toast('Call & schedule rails ship with the comms node v2', 'info')}>
-					<Icon class="w-4 h-4" />{i === 0 ? 'Call' : i === 1 ? 'Video' : 'Schedule'}
+					<Icon class="w-4 h-4" />{action.label}
 				</button>
 			{/each}
 		</div>
 
-		<div bind:this={scroller} class="flex flex-col gap-space-md px-margin pt-space-xs overflow-y-auto flex-1 max-h-[calc(100dvh-16rem)]">
+		<div bind:this={scroller} class="flex flex-col gap-space-md px-margin pt-space-xs overflow-y-auto flex-1 max-h-[calc(100dvh-18rem)]">
 			{#each messages.data ?? [] as m, i (m.id)}
 				{@const mine = m.senderId === meId}
 				{#if mine}

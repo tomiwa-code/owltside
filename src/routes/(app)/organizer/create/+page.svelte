@@ -46,6 +46,7 @@
 	import Cover from '$components/Cover.svelte';
 	import { formatMoney } from '$lib/utils/money';
 	import { fmtDate } from '$lib/utils/dates';
+	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 	import { toast } from '$lib/state/toast.svelte';
 
 	let { form } = $props();
@@ -446,9 +447,18 @@
 							<span class="w-9 h-9 rounded-full bg-surface-container-high text-on-surface flex items-center justify-center shrink-0">
 								<MapPin class="w-4 h-4" />
 							</span>
-							<div class="flex-1 min-w-0">
-								<input type="text" bind:value={venue} placeholder="The Civic Centre" class="w-full bg-transparent text-body-md font-semibold text-on-surface focus:outline-none" />
-								<span class="block font-code text-[11px] tracking-[0.08em] text-on-surface-variant pt-0.5 truncate">Water Corporation Dr, Annex 106104 • 6.4253° N, 3.4219° E • {city}</span>
+							<div class="flex-1 min-w-0 grid grid-cols-2 gap-x-3 gap-y-1">
+								<label for="event-venue-desktop" class="min-w-0 text-label-badge text-on-surface-variant">Venue
+									<input id="event-venue-desktop" type="text" bind:value={venue} placeholder="The Civic Centre" class="block w-full bg-transparent text-body-md font-semibold text-on-surface focus:outline-none" />
+								</label>
+								<label for="event-city-desktop" class="min-w-0 text-label-badge text-on-surface-variant">City / state
+									<select id="event-city-desktop" bind:value={city} required class="block w-full bg-transparent text-body-md text-on-surface focus:outline-none">
+										{#each NIGERIAN_STATES as state (state)}
+											<option value={state}>{state} State</option>
+										{/each}
+									</select>
+								</label>
+								<span class="col-span-2 block font-code text-[11px] tracking-[0.08em] text-on-surface-variant pt-0.5 truncate">Water Corporation Dr, Annex 106104 • 6.4253° N, 3.4219° E • {city}</span>
 							</div>
 							<button type="button" onclick={() => toast('Coordinate calibration locked to venue node', 'info')} class="{MONO} text-on-surface underline underline-offset-4 hover:text-primary shrink-0">Calibrate</button>
 						</div>
@@ -1690,8 +1700,12 @@
 				</div>
 				<div class="grid grid-cols-2 gap-space-sm">
 					<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md flex flex-col gap-2">
-						<span class="text-body-sm text-on-surface-variant">City</span>
-						<input type="text" bind:value={city} placeholder="Lagos" class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />
+						<label for="event-city" class="text-body-sm text-on-surface-variant">City</label>
+						<select id="event-city" bind:value={city} required class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline">
+							{#each NIGERIAN_STATES as state (state)}
+								<option value={state}>{state} State</option>
+							{/each}
+						</select>
 					</div>
 					<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md flex flex-col gap-2">
 						<span class="text-body-sm text-on-surface-variant">Venue</span>

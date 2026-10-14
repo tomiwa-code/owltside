@@ -22,7 +22,7 @@
 	type PrivacyToggle = keyof AppSettings['privacy'];
 	type CookieToggle = keyof AppSettings['cookies'];
 	type SecurityToggle = keyof AppSettings['security'];
-	type AccessibilityToggle = 'largerText' | 'reduceMotion' | 'screenReaderLabels';
+	type AccessibilityToggle = 'reduceMotion' | 'screenReaderLabels';
 	type StorageToggle = keyof AppSettings['storage'];
 
 	const verificationRows: Array<{ key: keyof AppSettings['verification']; label: string; description: string }> = [
@@ -82,8 +82,8 @@
 	function setAppearance(value: string) {
 		appSettings.value.accessibility.appearance = value as AppSettings['accessibility']['appearance'];
 	}
-	function setTextSize(value: string) {
-		appSettings.value.accessibility.textSize = value as AppSettings['accessibility']['textSize'];
+	function setPageSize(value: string) {
+		appSettings.value.accessibility.pageSize = Math.min(150, Math.max(25, Number(value) || 100));
 	}
 	async function clearOfflineCache() {
 		try {
@@ -255,10 +255,15 @@
 			<Accessibility class="w-5 h-5 text-primary shrink-0" />
 		</div>
 		<label class="flex items-center justify-between gap-3 py-3 border-b border-surface-glass-border"><span class="text-body-sm font-semibold text-on-surface">Appearance</span><select value={appSettings.value.accessibility.appearance} onchange={(event) => setAppearance(event.currentTarget.value)} class="h-10 px-3 rounded-md bg-surface-base border border-surface-glass-border text-body-sm text-on-surface"><option value="dark">Dark</option><option value="light">Light</option></select></label>
-		<label class="flex items-center justify-between gap-3 py-3 border-b border-surface-glass-border cursor-pointer"><span><span class="block text-body-sm font-semibold text-on-surface">Larger text</span><span class="block text-xs text-on-surface-variant">Increase text across the app.</span></span><input type="checkbox" checked={appSettings.value.accessibility.largerText} onchange={() => toggleAccessibility('largerText')} class="w-4 h-4 accent-primary" /></label>
 		<label class="flex items-center justify-between gap-3 py-3 border-b border-surface-glass-border cursor-pointer"><span><span class="block text-body-sm font-semibold text-on-surface">Reduced motion</span><span class="block text-xs text-on-surface-variant">Minimize animations and transitions.</span></span><input type="checkbox" checked={appSettings.value.accessibility.reduceMotion} onchange={() => toggleAccessibility('reduceMotion')} class="w-4 h-4 accent-primary" /></label>
 		<label class="flex items-center justify-between gap-3 py-3 border-b border-surface-glass-border cursor-pointer"><span><span class="block text-body-sm font-semibold text-on-surface">Screen-reader labels</span><span class="block text-xs text-on-surface-variant">Prefer explicit labels on controls.</span></span><input type="checkbox" checked={appSettings.value.accessibility.screenReaderLabels} onchange={() => toggleAccessibility('screenReaderLabels')} class="w-4 h-4 accent-primary" /></label>
-		<label class="flex items-center justify-between gap-3 pt-3"><span class="text-body-sm font-semibold text-on-surface">Text size</span><select value={appSettings.value.accessibility.textSize} onchange={(event) => setTextSize(event.currentTarget.value)} class="h-10 px-3 rounded-md bg-surface-base border border-surface-glass-border text-body-sm text-on-surface"><option>90%</option><option>100%</option><option>110%</option><option>125%</option></select></label>
+		<div class="pt-3">
+			<label for="page-size" class="flex items-center justify-between gap-3 text-body-sm font-semibold text-on-surface">
+				<span>Page size</span><output for="page-size">{appSettings.value.accessibility.pageSize}%</output>
+			</label>
+			<input id="page-size" type="range" min="25" max="150" step="5" value={appSettings.value.accessibility.pageSize} aria-describedby="page-size-range" oninput={(event) => setPageSize(event.currentTarget.value)} class="mt-3 w-full accent-primary" />
+			<div id="page-size-range" class="flex justify-between text-label-badge text-on-surface-variant"><span>25%</span><span>150%</span></div>
+		</div>
 	</section>
 
 	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 md:p-6">

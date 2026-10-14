@@ -38,10 +38,9 @@ export interface AppSettings {
 	};
 	accessibility: {
 		appearance: 'dark' | 'light';
-		largerText: boolean;
 		reduceMotion: boolean;
 		screenReaderLabels: boolean;
-		textSize: '90%' | '100%' | '110%' | '125%';
+		pageSize: number;
 	};
 	storage: {
 		offlineMode: boolean;
@@ -74,12 +73,36 @@ const defaults: AppSettings = {
 	},
 	accessibility: {
 		appearance: 'dark',
-		largerText: false,
 		reduceMotion: false,
 		screenReaderLabels: true,
-		textSize: '100%'
+		pageSize: 100
 	},
 	storage: { offlineMode: true, autoDownloadTickets: true }
 };
 
-export const appSettings = persisted<AppSettings>('owltside.settings.v1', defaults);
+const settings = persisted<AppSettings>('owltside.settings.v1', defaults);
+
+// Upgrade the previous text-size preference without resetting any other saved preferences.
+const stored = settings.value as AppSettings & {
+	accessibility?: AppSettings['accessibility'] & { textSize?: string; largerText?: boolean };
+};
+const oldAccessibility = stored.accessibility;
+if (!oldAccessibility || !Number.isFinite(oldAccessibility.pageSize)) {
+	const legacySize = Number(oldAccessibility?.textSize?.replace('%', ''));
+	const migratedPageSize = Number.isFinite(legacySize) && legacySize > 0
+		? legacySize
+		: oldAccessibility?.largerText
+			? 110
+			: 100;
+	settings.value = {
+		...defaults,
+		...stored,
+		accessibility: {
+			...defaults.accessibility,
+			...oldAccessibility,
+			pageSize: Math.min(150, Math.max(25, migratedPageSize))
+		}
+	};
+}
+
+export const appSettings = settings;

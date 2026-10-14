@@ -33,6 +33,7 @@
 	import { useQuery } from '$lib/state/query.svelte';
 	import { fmtDate, fmtTime } from '$lib/utils/dates';
 	import { formatMoney } from '$lib/utils/money';
+	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 	import type { CategoryId, EventItem } from '$lib/types';
 
 	let { data } = $props();
@@ -42,10 +43,11 @@
 	/* ── shared discovery state (desktop sidebar + mobile filter sheet) ── */
 	const params = $derived(page.url.searchParams);
 	const view = $derived(params.get('view') ?? 'list');
+	const requestedZone = params.get('zone') ?? '';
 	const viewMode = $derived<'grid' | 'map' | 'timeline'>(
 		view === 'map' ? 'map' : view === 'timeline' || view === 'calendar' ? 'timeline' : 'grid'
 	);
-	let zone = $state(params.get('zone') ?? '');
+	let zone = $state((NIGERIAN_STATES as readonly string[]).includes(requestedZone) ? requestedZone : '');
 	let maxPrice = $state(Number(params.get('maxPrice') ?? 250_000));
 	let freeOnlyDesk = $state(params.get('freeOnly') === '1' || params.get('free') === '1');
 	let gateQR = $state(params.get('gateQR') !== '0');
@@ -91,7 +93,7 @@
 			const mp = Math.min(...e.tiers.map((t) => t.price));
 			if (mp > maxPrice) return false;
 			if (freeOnlyDesk && mp !== 0) return false;
-			if (zone && !`${e.venue} ${e.city}`.toLowerCase().includes(zone.split(',')[0].toLowerCase()))
+			if (zone && !`${e.venue} ${e.city}`.toLowerCase().includes(zone.toLowerCase()))
 				return false;
 			const modes = (e.gates ?? []).flatMap((g) => g.modes);
 			const hasQR = modes.includes('QR') || modes.length === 0;
@@ -112,7 +114,7 @@
 			});
 		if (zone)
 			chips.push({
-				label: zone.split(',')[0],
+				label: `${zone} State`,
 				clear: () => {
 					zone = '';
 					apply({ zone: null });
@@ -499,11 +501,9 @@
 						class="w-full h-11 appearance-none px-4 pr-10 rounded-lg bg-surface-container-low border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50"
 					>
 						<option value="">All Nigeria</option>
-						<option value="Victoria Island, Lagos">Victoria Island, Lagos</option>
-						<option value="Ikoyi, Lagos">Ikoyi, Lagos</option>
-						<option value="Yaba, Lagos">Yaba, Lagos</option>
-						<option value="Gbagada, Lagos">Gbagada, Lagos</option>
-						<option value="Onikan, Lagos">Onikan, Lagos</option>
+						{#each NIGERIAN_STATES as state (state)}
+							<option value={state}>{state} State</option>
+						{/each}
 					</select>
 					<ChevronDown class="w-4 h-4 text-on-surface-variant absolute right-3.5 top-1/2 translate-y-[-30%] pointer-events-none" />
 				</div>
@@ -874,11 +874,9 @@
 			<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Zone &amp; Location</span>
 			<select bind:value={fZone} aria-label="Zone and location" class="h-11 px-3 rounded-lg bg-surface-container-low border border-surface-glass-border text-body-md text-on-surface focus:outline-none focus:border-primary/50">
 				<option value="">All Nigeria</option>
-				<option value="Victoria Island, Lagos">Victoria Island, Lagos</option>
-				<option value="Ikoyi, Lagos">Ikoyi, Lagos</option>
-				<option value="Yaba, Lagos">Yaba, Lagos</option>
-				<option value="Gbagada, Lagos">Gbagada, Lagos</option>
-				<option value="Onikan, Lagos">Onikan, Lagos</option>
+				{#each NIGERIAN_STATES as state (state)}
+					<option value={state}>{state} State</option>
+				{/each}
 			</select>
 		</div>
 		<div class="flex flex-col gap-2">
