@@ -86,7 +86,7 @@ async function runCallback(search: string) {
 	try {
 		await GET({
 			url: new URL(`http://localhost/auth/callback${search}`),
-			cookies: {}
+			cookies: { get: () => undefined, delete: () => {} }
 		} as unknown as Parameters<typeof GET>[0]);
 	} catch (thrown) {
 		return thrown as { status: number; location: string };
@@ -97,6 +97,7 @@ async function runCallback(search: string) {
 async function runHook() {
 	const locals: Row = {};
 	const event = {
+		url: new URL('http://localhost/home'),
 		cookies: { get: () => undefined },
 		locals
 	} as unknown as Parameters<typeof handle>[0]['event'];
@@ -191,5 +192,21 @@ describe('request hook — Google details only fill empty profile fields', () =>
 		const session = await runHook();
 		expect(updates).toEqual([{ avatar_url: GOOGLE_PHOTO }]);
 		expect(session).toMatchObject({ name: 'Ada Obi', avatarUrl: GOOGLE_PHOTO });
+	});
+});
+
+
+describe('request hook — saved account operating role', () => {
+	it('restores the saved organizer role instead of hardcoding attendee', async () => {
+		fakeSupabase({ profile: existing() });
+		Object.assign(googleUser.user_metadata, { operating_identity: 'organizer' });
+		try { expect(await runHook()).toMatchObject({ role: 'organizer' }); }
+		finally { delete (googleUser.user_metadata as Record<string, unknown>).operating_identity; }
+	});
+	it('does not recognize arbitrary admin permissions as an operating role', async () => {
+		fakeSupabase({ profile: existing() });
+		Object.assign(googleUser.user_metadata, { operating_identity: 'admin' });
+		try { expect(await runHook()).toMatchObject({ role: 'attendee' }); }
+		finally { delete (googleUser.user_metadata as Record<string, unknown>).operating_identity; }
 	});
 });

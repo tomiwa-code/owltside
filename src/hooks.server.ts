@@ -1,12 +1,22 @@
+import { isAuthReturn } from '$lib/server/oauth';
 import { createSupabase, supabaseConfigured } from '$lib/server/supabase';
 import { demo } from '$lib/server/demo-index';
 import { fillEmptyProfileFields, providerProfile } from '$lib/server/profile-sync';
+import { OPERATING_IDENTITY_COOKIE, isOperatingIdentity } from '$lib/constants/operating-identity';
 import type { Handle } from '@sveltejs/kit';
 
 export const handle: Handle = async ({ event, resolve }) => {
-	const db = createSupabase(event.cookies);
 	event.locals.demoMode = !supabaseConfigured();
 	event.locals.session = null;
+	// Exchange the PKCE code before validating/refreshing an old session.
+	// A failed old-session refresh may otherwise remove the in-flight verifier.
+	if (isAuthReturn(event.url)) {
+		const response = await resolve(event);
+		response.headers.set('cache-control', 'private, no-store');
+		response.headers.set('referrer-policy', 'no-referrer');
+		return response;
+	}
+	const db = createSupabase(event.cookies);
 
 	if (db) {
 		const {
@@ -43,7 +53,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 				email: user.email ?? '',
 				handle: profile?.handle ?? 'you',
 				name: profile?.name ?? (user.email?.split('@')[0] || 'Explorer'),
-				role: 'attendee',
+				role: isOperatingIdentity(String(meta.operating_identity ?? '')) ? meta.operating_identity as 'attendee' | 'organizer' | 'guest' : 'attendee',
 				avatarUrl: profile?.avatar_url ?? null,
 				usernameChangedAt: profile?.username_changed_at ?? null
 			};
@@ -61,7 +71,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 			email: 'ada@owltside.app',
 			handle: demoProfile.username ?? me.handle,
 			name: demoProfile.name ?? me.name,
-			role: 'attendee',
+			role: isOperatingIdentity(event.cookies.get(OPERATING_IDENTITY_COOKIE) ?? '') ? event.cookies.get(OPERATING_IDENTITY_COOKIE) as 'attendee' | 'organizer' | 'guest' : 'attendee',
 			avatarUrl: null,
 			usernameChangedAt: demoProfile.usernameChangedAt ?? null,
 			demo: true

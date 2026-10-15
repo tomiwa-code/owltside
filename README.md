@@ -155,3 +155,42 @@ check-ins table, gate config and organizer RLS.
 Regression checks: `npm run check`, `npm test`, `npm run build`, and
 `npm run test:e2e -- tests/e2e/app-regressions.spec.ts` (requires Playwright Chromium).
 For an existing Chromium binary, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its path.
+
+### Switching your own role
+
+Use **Profile → Switch role**, or **Settings → Operating Identity**, to choose
+Attendee, Organizer, or Guest. The active role updates shared navigation and
+organizer-route access. Your account, tickets, and profile are retained in Guest
+mode, so you can switch back without signing in again. Role switching shows a
+pending state, prevents concurrent submissions, and reports save failures without
+changing the selected mode.
+
+In live mode this preference is saved in Supabase Auth user metadata as
+`operating_identity` and restored from the authenticated user on each request
+(including another device). No new SQL migration is needed for role switching.
+Demo mode uses the existing HTTP-only identity cookie. This is a view preference,
+not an admin role: database ownership and RLS still control access to event data.
+
+### Live Google sign-in configuration
+
+Google uses a server-side PKCE exchange and an exact, same-origin callback at
+`https://<your-app-host>/auth/callback` (no query string). In Supabase Authentication:
+
+- Enable the Google provider and configure its client ID/secret there, not in browser code.
+- Set **Site URL** to your canonical production URL and add the exact app callback
+  to **Redirect URLs**; for `https://owltside.vercel.app`, that is
+  `https://owltside.vercel.app/auth/callback`.
+- Add callbacks for any preview/custom hosts you actually sign in from as well.
+  Start and finish on the same host/browser; the PKCE verifier is a host-scoped cookie.
+- In Google Cloud, the authorized redirect URI is the **Supabase provider callback**
+  shown in the Google provider settings (`https://<project-ref>.supabase.co/auth/v1/callback`),
+  not the Owltside `/auth/callback` URL. Make sure Google test users/publishing status
+  permit the account attempting login.
+- Ensure the deployed app has `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_ANON_KEY`
+  for that same project, and deploy the branch containing these changes.
+
+The callback reports exchange failures instead of silently opening a guest session.
+Same-host returns to `/` are recovered if Supabase falls back to Site URL, but that
+cannot repair a callback sent to a different host (where the verifier cookie is absent).
+Never share callback codes, access/refresh tokens, provider secrets, or cookie values
+when reporting a login error; share only the host, failing step, and visible error text.

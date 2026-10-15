@@ -4,7 +4,7 @@ import { createSupabase } from '$lib/server/supabase';
 import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
-import { OPERATING_IDENTITY_COOKIE } from '$lib/constants/operating-identity';
+import { hasOrganizerIdentity } from '$lib/server/organizer-access';
 import type { WizardSpeaker } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -65,8 +65,8 @@ const draftSchema = z.object({
 
 export const actions: Actions = {
 	create: async ({ request, cookies, locals }) => {
-		if (cookies.get(OPERATING_IDENTITY_COOKIE) !== 'organizer') redirect(303, '/settings?identity=organizer-required');
 		if (!locals.session) return fail(401, { error: 'Sign in to create an event.' });
+		if (!hasOrganizerIdentity(locals.session)) redirect(303, '/settings?identity=organizer-required');
 		const form = await request.formData();
 		let raw: unknown;
 		try {

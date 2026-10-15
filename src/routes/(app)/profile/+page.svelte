@@ -25,6 +25,7 @@
 	import ImageCropSheet from '$components/ImageCropSheet.svelte';
 	import SavedEventsList from '$components/SavedEventsList.svelte';
 	import Sheet from '$components/Sheet.svelte';
+	import RoleSwitcher from '$components/RoleSwitcher.svelte';
 	import ConnectionsSheet from '$components/ConnectionsSheet.svelte';
 	import { page } from '$app/state';
 	import { bookmarks, toggleIn } from '$lib/state/prefs.svelte';
@@ -37,7 +38,7 @@
 	let { data } = $props();
 	const session = $derived(data.session !== undefined ? data.session : page.data.session);
 	const isDemoMode = $derived(Boolean((data as { demoMode?: boolean }).demoMode ?? page.data.demoMode));
-	const isGuest = $derived(!session || data.operatingIdentity === 'guest');
+	const isGuest = $derived(!session);
 	const isFullyVerified = $derived(!isGuest && Object.values(appSettings.value.verification).every(Boolean));
 	const hasProfileDraft = $derived(profileDraft.value.hasChanges && profileDraft.value.ownerId === session?.userId);
 	const name = $derived(hasProfileDraft ? profileDraft.value.name : (data.profile?.name ?? session?.name ?? 'Guest Explorer'));
@@ -226,6 +227,10 @@
 </script>
 
 <svelte:head><title>Profile • Owltside</title></svelte:head>
+<div class="mx-auto w-full max-w-[1400px] px-gutter md:px-6 xl:px-10 py-3 border-b border-surface-glass-border">
+	<RoleSwitcher currentRole={data.operatingIdentity ?? 'guest'} signedIn={!!session} />
+	{#if data.operatingIdentity === 'organizer'}<a href="/organizer" class="inline-block mt-2 text-body-sm text-primary">Open organizer console →</a>{/if}
+</div>
 
 <!-- ── desktop (md+) profile & pass portfolio in the shipped console design
      language (design source unavailable this turn — extrapolated); mobile

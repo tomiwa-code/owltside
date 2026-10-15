@@ -1,3 +1,4 @@
+import { startGoogleSignIn } from '$lib/server/oauth';
 import { createSupabase } from '$lib/server/supabase';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
@@ -38,15 +39,6 @@ export const actions: Actions = {
 		const username = String(form.get('username') ?? '').trim().replace(/^@/, '').toLowerCase();
 		if (username && !validUsername(username)) return fail(400, { error: 'Username must be 3–24 letters, numbers, or underscores' });
 
-		const db = createSupabase(cookies);
-		if (!db) return fail(503, { error: 'Google sign-in is unavailable until the Google provider is configured.' });
-		const next = `/auth/callback?next=${encodeURIComponent('/home')}${username ? `&handle=${encodeURIComponent(username)}` : ''}`;
-		const { data, error } = await db.auth.signInWithOAuth({
-			provider: 'google',
-			options: { redirectTo: `${url.origin}${next}` }
-		});
-		if (error) return fail(400, { error: error.message });
-		if (!data.url) return fail(502, { error: 'Google sign-in did not return an authorization URL.' });
-		redirect(303, data.url);
+		return startGoogleSignIn(cookies, url, username || undefined);
 	}
 };

@@ -1,5 +1,5 @@
 /* Owltside service worker — cache-first hashed assets, network-first navigation. */
-const VERSION = 'owltside-v1';
+const VERSION = 'owltside-v2';
 const CORE = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/logo.png'];
 
 self.addEventListener('install', (event) => {
@@ -25,14 +25,17 @@ self.addEventListener('fetch', (event) => {
 	if (req.method !== 'GET') return;
 	const url = new URL(req.url);
 	if (url.origin !== self.location.origin) return;
+	if (url.pathname.startsWith('/auth/') || ['code', 'token_hash', 'error', 'error_description'].some((key) => url.searchParams.has(key))) return;
 
 	// Navigations: network first, fall back to cached shell for offline.
 	if (req.mode === 'navigate') {
 		event.respondWith(
 			fetch(req)
 				.then((res) => {
-					const copy = res.clone();
-					caches.open(VERSION).then((c) => c.put('/', copy));
+					if (url.pathname === '/' && res.ok && !res.redirected && !/no-store|private/.test(res.headers.get('cache-control') ?? '')) {
+						const copy = res.clone();
+						caches.open(VERSION).then((c) => c.put('/', copy));
+					}
 					return res;
 				})
 				.catch(() => caches.match('/'))

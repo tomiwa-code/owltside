@@ -30,6 +30,7 @@
 	import Avatar from '$components/Avatar.svelte';
 	import CurrencyPill from '$components/CurrencyPill.svelte';
 	import Sheet from '$components/Sheet.svelte';
+	import RoleSwitcher from '$components/RoleSwitcher.svelte';
 	import { page } from '$app/state';
 	import { toast } from '$lib/state/toast.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
@@ -41,12 +42,6 @@
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
 	const role = $derived(data.operatingIdentity ?? 'attendee');
-
-	const roles = [
-		{ id: 'attendee', label: 'Attendee', icon: Ticket, sub: 'Wallet, drops & gate passes' },
-		{ id: 'guest', label: 'Guest', icon: UserRound, sub: 'Browse-only, no stored passes' },
-		{ id: 'organizer', label: 'Organizer', icon: Megaphone, sub: 'Console, gates & settlement' }
-	] as const;
 
 	const securityRows: Array<[string, string]> = [
 		['Cipher_Suite', 'RSA-4096 / TLS 1.3'],
@@ -314,21 +309,7 @@
 
 	<!-- popups for desktop categories -->
 	<Sheet open={openCategory === 'identity'} title="Operating Identity" close={() => (openCategory = null)}>
-		<div class="flex flex-col gap-4">
-			<div class="flex items-center justify-between"><span class="text-body-sm text-on-surface-variant">Current role</span><span class="{MONO} px-2 py-0.5 rounded bg-primary text-on-primary">{role}</span></div>
-			<p class="text-body-sm text-on-surface-variant">Switch views to toggle permissions & venue tools</p>
-			{#each roles as r (r.id)}
-				{@const RIcon = r.icon}
-				<form method="POST" action="?/setIdentity" use:enhance>
-					<input type="hidden" name="identity" value={r.id} />
-					<button type="submit" class="w-full flex items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors {role === r.id ? 'border-primary/50 bg-primary/10' : 'border-surface-glass-border bg-surface-container-high/50 hover:bg-surface-container-high'}">
-						<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0"><RIcon class="w-4 h-4 text-on-surface-variant" /></span>
-						<span class="flex-1 min-w-0"><span class="block text-body-sm font-medium text-on-surface">{r.label}</span><span class="block text-xs text-on-surface-variant mt-0.5">{r.sub}</span></span>
-						{#if role === r.id}<span class="w-1.5 h-1.5 rounded-full bg-primary glow-primary shrink-0"></span>{/if}
-					</button>
-				</form>
-			{/each}
-		</div>
+		<RoleSwitcher currentRole={role} signedIn={!!session} expanded />
 	</Sheet>
 
 	<Sheet open={openCategory === 'preferences'} title="Preferences" close={() => (openCategory = null)}>

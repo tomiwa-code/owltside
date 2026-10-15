@@ -93,3 +93,41 @@ test('a changed profile photo appears in the shared notification header after re
 	await page.reload();
 	await expect(page.locator('header a[aria-label="Your profile"] img')).toBeVisible();
 });
+
+
+for (const width of [393, 1440]) {
+	test(`profile switches roles and keeps the selected mode after refresh at ${width}px`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 950 });
+		await page.goto('/profile'); await page.waitForLoadState('networkidle');
+		await page.getByRole('button', { name: 'Switch role', exact: true }).click();
+		await page.getByRole('dialog', { name: 'Switch role', exact: true }).getByRole('button', { name: /^Attendee/ }).click();
+		await expect(page.getByRole('dialog')).toHaveCount(0);
+		await expect(page.getByText('Current role: Attendee', { exact: true })).toBeVisible();
+		await expect(page.locator('nav[aria-label="Primary"] a[href="/organizer"]')).toHaveCount(0);
+		await page.reload(); await page.waitForLoadState('networkidle');
+		await expect(page.getByText('Current role: Attendee', { exact: true })).toBeVisible();
+		await page.getByRole('button', { name: 'Switch role', exact: true }).click();
+		await page.getByRole('dialog', { name: 'Switch role', exact: true }).getByRole('button', { name: /^Organizer/ }).click();
+		await expect(page.getByRole('link', { name: /Open organizer console/ })).toBeVisible();
+		await page.getByRole('link', { name: /Open organizer console/ }).click();
+		await expect(page).toHaveURL(/\/organizer$/);
+		await page.goto('/profile'); await page.waitForLoadState('networkidle');
+		await page.getByRole('button', { name: 'Switch role', exact: true }).click();
+		await page.getByRole('dialog', { name: 'Switch role', exact: true }).getByRole('button', { name: /^Guest/ }).click();
+		await expect(page.getByText('Current role: Guest', { exact: true })).toBeVisible();
+		// Guest mode is not a sign-out; the account can switch back immediately.
+		await expect(page.getByRole('button', { name: 'Switch role', exact: true })).toBeVisible();
+		await expect(page.locator('button:visible').filter({ hasText: 'Edit Profile' })).toBeVisible();
+	});
+}
+
+test('settings switches roles through the same control without nested dialogs', async ({ page }) => {
+	await page.goto('/settings'); await page.waitForLoadState('networkidle');
+	await page.getByRole('button', { name: /Operating Identity/ }).last().click();
+	await expect(page.getByRole('dialog')).toHaveCount(1);
+	await page.getByRole('dialog').getByRole('button', { name: /^Attendee/ }).click();
+	await expect(page.getByText('Current role: Attendee', { exact: true })).toBeVisible();
+	await page.reload(); await page.waitForLoadState('networkidle');
+	await page.getByRole('button', { name: /Operating Identity/ }).last().click();
+	await expect(page.getByRole('dialog').getByRole('button', { name: /^Attendee/ })).toHaveAttribute('aria-pressed', 'true');
+});

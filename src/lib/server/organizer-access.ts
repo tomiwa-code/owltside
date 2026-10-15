@@ -1,5 +1,6 @@
-import { OPERATING_IDENTITY_COOKIE } from '$lib/constants/operating-identity';
+import type { Session } from '$lib/types';
 
-export function hasOrganizerIdentity(cookies: { get(name: string): string | undefined }): boolean {
-	return cookies.get(OPERATING_IDENTITY_COOKIE) === 'organizer';
+/** Operating mode only; database ownership/RLS still controls event access. */
+export function hasOrganizerIdentity(session: Session | null): boolean {
+	return session?.role === 'organizer';
 }

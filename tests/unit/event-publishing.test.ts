@@ -15,7 +15,7 @@ beforeEach(async () => {
 const draft = () => ({ poster, title: 'My real event', category: 'music', date: '2099-11-20', dateEnd: '2099-11-21', venue: 'Actual venue', city: 'Lagos', description: 'An event with an actual description.', tiers: [{ name: 'Regular', price: 1000, capacity: 50 }] });
 async function publish(payload: unknown, signedIn = true) {
 	const body = new FormData(); body.set('draft', JSON.stringify(payload));
-	return actions.create!({ request: new Request('http://localhost/organizer/create', { method: 'POST', body }), cookies: { get: () => 'organizer' }, locals: { session: signedIn ? { userId: 'signed-in-user' } : null } } as never);
+	return actions.create!({ request: new Request('http://localhost/organizer/create', { method: 'POST', body }), cookies: { get: () => 'organizer' }, locals: { session: signedIn ? { userId: 'signed-in-user', role: 'organizer' } : null } } as never);
 }
 describe('publishing validation and failure UI', () => {
 	it('requires sign-in', async () => {
