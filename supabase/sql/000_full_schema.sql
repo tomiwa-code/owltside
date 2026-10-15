@@ -209,6 +209,11 @@ create policy tickets_update_organizer on public.tickets for update
     exists (select 1 from public.events e where e.id = event_id and e.organizer_id = auth.uid())
   );
 
+drop policy if exists tickets_update_owner on public.tickets;
+create policy tickets_update_owner on public.tickets for update
+  using (auth.uid() = owner_id)
+  with check (true);
+
 -- Orders: owner reads, event organizer reads
 drop policy if exists orders_select on public.orders;
 create policy orders_select on public.orders for select
@@ -283,6 +288,9 @@ create policy notifications_select on public.notifications for select using (aut
 
 drop policy if exists notifications_update on public.notifications;
 create policy notifications_update on public.notifications for update using (auth.uid() = user_id);
+
+drop policy if exists notifications_insert_authenticated on public.notifications;
+create policy notifications_insert_authenticated on public.notifications for insert with check (auth.uid() is not null);
 
 -- ── 3. FUNCTIONS & TRIGGERS ──────────────────────────────────────────────────
 

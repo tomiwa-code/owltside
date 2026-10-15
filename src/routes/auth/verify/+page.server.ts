@@ -2,13 +2,31 @@ import { createSupabase, supabaseConfigured } from '$lib/server/supabase';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = ({ url }) => ({
-	email: url.searchParams.get('email') ?? '',
-	name: url.searchParams.get('name'),
-	username: url.searchParams.get('username'),
-	isNew: url.searchParams.get('new') === '1',
-	demoMode: !supabaseConfigured()
-});
+export const load: PageServerLoad = async ({ url, cookies }) => {
+	const db = createSupabase(cookies);
+	const pkceCode = url.searchParams.get('code');
+	const tokenHash = url.searchParams.get('token_hash');
+	const otpType = url.searchParams.get('type') as 'email' | 'signup' | 'magiclink' | null;
+
+	if (db && pkceCode) {
+		const { error } = await db.auth.exchangeCodeForSession(pkceCode);
+		if (!error) redirect(303, '/home');
+	} else if (db && tokenHash) {
+		const { error } = await db.auth.verifyOtp({
+			token_hash: tokenHash,
+			type: otpType || 'email'
+		});
+		if (!error) redirect(303, '/home');
+	}
+
+	return {
+		email: url.searchParams.get('email') ?? '',
+		name: url.searchParams.get('name'),
+		username: url.searchParams.get('username'),
+		isNew: url.searchParams.get('new') === '1',
+		demoMode: !supabaseConfigured()
+	};
+};
 
 export const actions: Actions = {
 	verify: async ({ request, cookies, url }) => {

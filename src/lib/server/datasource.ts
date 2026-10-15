@@ -104,6 +104,8 @@ export interface DataSource {
 	): Promise<EventItem>;
 	deleteEvent(userId: string, eventId: string): Promise<void>;
 	broadcastEvent(userId: string, eventId: string, message: string): Promise<number>;
+	transferTicket(userId: string, ticketId: string, recipientHandle: string): Promise<Ticket>;
+	refundTicket(userId: string, ticketId: string): Promise<Ticket>;
 }
 
 /* ────────────────────────────── demo mode ────────────────────────────── */
@@ -554,6 +556,25 @@ export const demoSource: DataSource = {
 			read: false
 		});
 		return 1;
+	},
+	async transferTicket(_userId, ticketId, recipientHandle) {
+		const cleaned = recipientHandle.trim().replace(/^@/, '').toLowerCase();
+		if (!cleaned) throw new Error('Enter a valid recipient @handle');
+		const ticket = demo.tickets.find((t) => t.id === ticketId);
+		if (!ticket) throw new Error('Ticket not found');
+		if (ticket.status !== 'valid') throw new Error('Only active tickets can be transferred');
+		const recipient = Object.values(demo.people).find((p) => p.handle.toLowerCase() === cleaned);
+		ticket.holder = recipient?.name ?? `@${cleaned}`;
+		ticket.code = newTicketCode();
+		ticket.status = 'transferred';
+		return ticket;
+	},
+	async refundTicket(_userId, ticketId) {
+		const ticket = demo.tickets.find((t) => t.id === ticketId);
+		if (!ticket) throw new Error('Ticket not found');
+		if (ticket.status !== 'valid') throw new Error('Only active tickets can be refunded');
+		ticket.status = 'refunded';
+		return ticket;
 	}
 };
 
@@ -1067,6 +1088,58 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			});
 			if (error) throw error;
 			return Number(data?.sent ?? 0);
+		},
+		async transferTicket(userId, ticketId, recipientHandle) {
+			if (!isUuid(userId) || !isUuid(ticketId)) throw new Error('Invalid ticket or user ID');
+			const cleaned = recipientHandle.trim().replace(/^@/, '').toLowerCase();
+			if (!cleaned) throw new Error('Enter a valid recipient @handle');
+			const { data: recipient } = await db
+				.from('profiles')
+				.select('*')
+				.ilike('handle', cleaned)
+				.maybeSingle();
+			if (!recipient) throw new Error(`No member found with handle @${cleaned}`);
+			if (recipient.id === userId) throw new Error('You already own this ticket');
+			const rotatedCode = newTicketCode();
+			const { data, error } = await db
+				.from('tickets')
+				.update({
+					owner_id: recipient.id,
+					holder_name: recipient.name,
+					code: rotatedCode
+				})
+				.eq('id', ticketId)
+				.eq('owner_id', userId)
+				.select('*')
+				.single();
+			if (error) throw error;
+			await db.from('notifications').insert({
+				user_id: recipient.id,
+				kind: 'ticket',
+				title: `Pass Transferred · ${data.event_title}`,
+				body: `A ${data.tier_name} pass for ${data.event_title} has been transferred to your wallet.`,
+				action_url: `/tickets/${data.id}`
+			});
+			return toTicket(data);
+		},
+		async refundTicket(userId, ticketId) {
+			if (!isUuid(userId) || !isUuid(ticketId)) throw new Error('Invalid ticket or user ID');
+			const { data, error } = await db
+				.from('tickets')
+				.update({ status: 'refunded' })
+				.eq('id', ticketId)
+				.eq('owner_id', userId)
+				.select('*')
+				.single();
+			if (error) throw error;
+			await db.from('notifications').insert({
+				user_id: userId,
+				kind: 'ticket',
+				title: `Refund Requested · ${data.event_title}`,
+				body: `Your ${data.tier_name} pass has been marked as refunded.`,
+				action_url: `/tickets/${data.id}`
+			});
+			return toTicket(data);
 		}
 	};
 }

@@ -25,6 +25,8 @@ create policy events_write on public.events for all using (auth.uid() = organize
 -- tickets: owner only
 drop policy if exists tickets_select on public.tickets;
 create policy tickets_select on public.tickets for select using (auth.uid() = owner_id);
+drop policy if exists tickets_update_owner on public.tickets;
+create policy tickets_update_owner on public.tickets for update using (auth.uid() = owner_id) with check (true);
 
 -- orders: owner only (writes happen through the create_order RPC with SECURITY DEFINER)
 drop policy if exists orders_select on public.orders;
@@ -55,3 +57,5 @@ drop policy if exists notifications_select on public.notifications;
 create policy notifications_select on public.notifications for select using (auth.uid() = user_id);
 drop policy if exists notifications_update on public.notifications;
 create policy notifications_update on public.notifications for update using (auth.uid() = user_id);
+drop policy if exists notifications_insert_authenticated on public.notifications;
+create policy notifications_insert_authenticated on public.notifications for insert with check (auth.uid() is not null);

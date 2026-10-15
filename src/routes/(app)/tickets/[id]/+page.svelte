@@ -1,9 +1,11 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
 	import {
 		CalendarPlus,
 		CloudCheck,
 		Copy,
 		Download,
+		Loader2,
 		MapPin,
 		ScanLine,
 		Send,
@@ -28,6 +30,57 @@
 	let transferOpen = $state(false);
 	let refundOpen = $state(false);
 	let transferHandle = $state('');
+	let transferring = $state(false);
+	let refunding = $state(false);
+	let transferError = $state('');
+
+	function handleTransferEnhance() {
+		transferring = true;
+		transferError = '';
+		return async ({
+			result,
+			update
+		}: {
+			result: { type: string; data?: Record<string, unknown> };
+			update: () => Promise<void>;
+		}) => {
+			try {
+				await update();
+				if (result.type === 'success' || result.type === 'redirect') {
+					transferOpen = false;
+					toast(`Pass transferred to @${transferHandle.trim().replace(/^@/, '')}`, 'success');
+				} else if (result.type === 'failure') {
+					transferError = typeof result.data?.error === 'string' ? result.data.error : 'Could not transfer ticket.';
+				}
+			} finally {
+				transferring = false;
+			}
+		};
+	}
+
+	function handleRefundEnhance() {
+		refunding = true;
+		return async ({
+			result,
+			update
+		}: {
+			result: { type: string; data?: Record<string, unknown> };
+			update: () => Promise<void>;
+		}) => {
+			try {
+				await update();
+				if (result.type === 'success' || result.type === 'redirect') {
+					refundOpen = false;
+					toast('Refund processed — 3–5 working days', 'info');
+				} else if (result.type === 'failure') {
+					const errMsg = typeof result.data?.error === 'string' ? result.data.error : 'Could not process refund.';
+					toast(errMsg, 'error');
+				}
+			} finally {
+				refunding = false;
+			}
+		};
+	}
 
 	async function copyCode() {
 		try {
@@ -207,38 +260,49 @@
 <Sheet open={transferOpen} title="Transfer pass" close={() => (transferOpen = false)}>
 	{#snippet footer()}
 		<button
-			class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md disabled:opacity-40"
-			disabled={!transferHandle.trim()}
-			onclick={() => {
-				transferOpen = false;
-				toast(`Pass transferred to @${transferHandle.trim()}`, 'success');
-			}}
+			type="submit"
+			form="ticket-transfer-form"
+			class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center gap-2 disabled:opacity-40"
+			disabled={!transferHandle.trim() || transferring}
 		>
-			Confirm transfer
+			{#if transferring}
+				<Loader2 class="w-4.5 h-4.5 animate-spin" />
+				<span>Transferring…</span>
+			{:else}
+				<span>Confirm transfer</span>
+			{/if}
 		</button>
 	{/snippet}
-	<div class="flex flex-col gap-space-sm">
+	<form id="ticket-transfer-form" method="POST" action="?/transfer" use:enhance={handleTransferEnhance} class="flex flex-col gap-space-sm">
+		{#if transferError}
+			<p class="rounded-lg bg-error/10 border border-error/30 px-3 py-2 text-body-sm text-error" role="alert">{transferError}</p>
+		{/if}
 		<p class="text-body-sm text-on-surface-variant">
 			Transfer re-mints the QR under the new holder. Your copy becomes invalid immediately.
 		</p>
 		<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
 			Recipient @handle
-			<input bind:value={transferHandle} placeholder="@tundeb" class="h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />
+			<input name="handle" bind:value={transferHandle} placeholder="@tundeb" class="h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />
 		</label>
-	</div>
+	</form>
 </Sheet>
 
 <Sheet open={refundOpen} title="Request refund" close={() => (refundOpen = false)}>
 	{#snippet footer()}
-		<button
-			class="w-full h-12 rounded-full bg-error-container text-on-error-container font-semibold text-body-md"
-			onclick={() => {
-				refundOpen = false;
-				toast('Refund requested — 3–5 working days', 'info');
-			}}
-		>
-			Request full refund
-		</button>
+		<form method="POST" action="?/refund" use:enhance={handleRefundEnhance} class="w-full">
+			<button
+				type="submit"
+				disabled={refunding}
+				class="w-full h-12 rounded-full bg-error-container text-on-error-container font-semibold text-body-md flex items-center justify-center gap-2 disabled:opacity-40"
+			>
+				{#if refunding}
+					<Loader2 class="w-4.5 h-4.5 animate-spin" />
+					<span>Processing refund…</span>
+				{:else}
+					<span>Request full refund</span>
+				{/if}
+			</button>
+		</form>
 	{/snippet}
 	<p class="text-body-sm text-on-surface-variant">
 		Full refunds are automatic up to 72 hours before doors. After that, refunds go through the organiser's policy.
