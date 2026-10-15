@@ -1,5 +1,6 @@
 import { createSupabase, supabaseConfigured } from '$lib/server/supabase';
 import { demo } from '$lib/server/demo-index';
+import { fillEmptyProfileFields, providerProfile } from '$lib/server/profile-sync';
 import type { Handle } from '@sveltejs/kit';
 
 export const handle: Handle = async ({ event, resolve }) => {
@@ -12,22 +13,30 @@ export const handle: Handle = async ({ event, resolve }) => {
 			data: { user }
 		} = await db.auth.getUser();
 		if (user) {
+			const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
 			let { data: profile } = await db.from('profiles').select('*').eq('id', user.id).maybeSingle();
 			if (!profile) {
 				const rawHandle =
-					(user.user_metadata?.handle as string | undefined) ||
+					(meta.handle as string | undefined) ||
 					user.email?.split('@')[0]?.replace(/[^a-z0-9_]/gi, '').toLowerCase() ||
 					`owl_${user.id.slice(0, 6)}`;
-				const rawName =
-					(user.user_metadata?.full_name as string | undefined) ||
-					user.email?.split('@')[0] ||
-					'Explorer';
+				const { data: clash } = await db.from('profiles').select('id').eq('handle', rawHandle).neq('id', user.id).maybeSingle();
+				const finalHandle = clash ? `${rawHandle}_${user.id.slice(0, 6)}` : rawHandle;
+				const provider = providerProfile(meta);
+				const rawName = provider.name || user.email?.split('@')[0] || 'Explorer';
 				const { data: created } = await db
 					.from('profiles')
-					.upsert({ id: user.id, handle: rawHandle, name: rawName }, { onConflict: 'id' })
+					.upsert({ id: user.id, handle: finalHandle, name: rawName, avatar_url: provider.avatarUrl ?? null }, { onConflict: 'id' })
 					.select('*')
 					.maybeSingle();
 				profile = created;
+			} else {
+				// Provider (Google) details only fill gaps; they never replace what the user already has.
+				const updates = fillEmptyProfileFields(profile, meta);
+				if (Object.keys(updates).length > 0) {
+					const { data: updated } = await db.from('profiles').update(updates).eq('id', user.id).select('*').maybeSingle();
+					if (updated) profile = updated;
+				}
 			}
 			event.locals.session = {
 				userId: user.id,

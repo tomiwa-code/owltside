@@ -35,11 +35,7 @@ export const actions: Actions = {
 
 	google: async ({ request, cookies, url }) => {
 		const form = await request.formData();
-		const termsAccepted = form.get('terms') === 'accepted';
-		const ageConfirmed = form.get('ageConfirmed') === 'confirmed';
 		const username = String(form.get('username') ?? '').trim().replace(/^@/, '').toLowerCase();
-		if (!termsAccepted) return fail(400, { error: 'Please agree to the Terms and Privacy Policy' });
-		if (!ageConfirmed) return fail(400, { error: 'You must confirm that you are 18 or older' });
 		if (username && !validUsername(username)) return fail(400, { error: 'Username must be 3–24 letters, numbers, or underscores' });
 
 		const db = createSupabase(cookies);

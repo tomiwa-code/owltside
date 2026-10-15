@@ -4,14 +4,42 @@ returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
+declare
+  v_handle text;
+  v_name text;
+  v_avatar text;
 begin
-  insert into public.profiles (id, handle, name)
-  values (
-    new.id,
-    coalesce(new.raw_user_meta_data->>'handle', split_part(new.email, '@', 1), 'owl-' || left(new.id::text, 6)),
-    coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1))
-  )
-  on conflict (id) do nothing;
+  v_handle := coalesce(
+    new.raw_user_meta_data->>'handle',
+    new.raw_user_meta_data->>'preferred_username',
+    split_part(new.email, '@', 1),
+    'owl-' || left(new.id::text, 6)
+  );
+  if exists (select 1 from public.profiles where handle = v_handle and id <> new.id) then
+    v_handle := v_handle || '_' || left(new.id::text, 6);
+  end if;
+  v_name := coalesce(
+    new.raw_user_meta_data->>'full_name',
+    new.raw_user_meta_data->>'name',
+    split_part(new.email, '@', 1),
+    'Explorer'
+  );
+  v_avatar := coalesce(
+    new.raw_user_meta_data->>'avatar_url',
+    new.raw_user_meta_data->>'picture'
+  );
+  -- Provider details (e.g. Google) only fill gaps: an existing name/photo is never replaced.
+  insert into public.profiles (id, handle, name, avatar_url)
+  values (new.id, v_handle, v_name, v_avatar)
+  on conflict (id) do update set
+    name = case
+      when coalesce(btrim(public.profiles.name), '') = '' then excluded.name
+      else public.profiles.name
+    end,
+    avatar_url = case
+      when coalesce(btrim(public.profiles.avatar_url), '') = '' then excluded.avatar_url
+      else public.profiles.avatar_url
+    end;
   return new;
 end;
 $$;
