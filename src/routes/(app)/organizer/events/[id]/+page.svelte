@@ -1,7 +1,10 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
 	import {
 		ArrowLeft,
 		Download,
+		Edit,
+		Trash2,
 		UserCheck,
 		Megaphone,
 		ScanBarcode,
@@ -19,7 +22,20 @@
 
 	let tab = $state<'attendees' | 'orders' | 'log'>('attendees');
 	let broadcastOpen = $state(false);
+	let editOpen = $state(false);
 	let msg = $state('');
+	let editTitle = $state('');
+	let editVenue = $state('');
+	let editCity = $state('');
+	let editDescription = $state('');
+
+	function openEditEvent() {
+		editTitle = data.event.title;
+		editVenue = data.event.venue;
+		editCity = data.event.city;
+		editDescription = data.event.description;
+		editOpen = true;
+	}
 
 	const tabs: { id: typeof tab; label: string; icon: Snippet }[] = $derived([
 		{ id: 'attendees', label: 'Attendees', icon: iconUsers },
@@ -42,6 +58,9 @@
 				<h1 class="font-display text-headline-md text-on-surface truncate leading-tight">{data.event.title}</h1>
 				<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Event management</span>
 			</div>
+			<button onclick={openEditEvent} aria-label="Edit event" class="w-11 h-11 flex items-center justify-center rounded-full bg-surface-container-high border border-outline-variant/30 text-on-surface hover:bg-surface-bright transition-colors">
+				<Edit class="w-4.5 h-4.5" />
+			</button>
 			<a href="/organizer/scan" aria-label="Open scanner" class="w-11 h-11 flex items-center justify-center rounded-full bg-surface-container-high border border-outline-variant/30 text-on-surface hover:bg-surface-bright transition-colors">
 				<ScanBarcode class="w-5 h-5" />
 			</a>
@@ -149,11 +168,74 @@
 
 <Sheet open={broadcastOpen} title="Broadcast" close={() => (broadcastOpen = false)}>
 	{#snippet footer()}
-		<button class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md disabled:opacity-40" disabled={!msg.trim()} onclick={() => { broadcastOpen = false; toast('Broadcast queued', 'success'); msg = ''; }}>
+		<button type="submit" form="broadcast-form" class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md disabled:opacity-40" disabled={!msg.trim()}>
 			Send broadcast
 		</button>
 	{/snippet}
-	<textarea bind:value={msg} rows="4" placeholder="Write an announcement…" class="px-4 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline"></textarea>
+	<form
+		id="broadcast-form"
+		method="POST"
+		action="?/broadcast"
+		use:enhance={() => {
+			return async ({ result, update }) => {
+				await update();
+				if (result.type === 'success') {
+					broadcastOpen = false;
+					msg = '';
+					toast('Broadcast sent to ticket holders', 'success');
+				}
+			};
+		}}
+	>
+		<textarea name="message" bind:value={msg} rows="4" placeholder="Write an announcement…" class="w-full px-4 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline"></textarea>
+	</form>
+</Sheet>
+
+<Sheet open={editOpen} title="Edit event" close={() => (editOpen = false)}>
+	{#snippet footer()}
+		<div class="flex gap-2 w-full">
+			<form method="POST" action="?/deleteEvent" use:enhance>
+				<button type="submit" aria-label="Delete event" class="h-12 px-4 rounded-full bg-error/15 border border-error/30 text-error font-semibold text-body-sm flex items-center gap-1.5">
+					<Trash2 class="w-4 h-4" /> Delete
+				</button>
+			</form>
+			<button type="submit" form="edit-event-form" class="flex-1 h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md">
+				Save changes
+			</button>
+		</div>
+	{/snippet}
+	<form
+		id="edit-event-form"
+		method="POST"
+		action="?/updateEvent"
+		use:enhance={() => {
+			return async ({ result, update }) => {
+				await update();
+				if (result.type === 'success') {
+					editOpen = false;
+					toast('Event updated', 'success');
+				}
+			};
+		}}
+		class="flex flex-col gap-3"
+	>
+		<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
+			Title
+			<input name="title" bind:value={editTitle} required minlength="3" class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md" />
+		</label>
+		<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
+			Venue
+			<input name="venue" bind:value={editVenue} required class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md" />
+		</label>
+		<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
+			City
+			<input name="city" bind:value={editCity} required class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md" />
+		</label>
+		<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
+			Description
+			<textarea name="description" bind:value={editDescription} rows="4" class="px-3 py-2.5 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md"></textarea>
+		</label>
+	</form>
 </Sheet>
 
 {#snippet iconUsers()}<Users class="w-4 h-4" />{/snippet}

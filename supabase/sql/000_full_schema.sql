@@ -399,6 +399,28 @@ begin
     set tiers = v_event.tiers, attendees = attendees + jsonb_array_length(v_tickets)
     where id = v_event.id;
 
+  -- Notify buyer of confirmed pass
+  insert into public.notifications (user_id, kind, title, body, href)
+  values (
+    p_owner,
+    'ticket',
+    'Pass confirmed · ' || v_event.title,
+    'Your gate pass (' || jsonb_array_length(v_tickets) || 'x) is ready in your Ticket Wallet.',
+    '/tickets'
+  );
+
+  -- Notify event organizer of ticket sale
+  if v_event.organizer_id <> p_owner then
+    insert into public.notifications (user_id, kind, title, body, href)
+    values (
+      v_event.organizer_id,
+      'event',
+      'New ticket order · ' || v_event.title,
+      coalesce(v_holder, 'An attendee') || ' booked ' || jsonb_array_length(v_tickets) || ' pass(es) (' || v_reference || ').',
+      '/organizer/events/' || v_event.id
+    );
+  end if;
+
   return jsonb_build_object(
     'orderId', v_order_id,
     'reference', v_reference,
@@ -410,6 +432,37 @@ $$;
 
 grant execute on function public.create_order(uuid, text, jsonb) to authenticated;
 
+-- Notify organizer when a new message request is created
+create or replace function public.notify_new_message_request()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_requester_name text;
+  v_event_title text;
+begin
+  select name into v_requester_name from public.profiles where id = new.requester_id;
+  select title into v_event_title from public.events where id = new.event_id;
+
+  insert into public.notifications (user_id, kind, title, body, href)
+  values (
+    new.organizer_id,
+    'social',
+    'Message request · ' || coalesce(v_event_title, 'Event'),
+    coalesce(v_requester_name, 'An attendee') || ': ' || left(new.body, 120),
+    '/inbox'
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists message_requests_notify_organizer on public.message_requests;
+create trigger message_requests_notify_organizer
+after insert on public.message_requests
+for each row execute function public.notify_new_message_request();
+
 -- Respond to message request RPC
 create or replace function public.respond_to_message_request(p_request_id uuid, p_accept boolean)
 returns jsonb
@@ -420,6 +473,8 @@ as $$
 declare
   v_request public.message_requests%rowtype;
   v_conversation_id uuid;
+  v_organizer_name text;
+  v_event_title text;
 begin
   select * into v_request
   from public.message_requests
@@ -435,6 +490,9 @@ begin
   if v_request.status <> 'pending' then
     raise exception 'This message request has already been answered';
   end if;
+
+  select name into v_organizer_name from public.profiles where id = v_request.organizer_id;
+  select title into v_event_title from public.events where id = v_request.event_id;
 
   if p_accept then
     select id into v_conversation_id
@@ -456,10 +514,28 @@ begin
     update public.message_requests
     set status = 'accepted', conversation_id = v_conversation_id
     where id = p_request_id;
+
+    insert into public.notifications (user_id, kind, title, body, href)
+    values (
+      v_request.requester_id,
+      'social',
+      'Message request accepted · ' || coalesce(v_event_title, 'Event'),
+      coalesce(v_organizer_name, 'The organizer') || ' accepted your request. You can now chat directly.',
+      '/inbox/' || v_conversation_id
+    );
   else
     update public.message_requests
     set status = 'declined'
     where id = p_request_id;
+
+    insert into public.notifications (user_id, kind, title, body, href)
+    values (
+      v_request.requester_id,
+      'social',
+      'Message request update · ' || coalesce(v_event_title, 'Event'),
+      coalesce(v_organizer_name, 'The organizer') || ' declined your message request.',
+      '/events'
+    );
   end if;
 
   return jsonb_build_object(
@@ -540,6 +616,7 @@ declare
   v_event public.events%rowtype;
   v_status text;
   v_can_respond boolean;
+  v_speaker_name text;
 begin
   if auth.uid() is null then
     raise exception 'Sign in to respond to this invitation';
@@ -592,11 +669,79 @@ begin
   )
   where id = v_event.id;
 
+  select name into v_speaker_name from public.profiles where id = auth.uid();
+
+  if v_event.organizer_id <> auth.uid() then
+    insert into public.notifications (user_id, kind, title, body, href)
+    values (
+      v_event.organizer_id,
+      'event',
+      'Speaker invite ' || v_status || ' · ' || v_event.title,
+      coalesce(v_speaker_name, 'Invited speaker') || ' ' || v_status || ' your speaker invitation.',
+      '/events/' || v_event.slug
+    );
+  end if;
+
   return jsonb_build_object('event_slug', p_event_slug, 'status', v_status);
 end;
 $$;
 
 grant execute on function public.respond_to_event_speaker_invite(text, boolean) to authenticated;
+
+-- Increment event views_today RPC
+create or replace function public.record_event_view(p_slug text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.events
+  set views_today = views_today + 1
+  where slug = p_slug;
+end;
+$$;
+
+grant execute on function public.record_event_view(text) to anon, authenticated;
+
+-- Broadcast announcement to all ticket holders of an event
+create or replace function public.broadcast_to_event_holders(p_event_id uuid, p_body text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_event public.events%rowtype;
+  v_count int := 0;
+begin
+  select * into v_event from public.events where id = p_event_id;
+  if not found then raise exception 'Event not found'; end if;
+  if auth.uid() is null or auth.uid() <> v_event.organizer_id then
+    raise exception 'Only the event organizer can broadcast to ticket holders';
+  end if;
+
+  with recipients as (
+    select distinct owner_id
+    from public.tickets
+    where event_id = p_event_id and status = 'valid'
+  ), inserted as (
+    insert into public.notifications (user_id, kind, title, body, href)
+    select r.owner_id,
+           'event',
+           'Announcement · ' || v_event.title,
+           p_body,
+           '/events/' || v_event.slug
+    from recipients r
+    returning id
+  )
+  select count(*) into v_count from inserted;
+
+  return jsonb_build_object('sent', v_count);
+end;
+$$;
+
+grant execute on function public.broadcast_to_event_holders(uuid, text) to authenticated;
 
 -- ── 4. REALTIME CONFIGURATION ────────────────────────────────────────────────
 

@@ -5,6 +5,7 @@ import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, cookies, locals }) => {
 	const source = getSource(createSupabase(cookies));
+	await source.recordEventView(params.slug);
 	const event = await source.getEvent(params.slug);
 	if (!event) error(404, 'Event not found');
 	const messageRequest = locals.session

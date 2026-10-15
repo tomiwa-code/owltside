@@ -678,6 +678,8 @@
 	{/snippet}
 	<form id="profile-edit-form" method="POST" action="?/updateProfile" enctype="multipart/form-data" use:enhance={handleProfileEnhance} class="flex flex-col gap-space-md">
 		{#if editError}<p class="rounded-lg bg-error/10 border border-error/30 px-3 py-2 text-body-sm text-error" role="alert">{editError}</p>{/if}
+		<input type="hidden" name="avatarUrl" value={avatarPhoto ?? ''} />
+		<input type="hidden" name="bannerUrl" value={bannerPhoto ?? ''} />
 
 		<section class="rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3">
 			<h3 class="text-body-sm font-semibold text-on-surface mb-3">Profile photo</h3>

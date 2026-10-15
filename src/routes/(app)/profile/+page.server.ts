@@ -26,6 +26,8 @@ export const actions: Actions = {
 		const bio = String(form.get('bio') ?? '').trim();
 		const city = String(form.get('city') ?? '').trim();
 		let link = String(form.get('link') ?? '').trim();
+		const avatarUrl = String(form.get('avatarUrl') ?? '').trim();
+		const bannerUrl = String(form.get('bannerUrl') ?? '').trim();
 		const selectedInterests = [...new Set(form.getAll('interests').map((value) => String(value).trim()).filter(Boolean))];
 		const interests = selectedInterests.slice(0, 12);
 
@@ -94,10 +96,23 @@ export const actions: Actions = {
 			city: city || null,
 			link: link || null,
 			interests,
+			...(avatarUrl ? { avatar_url: avatarUrl } : {}),
+			...(bannerUrl ? { banner_url: bannerUrl } : {}),
 			...(usernameChanged ? { username_changed_at: new Date().toISOString() } : {})
 		};
 		const { error } = await db.from('profiles').update(updates).eq('id', session.userId);
 		if (error) return fail(400, { error: error.message });
-		return { success: true, name, username, bio, city, link, interests, usernameChangedAt: usernameChanged ? new Date().toISOString() : current.username_changed_at };
+		return {
+			success: true,
+			name,
+			username,
+			bio,
+			city,
+			link,
+			interests,
+			avatarUrl: avatarUrl || null,
+			bannerUrl: bannerUrl || null,
+			usernameChangedAt: usernameChanged ? new Date().toISOString() : current.username_changed_at
+		};
 	}
 };

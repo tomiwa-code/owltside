@@ -96,6 +96,14 @@ export interface DataSource {
 	getEventCheckins(eventId: string): Promise<Checkin[]>;
 	checkInTicket(eventId: string, code: string, gate: string): Promise<Checkin>;
 	createEvent(userId: string, payload: WizardPayload): Promise<EventItem>;
+	recordEventView(slug: string): Promise<void>;
+	updateEvent(
+		userId: string,
+		eventId: string,
+		updates: { title?: string; venue?: string; city?: string; startsAt?: string; description?: string }
+	): Promise<EventItem>;
+	deleteEvent(userId: string, eventId: string): Promise<void>;
+	broadcastEvent(userId: string, eventId: string, message: string): Promise<number>;
 }
 
 /* ────────────────────────────── demo mode ────────────────────────────── */
@@ -510,6 +518,42 @@ export const demoSource: DataSource = {
 			demoPrivateNotifications.set(speaker.id, inviteeNotifications);
 		}
 		return event;
+	},
+	async recordEventView(slug) {
+		const event = demo.events.find((e) => e.slug === slug);
+		if (event) event.viewsToday += 1;
+	},
+	async updateEvent(userId, eventId, updates) {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		const event = demo.events.find((e) => e.id === eventId && e.organizer.id === uid);
+		if (!event) throw new Error('Event not found');
+		if (updates.title) event.title = updates.title;
+		if (updates.venue) event.venue = updates.venue;
+		if (updates.city) event.city = updates.city;
+		if (updates.startsAt) event.startsAt = updates.startsAt;
+		if (updates.description !== undefined) event.description = updates.description;
+		return event;
+	},
+	async deleteEvent(userId, eventId) {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		const idx = demo.events.findIndex((e) => e.id === eventId && e.organizer.id === uid);
+		if (idx === -1) throw new Error('Event not found');
+		demo.events.splice(idx, 1);
+	},
+	async broadcastEvent(userId, eventId, message) {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		const event = demo.events.find((e) => e.id === eventId && e.organizer.id === uid);
+		if (!event) throw new Error('Event not found');
+		demo.notifications.unshift({
+			id: `n-${Math.random().toString(36).slice(2, 10)}`,
+			kind: 'event',
+			title: `Announcement · ${event.title}`,
+			body: message.trim(),
+			href: `/events/${event.slug}`,
+			at: new Date().toISOString(),
+			read: false
+		});
+		return 1;
 	}
 };
 
@@ -984,6 +1028,45 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				.single();
 			if (error) throw error;
 			return toEvent(data, toProfile(data.organizer));
+		},
+		async recordEventView(slug) {
+			try {
+				await db.rpc('record_event_view', { p_slug: slug });
+			} catch {
+				// Ignore view counter errors if migration isn't applied yet
+			}
+		},
+		async updateEvent(userId, eventId, updates) {
+			if (!isUuid(userId) || !isUuid(eventId)) throw new Error('Invalid event or organizer ID');
+			const patch: Record<string, unknown> = {};
+			if (updates.title) patch.title = updates.title;
+			if (updates.venue) patch.venue = updates.venue;
+			if (updates.city) patch.city = updates.city;
+			if (updates.startsAt) patch.starts_at = updates.startsAt;
+			if (updates.description !== undefined) patch.description = updates.description;
+			const { data, error } = await db
+				.from('events')
+				.update(patch)
+				.eq('id', eventId)
+				.eq('organizer_id', userId)
+				.select('*, organizer:profiles(*)')
+				.single();
+			if (error) throw error;
+			return toEvent(data, toProfile(data.organizer));
+		},
+		async deleteEvent(userId, eventId) {
+			if (!isUuid(userId) || !isUuid(eventId)) throw new Error('Invalid event or organizer ID');
+			const { error } = await db.from('events').delete().eq('id', eventId).eq('organizer_id', userId);
+			if (error) throw error;
+		},
+		async broadcastEvent(_userId, eventId, message) {
+			if (!isUuid(eventId)) throw new Error('Invalid event ID');
+			const { data, error } = await db.rpc('broadcast_to_event_holders', {
+				p_event_id: eventId,
+				p_body: message.trim()
+			});
+			if (error) throw error;
+			return Number(data?.sent ?? 0);
 		}
 	};
 }
