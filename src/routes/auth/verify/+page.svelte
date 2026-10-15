@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { ArrowLeft, ArrowRight, ShieldCheck, Timer } from '@lucide/svelte';
+	import { ArrowLeft, ArrowRight, Loader2, ShieldCheck, Timer } from '@lucide/svelte';
 
 	let { data, form } = $props();
 
@@ -9,8 +9,24 @@
 	const digits = $state<string[]>(['', '', '', '', '', '']);
 	let inputs: Array<HTMLInputElement | null> = [];
 	let inputsDesk: Array<HTMLInputElement | null> = [];
+	let verifying = $state(false);
+	let resending = $state(false);
 	const code = $derived(digits.join(''));
 	const complete = $derived(code.length === 6);
+
+	function handleVerifyEnhance({ action }: { action: URL }) {
+		const isResend = action.search.includes('resend');
+		if (isResend) resending = true;
+		else verifying = true;
+		return async ({ update }: { update: () => Promise<void> }) => {
+			try {
+				await update();
+			} finally {
+				verifying = false;
+				resending = false;
+			}
+		};
+	}
 
 	/* resend countdown */
 	let resendIn = $state(42);
@@ -149,7 +165,7 @@
 					<a href="/auth/login" class="text-on-surface underline underline-offset-4 hover:text-primary transition-colors">Change</a>
 				</p>
 
-				<form method="POST" action="?/verify" use:enhance class="w-full flex flex-col items-center mt-8">
+				<form method="POST" action="?/verify" use:enhance={handleVerifyEnhance} class="w-full flex flex-col items-center mt-8">
 					<input type="hidden" name="email" value={data.email} />
 					<input type="hidden" name="code" value={code} />
 					<div class="flex items-center justify-center gap-3">
@@ -177,11 +193,11 @@
 						<button
 							type="submit"
 							formaction="?/resend"
-							disabled={resendIn > 0}
+							disabled={resendIn > 0 || resending || verifying}
 							class="{MONO} text-on-surface-variant enabled:text-primary enabled:hover:underline disabled:opacity-50 transition-colors"
 							onclick={() => (resendIn = 60)}
 						>
-							Resend Code
+							{resending ? 'Sending…' : 'Resend Code'}
 						</button>
 					</div>
 
@@ -194,12 +210,17 @@
 					{/if}
 
 					<button
-						disabled={!complete}
+						disabled={!complete || verifying || resending}
 						class="w-full h-12 mt-6 rounded-md bg-primary-container text-on-primary-container text-body-md font-semibold flex items-center justify-center gap-2 transition-colors hover:bg-primary/30 disabled:opacity-40"
 						type="submit"
 					>
-						<span>Verify & Enter OWLTSIDE</span>
-						<ArrowRight class="w-4 h-4" />
+						{#if verifying}
+							<Loader2 class="w-4 h-4 animate-spin" />
+							<span>Verifying code…</span>
+						{:else}
+							<span>Verify & Enter OWLTSIDE</span>
+							<ArrowRight class="w-4 h-4" />
+						{/if}
 					</button>
 					{#if data.demoMode}
 						<p class="{MONO} text-on-surface-variant mt-4">Demo mode: any 6 digits work</p>
@@ -257,7 +278,7 @@
 			{/if}
 		</div>
 
-		<form method="POST" action="?/verify" use:enhance class="flex flex-col gap-space-md">
+		<form method="POST" action="?/verify" use:enhance={handleVerifyEnhance} class="flex flex-col gap-space-md">
 			<input type="hidden" name="email" value={data.email} />
 			<input type="hidden" name="code" value={code} />
 			<div class="flex items-center justify-center gap-2">
@@ -281,20 +302,25 @@
 				<p class="text-body-sm text-error text-center">{form.error}</p>
 			{/if}
 			<button
-				disabled={!complete}
-				class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center transition-all active:scale-[0.98] disabled:opacity-40 glow-primary"
+				disabled={!complete || verifying || resending}
+				class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-40 glow-primary"
 				type="submit"
 			>
-				Verify & Enter
+				{#if verifying}
+					<Loader2 class="w-4.5 h-4.5 animate-spin" />
+					<span>Verifying code…</span>
+				{:else}
+					<span>Verify & Enter</span>
+				{/if}
 			</button>
 			<button
 				class="text-body-sm text-on-surface-variant hover:text-on-surface mx-auto disabled:opacity-40"
 				type="submit"
 				formaction="?/resend"
-				disabled={resendIn > 0}
+				disabled={resendIn > 0 || resending || verifying}
 				onclick={() => (resendIn = 60)}
 			>
-				{resendIn > 0 ? `Resend code in ${mm}:${ss}` : 'Resend code'}
+				{resending ? 'Sending…' : resendIn > 0 ? `Resend code in ${mm}:${ss}` : 'Resend code'}
 			</button>
 			{#if form?.resent}
 				<p class="text-body-sm text-accent-emerald text-center">A fresh code has been sent to your email.</p>

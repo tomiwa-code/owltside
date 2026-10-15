@@ -22,7 +22,21 @@ const communityProfile: Profile = {
 };
 
 const communityData = { ...layoutData, profile: communityProfile, events: [] };
-const ownProfileData = { ...layoutData, profile: null, tickets: [], events: [] };
+const ownProfileData = {
+	...layoutData,
+	session: {
+		userId: 'u-ada',
+		email: 'ada@owltside.app',
+		handle: 'adaobi',
+		name: 'Ada Obi',
+		role: 'attendee' as const,
+		avatarUrl: null
+	},
+	profile: null,
+	tickets: [],
+	events: []
+};
+const guestProfileData = { ...layoutData, session: null, profile: null, tickets: [], events: [] };
 
 const rowButtons = () =>
 	Array.from(document.querySelectorAll('a[href^="/users/"]')).map(
@@ -94,5 +108,13 @@ describe('follow lists', () => {
 		const labels = rowButtons();
 		expect(labels.length).toBeGreaterThan(0);
 		expect(labels.every((label) => label === 'Follow' || label === 'Following')).toBe(true);
+	});
+
+	it('guest profile: prompts the guest to sign in and does not show dummy followers', () => {
+		const { container } = render(ProfilePage, { props: { data: guestProfileData } });
+		expect(container.textContent).toContain('Sign in to view your profile');
+		expect(container.querySelector('a[href="/auth/login"]')).not.toBeNull();
+		expect(container.querySelector('a[href="/auth/signup"]')).not.toBeNull();
+		expect(container.textContent).not.toContain('342');
 	});
 });

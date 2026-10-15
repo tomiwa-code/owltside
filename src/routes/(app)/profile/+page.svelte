@@ -34,12 +34,13 @@
 	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 
 	let { data } = $props();
-	const session = $derived(page.data.session);
+	const session = $derived((data as { session?: typeof page.data.session }).session ?? page.data.session);
+	const isDemoMode = $derived(Boolean((data as { demoMode?: boolean }).demoMode ?? page.data.demoMode));
 	const isFullyVerified = $derived(!!session && Object.values(appSettings.value.verification).every(Boolean));
 	const hasProfileDraft = $derived(profileDraft.value.hasChanges);
 	const name = $derived(hasProfileDraft ? profileDraft.value.name : (data.profile?.name ?? session?.name ?? 'Guest Explorer'));
 	const handle = $derived(hasProfileDraft ? profileDraft.value.username : (data.profile?.handle ?? session?.handle ?? 'guest'));
-	const bio = $derived(hasProfileDraft ? profileDraft.value.bio : (data.profile?.bio ?? 'Chasing good sound and good software across Lagos.'));
+	const bio = $derived(hasProfileDraft ? profileDraft.value.bio : (data.profile?.bio ?? (session ? 'Chasing good sound and good software across Lagos.' : '')));
 	const city = $derived(hasProfileDraft ? profileDraft.value.city : (data.profile?.city ?? 'Lagos'));
 	const profileLink = $derived(hasProfileDraft ? profileDraft.value.link : (data.profile?.link ?? ''));
 	const interests = $derived(hasProfileDraft ? profileDraft.value.interests : (data.profile?.interests ?? []));
@@ -47,6 +48,9 @@
 	const bannerPhoto = $derived(profileAppearance.value.bannerData || data.profile?.bannerUrl || null);
 	const lastUsernameChange = $derived(profileDraft.value.usernameChangedAt ?? data.profile?.usernameChangedAt ?? session?.usernameChangedAt ?? null);
 	const usernameCooldownDays = $derived(lastUsernameChange ? Math.max(0, Math.ceil((new Date(lastUsernameChange).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000))) : 0);
+
+	const followersCount = $derived(data.profile?.followers ?? 0);
+	const followingCount = $derived((data.profile?.following ?? 0) + follows.value.length);
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
@@ -70,11 +74,13 @@
 	let followingOpen = $state(false);
 
 	let followingProfiles = $derived.by(() => {
+		if (!session) return [];
 		const followed = new Set(follows.value);
 		const matched = mockProfiles.filter((p) => followed.has(p.id));
-		return matched.length ? matched : mockProfiles.slice(0, 4);
+		if (matched.length) return matched;
+		return isDemoMode ? mockProfiles.slice(0, 4) : [];
 	});
-	let followersProfiles = $derived(mockProfiles.slice().reverse());
+	let followersProfiles = $derived(session && isDemoMode ? mockProfiles.slice().reverse() : []);
 	const interestChoices = ['Afrobeats', 'Amapiano', 'Live music', 'Nightlife', 'Tech', 'Art & design', 'Comedy', 'Food', 'Fashion', 'Film', 'Workshops', 'Fitness'];
 
 	// month grid for the current month
@@ -267,6 +273,30 @@
 		</div>
 	</header>
 
+	{#if !session}
+		<div class="mx-auto w-full max-w-xl px-6 py-20 flex-1 flex flex-col items-center justify-center text-center">
+			<section class="w-full rounded-2xl border border-surface-glass-border bg-surface-container p-10 flex flex-col items-center gap-5">
+				<div class="w-16 h-16 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center glow-primary">
+					<ShieldCheck class="w-8 h-8" />
+				</div>
+				<div>
+					<span class="{MONO} text-on-surface-variant">Guest Session</span>
+					<h1 class="font-display text-headline-lg text-on-surface mt-2">Sign in to view your profile</h1>
+					<p class="text-body-md text-on-surface-variant mt-2 max-w-md">
+						Sign in or create an account to claim your @handle, manage your pass calendar, and sync your ticket wallet across devices.
+					</p>
+				</div>
+				<div class="flex flex-col sm:flex-row items-center gap-3 w-full pt-2">
+					<a href="/auth/login" class="w-full sm:flex-1 h-12 rounded-lg bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center transition-colors hover:bg-primary-container glow-primary">
+						Sign In
+					</a>
+					<a href="/auth/signup" class="w-full sm:flex-1 h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface font-semibold text-body-md flex items-center justify-center hover:border-primary/40 transition-colors">
+						Create Account
+					</a>
+				</div>
+			</section>
+		</div>
+	{:else}
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-10 pb-2 flex flex-wrap items-end justify-between gap-4">
 		<div class="min-w-0">
 			<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
@@ -310,9 +340,6 @@
 						<span class="flex items-center flex-wrap gap-2">
 							<span class="font-display text-headline-lg text-on-surface tracking-tight">{name}</span>
 							{#if isFullyVerified}<BadgeCheck class="w-5 h-5 text-tertiary shrink-0" aria-label="Verified member" />{/if}
-							{#if !session}
-								<span class="px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant {MONO}">Guest</span>
-							{/if}
 						</span>
 						<span class="{MONO} text-outline block mt-1.5">@{handle} • {city}</span>
 						<span class="block text-body-md text-on-surface-variant mt-2 leading-relaxed max-w-xl">{bio}</span>
@@ -325,15 +352,15 @@
 				</span>
 				<span class="flex items-center gap-3 flex-wrap">
 					<span class="rounded-lg border border-surface-glass-border bg-surface-container-high/60 px-6 py-3 text-center">
-						<span class="block font-display text-headline-md font-semibold text-primary">{upcoming.length + (data.tickets?.length ?? 0)}</span>
+						<span class="block font-display text-headline-md font-semibold text-primary">{data.tickets?.length ?? 0}</span>
 						<span class="{MONO} text-on-surface-variant block mt-0.5">Tickets</span>
 					</span>
 					<button type="button" onclick={() => (followingOpen = true)} class="rounded-lg border border-surface-glass-border bg-surface-container-high/60 px-6 py-3 text-center hover:bg-surface-container-high transition-colors text-left">
-						<span class="block font-display text-headline-md font-semibold text-on-surface">{follows.value.length + 86}</span>
+						<span class="block font-display text-headline-md font-semibold text-on-surface">{followingCount}</span>
 						<span class="{MONO} text-on-surface-variant block mt-0.5">Following</span>
 					</button>
 					<button type="button" onclick={() => (followersOpen = true)} class="rounded-lg border border-surface-glass-border bg-surface-container-high/60 px-6 py-3 text-center hover:bg-surface-container-high transition-colors text-left">
-						<span class="block font-display text-headline-md font-semibold text-on-surface">342</span>
+						<span class="block font-display text-headline-md font-semibold text-on-surface">{followersCount}</span>
 						<span class="{MONO} text-on-surface-variant block mt-0.5">Followers</span>
 					</button>
 				</span>
@@ -514,6 +541,7 @@
 	</div>
 
 	{/if}
+	{/if}
 	<footer class="mt-4 border-t border-surface-glass-border">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
 			<span class="flex items-center gap-3">
@@ -543,6 +571,30 @@
 	</header>
 
 	<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
+		{#if !session}
+			<div class="flex-1 flex flex-col items-center justify-center px-gutter py-12 text-center">
+				<div class="w-full max-w-sm rounded-2xl border border-surface-glass-border bg-surface-container p-6 flex flex-col items-center gap-4">
+					<div class="w-14 h-14 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center glow-primary">
+						<ShieldCheck class="w-7 h-7" />
+					</div>
+					<div>
+						<span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Guest Session</span>
+						<h1 class="font-display text-headline-lg-mobile text-on-surface mt-1">Sign in to view your profile</h1>
+						<p class="text-body-sm text-on-surface-variant mt-1.5">
+							Sign in or create an account to claim your @handle, manage your pass calendar, and sync your ticket wallet across devices.
+						</p>
+					</div>
+					<div class="flex flex-col gap-2.5 w-full pt-2">
+						<a href="/auth/login" class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center transition-all active:scale-[0.98] glow-primary">
+							Sign In
+						</a>
+						<a href="/auth/signup" class="w-full h-12 rounded-full bg-surface-base border border-surface-glass-border text-on-surface font-semibold text-body-md flex items-center justify-center transition-all active:scale-[0.98]">
+							Create Account
+						</a>
+					</div>
+				</div>
+			</div>
+		{:else}
 		<div class="flex flex-col w-full relative md:max-w-3xl md:mx-auto">
 			<!-- cover -->
 			<div class="relative w-full h-44 overflow-hidden" style="background: linear-gradient(140deg, #312e81 0%, #1e1b4b 45%, #0b1326 100%);">
@@ -565,9 +617,6 @@
 					<div class="flex items-center flex-wrap gap-2">
 							<h1 class="font-display text-headline-lg-mobile text-on-surface tracking-tight">{name}</h1>
 						{#if isFullyVerified}<BadgeCheck class="w-5 h-5 text-tertiary shrink-0" aria-label="Verified member" />{/if}
-						{#if !session}
-							<span class="px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-label-badge">Guest</span>
-						{/if}
 					</div>
 					<p class="font-code text-label-code text-outline mt-0.5">@{handle} • {city}</p>
 				</div>
@@ -585,15 +634,15 @@
 				<!-- stats -->
 				<div class="grid grid-cols-3 gap-2 mt-4 bg-surface-container-low rounded-xl p-3 shadow-md">
 					<div class="flex flex-col items-center justify-center p-1 rounded-lg">
-						<span class="font-display text-headline-md text-primary font-semibold">{upcoming.length + (data.tickets?.length ?? 0)}</span>
+						<span class="font-display text-headline-md text-primary font-semibold">{data.tickets?.length ?? 0}</span>
 						<span class="text-label-badge text-on-surface-variant tracking-wider uppercase">Tickets</span>
 					</div>
 					<button type="button" onclick={() => (followingOpen = true)} class="flex flex-col items-center justify-center p-1 rounded-lg hover:bg-surface-container transition-colors active:scale-95">
-						<span class="font-display text-headline-md text-on-surface font-semibold">{follows.value.length + 86}</span>
+						<span class="font-display text-headline-md text-on-surface font-semibold">{followingCount}</span>
 						<span class="text-label-badge text-on-surface-variant tracking-wider uppercase">Following</span>
 					</button>
 					<button type="button" onclick={() => (followersOpen = true)} class="flex flex-col items-center justify-center p-1 rounded-lg hover:bg-surface-container transition-colors active:scale-95">
-						<span class="font-display text-headline-md text-on-surface font-semibold">342</span>
+						<span class="font-display text-headline-md text-on-surface font-semibold">{followersCount}</span>
 						<span class="text-label-badge text-on-surface-variant tracking-wider uppercase">Followers</span>
 					</button>
 				</div>
@@ -667,6 +716,7 @@
 				{/if}
 			</div>
 		</div>
+		{/if}
 	</main>
 </div>
 
@@ -763,7 +813,7 @@
 	close={closeCrop}
 />
 
-<Sheet open={followersOpen} title="Followers • 342" close={() => (followersOpen = false)}>
+<Sheet open={followersOpen} title="Followers • {followersCount}" close={() => (followersOpen = false)}>
 	<div class="flex flex-col gap-3 pt-2">
 		<p class="text-body-sm text-on-surface-variant flex items-center gap-1.5"><Users class="w-4 h-4" /> People following you</p>
 		{#each followersProfiles as prof (prof.id)}
@@ -776,10 +826,13 @@
 				<button type="button" class="text-label-badge px-3 py-1.5 rounded-full bg-primary text-on-primary font-semibold shrink-0" onclick={(e) => { e.preventDefault(); toggleIn(follows, prof.id); }}>{follows.value.includes(prof.id) ? 'Following' : 'Follow'}</button>
 			</a>
 		{/each}
+		{#if followersProfiles.length === 0}
+			<p class="text-body-sm text-on-surface-variant text-center py-6">No followers yet.</p>
+		{/if}
 	</div>
 </Sheet>
 
-<Sheet open={followingOpen} title="Following • {follows.value.length + 86}" close={() => (followingOpen = false)}>
+<Sheet open={followingOpen} title="Following • {followingCount}" close={() => (followingOpen = false)}>
 	<div class="flex flex-col gap-3 pt-2">
 		<p class="text-body-sm text-on-surface-variant flex items-center gap-1.5"><Users class="w-4 h-4" /> People you follow</p>
 		{#each followingProfiles as prof (prof.id)}
