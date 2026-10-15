@@ -137,7 +137,7 @@
 	]);
 
 	function share() {
-		void navigator.clipboard?.writeText(`https://owltside.app/@${handle}`);
+		void navigator.clipboard?.writeText(`https://owltside.com/${handle}`);
 		toast('Profile link copied', 'success');
 	}
 	async function copyText(value: string, label: string) {
@@ -346,7 +346,7 @@
 						<span class="block text-body-md text-on-surface-variant mt-2 leading-relaxed max-w-xl">{bio}</span>
 						{#if interests.length}<span class="flex flex-wrap gap-1.5 mt-2">{#each interests as interest (interest)}<span class="text-label-badge px-2 py-1 rounded-full bg-primary/10 text-primary">{interest}</span>{/each}</span>{/if}
 						<span class="flex items-center gap-4 mt-2.5 flex-wrap">
-							<span class="inline-flex items-center gap-1.5 {MONO} text-tertiary"><Globe class="w-3.5 h-3.5" /> owltside.app/@{handle}</span>
+							<span class="inline-flex items-center gap-1.5 {MONO} text-tertiary"><Globe class="w-3.5 h-3.5" /> Owltside.com/{handle}</span>
 							{#if profileLink}<a href={profileLink} target="_blank" rel="noreferrer" class="inline-flex items-center gap-1.5 {MONO} text-on-surface-variant hover:text-primary"><Link2 class="w-3.5 h-3.5" /> {profileLink}</a>{:else}<span class="inline-flex items-center gap-1.5 {MONO} text-on-surface-variant"><Link2 class="w-3.5 h-3.5" /> @{handle}</span>{/if}
 						</span>
 					</span>
@@ -503,8 +503,8 @@
 				<div class="flex flex-col gap-2.5 mt-4">
 					<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5">
 						<Globe class="w-4 h-4 text-tertiary shrink-0" />
-						<span class="flex-1 min-w-0 {MONO} text-on-surface truncate">owltside.app/@{handle}</span>
-						<button class="w-8 h-8 rounded-md flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors shrink-0" aria-label="Copy profile link" onclick={() => copyText(`https://owltside.app/@${handle}`, 'Profile link')}>
+						<span class="flex-1 min-w-0 {MONO} text-on-surface truncate">Owltside.com/{handle}</span>
+						<button class="w-8 h-8 rounded-md flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors shrink-0" aria-label="Copy profile link" onclick={() => copyText(`https://owltside.com/${handle}`, 'Profile link')}>
 							<Copy class="w-3.5 h-3.5" />
 						</button>
 					</div>
@@ -627,7 +627,7 @@
 
 				<div class="flex items-center gap-4 mt-2.5 flex-wrap">
 					<span class="inline-flex items-center gap-1 text-label-badge text-tertiary">
-						<Globe class="w-3.5 h-3.5" /> owltside.app/@{handle}
+						<Globe class="w-3.5 h-3.5" /> Owltside.com/{handle}
 					</span>
 					{#if profileLink}<a href={profileLink} target="_blank" rel="noreferrer" class="inline-flex items-center gap-1 text-label-badge text-on-surface-variant hover:text-primary"><Link2 class="w-3.5 h-3.5" /> {profileLink}</a>{:else}<span class="inline-flex items-center gap-1 text-label-badge text-on-surface-variant"><Link2 class="w-3.5 h-3.5" /> @{handle}</span>{/if}
 				</div>
