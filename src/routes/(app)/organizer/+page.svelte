@@ -200,9 +200,15 @@
 				<button class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={exportCsv}>
 					<Download class="w-4 h-4 text-on-surface-variant" /><span>Export Attendee CSV</span>
 				</button>
+				{#if mainEvent?.live}
 				<a href="/organizer/scan" class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors">
 					<ScanBarcode class="w-4 h-4 text-on-surface-variant" /><span>Open Camera QR Scanner</span>
 				</a>
+				{:else}
+				<span class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high/50 border border-surface-glass-border text-on-surface-variant text-body-sm opacity-60 cursor-not-allowed" title="No live event – create and activate an event to enable scanning">
+					<ScanBarcode class="w-4 h-4 text-on-surface-variant" /><span>Open Camera QR Scanner</span>
+				</span>
+				{/if}
 				<a href="/organizer/create" class="h-10 px-4 rounded-lg flex items-center gap-2 bg-on-surface text-surface-base text-body-sm font-semibold hover:opacity-90 transition-opacity">
 					<Plus class="w-4 h-4" /><span>Create New Event</span>
 				</a>
@@ -262,7 +268,7 @@
 			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col">
 				<div class="flex items-center justify-between gap-2">
 					<span class="{MONO} text-on-surface-variant">Available Payout</span>
-					<span class="{MONO} text-on-surface-variant">GTB ••••4821</span>
+					<span class="{MONO} text-on-surface-variant">{#if appSettings.value.verification.payoutAccount && appSettings.value.payout.bank}{appSettings.value.payout.bank} ••{appSettings.value.payout.accountNumber.slice(-4)}{:else}—{/if}</span>
 				</div>
 				<span class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-4">{formatMoney(stats.payout)}</span>
 				<span class="text-body-sm text-on-surface-variant mt-1.5">Cleared settlement balance</span>
@@ -274,6 +280,15 @@
 		</div>
 	{/if}
 
+	{#if !mainEvent}
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-2">
+		<div class="rounded-xl border border-surface-glass-border bg-surface-container p-10 flex flex-col items-center gap-4 text-center">
+			<div class="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center"><Megaphone class="w-6 h-6 text-on-surface-variant" /></div>
+			<div><h2 class="font-display text-headline-md text-on-surface">No events yet</h2><p class="text-body-sm text-on-surface-variant mt-1 max-w-md">Launch the wizard and mint your first gate-ready event in five steps.</p></div>
+			<a href="/organizer/create" class="h-11 px-6 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center">Create event</a>
+		</div>
+	</div>
+	{/if}
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 grid xl:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
 		<div class="flex flex-col gap-6 min-w-0">
 			{#if mainEvent}
@@ -409,6 +424,15 @@
 						{/each}
 					</div>
 				</section>
+			{:else}
+				<div class="rounded-xl border border-surface-glass-border bg-surface-container p-6 opacity-60">
+					<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-outline-variant"></span><span class="font-display text-headline-md text-on-surface">Live Check-in Ledger</span></div>
+					<p class="text-body-sm text-on-surface-variant mt-3">No live stream — create an event to see check-ins.</p>
+				</div>
+				<div class="rounded-xl border border-surface-glass-border bg-surface-container p-6 opacity-60">
+					<h2 class="font-display text-headline-md text-on-surface">Ticket Tier Breakdown</h2>
+					<p class="text-body-sm text-on-surface-variant mt-2">No tiers yet — create an event to configure ticket categories.</p>
+				</div>
 			{/if}
 		</div>
 
@@ -458,6 +482,8 @@
 							</span>
 							<span class="{MONO} text-on-surface-variant shrink-0">{term.ms}</span>
 						</div>
+					{:else}
+						<p class="text-body-sm text-on-surface-variant">No active terminals reported.</p>
 					{/each}
 				</div>
 			</section>
@@ -465,6 +491,34 @@
 			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
 				<h2 class="font-display text-headline-md text-on-surface">Management Shortcuts</h2>
 				<div class="flex flex-col gap-2.5 mt-4">
+					<a href="/organizer/create" class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3 hover:bg-surface-container-high transition-colors">
+						<PlusCircle class="w-4 h-4 text-on-surface-variant shrink-0" />
+						<span class="flex-1 min-w-0">
+							<span class="block text-body-sm font-medium text-on-surface">Create New Event</span>
+							<span class="block text-xs text-on-surface-variant mt-0.5">Launch wizard: Tickets, pricing & venue layout</span>
+						</span>
+						<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
+					</a>
+					{#if mainEvent}
+					<a href="/organizer/events/{mainEvent.id}" class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3 hover:bg-surface-container-high transition-colors">
+						<Users class="w-4 h-4 text-on-surface-variant shrink-0" />
+						<span class="flex-1 min-w-0">
+							<span class="block text-body-sm font-medium text-on-surface">Attendee Roster & Export CSV</span>
+							<span class="block text-xs text-on-surface-variant mt-0.5">Manage guest lists, manual check-ins & data exports</span>
+						</span>
+						<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
+					</a>
+					{:else}
+					<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/30 px-3 py-3 opacity-60">
+						<Users class="w-4 h-4 text-on-surface-variant shrink-0" />
+						<span class="flex-1 min-w-0">
+							<span class="block text-body-sm font-medium text-on-surface">Attendee Roster & Export CSV</span>
+							<span class="block text-xs text-on-surface-variant mt-0.5">No event yet — create one to manage roster</span>
+						</span>
+						<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
+					</div>
+					{/if}
+					{#if mainEvent}
 					<button class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3 text-left hover:bg-surface-container-high transition-colors" onclick={() => (broadcastOpen = true)}>
 						<Megaphone class="w-4 h-4 text-on-surface-variant shrink-0" />
 						<span class="flex-1 min-w-0">
@@ -473,6 +527,16 @@
 						</span>
 						<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
 					</button>
+					{:else}
+					<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/30 px-3 py-3 opacity-60">
+						<Megaphone class="w-4 h-4 text-on-surface-variant shrink-0" />
+						<span class="flex-1 min-w-0">
+							<span class="block text-body-sm font-medium text-on-surface">Broadcast Announcement</span>
+							<span class="block text-xs text-on-surface-variant mt-0.5">No holders yet — create an event first</span>
+						</span>
+						<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
+					</div>
+					{/if}
 					<button class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3 text-left hover:bg-surface-container-high transition-colors" onclick={() => (staffOpen = true)}>
 						<IdCard class="w-4 h-4 text-on-surface-variant shrink-0" />
 						<span class="flex-1 min-w-0">
@@ -507,17 +571,20 @@
 					<div class="flex flex-col gap-2 mt-4 pt-4 border-t border-surface-glass-border text-body-sm">
 						<div class="flex items-center justify-between gap-3">
 							<span class="text-on-surface-variant">Split Mechanism</span>
-							<span class="text-on-surface">Paystack Split Active</span>
+							<span class="text-on-surface">{appSettings.value.verification.payoutAccount ? 'Paystack Split Active' : '—'}</span>
 						</div>
 						<div class="flex items-center justify-between gap-3">
 							<span class="text-on-surface-variant">Protocol Processing Fee</span>
-							<span class="text-on-surface">0.00% (Genesis Tier)</span>
+							<span class="text-on-surface">{appSettings.value.verification.payoutAccount ? '0.00% (Genesis Tier)' : '—'}</span>
 						</div>
 						<div class="flex items-center justify-between gap-3">
 							<span class="text-on-surface-variant">Next Automated Sweep</span>
-							<span class="text-on-surface">Tonight at 23:59 WAT</span>
+							<span class="text-on-surface">{appSettings.value.verification.payoutAccount ? 'Tonight at 23:59 WAT' : '—'}</span>
 						</div>
 					</div>
+					{#if !appSettings.value.verification.payoutAccount || !appSettings.value.payout.bank}
+					<p class="text-xs text-on-surface-variant mt-3">Verify your payout account in Settings → Verification to enable settlements.</p>
+					{/if}
 				</div>
 			</section>
 		</div>
