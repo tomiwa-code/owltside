@@ -51,31 +51,64 @@
 	import { formatMoney } from '$lib/utils/money';
 	import { fmtDate } from '$lib/utils/dates';
 	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
+	import { browser } from '$app/environment';
 	import { toast } from '$lib/state/toast.svelte';
+	import { appSettings } from '$lib/state/settings.svelte';
 	import { categories } from '$components/iconMap';
 	import type { Profile, WizardSpeaker } from '$lib/types';
 
 	let { form } = $props();
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
-	let dateEnd = $state('2026-11-22');
+	let dateEnd = $state('');
 	const demoCover = { from: '#4c1d95', to: '#0b1326', icon: 'audio-waveform' };
+	let coverUrl = $state<string | null>(null);
+	let coverName = $state<string | null>(null);
+	let coverError = $state('');
+
+	function handleCoverSelect(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0] ?? null;
+		input.value = '';
+		if (!file) return;
+		if (!file.type.startsWith('image/')) {
+			coverError = 'Please select an image file (PNG, WEBP, AVIF).';
+			toast(coverError, 'error');
+			return;
+		}
+		if (file.size > 12 * 1024 * 1024) {
+			coverError = 'Image must be under 12MB.';
+			toast(coverError, 'error');
+			return;
+		}
+		const reader = new FileReader();
+		reader.onload = () => {
+			coverUrl = String(reader.result);
+			coverName = file.name;
+			coverError = '';
+			toast('Cover image loaded — will be saved with your event', 'success');
+		};
+		reader.readAsDataURL(file);
+	}
+	function clearCover() {
+		coverUrl = null;
+		coverName = null;
+		coverError = '';
+	}
+
 
 	/* ── draft state ─────────────────────────────────────────── */
 	let step = $state(1);
-	let title = $state('Pulse AI Summit 2026');
-	let date = $state('2026-11-20');
-	let venue = $state('The Civic Centre');
-	let city = $state('Lagos');
+	let title = $state('');
+	let date = $state('');
+	let venue = $state('');
+	let city = $state('');
 	let description = $state('');
-	let selectedCategory = $state('tech');
+	let selectedCategory = $state('');
 	let customCategory = $state('');
 	const categoryOptions = categories.filter((category) => category.id !== 'all');
 
-	let tiers = $state([
-		{ name: 'Early Bird Access', price: 25000, capacity: 300, benefits: 'Front-row seating', editing: false },
-		{ name: 'VIP Floor Pass', price: 75000, capacity: 100, benefits: 'Lounge + speaker meet', editing: false }
-	]);
+	let tiers = $state<Array<{ name: string; price: number; capacity: number; benefits: string; editing: boolean }>>([]);
 	let promos = $state<Array<{ code: string; percent: number; maxUses: number }>>([]);
 	let promoCode = $state('');
 	let promoPercent = $state('');
@@ -86,22 +119,11 @@
 	let broadcast = $state(true);
 	let launchMode = $state<'now' | 'staged'>('now');
 
-	let days = $state([
-		{
-			label: 'Nov 20',
-			sessions: [
-				{ time: '09:00', title: 'Doors & Registration', stage: 'Main Hall' },
-				{ time: '10:30', title: 'Keynote: The Agentic Era', stage: 'Mainstage Hall A' }
-			]
-		}
-	]);
+	let days = $state<Array<{ label: string; sessions: Array<{ time: string; title: string; stage: string }> }>>([]);
 	let dayIdx = $state(0);
 	let newSession = $state({ time: '12:00', title: '', stage: '' });
 
-	let gates = $state([
-		{ name: 'Fast-Pass Turnstiles', staff: 4 },
-		{ name: 'VIP & Press Entrance', staff: 2 }
-	]);
+	let gates = $state<Array<{ name: string; staff: number }>>([]);
 	let roster = $state<WizardSpeaker[]>([]);
 	let showInviteDialog = $state(false);
 	let inviteName = $state('');
@@ -203,6 +225,44 @@
 	/* ── desktop step 5 (Review & Pre-Flight Clearance) ── */
 	const sessionCount = $derived(days.reduce((s, d) => s + d.sessions.length, 0));
 	const staffTotal = $derived(gates.reduce((s, g) => s + g.staff, 0));
+	const totalChecks = 5;
+	const validatedCount = $derived([title.trim().length > 2, tiers.length > 0, days.reduce((s, d) => s + d.sessions.length, 0) > 0, gates.length > 0, true].filter(Boolean).length);
+	const validated = $derived(validatedCount === totalChecks && canContinue);
+	const stepValidated = $derived(step === 1 ? title.trim().length > 2 && venue.trim().length > 1 : tiers.length > 0);
+
+	function saveDraft() {
+		if (browser) {
+			try { localStorage.setItem('owltside.wizard.draft.v1', draftJson); } catch {}
+		}
+		toast('Draft synced to organizer node', 'success');
+	}
+
+	$effect(() => {
+		if (!browser) return;
+		try {
+			const raw = localStorage.getItem('owltside.wizard.draft.v1');
+			if (!raw) return;
+			const d = JSON.parse(raw);
+			let restored = false;
+			if (d.title && !title) { title = d.title; restored = true; }
+			if (d.venue && !venue) { venue = d.venue; restored = true; }
+			if (d.city && !city) { city = d.city; restored = true; }
+			if (d.date && !date) { date = d.date; restored = true; }
+			if (d.dateEnd && !dateEnd) { dateEnd = d.dateEnd; restored = true; }
+			if (d.description && !description) { description = d.description; restored = true; }
+			if (d.category && !selectedCategory) {
+				if (categoryOptions.some(c => c.id === d.category)) selectedCategory = d.category;
+				else { selectedCategory = 'custom'; customCategory = d.category; }
+				restored = true;
+			}
+			if (Array.isArray(d.tiers) && d.tiers.length && !tiers.length) { tiers = d.tiers.map((x: any) => ({ ...x, editing: false })); restored = true; }
+			if (Array.isArray(d.days) && d.days.length && !days.length) { days = d.days; restored = true; }
+			if (Array.isArray(d.gates) && d.gates.length && !gates.length) { gates = d.gates; restored = true; }
+			if (Array.isArray(d.speakers) && d.speakers.length && !roster.length) { roster = d.speakers; restored = true; }
+			if (Array.isArray(d.promos) && d.promos.length && !promos.length) { promos = d.promos; restored = true; }
+			if (restored) toast('Draft restored from organizer node', 'info');
+		} catch {}
+	});
 
 	function publishHandler() {
 		return async ({ update }: { update: () => Promise<void> }) => {
@@ -289,9 +349,10 @@
 		promos = promos.filter((_, i) => i !== idx);
 	}
 	function addDay() {
-		const d = new Date(`${date}T00:00:00`);
-		d.setDate(d.getDate() + days.length);
-		const label = d.toLocaleDateString('en-NG', { month: 'short', day: 'numeric' });
+		const base = date ? new Date(`${date}T00:00:00`) : new Date();
+		if (isNaN(base.getTime())) base.setTime(Date.now());
+		base.setDate(base.getDate() + days.length);
+		const label = base.toLocaleDateString('en-NG', { month: 'short', day: 'numeric' });
 		days = [...days, { label, sessions: [] }];
 		dayIdx = days.length - 1;
 	}
@@ -361,54 +422,55 @@
 			<div class="flex items-center gap-2 {MONO} text-on-surface-variant min-w-0">
 				<span class="truncate">Protocol Console // 04-Create</span>
 				<span class="text-outline-variant">•</span>
-				<span class="truncate">Draft #EVT-8829-LOS</span>
+				<span class="truncate">Draft • New</span>
 			</div>
 			<div class="flex flex-wrap items-end justify-between gap-4 pt-3">
 				<h1 class="font-display text-headline-lg md:text-[34px] leading-tight text-on-surface">Create Architecture Node</h1>
 				<div class="flex items-center gap-4 pb-1">
 					<span class="{MONO} text-on-surface-variant">Auto-saved 7m ago</span>
-					<button type="button" onclick={() => toast('Draft synced to organizer node', 'success')} class="h-10 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors">
+					<button type="button" onclick={saveDraft} class="h-10 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors">
 						<Save class="w-4 h-4" /> Save Draft
 					</button>
 				</div>
 			</div>
 
-			<!-- stepper -->
+			<!-- stepper (image design 01-05 with subs) -->
 			<div class="grid grid-cols-5 gap-3 pt-6">
 				{#each ([
-					[1, 'Basics & Venue'],
-					[2, 'Tickets & Pricing'],
-					[3, 'Agenda & Lineup'],
-					[4, 'Gate Security'],
-					[5, 'Review & Deploy']
-				] as [number, string][]) as [n, label]}
+					[1, 'Basics & Venue', venue ? venue.slice(0, 18) : 'No venue yet'],
+					[2, 'Tickets & Pools', `${tiers.length} Tiers\u00B7${tiers.reduce((s, tt) => s + (Number(tt.capacity) || 0), 0)} Cap`],
+					[3, 'Schedule & Lineup', `${days.reduce((s, d) => s + d.sessions.length, 0)} Sessions Pinned`],
+					[4, 'Gate Infrastructure', `HMAC 30s\u00B76 Scanners`],
+					[5, 'Review & Deploy', validated ? '100% Validated' : `${validatedCount}/${totalChecks} Checks`]
+				] as [number, string, string][]) as [n, label, sub]}
 					<button
 						type="button"
 						onclick={() => {
 							step = n;
 							scrollTo({ top: 0 });
 						}}
-						class="rounded-lg border p-3 flex items-center gap-2.5 text-left transition-colors
-							{n === step
-								? 'border-surface-glass-border bg-surface-container-high'
+						class="rounded-lg border p-3 flex flex-col gap-1 text-left transition-colors
+							{n == step
+								? 'border-primary/40 bg-surface-container-high'
 								: n < step
-									? 'border-surface-glass-border bg-surface-container'
+									? 'border-accent-emerald/30 bg-surface-container'
 									: 'border-transparent bg-surface-container/40 hover:bg-surface-container'}"
 					>
-						<span
-							class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-code text-label-badge font-bold
-								{n < step
-									? 'bg-surface-container-high text-accent-emerald'
-									: n === step
-										? 'bg-primary text-on-primary'
-										: 'bg-surface-container-high text-on-surface-variant'}"
-						>
-							{#if n < step}<Check class="w-3.5 h-3.5" />{:else}{String(n).padStart(2, '0')}{/if}
+						<span class="flex items-center gap-2.5">
+							<span
+								class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-code text-label-badge font-bold
+									{n < step
+										? 'bg-accent-emerald text-on-primary'
+										: n == step
+											? 'bg-primary text-on-primary'
+											: 'bg-surface-container-high text-on-surface-variant'}"
+							>
+								{#if n < step}<Check class="w-3.5 h-3.5" />{:else}{String(n).padStart(2, '0')}{/if}
+							</span>
+							<span class="{MONO} text-on-surface-variant">Step {String(n).padStart(2, '0')}{n == step ? ' // Active' : n < step ? ' ✓' : ''}</span>
 						</span>
-						<span class="min-w-0">
-							<span class="{MONO} text-on-surface-variant block">Step {String(n).padStart(2, '0')}{n === step ? ' // Active' : ''}</span>
-							<span class="text-body-sm font-semibold text-on-surface truncate block">{label}</span>
-						</span>
+						<span class="text-body-sm font-semibold text-on-surface truncate">{label}</span>
+						<span class="font-code text-[11px] tracking-[0.08em] truncate {n == step ? 'text-primary' : n < step ? 'text-accent-emerald' : 'text-on-surface-variant'}">{sub}{n === 5 && Number(step) === 5 && validated ? ' · LAUNCH READY' : ''}</span>
 					</button>
 				{/each}
 			</div>
@@ -418,6 +480,7 @@
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8 grid lg:grid-cols-[minmax(0,1fr)_400px] xl:grid-cols-[minmax(0,1fr)_420px] gap-6 xl:gap-8 items-start">
 			<!-- left column -->
 			<div class="flex flex-col gap-6 min-w-0">
+				{#if step === 1}
 				<!-- BLOCK A -->
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6 xl:p-7 flex flex-col gap-6">
 					<div class="flex items-center justify-between gap-4">
@@ -443,6 +506,7 @@
 					<div class="flex flex-col gap-2">
 						<label for="event-category-desktop" class="{MONO} text-on-surface-variant">Category</label>
 						<select id="event-category-desktop" bind:value={selectedCategory} class="w-full h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50">
+							<option value="" disabled>Select category</option>
 							{#each categoryOptions as category (category.id)}<option value={category.id}>{category.label}</option>{/each}
 							<option value="custom">Custom category…</option>
 						</select>
@@ -497,12 +561,13 @@
 								</label>
 								<label for="event-city-desktop" class="min-w-0 text-label-badge text-on-surface-variant">City / state
 									<select id="event-city-desktop" bind:value={city} required class="block w-full bg-transparent text-body-md text-on-surface focus:outline-none">
+										<option value="" disabled>Select state</option>
 										{#each NIGERIAN_STATES as state (state)}
 											<option value={state}>{state} State</option>
 										{/each}
 									</select>
 								</label>
-								<span class="col-span-2 block font-code text-[11px] tracking-[0.08em] text-on-surface-variant pt-0.5 truncate">Water Corporation Dr, Annex 106104 • 6.4253° N, 3.4219° E • {city}</span>
+								<span class="col-span-2 block font-code text-[11px] tracking-[0.08em] text-on-surface-variant pt-0.5 truncate">{venue || 'Venue TBA'} • {city || 'City not set'} • 6.4253° N, 3.4219° E</span>
 							</div>
 							<button type="button" onclick={() => toast('Coordinate calibration locked to venue node', 'info')} class="{MONO} text-on-surface underline underline-offset-4 hover:text-primary shrink-0">Calibrate</button>
 						</div>
@@ -529,11 +594,22 @@
 							<span>Keyframe Artwork / 16:9 Banner</span>
 							<span class="normal-case tracking-normal font-code text-[11px]">Required Aspect Ratio 1280x720</span>
 						</span>
-						<button
-							type="button"
-							onclick={() => toast('Cover studio ships with the media node', 'info')}
-							class="rounded-lg border border-dashed border-outline-variant/50 bg-surface-container-low p-10 flex flex-col items-center gap-3 hover:border-primary/40 transition-colors"
-						>
+						{#if coverUrl}
+						<div class="rounded-lg border border-surface-glass-border bg-surface-container-low overflow-hidden">
+							<img src={coverUrl} alt="Event cover preview" class="w-full h-56 object-cover" />
+							<div class="flex items-center justify-between gap-3 px-4 py-3 bg-surface-base border-t border-surface-glass-border">
+								<span class="text-body-sm text-on-surface truncate">{coverName}</span>
+								<span class="flex items-center gap-2">
+									<label class="h-9 px-3 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 cursor-pointer hover:border-primary/40">
+										<CloudUpload class="w-4 h-4" /> Replace
+										<input type="file" accept="image/*" class="sr-only" onchange={handleCoverSelect} />
+									</label>
+									<button type="button" onclick={clearCover} class="h-9 px-3 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm text-on-surface-variant hover:text-error">Remove</button>
+								</span>
+							</div>
+						</div>
+						{:else}
+						<label class="rounded-lg border border-dashed border-outline-variant/50 bg-surface-container-low p-10 flex flex-col items-center gap-3 hover:border-primary/40 transition-colors cursor-pointer">
 							<span class="w-12 h-12 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface-variant flex items-center justify-center">
 								<CloudUpload class="w-5 h-5" />
 							</span>
@@ -543,10 +619,13 @@
 								<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">16:9 Auto-Crop</span>
 								<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">Metadata Encrypted</span>
 							</span>
-						</button>
+							<input type="file" accept="image/*" class="sr-only" onchange={handleCoverSelect} />
+						</label>
+						{/if}
+						{#if coverError}<p class="text-body-sm text-error" role="alert">{coverError}</p>{/if}
 					</div>
 				</section>
-
+				{:else if step === 2}
 				<!-- BLOCK B -->
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6 xl:p-7 flex flex-col gap-5">
 					<div class="flex items-center justify-between gap-4">
@@ -690,6 +769,7 @@
 						{/if}
 					</div>
 				</section>
+				{/if}
 			</div>
 
 			<!-- right rail: live feed simulation -->
@@ -704,16 +784,20 @@
 					</div>
 					<div class="p-5 flex flex-col gap-5">
 						<div class="relative rounded-lg overflow-hidden border border-surface-glass-border">
+							{#if coverUrl}
+							<img src={coverUrl} alt="Event cover preview" class="w-full h-44 object-cover" />
+							{:else}
 							<Cover cover={demoCover} class="w-full h-44" iconClass="w-12 h-12 text-white/30" />
+							{/if}
 							<div class="absolute top-3 left-3 flex items-center gap-2">
-								<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{categoryLabel || 'Tech & AI'}</span>
-								<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{city} WAT</span>
+								<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{categoryLabel || 'Category'}</span>
+								<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{city || 'City'} WAT</span>
 							</div>
 							<div class="absolute top-3 right-3 hidden xl:flex flex-col gap-1 w-40 rounded-lg border border-surface-glass-border bg-surface-base/85 backdrop-blur-md p-2.5">
 								<span class="{MONO} text-on-surface-variant">Event Title</span>
 								<span class="text-[11px] text-on-surface truncate">{title || 'Untitled node'}</span>
 								<span class="{MONO} text-on-surface-variant pt-1">Date &amp; Time</span>
-								<span class="text-[11px] text-on-surface">{fmtDate(date)} → {fmtDate(dateEnd)}</span>
+								<span class="text-[11px] text-on-surface">{date ? fmtDate(date) : 'Date TBA'} → {dateEnd ? fmtDate(dateEnd) : 'Date TBA'}</span>
 								<span class="{MONO} text-on-surface-variant pt-1">Capacity</span>
 								<span class="text-[11px] text-on-surface">{totalCapacity.toLocaleString()} slots</span>
 							</div>
@@ -722,7 +806,7 @@
 							<h3 class="font-display text-headline-md text-on-surface leading-tight">{title || 'Untitled node'}</h3>
 							<span class="flex items-center gap-1.5 text-body-sm text-on-surface-variant pt-1 min-w-0">
 								<MapPin class="w-3.5 h-3.5 shrink-0" />
-								<span class="truncate">{venue || 'Venue TBA'}, {city} • {fmtDate(date)}–{fmtDate(dateEnd)}</span>
+								<span class="truncate">{venue || 'Venue TBA'}, {city} • {date ? fmtDate(date) : 'Date TBA'}–{dateEnd ? fmtDate(dateEnd) : 'Date TBA'}</span>
 							</span>
 						</div>
 						<div class="flex items-end justify-between gap-4 border-t border-surface-glass-border pt-4">
@@ -791,28 +875,48 @@
 		<div class="sticky bottom-0 z-40 mt-8 border-t border-surface-glass-border bg-surface-base/90 backdrop-blur-xl">
 			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-3 flex flex-wrap items-center justify-between gap-4">
 				<div class="flex items-center gap-4">
-					<button type="button" onclick={back} class="h-11 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors">
-						<ArrowLeft class="w-4 h-4" /> Save &amp; Exit Draft
-					</button>
+					{#if step === 1}
+						<button type="button" onclick={() => { saveDraft(); back(); }} class="h-11 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors">
+							<ArrowLeft class="w-4 h-4" /> Save &amp; Exit Draft
+						</button>
+					{:else}
+						<button type="button" onclick={() => { step = 1; scrollTo({ top: 0 }); }} class="h-11 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors">
+							<ArrowLeft class="w-4 h-4" /> Back: Basics &amp; Venue
+						</button>
+					{/if}
 					<span class="{MONO} text-on-surface-variant hidden lg:block">Next auto-sync in 18s</span>
 				</div>
 				<div class="flex items-center gap-5">
 					<div class="hidden md:flex flex-col items-end leading-tight">
-						<span class="{MONO} text-on-surface">Step 02 of 05 completed</span>
-						<span class="text-body-sm text-on-surface-variant pt-0.5">Tickets configured: {tiers.length} Tiers ({totalCapacity.toLocaleString()} Total Slots)</span>
+						{#if step === 1}
+							<span class="{MONO} text-on-surface">Step 01 of 05</span>
+							<span class="text-body-sm text-on-surface-variant pt-0.5">Essentials &amp; Space · {title ? title.slice(0,24) : 'Untitled'}</span>
+						{:else}
+							<span class="{MONO} text-on-surface">Step 02 of 05 completed</span>
+							<span class="text-body-sm text-on-surface-variant pt-0.5">Tickets configured: {tiers.length} Tiers ({totalCapacity.toLocaleString()} Total Slots)</span>
+						{/if}
 					</div>
-					<button
-						type="button"
-						disabled={!canContinue}
-						onclick={() => {
-							step = 3;
-							scrollTo({ top: 0 });
-						}}
-						class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40"
-					>
-						<span>Next: Step 3 – Agenda &amp; Speakers</span>
-						<ArrowRight class="w-4 h-4" />
-					</button>
+					{#if step === 1}
+						<button
+							type="button"
+							disabled={!title.trim() || !venue.trim()}
+							onclick={() => { step = 2; scrollTo({ top: 0 }); }}
+							class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40"
+						>
+							<span>Next: Step 2 – Tickets &amp; Pools</span>
+							<ArrowRight class="w-4 h-4" />
+						</button>
+					{:else}
+						<button
+							type="button"
+							disabled={!canContinue}
+							onclick={() => { step = 3; scrollTo({ top: 0 }); }}
+							class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40"
+						>
+							<span>Next: Step 3 – Schedule &amp; Lineup</span>
+							<ArrowRight class="w-4 h-4" />
+						</button>
+					{/if}
 				</div>
 			</div>
 		</div>
@@ -834,12 +938,10 @@
 	</div>
 {/if}
 
-<!-- ── desktop (md+) "Execution Matrix & Gate Hardware" — agenda & gate
-     security blocks per the desktop design source, same theme tokens ── -->
-{#if step === 3 || step === 4}
+<!-- ── desktop (md+) "Execution Matrix & Gate Hardware" — step 3 only ── -->
+{#if step === 3}
 	<div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
-		<!-- top bar -->
-		<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
+<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
 			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
 				<a href="/home" class="flex items-center gap-2.5 shrink-0">
 					<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
@@ -886,56 +988,65 @@
 
 		<!-- protocol configuration sub-header -->
 		<div class="border-b border-surface-glass-border bg-surface-container-low/60">
-			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-5 flex flex-wrap items-center justify-between gap-4">
-				<span class="flex items-center gap-3 min-w-0">
-					<span class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface flex items-center justify-center shrink-0">
-						<SlidersHorizontal class="w-4 h-4" />
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-5 flex flex-col gap-4">
+				<div class="flex flex-wrap items-center justify-between gap-4">
+					<span class="flex items-center gap-3 min-w-0">
+						<span class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface flex items-center justify-center shrink-0">
+							<SlidersHorizontal class="w-4 h-4" />
+						</span>
+						<span class="min-w-0">
+							<span class="{MONO} text-on-surface-variant block truncate">Protocol Configuration / Draft_EVT_NEW</span>
+							<span class="font-display text-headline-md text-on-surface block truncate">Execution Matrix &amp; Gate Hardware</span>
+						</span>
 					</span>
-					<span class="min-w-0">
-						<span class="{MONO} text-on-surface-variant block truncate">Protocol Configuration / Draft_EVT_8820</span>
-						<span class="font-display text-headline-md text-on-surface block truncate">Execution Matrix &amp; Gate Hardware</span>
-					</span>
-				</span>
-				<span class="flex items-center gap-2 flex-wrap">
+					<span class="{MONO} text-on-surface-variant hidden xl:block">Auto-synced</span>
+				</div>
+				<!-- stepper (image design) -->
+				<div class="grid grid-cols-5 gap-3">
 					{#each ([
-						[1, '01. Basics'],
-						[2, '02. Tickets'],
-						[3, '03. Agenda'],
-						[4, '04. Access'],
-						[5, '05. Launch']
-					] as [number, string][]) as [n, label], i (n)}
-						{#if i > 0}<span class="{MONO} text-outline-variant">/</span>{/if}
-						<button
-							type="button"
-							onclick={() => {
-								step = n;
-								scrollTo({ top: 0 });
-							}}
-							class="h-8 px-3 rounded-lg flex items-center gap-2 {MONO} transition-colors
-								{n < 3
-									? 'text-on-surface-variant hover:text-on-surface'
-									: n === 3 || n === 4
-										? 'bg-surface-container-high border border-surface-glass-border text-on-surface'
-										: 'text-outline-variant hover:text-on-surface-variant'}"
-						>
-							{#if n < 3}
-								<Check class="w-3.5 h-3.5 text-accent-emerald" />
-							{:else if n === 3 || n === 4}
-								<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
-							{:else}
-								<span class="w-1.5 h-1.5 rounded-full bg-outline-variant"></span>
-							{/if}
-							{label}
-						</button>
-					{/each}
-				</span>
+					[1, 'Basics & Venue', venue ? venue.slice(0, 18) : 'No venue yet'],
+					[2, 'Tickets & Pools', `${tiers.length} Tiers\u00B7${tiers.reduce((s, tt) => s + (Number(tt.capacity) || 0), 0)} Cap`],
+					[3, 'Schedule & Lineup', `${days.reduce((s, d) => s + d.sessions.length, 0)} Sessions Pinned`],
+					[4, 'Gate Infrastructure', `HMAC 30s\u00B7${gates.reduce((s, g) => s + Number(g.staff ?? 1), 0)} Scanners`],
+					[5, 'Review & Deploy', validated ? '100% Validated' : `${validatedCount}/${totalChecks} Checks`]
+				] as [number, string, string][]) as [n, label, sub]}
+					<button
+						type="button"
+						onclick={() => {
+							step = n;
+							scrollTo({ top: 0 });
+						}}
+						class="rounded-lg border p-3 flex flex-col gap-1 text-left transition-colors
+							{n == step
+								? 'border-primary/40 bg-surface-container-high'
+								: n < step
+									? 'border-accent-emerald/30 bg-surface-container'
+									: 'border-transparent bg-surface-container/40 hover:bg-surface-container'}"
+					>
+						<span class="flex items-center gap-2.5">
+							<span
+								class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-code text-label-badge font-bold
+									{n < step
+										? 'bg-accent-emerald text-on-primary'
+										: n == step
+											? 'bg-primary text-on-primary'
+											: 'bg-surface-container-high text-on-surface-variant'}"
+							>
+								{#if n < step}<Check class="w-3.5 h-3.5" />{:else}{String(n).padStart(2, '0')}{/if}
+							</span>
+							<span class="{MONO} text-on-surface-variant">Step {String(n).padStart(2, '0')}{n == step ? ' // Active' : n < step ? ' ✓' : ''}</span>
+						</span>
+						<span class="text-body-sm font-semibold text-on-surface truncate">{label}</span>
+						<span class="font-code text-[11px] tracking-[0.08em] truncate {n == step ? 'text-primary' : n < step ? 'text-accent-emerald' : 'text-on-surface-variant'}">{sub}{n === 5 && Number(step) === 5 && validated ? ' \u00B7 LAUNCH READY' : ''}</span>
+					</button>
+				{/each}
+				</div>
 			</div>
 		</div>
 
 		<!-- main grid -->
-		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8 grid lg:grid-cols-[minmax(0,1fr)_440px] xl:grid-cols-[minmax(0,1fr)_460px] gap-8 xl:gap-10 items-start">
-			<!-- STEP 03 COMPONENT -->
-			<section class="flex flex-col gap-6 min-w-0">
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8 grid gap-8 xl:gap-10 items-start">
+<section class="flex flex-col gap-6 min-w-0">
 				<div class="flex items-end justify-between gap-4">
 					<div>
 						<span class="{MONO} text-on-surface-variant">Step 03 Component</span>
@@ -970,10 +1081,11 @@
 				</div>
 
 				<!-- sessions -->
+				{#if days.length && days[dayIdx]}
 				{#each days[dayIdx].sessions as s, i (i)}
 					<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-3">
 						<div class="flex items-center gap-2 flex-wrap">
-							<span class="font-code text-body-md font-bold text-on-surface">{timeRange(s.time)}</span>
+							<span class="font-code text-body-md font-bold text-on-surface">{s.time}</span>
 							<input type="text" bind:value={s.stage} aria-label="Room or stage for {s.title}" class="max-w-56 px-2 py-1 rounded bg-surface-container-high border border-surface-glass-border text-on-surface-variant {MONO} focus:outline-none focus:border-primary/50" />
 							<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">{sessionTypes[i % sessionTypes.length]}</span>
 							<button
@@ -997,6 +1109,9 @@
 				{:else}
 					<p class="text-body-sm text-on-surface-variant rounded-xl border border-dashed border-outline-variant/50 p-6">No sessions on this day yet — add the first block below.</p>
 				{/each}
+				{:else}
+					<p class="text-body-sm text-on-surface-variant rounded-xl border border-dashed border-outline-variant/50 p-6">No days yet — add a day to schedule sessions.</p>
+				{/if}
 
 				{#if showComposer}
 					<div class="rounded-xl border border-surface-glass-border bg-surface-container-low p-5 grid grid-cols-[110px_1fr] gap-3">
@@ -1037,8 +1152,168 @@
 				</div>
 			</section>
 
-			<!-- STEP 04 COMPONENT -->
-			<aside class="flex flex-col gap-6 min-w-0">
+			
+		</div>
+
+		<!-- sticky action bar -->
+		<div class="sticky bottom-0 z-40 mt-8 border-t border-surface-glass-border bg-surface-base/90 backdrop-blur-xl">
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-3 flex flex-wrap items-center justify-between gap-4">
+				<button
+					type="button"
+					onclick={() => {
+						step = 2;
+						scrollTo({ top: 0 });
+					}}
+					class="h-11 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors"
+				>
+					<ArrowLeft class="w-4 h-4" /> Back to Tickets &amp; Pools
+				</button>
+				<div class="flex items-center gap-5">
+					<div class="hidden md:flex flex-col items-end leading-tight">
+						<span class="{MONO} text-on-surface">Step 03 · Schedule &amp; Lineup</span>
+						<span class="text-body-sm text-on-surface-variant pt-0.5">{days.reduce((s, d) => s + d.sessions.length, 0)} Sessions pinned · {roster.length} Speakers</span>
+					</div>
+					<button
+						type="button"
+						onclick={() => {
+							step = 4;
+							scrollTo({ top: 0 });
+						}}
+						class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 hover:bg-primary-container transition-colors glow-primary"
+					>
+						<span>Next: Step 4 — Gate Infrastructure</span>
+						<ArrowRight class="w-4 h-4" />
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- footer -->
+		<footer class="border-t border-surface-glass-border">
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
+				<span class="flex items-center gap-3">
+					<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
+					<span class="{MONO} text-on-surface-variant">Decentralized Event Protocol</span>
+				</span>
+				<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
+					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
+					Mainnet 99.98% Operational • Latency: 24ms
+				</span>
+				<span class="text-body-sm text-on-surface-variant">© {new Date().getFullYear()} OWLTSIDE Protocol. All rights reserved.</span>
+			</div>
+		</footer>
+	</div>
+{/if}
+
+<!-- ── desktop (md+) "Gate Infrastructure" — step 4 only ── -->
+{#if step === 4}
+	<div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
+<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
+				<a href="/home" class="flex items-center gap-2.5 shrink-0">
+					<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
+					<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
+				</a>
+				<nav class="flex items-center gap-1" aria-label="Primary">
+					{#each [
+						['/home', 'Home'],
+						['/explore', 'Explore'],
+						['/tickets', 'Tickets'],
+						['/organizer', 'Organizer']
+					] as [href, label]}
+						<a
+							{href}
+							aria-current={href === '/organizer' ? 'page' : undefined}
+							class="px-3 h-9 rounded-lg flex items-center text-body-sm transition-colors
+								{href === '/organizer'
+									? 'text-on-surface font-semibold bg-surface-container border border-surface-glass-border'
+									: 'text-on-surface-variant hover:text-on-surface'}"
+						>
+							{label}
+						</a>
+					{/each}
+				</nav>
+				<div class="flex-1"></div>
+				<a href="/explore" class="relative hidden lg:flex items-center w-72 h-10">
+					<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
+					<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, venues…</span>
+					<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
+				</a>
+				<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
+					<Bell class="w-4.5 h-4.5" />
+					<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
+				</a>
+				<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
+					<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
+					<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">CONNECTED</span>
+				</div>
+				<a href="/profile" aria-label="Your profile" class="shrink-0">
+					<Avatar name={page.data.session?.name ?? 'Organizer'} size="sm" />
+				</a>
+			</div>
+		</header>
+
+		<!-- protocol configuration sub-header -->
+		<div class="border-b border-surface-glass-border bg-surface-container-low/60">
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-5 flex flex-col gap-4">
+				<div class="flex flex-wrap items-center justify-between gap-4">
+					<span class="flex items-center gap-3 min-w-0">
+						<span class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface flex items-center justify-center shrink-0">
+							<SlidersHorizontal class="w-4 h-4" />
+						</span>
+						<span class="min-w-0">
+							<span class="{MONO} text-on-surface-variant block truncate">Protocol Configuration / Draft_EVT_NEW</span>
+							<span class="font-display text-headline-md text-on-surface block truncate">Execution Matrix &amp; Gate Hardware</span>
+						</span>
+					</span>
+					<span class="{MONO} text-on-surface-variant hidden xl:block">Auto-synced</span>
+				</div>
+				<!-- stepper (image design) -->
+				<div class="grid grid-cols-5 gap-3">
+					{#each ([
+					[1, 'Basics & Venue', venue ? venue.slice(0, 18) : 'No venue yet'],
+					[2, 'Tickets & Pools', `${tiers.length} Tiers\u00B7${tiers.reduce((s, tt) => s + (Number(tt.capacity) || 0), 0)} Cap`],
+					[3, 'Schedule & Lineup', `${days.reduce((s, d) => s + d.sessions.length, 0)} Sessions Pinned`],
+					[4, 'Gate Infrastructure', `HMAC 30s\u00B7${gates.reduce((s, g) => s + Number(g.staff ?? 1), 0)} Scanners`],
+					[5, 'Review & Deploy', validated ? '100% Validated' : `${validatedCount}/${totalChecks} Checks`]
+				] as [number, string, string][]) as [n, label, sub]}
+					<button
+						type="button"
+						onclick={() => {
+							step = n;
+							scrollTo({ top: 0 });
+						}}
+						class="rounded-lg border p-3 flex flex-col gap-1 text-left transition-colors
+							{n == step
+								? 'border-primary/40 bg-surface-container-high'
+								: n < step
+									? 'border-accent-emerald/30 bg-surface-container'
+									: 'border-transparent bg-surface-container/40 hover:bg-surface-container'}"
+					>
+						<span class="flex items-center gap-2.5">
+							<span
+								class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-code text-label-badge font-bold
+									{n < step
+										? 'bg-accent-emerald text-on-primary'
+										: n == step
+											? 'bg-primary text-on-primary'
+											: 'bg-surface-container-high text-on-surface-variant'}"
+							>
+								{#if n < step}<Check class="w-3.5 h-3.5" />{:else}{String(n).padStart(2, '0')}{/if}
+							</span>
+							<span class="{MONO} text-on-surface-variant">Step {String(n).padStart(2, '0')}{n == step ? ' // Active' : n < step ? ' ✓' : ''}</span>
+						</span>
+						<span class="text-body-sm font-semibold text-on-surface truncate">{label}</span>
+						<span class="font-code text-[11px] tracking-[0.08em] truncate {n == step ? 'text-primary' : n < step ? 'text-accent-emerald' : 'text-on-surface-variant'}">{sub}{n === 5 && Number(step) === 5 && validated ? ' \u00B7 LAUNCH READY' : ''}</span>
+					</button>
+				{/each}
+				</div>
+			</div>
+		</div>
+
+		<!-- main grid -->
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8 grid gap-8 xl:gap-10 items-start">
+<section class="flex flex-col gap-6 min-w-0">
 				<div class="flex items-end justify-between gap-4">
 					<div>
 						<span class="{MONO} text-on-surface-variant">Step 04 Component</span>
@@ -1068,10 +1343,8 @@
 							<p class="text-body-sm text-on-surface-variant">{gateSubs[i % gateSubs.length]}</p>
 							{#if gateEdit === i}
 								<div class="flex items-center gap-2 rounded-lg bg-surface-base border border-surface-glass-border px-3 py-2">
-									<button type="button" aria-label="Fewer staff" class="w-8 h-8 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface" onclick={() => (gate.staff = Math.max(1, gate.staff - 1))}>−</button>
-									<span class="text-body-sm text-on-surface w-16 text-center">{gate.staff} staff</span>
-									<button type="button" aria-label="More staff" class="w-8 h-8 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface" onclick={() => (gate.staff += 1)}>+</button>
-									<button type="button" class="ml-auto {MONO} text-primary" onclick={() => (gateEdit = -1)}>Done</button>
+									<input aria-label="Gate name" bind:value={gate.name} placeholder="Gate name" class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-surface-container-low border border-surface-glass-border text-body-sm text-on-surface focus:outline-none focus:border-primary/50" />
+									<button type="button" class="h-9 px-4 rounded-lg bg-primary text-on-primary text-body-sm font-semibold shrink-0" onclick={() => (gateEdit = -1)}>Done</button>
 								</div>
 							{/if}
 							<div class="flex items-center justify-between gap-3">
@@ -1082,7 +1355,7 @@
 										<ShieldCheck class="w-3.5 h-3.5 text-accent-emerald" /> Whitelisted Roles Only
 									{/if}
 								</span>
-								<button type="button" onclick={() => (gateEdit = gateEdit === i ? -1 : i)} class="{MONO} text-on-surface underline underline-offset-4 hover:text-primary">Edit Node</button>
+								<button type="button" onclick={() => (gateEdit = gateEdit === i ? -1 : i)} class="{MONO} text-on-surface underline underline-offset-4 hover:text-primary">edit</button>
 							</div>
 						</div>
 					{/each}
@@ -1191,7 +1464,7 @@
 						<span class="text-body-sm text-on-surface-variant">Triggered if an already checked-in ticket ID attempts entry within 120 minutes.</span>
 					</div>
 				</div>
-			</aside>
+			</section>
 		</div>
 
 		<!-- sticky action bar -->
@@ -1200,17 +1473,17 @@
 				<button
 					type="button"
 					onclick={() => {
-						step = 2;
+						step = 3;
 						scrollTo({ top: 0 });
 					}}
 					class="h-11 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors"
 				>
-					<ArrowLeft class="w-4 h-4" /> Back to Tickets &amp; Pricing
+					<ArrowLeft class="w-4 h-4" /> Back to Schedule &amp; Lineup
 				</button>
 				<div class="flex items-center gap-5">
 					<div class="hidden md:flex flex-col items-end leading-tight">
-						<span class="{MONO} text-on-surface">Steps 3 &amp; 4 Complete</span>
-						<span class="text-body-sm text-on-surface-variant pt-0.5">All hardware nodes &amp; lineup schemas verified</span>
+						<span class="{MONO} text-on-surface">Step 04 · Gate Infrastructure</span>
+						<span class="text-body-sm text-on-surface-variant pt-0.5">{gates.length} Gates · {staffTotal} Scanners · HMAC 30s</span>
 					</div>
 					<button
 						type="button"
@@ -1359,11 +1632,15 @@
 				<!-- hero -->
 				<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
 					<div class="relative">
+						{#if coverUrl}
+						<img src={coverUrl} alt="Event cover" class="w-full h-64 object-cover" />
+						{:else}
 						<Cover cover={demoCover} class="w-full h-64" iconClass="w-16 h-16 text-white/25" />
+						{/if}
 						<div class="absolute inset-0 bg-gradient-to-t from-surface-container via-surface-container/20 to-transparent"></div>
 						<div class="absolute top-4 left-4 flex items-center gap-2 flex-wrap">
 							<span class="{MONO} bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded flex items-center gap-1.5">
-								<BadgeCheck class="w-3.5 h-3.5 text-accent-emerald" /> Ready to Launch • ID: EVT-2026-LGS
+								<BadgeCheck class="w-3.5 h-3.5 text-accent-emerald" /> Ready to Launch • ID: EVT-NEW
 							</span>
 							<span class="{MONO} bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded">Mainnet Protocol 1.4</span>
 						</div>
@@ -1371,7 +1648,7 @@
 							<span class="{MONO} text-tertiary">{(categoryLabel || 'Event').toUpperCase()} SUMMIT</span>
 							<h2 class="font-display text-headline-lg md:text-[32px] leading-tight text-on-surface pt-2">{title || 'Untitled node'}</h2>
 							<span class="flex flex-wrap items-center gap-4 pt-2 text-body-sm text-on-surface-variant">
-								<span class="flex items-center gap-1.5"><CalendarDays class="w-4 h-4 text-primary" /> {fmtDate(date)} – {fmtDate(dateEnd)}</span>
+								<span class="flex items-center gap-1.5"><CalendarDays class="w-4 h-4 text-primary" /> {date ? fmtDate(date) : 'Date TBA'} – {dateEnd ? fmtDate(dateEnd) : 'Date TBA'}</span>
 								<span class="flex items-center gap-1.5 min-w-0"><MapPin class="w-4 h-4 text-primary shrink-0" /> <span class="truncate">{venue}, {city}</span></span>
 							</span>
 						</div>
@@ -1550,16 +1827,16 @@
 						<button type="button" onclick={() => toast('Payout rails are managed from the organizer console', 'info')} class="{MONO} text-on-surface underline underline-offset-4 hover:text-primary">Change</button>
 					</div>
 					<div class="rounded-lg bg-surface-container-low border border-surface-glass-border p-4 flex items-center gap-3">
-						<span class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border font-code text-label-badge font-bold text-on-surface flex items-center justify-center shrink-0">GTB</span>
+						<span class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border font-code text-label-badge font-bold text-on-surface flex items-center justify-center shrink-0">{appSettings.value.payout.bank ? appSettings.value.payout.bank.slice(0,3).toUpperCase() : '—'}</span>
 						<span class="min-w-0 flex-1">
-							<span class="text-body-md font-semibold text-on-surface block">Guaranty Trust Bank</span>
-							<span class="font-code text-[12px] tracking-[0.06em] text-on-surface-variant block pt-0.5">•••• 4821 (NGN Main)</span>
+							<span class="text-body-md font-semibold text-on-surface block">{appSettings.value.payout.bank || 'No payout account linked'}</span>
+							<span class="font-code text-[12px] tracking-[0.06em] text-on-surface-variant block pt-0.5">{appSettings.value.payout.accountNumber ? `•••• ${appSettings.value.payout.accountNumber.slice(-4)} (NGN Main)` : 'Add payout in Settings → Verification'}</span>
 						</span>
-						<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded shrink-0">Verified</span>
+						<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded shrink-0">{appSettings.value.verification.payoutAccount ? 'Verified' : 'Not verified'}</span>
 					</div>
 					<div class="flex flex-col gap-2">
 						{#each [
-							['Account Holder:', 'Starlight Experiences Ltd'],
+							['Account Holder:', appSettings.value.payout.accountName || 'Not linked'],
 							['Gateway Engine:', 'Paystack Split Gateway (KYC Tier 3)'],
 							['Payout Frequency:', 'T+2 Rolling Settlement']
 						] as [k, v]}
@@ -1585,8 +1862,8 @@
 						<span class="font-display text-headline-md text-on-surface">Distribution &amp; Discovery Controls</span>
 					</span>
 					{#each [
-						{ key: 'explore', title: 'Publish to OWLTSIDE Explore', sub: 'Feature on global algorithmic discovery radar and location heatmaps in Lagos.' },
-						{ key: 'broadcast', title: 'Instant Organizer Broadcast', sub: 'Dispatch push notification to 4,280 verified Starlight followers immediately upon launch.' }
+						{ key: 'explore', title: 'Publish to OWLTSIDE Explore', sub: 'Feature on global discovery and location heatmaps.' },
+						{ key: 'broadcast', title: 'Instant Organizer Broadcast', sub: 'Dispatch push notification to followers immediately upon launch.' }
 					] as row (row.key)}
 						<div class="flex items-start justify-between gap-4">
 							<span class="min-w-0">
@@ -1650,7 +1927,7 @@
 						account will become liable for venue capacity limits under OWLTSIDE Protocol terms.
 					</p>
 					<div class="flex items-center gap-3 pt-1">
-						<button type="button" onclick={() => toast('Draft synced to organizer node', 'success')} class="h-12 px-5 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface hover:border-primary/40 transition-colors shrink-0">
+						<button type="button" onclick={saveDraft} class="h-12 px-5 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface hover:border-primary/40 transition-colors shrink-0">
 							Save Draft
 						</button>
 						<button type="submit" disabled={tiers.length === 0} class="flex-1 h-12 rounded-lg bg-primary text-on-primary text-body-md font-semibold flex items-center justify-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40">
@@ -1659,7 +1936,7 @@
 						</button>
 					</div>
 					<span class="flex items-center justify-center gap-1.5 font-code text-[11px] tracking-[0.08em] text-on-surface-variant">
-						<Clock class="w-3.5 h-3.5" /> Autosaved 1 minute ago • Build revision #824
+						<Clock class="w-3.5 h-3.5" /> Autosaved 1 minute ago • Build revision • New
 					</span>
 				</form>
 			</aside>
@@ -1694,7 +1971,7 @@
 			<div class="flex flex-col flex-1 min-w-0">
 				<h1 class="font-display text-headline-md text-on-surface truncate leading-tight">New Event Wizard</h1>
 			</div>
-			<button type="button" onclick={() => toast('Draft synced to organizer node', 'success')} aria-label="Save draft" class="flex items-center gap-1.5 rounded-full bg-surface-container-high border border-outline-variant/30 px-2.5 py-2 text-label-badge text-on-surface-variant">
+			<button type="button" onclick={saveDraft} aria-label="Save draft" class="flex items-center gap-1.5 rounded-full bg-surface-container-high border border-outline-variant/30 px-2.5 py-2 text-label-badge text-on-surface-variant">
 				<Save class="w-3.5 h-3.5 text-accent-emerald" /><span>Save draft</span>
 			</button>
 		</div>
@@ -1746,6 +2023,7 @@
 					<div class="flex flex-col gap-2 pt-1">
 						<label for="event-category-mobile" class="text-body-sm text-on-surface-variant">Category</label>
 						<select id="event-category-mobile" bind:value={selectedCategory} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline">
+							<option value="" disabled>Select category</option>
 							{#each categoryOptions as category (category.id)}<option value={category.id}>{category.label}</option>{/each}
 							<option value="custom">Custom category…</option>
 						</select>
@@ -1767,6 +2045,7 @@
 					<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md flex flex-col gap-2">
 						<label for="event-city" class="text-body-sm text-on-surface-variant">City</label>
 						<select id="event-city" bind:value={city} required class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline">
+							<option value="" disabled>Select state</option>
 							{#each NIGERIAN_STATES as state (state)}
 								<option value={state}>{state} State</option>
 							{/each}
@@ -1787,8 +2066,12 @@
 					<div class="p-3 flex items-center justify-between gap-2"><span class="min-w-0"><span class="block text-label-badge text-on-surface-variant">Physical venue &amp; coordinates</span><span class="block text-body-sm text-on-surface truncate pt-1">{venue || 'Venue TBA'}, Water Corporation Dr · {city}</span></span><button type="button" class="text-label-badge text-primary font-semibold shrink-0" onclick={() => toast('Coordinate calibration locked to venue node', 'info')}>Calibrate</button></div>
 				</div>
 				<div class="rounded-xl bg-surface-container border border-surface-glass-border overflow-hidden">
+					{#if coverUrl}
+					<img src={coverUrl} alt="Event cover" class="w-full h-36 object-cover" />
+					{:else}
 					<Cover cover={demoCover} class="w-full h-36" iconClass="w-10 h-10 text-white/30" />
-					<div class="p-3 flex items-center justify-between gap-3"><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Keyframe artwork · 16:9 banner</span><span class="block text-label-badge text-on-surface-variant pt-1">Recommended 1280 × 720 · up to 12 MB</span></span><button type="button" class="h-9 px-3 rounded-full bg-surface-container-high text-label-badge text-on-surface shrink-0 flex items-center gap-1" onclick={() => toast('Cover studio ships with the media node', 'info')}><CloudUpload class="w-3.5 h-3.5" />Upload</button></div>
+					{/if}
+					<div class="p-3 flex items-center justify-between gap-3"><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Keyframe artwork · 16:9 banner</span><span class="block text-label-badge text-on-surface-variant pt-1">Recommended 1280 × 720 · up to 12 MB</span>{#if coverUrl}<span class="block text-label-badge text-accent-emerald truncate pt-1">{coverName}</span>{/if}</span>{#if coverUrl}<span class="flex items-center gap-2 shrink-0"><label class="h-9 px-3 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface flex items-center gap-1 cursor-pointer"><CloudUpload class="w-3.5 h-3.5" />Replace<input type="file" accept="image/*" class="sr-only" onchange={handleCoverSelect} /></label><button type="button" onclick={clearCover} class="h-9 px-3 rounded-full border border-surface-glass-border text-label-badge text-on-surface-variant">Remove</button></span>{:else}<span class="flex items-center gap-2 shrink-0"><label class="h-9 px-3 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface flex items-center gap-1 cursor-pointer"><CloudUpload class="w-3.5 h-3.5" />Upload<input type="file" accept="image/*" class="sr-only" onchange={handleCoverSelect} /></label></span>{/if}</div>
 				</div>
 
 				<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md flex flex-col gap-2">
@@ -1920,6 +2203,7 @@
 				</div>
 				<p class="text-label-badge text-on-surface-variant">Type a room or stage name for each session.</p>
 				<div class="flex flex-col gap-2">
+					{#if days.length && days[dayIdx]}
 					{#each days[dayIdx].sessions as s, i (i)}
 						<div class="flex items-start gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md">
 							<span class="font-code text-body-md text-primary pt-0.5 w-14 flex-shrink-0">{s.time}</span>
@@ -1934,6 +2218,9 @@
 					{:else}
 						<p class="text-body-sm text-on-surface-variant py-4">No sessions on this day yet.</p>
 					{/each}
+					{:else}
+						<p class="text-body-sm text-on-surface-variant py-4">No days yet — add a day to begin scheduling.</p>
+					{/if}
 				</div>
 				<div class="rounded-xl bg-surface-container-low border border-dashed border-outline-variant/50 p-space-md grid grid-cols-[80px_1fr] gap-2">
 					<input type="time" bind:value={newSession.time} class="px-3 py-2.5 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md" />
@@ -1982,13 +2269,9 @@
 									<span class="w-7 h-7 rounded-full bg-surface-container-highest border-2 border-surface-container text-label-badge text-on-surface-variant flex items-center justify-center">{s + 1}</span>
 								{/each}
 							</div>
-							<div class="flex items-center gap-2">
-								<button aria-label="Fewer staff" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant/30 text-on-surface" onclick={() => (gate.staff = Math.max(1, gate.staff - 1))}>−</button>
-								<span class="text-body-sm text-on-surface w-16 text-center">{gate.staff} staff</span>
-								<button aria-label="More staff" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant/30 text-on-surface" onclick={() => (gate.staff += 1)}>+</button>
-							</div>
+							<span class="flex items-center gap-2 {MONO} text-on-surface-variant bg-surface-container-low border border-surface-glass-border px-2.5 py-1 rounded">{gate.staff} Scanners</span>
 						</div>
-						<div class="flex items-center justify-between border-t border-surface-glass-border pt-2"><span class="text-label-badge text-on-surface-variant">Est. capacity: {(gate.staff * 450).toLocaleString()}/hr</span><span class="flex items-center gap-1"><button type="button" class="text-label-badge text-primary underline" onclick={() => (gateEdit = gateEdit === i ? -1 : i)}>{gateEdit === i ? 'Done' : 'Edit node'}</button>{#if gates.length > 1}<button type="button" aria-label="Remove gate" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-error" onclick={() => (gates = gates.filter((_, j) => j !== i))}><Trash2 class="w-4 h-4" /></button>{/if}</span></div>
+						<div class="flex items-center justify-between border-t border-surface-glass-border pt-2"><span class="text-label-badge text-on-surface-variant">Est. capacity: {(gate.staff * 450).toLocaleString()}/hr</span><span class="flex items-center gap-1"><button type="button" class="text-label-badge text-primary underline" onclick={() => (gateEdit = gateEdit === i ? -1 : i)}>{gateEdit === i ? 'Done' : 'edit'}</button>{#if gates.length > 1}<button type="button" aria-label="Remove gate" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-error" onclick={() => (gates = gates.filter((_, j) => j !== i))}><Trash2 class="w-4 h-4" /></button>{/if}</span></div>
 					</div>
 				{/each}
 				<button class="h-12 rounded-full border border-dashed border-outline-variant/60 text-on-surface-variant text-body-md font-medium flex items-center justify-center gap-2 hover:border-primary hover:text-primary transition-colors" onclick={() => (gates = [...gates, { name: 'New Gate', staff: 2 }])}>
@@ -2035,7 +2318,7 @@
 							</span>
 							Ready to Launch
 						</span>
-						<span class="font-code text-label-badge text-on-surface-variant">ID: EVT-2026-LGS</span>
+						<span class="font-code text-label-badge text-on-surface-variant">ID: EVT-NEW</span>
 					</div>
 					<div class="flex items-center gap-space-md">
 						<Cover cover={demoCover} class="w-16 h-16 rounded-xl overflow-hidden shrink-0" iconClass="w-7 h-7 text-white/30" />

@@ -19,7 +19,8 @@
 		Network,
 		PenLine,
 		Plus,
-		PlusCircle,
+		FileText,
+	PlusCircle,
 		Radio,
 		RefreshCw,
 		ScanBarcode,
@@ -39,6 +40,7 @@
 	import Sheet from '$components/Sheet.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
+	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { useQuery } from '$lib/state/query.svelte';
@@ -63,6 +65,18 @@
 	let staffOpen = $state(false);
 	let broadcastMsg = $state('');
 	const pins = $state(['4821', '9307', '1156']);
+	let wizardDraftCount = $state(0);
+	$effect(() => {
+		if (!browser) return;
+		try {
+			const raw = localStorage.getItem('owltside.wizard.draft.v1');
+			if (raw) {
+				const d = JSON.parse(raw);
+				const hasContent = !!(d.title?.trim() || d.venue?.trim() || (Array.isArray(d.tiers) && d.tiers.length) || (Array.isArray(d.days) && d.days.length) || (Array.isArray(d.gates) && d.gates.length));
+				wizardDraftCount = hasContent ? 1 : 0;
+			} else wizardDraftCount = 0;
+		} catch { wizardDraftCount = 0; }
+	});
 	function newPin() {
 		pins.push(String(Math.floor(1000 + Math.random() * 9000)));
 	}
@@ -490,6 +504,17 @@
 						</span>
 						<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
 					</a>
+					<a href="/organizer/create" class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3 hover:bg-surface-container-high transition-colors">
+						<FileText class="w-4 h-4 text-on-surface-variant shrink-0" />
+						<span class="flex-1 min-w-0">
+							<span class="block text-body-sm font-medium text-on-surface">Drafts</span>
+							<span class="block text-xs text-on-surface-variant mt-0.5">{wizardDraftCount ? '1 draft • Resume wizard • Auto-saved' : 'No drafts — start a new event'}</span>
+						</span>
+						<span class="flex items-center gap-1.5 shrink-0">
+							{#if wizardDraftCount}<span class="hidden sm:inline-flex items-center gap-1 rounded-full bg-accent-amber/10 border border-accent-amber/20 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-accent-amber uppercase">1 Draft</span>{/if}
+							<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
+						</span>
+					</a>
 					{#if mainEvent}
 					<a href="/organizer/events/{mainEvent.id}" class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3 hover:bg-surface-container-high transition-colors">
 						<Users class="w-4 h-4 text-on-surface-variant shrink-0" />
@@ -879,6 +904,21 @@
 						</div>
 					</div>
 					<ChevronRight class="w-5 h-5 text-outline-variant group-hover:text-on-surface" />
+				</a>
+				<a href="/organizer/create" class="flex items-center justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm hover:bg-surface-container-high transition-colors group">
+					<div class="flex items-center gap-space-md min-w-0">
+						<div class="w-10 h-10 rounded-full bg-surface-container-highest border border-outline-variant/30 text-on-surface flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+							<FileText class="w-5 h-5" />
+						</div>
+						<div class="flex flex-col min-w-0">
+							<span class="text-body-lg text-on-surface font-semibold truncate">Drafts</span>
+							<span class="text-body-sm text-on-surface-variant truncate">{wizardDraftCount ? '1 draft • Resume wizard' : 'No drafts — start fresh'}</span>
+						</div>
+					</div>
+					<span class="flex items-center gap-2 shrink-0">
+						{#if wizardDraftCount}<span class="hidden sm:inline-flex items-center gap-1 rounded-full bg-accent-amber/10 border border-accent-amber/20 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-accent-amber uppercase">1 Draft</span>{/if}
+						<ChevronRight class="w-5 h-5 text-outline-variant group-hover:text-on-surface" />
+					</span>
 				</a>
 				{#if mainEvent}
 					<a href="/organizer/events/{mainEvent.id}" class="flex items-center justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm hover:bg-surface-container-high transition-colors group">
