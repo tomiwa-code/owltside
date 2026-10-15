@@ -40,6 +40,9 @@
 		Trash2,
 		TrendingUp,
 		UserPlus,
+		Tag,
+		Percent,
+		Gift,
 		X,
 		Zap
 	} from '@lucide/svelte';
@@ -73,6 +76,11 @@
 		{ name: 'Early Bird Access', price: 25000, capacity: 300, benefits: 'Front-row seating', editing: false },
 		{ name: 'VIP Floor Pass', price: 75000, capacity: 100, benefits: 'Lounge + speaker meet', editing: false }
 	]);
+	let promos = $state<Array<{ code: string; percent: number; maxUses: number }>>([]);
+	let promoCode = $state('');
+	let promoPercent = $state('');
+	let promoMax = $state('');
+	let promoError = $state('');
 	let showDescriptionPreview = $state(false);
 	let publishExplore = $state(true);
 	let broadcast = $state(true);
@@ -149,6 +157,7 @@
 			security: { allowOverride, allowOffline, restrictGates, hmacRotation, offlineKeyring, biometricFast, conflictPolicy },
 			distribution: { publishExplore, broadcast, launchMode },
 			tiers: tiers.map(({ editing: _e, ...t }) => t),
+			promos,
 			days: days.map((d) => ({ label: d.label, sessions: d.sessions })),
 			gates
 		})
@@ -262,6 +271,22 @@
 	}
 	function addTier() {
 		tiers = [...tiers, { name: 'New Tier', price: 10000, capacity: 100, benefits: '', editing: true }];
+	}
+	function addPromo() {
+		promoError = '';
+		const code = promoCode.trim();
+		const percent = Number(promoPercent);
+		const maxUses = Number(promoMax);
+		if (!code) { promoError = 'Enter a promo code.'; return; }
+		if (!Number.isFinite(percent) || percent < 1 || percent > 100) { promoError = 'Enter % off between 1 and 100.'; return; }
+		if (!Number.isFinite(maxUses) || maxUses < 1 || !Number.isInteger(maxUses)) { promoError = 'Enter number of purchases (e.g. 50).'; return; }
+		if (promos.some((p) => p.code.toLowerCase() === code.toLowerCase())) { promoError = 'That promo code already exists.'; return; }
+		promos = [...promos, { code, percent, maxUses }];
+		promoCode = ''; promoPercent = ''; promoMax = '';
+		toast(`Promo "${code}" — ${percent}% off, first ${maxUses} purchases — activated`, 'success');
+	}
+	function removePromo(idx: number) {
+		promos = promos.filter((_, i) => i !== idx);
 	}
 	function addDay() {
 		const d = new Date(`${date}T00:00:00`);
@@ -608,6 +633,62 @@
 					<button type="button" onclick={addTier} class="h-12 rounded-lg border border-dashed border-outline-variant/60 text-on-surface-variant text-body-md font-medium flex items-center justify-center gap-2 hover:border-primary hover:text-primary transition-colors">
 						<Plus class="w-4 h-4" /> + Add Another Ticket Tier (e.g. Student, Early Bird Round 2)
 					</button>
+					<!-- Promo Codes — under Tickets & Pricing -->
+					<div class="rounded-lg border border-surface-glass-border bg-surface-container-low p-5 flex flex-col gap-4">
+						<div class="flex items-center justify-between gap-3">
+							<span class="flex items-center gap-2.5">
+								<Tag class="w-4.5 h-4.5 text-primary" />
+								<span class="font-display text-body-lg font-semibold text-on-surface">Promo Codes</span>
+								<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded text-[10px]">Early Bird Engine</span>
+							</span>
+							<span class="{MONO} text-on-surface-variant">{promos.length} Active</span>
+						</div>
+						<p class="text-body-sm text-on-surface-variant">Reward early supporters with a limited promo. Eg: <span class="font-semibold text-on-surface">Owltside — 5% off — first 50 people</span>.</p>
+						<div class="grid grid-cols-[1.4fr_0.6fr_0.8fr_auto] gap-3 items-end">
+							<label class="flex flex-col gap-1.5 {MONO} text-on-surface-variant">
+								Promo code
+								<input type="text" placeholder="Owltside" bind:value={promoCode} maxlength="24" class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50" />
+							</label>
+							<label class="flex flex-col gap-1.5 {MONO} text-on-surface-variant">
+								% off
+								<span class="relative flex items-center">
+									<input type="number" inputmode="numeric" min="1" max="100" placeholder="5" bind:value={promoPercent} class="w-full h-11 pl-3 pr-7 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50" />
+									<Percent class="w-3.5 h-3.5 text-on-surface-variant absolute right-2.5 pointer-events-none" />
+								</span>
+							</label>
+							<label class="flex flex-col gap-1.5 {MONO} text-on-surface-variant">
+								No. of purchases
+								<input type="number" inputmode="numeric" min="1" placeholder="50" bind:value={promoMax} class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50" />
+							</label>
+							<button type="button" onclick={addPromo} class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 hover:bg-primary-container transition-colors glow-primary shrink-0">
+								<Plus class="w-4 h-4" /> Add
+							</button>
+						</div>
+						{#if promoError}
+							<p class="text-body-sm text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2" role="alert">{promoError}</p>
+						{/if}
+						{#if promos.length}
+							<div class="flex flex-col gap-2">
+								{#each promos as promo, idx (promo.code)}
+									<div class="flex items-center justify-between gap-3 rounded-lg border border-surface-glass-border bg-surface-base px-3 py-2.5">
+										<span class="flex items-center gap-2 min-w-0">
+											<span class="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0"><Tag class="w-3.5 h-3.5" /></span>
+											<span class="min-w-0">
+												<span class="block text-body-sm font-semibold text-on-surface truncate">{promo.code} — {promo.percent}% off — first {promo.maxUses} people</span>
+												<span class="block text-xs text-on-surface-variant">{promo.percent}% discount • capped at {promo.maxUses} redemptions</span>
+											</span>
+										</span>
+										<span class="flex items-center gap-2 shrink-0">
+											<span class="{MONO} px-2 py-0.5 rounded bg-accent-emerald/10 text-accent-emerald border border-accent-emerald/20">Active</span>
+											<button type="button" aria-label="Remove {promo.code}" onclick={() => removePromo(idx)} class="w-8 h-8 rounded-lg bg-surface-container-high border border-surface-glass-border flex items-center justify-center text-on-surface-variant hover:text-error transition-colors"><Trash2 class="w-3.5 h-3.5" /></button>
+										</span>
+									</div>
+								{/each}
+							</div>
+						{:else}
+							<p class="text-body-sm text-on-surface-variant rounded-lg bg-surface-base border border-dashed border-surface-glass-border px-3 py-3">No promo codes yet. Add one above — e.g. <span class="font-semibold text-on-surface">Owltside</span> for <span class="font-semibold text-on-surface">5% off</span> the first <span class="font-semibold text-on-surface">50</span> purchases.</p>
+						{/if}
+					</div>
 				</section>
 			</div>
 
@@ -1777,6 +1858,45 @@
 				<button class="h-12 rounded-full border border-dashed border-outline-variant/60 text-on-surface-variant text-body-md font-medium flex items-center justify-center gap-2 hover:border-primary hover:text-primary transition-colors" onclick={addTier}>
 					<Plus class="w-4 h-4" /> Add ticket tier
 				</button>
+				<!-- Promo Codes — mobile -->
+				<div class="rounded-xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-3">
+					<div class="flex items-center justify-between gap-2">
+						<span class="flex items-center gap-2">
+							<Tag class="w-4 h-4 text-primary" />
+							<span class="font-display text-body-lg font-semibold text-on-surface">Promo Codes</span>
+						</span>
+						<span class="text-label-badge px-2 py-0.5 rounded bg-surface-container-high border border-surface-glass-border text-on-surface-variant">{promos.length} Active</span>
+					</div>
+					<p class="text-body-sm text-on-surface-variant">Eg: <span class="font-semibold text-on-surface">Owltside — 5% off — first 50 people</span>.</p>
+					<div class="flex flex-col gap-2.5">
+						<label class="flex flex-col gap-1 text-label-badge text-on-surface-variant">Promo code<input type="text" placeholder="Owltside" bind:value={promoCode} maxlength="24" class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" /></label>
+						<div class="grid grid-cols-2 gap-2.5">
+							<label class="flex flex-col gap-1 text-label-badge text-on-surface-variant">% off<span class="relative flex items-center"><input type="number" inputmode="numeric" min="1" max="100" placeholder="5" bind:value={promoPercent} class="w-full h-11 pl-3 pr-6 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" /><Percent class="w-3.5 h-3.5 text-on-surface-variant absolute right-2.5 pointer-events-none" /></span></label>
+							<label class="flex flex-col gap-1 text-label-badge text-on-surface-variant">No. of purchases<input type="number" inputmode="numeric" min="1" placeholder="50" bind:value={promoMax} class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" /></label>
+						</div>
+						<button type="button" onclick={addPromo} class="h-11 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90">
+							<Plus class="w-4 h-4" /> Add
+						</button>
+						{#if promoError}
+							<p class="text-body-sm text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2" role="alert">{promoError}</p>
+						{/if}
+						{#if promos.length}
+							<div class="flex flex-col gap-2 pt-1">
+								{#each promos as promo, idx (promo.code)}
+									<div class="flex items-center justify-between gap-2 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5">
+										<span class="min-w-0">
+											<span class="block text-body-sm font-semibold text-on-surface">{promo.code} — {promo.percent}% off — first {promo.maxUses}</span>
+											<span class="block text-xs text-on-surface-variant">{promo.maxUses} redemptions • {promo.percent}%</span>
+										</span>
+										<button type="button" aria-label="Remove {promo.code}" onclick={() => removePromo(idx)} class="w-8 h-8 rounded-full bg-surface-container border border-surface-glass-border flex items-center justify-center text-on-surface-variant hover:text-error shrink-0"><Trash2 class="w-3.5 h-3.5" /></button>
+									</div>
+								{/each}
+							</div>
+						{:else}
+							<p class="text-body-sm text-on-surface-variant rounded-lg bg-surface-container-high/30 border border-dashed border-surface-glass-border px-3 py-2.5">No promos yet.</p>
+						{/if}
+					</div>
+				</div>
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-space-sm">
 					<h3 class="font-display text-headline-md text-on-surface">Issuance &amp; Settlement</h3>
 					<div class="grid grid-cols-3 gap-2"><div class="rounded-lg bg-surface-container-high p-2.5"><span class="block text-label-badge text-on-surface-variant">Starting at</span><span class="block text-body-sm font-bold text-on-surface pt-1">{minTierPrice === 0 ? 'Free' : formatMoney(minTierPrice)}</span></div><div class="rounded-lg bg-surface-container-high p-2.5"><span class="block text-label-badge text-on-surface-variant">Capacity</span><span class="block text-body-sm font-bold text-on-surface pt-1">{totalCapacity.toLocaleString()}</span></div><div class="rounded-lg bg-surface-container-high p-2.5"><span class="block text-label-badge text-on-surface-variant">Gross cap</span><span class="block text-body-sm font-bold text-on-surface pt-1">{formatMoney(totalGross)}</span></div></div>
