@@ -60,6 +60,40 @@
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 	let dateEnd = $state('2026-11-22');
 	const demoCover = { from: '#4c1d95', to: '#0b1326', icon: 'audio-waveform' };
+	let coverUrl = $state<string | null>(null);
+	let coverName = $state<string | null>(null);
+	let coverError = $state('');
+
+	function handleCoverSelect(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0] ?? null;
+		input.value = '';
+		if (!file) return;
+		if (!file.type.startsWith('image/')) {
+			coverError = 'Please select an image file (PNG, WEBP, AVIF).';
+			toast(coverError, 'error');
+			return;
+		}
+		if (file.size > 12 * 1024 * 1024) {
+			coverError = 'Image must be under 12MB.';
+			toast(coverError, 'error');
+			return;
+		}
+		const reader = new FileReader();
+		reader.onload = () => {
+			coverUrl = String(reader.result);
+			coverName = file.name;
+			coverError = '';
+			toast('Cover image loaded — will be saved with your event', 'success');
+		};
+		reader.readAsDataURL(file);
+	}
+	function clearCover() {
+		coverUrl = null;
+		coverName = null;
+		coverError = '';
+	}
+
 
 	/* ── draft state ─────────────────────────────────────────── */
 	let step = $state(1);
@@ -203,6 +237,10 @@
 	/* ── desktop step 5 (Review & Pre-Flight Clearance) ── */
 	const sessionCount = $derived(days.reduce((s, d) => s + d.sessions.length, 0));
 	const staffTotal = $derived(gates.reduce((s, g) => s + g.staff, 0));
+	const totalChecks = 5;
+	const validatedCount = $derived([title.trim().length > 2, tiers.length > 0, days.reduce((s, d) => s + d.sessions.length, 0) > 0, gates.length > 0, true].filter(Boolean).length);
+	const validated = $derived(validatedCount === totalChecks && canContinue);
+	const stepValidated = $derived(step === 1 ? title.trim().length > 2 && venue.trim().length > 1 : tiers.length > 0);
 
 	function publishHandler() {
 		return async ({ update }: { update: () => Promise<void> }) => {
@@ -373,42 +411,43 @@
 				</div>
 			</div>
 
-			<!-- stepper -->
+			<!-- stepper (image design 01-05 with subs) -->
 			<div class="grid grid-cols-5 gap-3 pt-6">
 				{#each ([
-					[1, 'Basics & Venue'],
-					[2, 'Tickets & Pricing'],
-					[3, 'Agenda & Lineup'],
-					[4, 'Gate Security'],
-					[5, 'Review & Deploy']
-				] as [number, string][]) as [n, label]}
+					[1, 'Basics & Venue', 'The Civic Centre'],
+					[2, 'Tickets & Pools', `${tiers.length} Tiers\u00B7${tiers.reduce((s, tt) => s + (Number(tt.capacity) || 0), 0)} Cap`],
+					[3, 'Schedule & Lineup', `${days.reduce((s, d) => s + d.sessions.length, 0)} Sessions Pinned`],
+					[4, 'Gate Infrastructure', `HMAC 30s\u00B76 Scanners`],
+					[5, 'Review & Deploy', validated ? '100% Validated' : `${validatedCount}/${totalChecks} Checks`]
+				] as [number, string, string][]) as [n, label, sub]}
 					<button
 						type="button"
 						onclick={() => {
 							step = n;
 							scrollTo({ top: 0 });
 						}}
-						class="rounded-lg border p-3 flex items-center gap-2.5 text-left transition-colors
-							{n === step
-								? 'border-surface-glass-border bg-surface-container-high'
+						class="rounded-lg border p-3 flex flex-col gap-1 text-left transition-colors
+							{n == step
+								? 'border-primary/40 bg-surface-container-high'
 								: n < step
-									? 'border-surface-glass-border bg-surface-container'
+									? 'border-accent-emerald/30 bg-surface-container'
 									: 'border-transparent bg-surface-container/40 hover:bg-surface-container'}"
 					>
-						<span
-							class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-code text-label-badge font-bold
-								{n < step
-									? 'bg-surface-container-high text-accent-emerald'
-									: n === step
-										? 'bg-primary text-on-primary'
-										: 'bg-surface-container-high text-on-surface-variant'}"
-						>
-							{#if n < step}<Check class="w-3.5 h-3.5" />{:else}{String(n).padStart(2, '0')}{/if}
+						<span class="flex items-center gap-2.5">
+							<span
+								class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-code text-label-badge font-bold
+									{n < step
+										? 'bg-accent-emerald text-on-primary'
+										: n == step
+											? 'bg-primary text-on-primary'
+											: 'bg-surface-container-high text-on-surface-variant'}"
+							>
+								{#if n < step}<Check class="w-3.5 h-3.5" />{:else}{String(n).padStart(2, '0')}{/if}
+							</span>
+							<span class="{MONO} text-on-surface-variant">Step {String(n).padStart(2, '0')}{n == step ? ' // Active' : n < step ? ' ✓' : ''}</span>
 						</span>
-						<span class="min-w-0">
-							<span class="{MONO} text-on-surface-variant block">Step {String(n).padStart(2, '0')}{n === step ? ' // Active' : ''}</span>
-							<span class="text-body-sm font-semibold text-on-surface truncate block">{label}</span>
-						</span>
+						<span class="text-body-sm font-semibold text-on-surface truncate">{label}</span>
+						<span class="font-code text-[11px] tracking-[0.08em] truncate {n == step ? 'text-primary' : n < step ? 'text-accent-emerald' : 'text-on-surface-variant'}">{sub}{n === 5 && Number(step) === 5 && validated ? ' · LAUNCH READY' : ''}</span>
 					</button>
 				{/each}
 			</div>
@@ -418,6 +457,7 @@
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8 grid lg:grid-cols-[minmax(0,1fr)_400px] xl:grid-cols-[minmax(0,1fr)_420px] gap-6 xl:gap-8 items-start">
 			<!-- left column -->
 			<div class="flex flex-col gap-6 min-w-0">
+				{#if step === 1}
 				<!-- BLOCK A -->
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6 xl:p-7 flex flex-col gap-6">
 					<div class="flex items-center justify-between gap-4">
@@ -529,11 +569,22 @@
 							<span>Keyframe Artwork / 16:9 Banner</span>
 							<span class="normal-case tracking-normal font-code text-[11px]">Required Aspect Ratio 1280x720</span>
 						</span>
-						<button
-							type="button"
-							onclick={() => toast('Cover studio ships with the media node', 'info')}
-							class="rounded-lg border border-dashed border-outline-variant/50 bg-surface-container-low p-10 flex flex-col items-center gap-3 hover:border-primary/40 transition-colors"
-						>
+						{#if coverUrl}
+						<div class="rounded-lg border border-surface-glass-border bg-surface-container-low overflow-hidden">
+							<img src={coverUrl} alt="Event cover preview" class="w-full h-56 object-cover" />
+							<div class="flex items-center justify-between gap-3 px-4 py-3 bg-surface-base border-t border-surface-glass-border">
+								<span class="text-body-sm text-on-surface truncate">{coverName}</span>
+								<span class="flex items-center gap-2">
+									<label class="h-9 px-3 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 cursor-pointer hover:border-primary/40">
+										<CloudUpload class="w-4 h-4" /> Replace
+										<input type="file" accept="image/*" class="sr-only" onchange={handleCoverSelect} />
+									</label>
+									<button type="button" onclick={clearCover} class="h-9 px-3 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm text-on-surface-variant hover:text-error">Remove</button>
+								</span>
+							</div>
+						</div>
+						{:else}
+						<label class="rounded-lg border border-dashed border-outline-variant/50 bg-surface-container-low p-10 flex flex-col items-center gap-3 hover:border-primary/40 transition-colors cursor-pointer">
 							<span class="w-12 h-12 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface-variant flex items-center justify-center">
 								<CloudUpload class="w-5 h-5" />
 							</span>
@@ -543,10 +594,13 @@
 								<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">16:9 Auto-Crop</span>
 								<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">Metadata Encrypted</span>
 							</span>
-						</button>
+							<input type="file" accept="image/*" class="sr-only" onchange={handleCoverSelect} />
+						</label>
+						{/if}
+						{#if coverError}<p class="text-body-sm text-error" role="alert">{coverError}</p>{/if}
 					</div>
 				</section>
-
+				{:else if step === 2}
 				<!-- BLOCK B -->
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6 xl:p-7 flex flex-col gap-5">
 					<div class="flex items-center justify-between gap-4">
@@ -690,6 +744,7 @@
 						{/if}
 					</div>
 				</section>
+				{/if}
 			</div>
 
 			<!-- right rail: live feed simulation -->
@@ -704,7 +759,11 @@
 					</div>
 					<div class="p-5 flex flex-col gap-5">
 						<div class="relative rounded-lg overflow-hidden border border-surface-glass-border">
+							{#if coverUrl}
+							<img src={coverUrl} alt="Event cover preview" class="w-full h-44 object-cover" />
+							{:else}
 							<Cover cover={demoCover} class="w-full h-44" iconClass="w-12 h-12 text-white/30" />
+							{/if}
 							<div class="absolute top-3 left-3 flex items-center gap-2">
 								<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{categoryLabel || 'Tech & AI'}</span>
 								<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{city} WAT</span>
@@ -791,28 +850,48 @@
 		<div class="sticky bottom-0 z-40 mt-8 border-t border-surface-glass-border bg-surface-base/90 backdrop-blur-xl">
 			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-3 flex flex-wrap items-center justify-between gap-4">
 				<div class="flex items-center gap-4">
-					<button type="button" onclick={back} class="h-11 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors">
-						<ArrowLeft class="w-4 h-4" /> Save &amp; Exit Draft
-					</button>
+					{#if step === 1}
+						<button type="button" onclick={back} class="h-11 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors">
+							<ArrowLeft class="w-4 h-4" /> Save &amp; Exit Draft
+						</button>
+					{:else}
+						<button type="button" onclick={() => { step = 1; scrollTo({ top: 0 }); }} class="h-11 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors">
+							<ArrowLeft class="w-4 h-4" /> Back: Basics &amp; Venue
+						</button>
+					{/if}
 					<span class="{MONO} text-on-surface-variant hidden lg:block">Next auto-sync in 18s</span>
 				</div>
 				<div class="flex items-center gap-5">
 					<div class="hidden md:flex flex-col items-end leading-tight">
-						<span class="{MONO} text-on-surface">Step 02 of 05 completed</span>
-						<span class="text-body-sm text-on-surface-variant pt-0.5">Tickets configured: {tiers.length} Tiers ({totalCapacity.toLocaleString()} Total Slots)</span>
+						{#if step === 1}
+							<span class="{MONO} text-on-surface">Step 01 of 05</span>
+							<span class="text-body-sm text-on-surface-variant pt-0.5">Essentials &amp; Space · {title ? title.slice(0,24) : 'Untitled'}</span>
+						{:else}
+							<span class="{MONO} text-on-surface">Step 02 of 05 completed</span>
+							<span class="text-body-sm text-on-surface-variant pt-0.5">Tickets configured: {tiers.length} Tiers ({totalCapacity.toLocaleString()} Total Slots)</span>
+						{/if}
 					</div>
-					<button
-						type="button"
-						disabled={!canContinue}
-						onclick={() => {
-							step = 3;
-							scrollTo({ top: 0 });
-						}}
-						class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40"
-					>
-						<span>Next: Step 3 – Agenda &amp; Speakers</span>
-						<ArrowRight class="w-4 h-4" />
-					</button>
+					{#if step === 1}
+						<button
+							type="button"
+							disabled={!title.trim() || !venue.trim()}
+							onclick={() => { step = 2; scrollTo({ top: 0 }); }}
+							class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40"
+						>
+							<span>Next: Step 2 – Tickets &amp; Pools</span>
+							<ArrowRight class="w-4 h-4" />
+						</button>
+					{:else}
+						<button
+							type="button"
+							disabled={!canContinue}
+							onclick={() => { step = 3; scrollTo({ top: 0 }); }}
+							class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40"
+						>
+							<span>Next: Step 3 – Schedule &amp; Lineup</span>
+							<ArrowRight class="w-4 h-4" />
+						</button>
+					{/if}
 				</div>
 			</div>
 		</div>
@@ -834,12 +913,10 @@
 	</div>
 {/if}
 
-<!-- ── desktop (md+) "Execution Matrix & Gate Hardware" — agenda & gate
-     security blocks per the desktop design source, same theme tokens ── -->
-{#if step === 3 || step === 4}
+<!-- ── desktop (md+) "Execution Matrix & Gate Hardware" — step 3 only ── -->
+{#if step === 3}
 	<div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
-		<!-- top bar -->
-		<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
+<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
 			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
 				<a href="/home" class="flex items-center gap-2.5 shrink-0">
 					<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
@@ -886,56 +963,65 @@
 
 		<!-- protocol configuration sub-header -->
 		<div class="border-b border-surface-glass-border bg-surface-container-low/60">
-			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-5 flex flex-wrap items-center justify-between gap-4">
-				<span class="flex items-center gap-3 min-w-0">
-					<span class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface flex items-center justify-center shrink-0">
-						<SlidersHorizontal class="w-4 h-4" />
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-5 flex flex-col gap-4">
+				<div class="flex flex-wrap items-center justify-between gap-4">
+					<span class="flex items-center gap-3 min-w-0">
+						<span class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface flex items-center justify-center shrink-0">
+							<SlidersHorizontal class="w-4 h-4" />
+						</span>
+						<span class="min-w-0">
+							<span class="{MONO} text-on-surface-variant block truncate">Protocol Configuration / Draft_EVT_8820</span>
+							<span class="font-display text-headline-md text-on-surface block truncate">Execution Matrix &amp; Gate Hardware</span>
+						</span>
 					</span>
-					<span class="min-w-0">
-						<span class="{MONO} text-on-surface-variant block truncate">Protocol Configuration / Draft_EVT_8820</span>
-						<span class="font-display text-headline-md text-on-surface block truncate">Execution Matrix &amp; Gate Hardware</span>
-					</span>
-				</span>
-				<span class="flex items-center gap-2 flex-wrap">
+					<span class="{MONO} text-on-surface-variant hidden xl:block">Auto-synced</span>
+				</div>
+				<!-- stepper (image design) -->
+				<div class="grid grid-cols-5 gap-3">
 					{#each ([
-						[1, '01. Basics'],
-						[2, '02. Tickets'],
-						[3, '03. Agenda'],
-						[4, '04. Access'],
-						[5, '05. Launch']
-					] as [number, string][]) as [n, label], i (n)}
-						{#if i > 0}<span class="{MONO} text-outline-variant">/</span>{/if}
-						<button
-							type="button"
-							onclick={() => {
-								step = n;
-								scrollTo({ top: 0 });
-							}}
-							class="h-8 px-3 rounded-lg flex items-center gap-2 {MONO} transition-colors
-								{n < 3
-									? 'text-on-surface-variant hover:text-on-surface'
-									: n === 3 || n === 4
-										? 'bg-surface-container-high border border-surface-glass-border text-on-surface'
-										: 'text-outline-variant hover:text-on-surface-variant'}"
-						>
-							{#if n < 3}
-								<Check class="w-3.5 h-3.5 text-accent-emerald" />
-							{:else if n === 3 || n === 4}
-								<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
-							{:else}
-								<span class="w-1.5 h-1.5 rounded-full bg-outline-variant"></span>
-							{/if}
-							{label}
-						</button>
-					{/each}
-				</span>
+					[1, 'Basics & Venue', 'The Civic Centre'],
+					[2, 'Tickets & Pools', `${tiers.length} Tiers\u00B7${tiers.reduce((s, tt) => s + (Number(tt.capacity) || 0), 0)} Cap`],
+					[3, 'Schedule & Lineup', `${days.reduce((s, d) => s + d.sessions.length, 0)} Sessions Pinned`],
+					[4, 'Gate Infrastructure', `HMAC 30s\u00B7${gates.reduce((s, g) => s + Number(g.staff ?? 1), 0)} Scanners`],
+					[5, 'Review & Deploy', validated ? '100% Validated' : `${validatedCount}/${totalChecks} Checks`]
+				] as [number, string, string][]) as [n, label, sub]}
+					<button
+						type="button"
+						onclick={() => {
+							step = n;
+							scrollTo({ top: 0 });
+						}}
+						class="rounded-lg border p-3 flex flex-col gap-1 text-left transition-colors
+							{n == step
+								? 'border-primary/40 bg-surface-container-high'
+								: n < step
+									? 'border-accent-emerald/30 bg-surface-container'
+									: 'border-transparent bg-surface-container/40 hover:bg-surface-container'}"
+					>
+						<span class="flex items-center gap-2.5">
+							<span
+								class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-code text-label-badge font-bold
+									{n < step
+										? 'bg-accent-emerald text-on-primary'
+										: n == step
+											? 'bg-primary text-on-primary'
+											: 'bg-surface-container-high text-on-surface-variant'}"
+							>
+								{#if n < step}<Check class="w-3.5 h-3.5" />{:else}{String(n).padStart(2, '0')}{/if}
+							</span>
+							<span class="{MONO} text-on-surface-variant">Step {String(n).padStart(2, '0')}{n == step ? ' // Active' : n < step ? ' ✓' : ''}</span>
+						</span>
+						<span class="text-body-sm font-semibold text-on-surface truncate">{label}</span>
+						<span class="font-code text-[11px] tracking-[0.08em] truncate {n == step ? 'text-primary' : n < step ? 'text-accent-emerald' : 'text-on-surface-variant'}">{sub}{n === 5 && Number(step) === 5 && validated ? ' \u00B7 LAUNCH READY' : ''}</span>
+					</button>
+				{/each}
+				</div>
 			</div>
 		</div>
 
 		<!-- main grid -->
-		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8 grid lg:grid-cols-[minmax(0,1fr)_440px] xl:grid-cols-[minmax(0,1fr)_460px] gap-8 xl:gap-10 items-start">
-			<!-- STEP 03 COMPONENT -->
-			<section class="flex flex-col gap-6 min-w-0">
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8 grid gap-8 xl:gap-10 items-start">
+<section class="flex flex-col gap-6 min-w-0">
 				<div class="flex items-end justify-between gap-4">
 					<div>
 						<span class="{MONO} text-on-surface-variant">Step 03 Component</span>
@@ -973,7 +1059,7 @@
 				{#each days[dayIdx].sessions as s, i (i)}
 					<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-3">
 						<div class="flex items-center gap-2 flex-wrap">
-							<span class="font-code text-body-md font-bold text-on-surface">{timeRange(s.time)}</span>
+							<span class="font-code text-body-md font-bold text-on-surface">{s.time}</span>
 							<input type="text" bind:value={s.stage} aria-label="Room or stage for {s.title}" class="max-w-56 px-2 py-1 rounded bg-surface-container-high border border-surface-glass-border text-on-surface-variant {MONO} focus:outline-none focus:border-primary/50" />
 							<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">{sessionTypes[i % sessionTypes.length]}</span>
 							<button
@@ -1037,8 +1123,168 @@
 				</div>
 			</section>
 
-			<!-- STEP 04 COMPONENT -->
-			<aside class="flex flex-col gap-6 min-w-0">
+			
+		</div>
+
+		<!-- sticky action bar -->
+		<div class="sticky bottom-0 z-40 mt-8 border-t border-surface-glass-border bg-surface-base/90 backdrop-blur-xl">
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-3 flex flex-wrap items-center justify-between gap-4">
+				<button
+					type="button"
+					onclick={() => {
+						step = 2;
+						scrollTo({ top: 0 });
+					}}
+					class="h-11 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors"
+				>
+					<ArrowLeft class="w-4 h-4" /> Back to Tickets &amp; Pools
+				</button>
+				<div class="flex items-center gap-5">
+					<div class="hidden md:flex flex-col items-end leading-tight">
+						<span class="{MONO} text-on-surface">Step 03 · Schedule &amp; Lineup</span>
+						<span class="text-body-sm text-on-surface-variant pt-0.5">{days.reduce((s, d) => s + d.sessions.length, 0)} Sessions pinned · {roster.length} Speakers</span>
+					</div>
+					<button
+						type="button"
+						onclick={() => {
+							step = 4;
+							scrollTo({ top: 0 });
+						}}
+						class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 hover:bg-primary-container transition-colors glow-primary"
+					>
+						<span>Next: Step 4 — Gate Infrastructure</span>
+						<ArrowRight class="w-4 h-4" />
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- footer -->
+		<footer class="border-t border-surface-glass-border">
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
+				<span class="flex items-center gap-3">
+					<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
+					<span class="{MONO} text-on-surface-variant">Decentralized Event Protocol</span>
+				</span>
+				<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
+					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
+					Mainnet 99.98% Operational • Latency: 24ms
+				</span>
+				<span class="text-body-sm text-on-surface-variant">© {new Date().getFullYear()} OWLTSIDE Protocol. All rights reserved.</span>
+			</div>
+		</footer>
+	</div>
+{/if}
+
+<!-- ── desktop (md+) "Gate Infrastructure" — step 4 only ── -->
+{#if step === 4}
+	<div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
+<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
+				<a href="/home" class="flex items-center gap-2.5 shrink-0">
+					<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
+					<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
+				</a>
+				<nav class="flex items-center gap-1" aria-label="Primary">
+					{#each [
+						['/home', 'Home'],
+						['/explore', 'Explore'],
+						['/tickets', 'Tickets'],
+						['/organizer', 'Organizer']
+					] as [href, label]}
+						<a
+							{href}
+							aria-current={href === '/organizer' ? 'page' : undefined}
+							class="px-3 h-9 rounded-lg flex items-center text-body-sm transition-colors
+								{href === '/organizer'
+									? 'text-on-surface font-semibold bg-surface-container border border-surface-glass-border'
+									: 'text-on-surface-variant hover:text-on-surface'}"
+						>
+							{label}
+						</a>
+					{/each}
+				</nav>
+				<div class="flex-1"></div>
+				<a href="/explore" class="relative hidden lg:flex items-center w-72 h-10">
+					<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
+					<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, venues…</span>
+					<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
+				</a>
+				<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
+					<Bell class="w-4.5 h-4.5" />
+					<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
+				</a>
+				<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
+					<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
+					<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">CONNECTED</span>
+				</div>
+				<a href="/profile" aria-label="Your profile" class="shrink-0">
+					<Avatar name={page.data.session?.name ?? 'Organizer'} size="sm" />
+				</a>
+			</div>
+		</header>
+
+		<!-- protocol configuration sub-header -->
+		<div class="border-b border-surface-glass-border bg-surface-container-low/60">
+			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-5 flex flex-col gap-4">
+				<div class="flex flex-wrap items-center justify-between gap-4">
+					<span class="flex items-center gap-3 min-w-0">
+						<span class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface flex items-center justify-center shrink-0">
+							<SlidersHorizontal class="w-4 h-4" />
+						</span>
+						<span class="min-w-0">
+							<span class="{MONO} text-on-surface-variant block truncate">Protocol Configuration / Draft_EVT_8820</span>
+							<span class="font-display text-headline-md text-on-surface block truncate">Execution Matrix &amp; Gate Hardware</span>
+						</span>
+					</span>
+					<span class="{MONO} text-on-surface-variant hidden xl:block">Auto-synced</span>
+				</div>
+				<!-- stepper (image design) -->
+				<div class="grid grid-cols-5 gap-3">
+					{#each ([
+					[1, 'Basics & Venue', 'The Civic Centre'],
+					[2, 'Tickets & Pools', `${tiers.length} Tiers\u00B7${tiers.reduce((s, tt) => s + (Number(tt.capacity) || 0), 0)} Cap`],
+					[3, 'Schedule & Lineup', `${days.reduce((s, d) => s + d.sessions.length, 0)} Sessions Pinned`],
+					[4, 'Gate Infrastructure', `HMAC 30s\u00B7${gates.reduce((s, g) => s + Number(g.staff ?? 1), 0)} Scanners`],
+					[5, 'Review & Deploy', validated ? '100% Validated' : `${validatedCount}/${totalChecks} Checks`]
+				] as [number, string, string][]) as [n, label, sub]}
+					<button
+						type="button"
+						onclick={() => {
+							step = n;
+							scrollTo({ top: 0 });
+						}}
+						class="rounded-lg border p-3 flex flex-col gap-1 text-left transition-colors
+							{n == step
+								? 'border-primary/40 bg-surface-container-high'
+								: n < step
+									? 'border-accent-emerald/30 bg-surface-container'
+									: 'border-transparent bg-surface-container/40 hover:bg-surface-container'}"
+					>
+						<span class="flex items-center gap-2.5">
+							<span
+								class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-code text-label-badge font-bold
+									{n < step
+										? 'bg-accent-emerald text-on-primary'
+										: n == step
+											? 'bg-primary text-on-primary'
+											: 'bg-surface-container-high text-on-surface-variant'}"
+							>
+								{#if n < step}<Check class="w-3.5 h-3.5" />{:else}{String(n).padStart(2, '0')}{/if}
+							</span>
+							<span class="{MONO} text-on-surface-variant">Step {String(n).padStart(2, '0')}{n == step ? ' // Active' : n < step ? ' ✓' : ''}</span>
+						</span>
+						<span class="text-body-sm font-semibold text-on-surface truncate">{label}</span>
+						<span class="font-code text-[11px] tracking-[0.08em] truncate {n == step ? 'text-primary' : n < step ? 'text-accent-emerald' : 'text-on-surface-variant'}">{sub}{n === 5 && Number(step) === 5 && validated ? ' \u00B7 LAUNCH READY' : ''}</span>
+					</button>
+				{/each}
+				</div>
+			</div>
+		</div>
+
+		<!-- main grid -->
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8 grid gap-8 xl:gap-10 items-start">
+<section class="flex flex-col gap-6 min-w-0">
 				<div class="flex items-end justify-between gap-4">
 					<div>
 						<span class="{MONO} text-on-surface-variant">Step 04 Component</span>
@@ -1068,10 +1314,8 @@
 							<p class="text-body-sm text-on-surface-variant">{gateSubs[i % gateSubs.length]}</p>
 							{#if gateEdit === i}
 								<div class="flex items-center gap-2 rounded-lg bg-surface-base border border-surface-glass-border px-3 py-2">
-									<button type="button" aria-label="Fewer staff" class="w-8 h-8 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface" onclick={() => (gate.staff = Math.max(1, gate.staff - 1))}>−</button>
-									<span class="text-body-sm text-on-surface w-16 text-center">{gate.staff} staff</span>
-									<button type="button" aria-label="More staff" class="w-8 h-8 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface" onclick={() => (gate.staff += 1)}>+</button>
-									<button type="button" class="ml-auto {MONO} text-primary" onclick={() => (gateEdit = -1)}>Done</button>
+									<input aria-label="Gate name" bind:value={gate.name} placeholder="Gate name" class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-surface-container-low border border-surface-glass-border text-body-sm text-on-surface focus:outline-none focus:border-primary/50" />
+									<button type="button" class="h-9 px-4 rounded-lg bg-primary text-on-primary text-body-sm font-semibold shrink-0" onclick={() => (gateEdit = -1)}>Done</button>
 								</div>
 							{/if}
 							<div class="flex items-center justify-between gap-3">
@@ -1082,7 +1326,7 @@
 										<ShieldCheck class="w-3.5 h-3.5 text-accent-emerald" /> Whitelisted Roles Only
 									{/if}
 								</span>
-								<button type="button" onclick={() => (gateEdit = gateEdit === i ? -1 : i)} class="{MONO} text-on-surface underline underline-offset-4 hover:text-primary">Edit Node</button>
+								<button type="button" onclick={() => (gateEdit = gateEdit === i ? -1 : i)} class="{MONO} text-on-surface underline underline-offset-4 hover:text-primary">edit</button>
 							</div>
 						</div>
 					{/each}
@@ -1191,7 +1435,7 @@
 						<span class="text-body-sm text-on-surface-variant">Triggered if an already checked-in ticket ID attempts entry within 120 minutes.</span>
 					</div>
 				</div>
-			</aside>
+			</section>
 		</div>
 
 		<!-- sticky action bar -->
@@ -1200,17 +1444,17 @@
 				<button
 					type="button"
 					onclick={() => {
-						step = 2;
+						step = 3;
 						scrollTo({ top: 0 });
 					}}
 					class="h-11 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors"
 				>
-					<ArrowLeft class="w-4 h-4" /> Back to Tickets &amp; Pricing
+					<ArrowLeft class="w-4 h-4" /> Back to Schedule &amp; Lineup
 				</button>
 				<div class="flex items-center gap-5">
 					<div class="hidden md:flex flex-col items-end leading-tight">
-						<span class="{MONO} text-on-surface">Steps 3 &amp; 4 Complete</span>
-						<span class="text-body-sm text-on-surface-variant pt-0.5">All hardware nodes &amp; lineup schemas verified</span>
+						<span class="{MONO} text-on-surface">Step 04 · Gate Infrastructure</span>
+						<span class="text-body-sm text-on-surface-variant pt-0.5">{gates.length} Gates · {staffTotal} Scanners · HMAC 30s</span>
 					</div>
 					<button
 						type="button"
@@ -1359,7 +1603,11 @@
 				<!-- hero -->
 				<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
 					<div class="relative">
+						{#if coverUrl}
+						<img src={coverUrl} alt="Event cover" class="w-full h-64 object-cover" />
+						{:else}
 						<Cover cover={demoCover} class="w-full h-64" iconClass="w-16 h-16 text-white/25" />
+						{/if}
 						<div class="absolute inset-0 bg-gradient-to-t from-surface-container via-surface-container/20 to-transparent"></div>
 						<div class="absolute top-4 left-4 flex items-center gap-2 flex-wrap">
 							<span class="{MONO} bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded flex items-center gap-1.5">
@@ -1787,8 +2035,12 @@
 					<div class="p-3 flex items-center justify-between gap-2"><span class="min-w-0"><span class="block text-label-badge text-on-surface-variant">Physical venue &amp; coordinates</span><span class="block text-body-sm text-on-surface truncate pt-1">{venue || 'Venue TBA'}, Water Corporation Dr · {city}</span></span><button type="button" class="text-label-badge text-primary font-semibold shrink-0" onclick={() => toast('Coordinate calibration locked to venue node', 'info')}>Calibrate</button></div>
 				</div>
 				<div class="rounded-xl bg-surface-container border border-surface-glass-border overflow-hidden">
+					{#if coverUrl}
+					<img src={coverUrl} alt="Event cover" class="w-full h-36 object-cover" />
+					{:else}
 					<Cover cover={demoCover} class="w-full h-36" iconClass="w-10 h-10 text-white/30" />
-					<div class="p-3 flex items-center justify-between gap-3"><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Keyframe artwork · 16:9 banner</span><span class="block text-label-badge text-on-surface-variant pt-1">Recommended 1280 × 720 · up to 12 MB</span></span><button type="button" class="h-9 px-3 rounded-full bg-surface-container-high text-label-badge text-on-surface shrink-0 flex items-center gap-1" onclick={() => toast('Cover studio ships with the media node', 'info')}><CloudUpload class="w-3.5 h-3.5" />Upload</button></div>
+					{/if}
+					<div class="p-3 flex items-center justify-between gap-3"><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Keyframe artwork · 16:9 banner</span><span class="block text-label-badge text-on-surface-variant pt-1">Recommended 1280 × 720 · up to 12 MB</span>{#if coverUrl}<span class="block text-label-badge text-accent-emerald truncate pt-1">{coverName}</span>{/if}</span>{#if coverUrl}<span class="flex items-center gap-2 shrink-0"><label class="h-9 px-3 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface flex items-center gap-1 cursor-pointer"><CloudUpload class="w-3.5 h-3.5" />Replace<input type="file" accept="image/*" class="sr-only" onchange={handleCoverSelect} /></label><button type="button" onclick={clearCover} class="h-9 px-3 rounded-full border border-surface-glass-border text-label-badge text-on-surface-variant">Remove</button></span>{:else}<span class="flex items-center gap-2 shrink-0"><label class="h-9 px-3 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface flex items-center gap-1 cursor-pointer"><CloudUpload class="w-3.5 h-3.5" />Upload<input type="file" accept="image/*" class="sr-only" onchange={handleCoverSelect} /></label></span>{/if}</div>
 				</div>
 
 				<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md flex flex-col gap-2">
@@ -1982,13 +2234,9 @@
 									<span class="w-7 h-7 rounded-full bg-surface-container-highest border-2 border-surface-container text-label-badge text-on-surface-variant flex items-center justify-center">{s + 1}</span>
 								{/each}
 							</div>
-							<div class="flex items-center gap-2">
-								<button aria-label="Fewer staff" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant/30 text-on-surface" onclick={() => (gate.staff = Math.max(1, gate.staff - 1))}>−</button>
-								<span class="text-body-sm text-on-surface w-16 text-center">{gate.staff} staff</span>
-								<button aria-label="More staff" class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant/30 text-on-surface" onclick={() => (gate.staff += 1)}>+</button>
-							</div>
+							<span class="flex items-center gap-2 {MONO} text-on-surface-variant bg-surface-container-low border border-surface-glass-border px-2.5 py-1 rounded">{gate.staff} Scanners</span>
 						</div>
-						<div class="flex items-center justify-between border-t border-surface-glass-border pt-2"><span class="text-label-badge text-on-surface-variant">Est. capacity: {(gate.staff * 450).toLocaleString()}/hr</span><span class="flex items-center gap-1"><button type="button" class="text-label-badge text-primary underline" onclick={() => (gateEdit = gateEdit === i ? -1 : i)}>{gateEdit === i ? 'Done' : 'Edit node'}</button>{#if gates.length > 1}<button type="button" aria-label="Remove gate" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-error" onclick={() => (gates = gates.filter((_, j) => j !== i))}><Trash2 class="w-4 h-4" /></button>{/if}</span></div>
+						<div class="flex items-center justify-between border-t border-surface-glass-border pt-2"><span class="text-label-badge text-on-surface-variant">Est. capacity: {(gate.staff * 450).toLocaleString()}/hr</span><span class="flex items-center gap-1"><button type="button" class="text-label-badge text-primary underline" onclick={() => (gateEdit = gateEdit === i ? -1 : i)}>{gateEdit === i ? 'Done' : 'edit'}</button>{#if gates.length > 1}<button type="button" aria-label="Remove gate" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-error" onclick={() => (gates = gates.filter((_, j) => j !== i))}><Trash2 class="w-4 h-4" /></button>{/if}</span></div>
 					</div>
 				{/each}
 				<button class="h-12 rounded-full border border-dashed border-outline-variant/60 text-on-surface-variant text-body-md font-medium flex items-center justify-center gap-2 hover:border-primary hover:text-primary transition-colors" onclick={() => (gates = [...gates, { name: 'New Gate', staff: 2 }])}>
