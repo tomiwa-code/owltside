@@ -1,5 +1,6 @@
 import { createSupabase, supabaseConfigured } from '$lib/server/supabase';
 import { demo } from '$lib/server/demo-index';
+import { fillEmptyProfileFields, providerProfile } from '$lib/server/profile-sync';
 import type { Handle } from '@sveltejs/kit';
 
 export const handle: Handle = async ({ event, resolve }) => {
@@ -13,8 +14,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 		} = await db.auth.getUser();
 		if (user) {
 			const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
-			const metaFullName = (meta.full_name as string | undefined) || (meta.name as string | undefined);
-			const metaAvatarUrl = (meta.avatar_url as string | undefined) || (meta.picture as string | undefined);
 			let { data: profile } = await db.from('profiles').select('*').eq('id', user.id).maybeSingle();
 			if (!profile) {
 				const rawHandle =
@@ -23,17 +22,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 					`owl_${user.id.slice(0, 6)}`;
 				const { data: clash } = await db.from('profiles').select('id').eq('handle', rawHandle).neq('id', user.id).maybeSingle();
 				const finalHandle = clash ? `${rawHandle}_${user.id.slice(0, 6)}` : rawHandle;
-				const rawName = metaFullName || user.email?.split('@')[0] || 'Explorer';
+				const provider = providerProfile(meta);
+				const rawName = provider.name || user.email?.split('@')[0] || 'Explorer';
 				const { data: created } = await db
 					.from('profiles')
-					.upsert({ id: user.id, handle: finalHandle, name: rawName, avatar_url: metaAvatarUrl ?? null }, { onConflict: 'id' })
+					.upsert({ id: user.id, handle: finalHandle, name: rawName, avatar_url: provider.avatarUrl ?? null }, { onConflict: 'id' })
 					.select('*')
 					.maybeSingle();
 				profile = created;
 			} else {
-				const updates: Record<string, unknown> = {};
-				if (metaFullName && metaFullName !== profile.name) updates.name = metaFullName;
-				if (metaAvatarUrl && metaAvatarUrl !== profile.avatar_url) updates.avatar_url = metaAvatarUrl;
+				// Provider (Google) details only fill gaps; they never replace what the user already has.
+				const updates = fillEmptyProfileFields(profile, meta);
 				if (Object.keys(updates).length > 0) {
 					const { data: updated } = await db.from('profiles').update(updates).eq('id', user.id).select('*').maybeSingle();
 					if (updated) profile = updated;

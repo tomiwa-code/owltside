@@ -324,11 +324,18 @@ begin
     new.raw_user_meta_data->>'avatar_url',
     new.raw_user_meta_data->>'picture'
   );
+  -- Provider details (e.g. Google) only fill gaps: an existing name/photo is never replaced.
   insert into public.profiles (id, handle, name, avatar_url)
   values (new.id, v_handle, v_name, v_avatar)
   on conflict (id) do update set
-    name = coalesce(excluded.name, public.profiles.name),
-    avatar_url = coalesce(excluded.avatar_url, public.profiles.avatar_url);
+    name = case
+      when coalesce(btrim(public.profiles.name), '') = '' then excluded.name
+      else public.profiles.name
+    end,
+    avatar_url = case
+      when coalesce(btrim(public.profiles.avatar_url), '') = '' then excluded.avatar_url
+      else public.profiles.avatar_url
+    end;
   return new;
 end;
 $$;
