@@ -762,7 +762,7 @@
 					<span class="block text-body-md font-semibold text-on-surface truncate flex items-center gap-1">{prof.name} {#if prof.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}</span>
 					<span class="block text-body-sm text-on-surface-variant truncate">@{prof.handle} • {prof.city}</span>
 				</span>
-				<span class="text-label-badge px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant border border-surface-glass-border shrink-0">{prof.followers.toLocaleString()} followers</span>
+				<button type="button" class="text-label-badge px-3 py-1.5 rounded-full bg-primary text-on-primary font-semibold shrink-0" onclick={(e) => { e.preventDefault(); toggleIn(follows, prof.id); }}>{follows.value.includes(prof.id) ? 'Following' : 'Follow'}</button>
 			</a>
 		{/each}
 	</div>
