@@ -21,18 +21,44 @@
 	const mm = $derived(String(Math.floor(resendIn / 60)).padStart(2, '0'));
 	const ss = $derived(String(resendIn % 60).padStart(2, '0'));
 
+	function fillFromCode(raw: string, startIndex = 0, targetInputs: Array<HTMLInputElement | null> = inputs) {
+		const cleaned = raw.replace(/\D/g, '');
+		if (!cleaned) return;
+		const offset = cleaned.length >= 6 ? 0 : startIndex;
+		const chars = cleaned.slice(0, 6 - offset).split('');
+		chars.forEach((c, k) => {
+			digits[offset + k] = c;
+			const inputEl = targetInputs[offset + k];
+			if (inputEl) inputEl.value = c;
+		});
+		const next = Math.min(5, offset + chars.length);
+		targetInputs[next]?.focus();
+	}
+
 	function onInput(i: number, e: Event) {
 		const el = e.currentTarget as HTMLInputElement;
 		const v = el.value.replace(/\D/g, '');
 		if (!v) {
 			digits[i] = '';
+			el.value = '';
 			return;
 		}
-		// paste support: spread across boxes
-		const chars = v.slice(0, 6 - i).split('');
-		chars.forEach((c, k) => (digits[i + k] = c));
-		const next = Math.min(5, i + chars.length);
-		inputs[next]?.focus();
+		if (v.length > 1) {
+			fillFromCode(v, i, inputs);
+			el.value = digits[i];
+			return;
+		}
+		digits[i] = v;
+		el.value = v;
+		if (i < 5) inputs[i + 1]?.focus();
+	}
+
+	function onPaste(i: number, e: ClipboardEvent, targetInputs: Array<HTMLInputElement | null>) {
+		const pasted = e.clipboardData?.getData('text') ?? '';
+		if (/\d/.test(pasted)) {
+			e.preventDefault();
+			fillFromCode(pasted, i, targetInputs);
+		}
 	}
 
 	function onKey(i: number, e: KeyboardEvent) {
@@ -44,17 +70,45 @@
 		const v = el.value.replace(/\D/g, '');
 		if (!v) {
 			digits[i] = '';
+			el.value = '';
 			return;
 		}
-		const chars = v.slice(0, 6 - i).split('');
-		chars.forEach((c, k) => (digits[i + k] = c));
-		const next = Math.min(5, i + chars.length);
-		inputsDesk[next]?.focus();
+		if (v.length > 1) {
+			fillFromCode(v, i, inputsDesk);
+			el.value = digits[i];
+			return;
+		}
+		digits[i] = v;
+		el.value = v;
+		if (i < 5) inputsDesk[i + 1]?.focus();
 	}
 
 	function onKeyDesk(i: number, e: KeyboardEvent) {
 		if (e.key === 'Backspace' && !digits[i] && i > 0) inputsDesk[i - 1]?.focus();
 	}
+
+	/* WebOTP API support for SMS/mobile browser autofill */
+	$effect(() => {
+		if (typeof navigator === 'undefined' || !('credentials' in navigator)) return;
+		const ac = new AbortController();
+		navigator.credentials
+			.get({
+				// @ts-expect-error WebOTP API
+				otp: { transport: ['sms'] },
+				signal: ac.signal
+			})
+			.then((cred: unknown) => {
+				const otpCode = (cred as { code?: string } | null)?.code;
+				if (otpCode) {
+					fillFromCode(otpCode, 0, inputs);
+					fillFromCode(otpCode, 0, inputsDesk);
+				}
+			})
+			.catch(() => {
+				// Ignore abort or unsupported environments
+			});
+		return () => ac.abort();
+	});
 </script>
 
 <!-- ── desktop (md+) "verify token" composition per the desktop design source
@@ -105,7 +159,10 @@
 								value={d}
 								oninput={(e) => onInputDesk(i, e)}
 								onkeydown={(e) => onKeyDesk(i, e)}
+								onpaste={(e) => onPaste(i, e, inputsDesk)}
 								inputmode="numeric"
+								pattern="[0-9]*"
+								autocomplete={i === 0 ? 'one-time-code' : 'off'}
 								maxlength="6"
 								aria-label="Digit {i + 1}"
 								class="w-14 h-16 text-center bg-surface-base border border-surface-glass-border rounded-lg font-code text-headline-md text-on-surface focus:outline-none focus:border-primary focus:bg-surface-container-low transition-colors"
@@ -206,7 +263,10 @@
 						value={d}
 						oninput={(e) => onInput(i, e)}
 						onkeydown={(e) => onKey(i, e)}
+						onpaste={(e) => onPaste(i, e, inputs)}
 						inputmode="numeric"
+						pattern="[0-9]*"
+						autocomplete={i === 0 ? 'one-time-code' : 'off'}
 						maxlength="6"
 						aria-label="Digit {i + 1}"
 						class="w-11 h-14 md:w-12 text-center bg-surface-base border border-surface-glass-border rounded-lg font-code text-headline-md text-on-surface focus:outline-none focus:border-primary transition-colors"
