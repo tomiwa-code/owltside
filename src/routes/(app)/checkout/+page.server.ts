@@ -1,6 +1,12 @@
-import { minPrice, getSource } from '$lib/server/datasource';
+import { getSource } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
-import { paystackConfigured, initializeTransaction } from '$lib/server/paystack';
+import {
+	paystackConfigured,
+	paystackSecretConfigured,
+	resolvePaystackPublicKey,
+	initializeTransaction,
+	verifyTransaction
+} from '$lib/server/paystack';
 import { toKobo } from '$lib/utils/money';
 import { env as publicEnv } from '$env/dynamic/public';
 import { error, fail, redirect } from '@sveltejs/kit';
@@ -24,9 +30,12 @@ export const load: PageServerLoad = async ({ url, locals, cookies }) => {
 		qty,
 		promo: promoParam === 'TECHCOMMUNITY' || promoParam === 'OWL10' ? promoParam : null,
 		paystack: paystackConfigured(),
+		paystackPublicKey: resolvePaystackPublicKey() || null,
+		demoMode: locals.demoMode,
 		holder: {
 			name: locals.session?.name ?? 'Guest Explorer',
-			email: locals.session?.email ?? 'guest@owltside.app'
+			email: locals.session?.email ?? 'guest@owltside.app',
+			authenticated: Boolean(locals.session?.userId)
 		}
 	};
 };
@@ -38,8 +47,8 @@ export const actions: Actions = {
 		const tierId = String(form.get('tier') ?? '');
 		const qty = Math.max(1, Math.min(6, Number(form.get('qty') ?? 1)));
 		const promo = String(form.get('promo') ?? '').toUpperCase() || null;
-		const method = String(form.get('method') ?? 'card');
 		const scenario = String(form.get('scenario') ?? 'approve');
+		const paystackReference = String(form.get('paystackReference') ?? '').trim();
 
 		const source = getSource(createSupabase(cookies));
 		if (source.mode === 'supabase' && !locals.session?.userId) {
@@ -52,8 +61,20 @@ export const actions: Actions = {
 
 		const totals = computeTotals(tier.price, qty, promo);
 
-		// Real gateway path (when Paystack is active and ticket is paid)
-		if (paystackConfigured() && totals.total > 0) {
+		// 1. If the client completed payment via Paystack Inline Popup, verify (if secret key present) and mint ticket
+		if (paystackReference) {
+			if (paystackSecretConfigured()) {
+				const paid = await verifyTransaction(paystackReference);
+				if (!paid) {
+					return fail(402, { error: 'Payment could not be verified with Paystack.', totals });
+				}
+			}
+			const order = await source.createOrder(locals.session?.userId ?? 'demo', slug, [{ tierId, qty }]);
+			redirect(303, `/tickets/${order.tickets[0].id}?new=1`);
+		}
+
+		// 2. Real gateway hosted checkout fallback (when Paystack secret key is active and ticket is paid)
+		if (paystackSecretConfigured() && totals.total > 0) {
 			const reference = `OWT-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
 			const init = await initializeTransaction({
 				email: locals.session?.email ?? 'guest@owltside.app',
@@ -64,7 +85,7 @@ export const actions: Actions = {
 			redirect(303, init.authorizationUrl);
 		}
 
-		// Demo sandbox decline simulation
+		// 3. Demo sandbox decline simulation
 		if (source.mode === 'demo' && scenario === 'decline') {
 			return fail(402, { error: 'declined', totals });
 		}

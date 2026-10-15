@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import { getSource } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
-import { paystackConfigured, verifyTransaction } from '$lib/server/paystack';
+import { paystackSecretConfigured, verifyTransaction } from '$lib/server/paystack';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url, cookies, locals }) => {
@@ -17,7 +17,7 @@ export const load: PageServerLoad = async ({ url, cookies, locals }) => {
 	const source = getSource(createSupabase(cookies));
 	const userId = locals.session?.userId ?? 'demo';
 
-	if (paystackConfigured()) {
+	if (paystackSecretConfigured()) {
 		const paid = await verifyTransaction(ref);
 		if (!paid) {
 			error(400, 'Payment verification failed. If your card was charged, contact support.');
