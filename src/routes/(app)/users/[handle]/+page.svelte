@@ -6,6 +6,7 @@
 	import EventRow from '$components/EventRow.svelte';
 	import Sheet from '$components/Sheet.svelte';
 	import TopBar from '$components/TopBar.svelte';
+	import { page } from '$app/state';
 	import { follows, toggleIn } from '$lib/state/prefs.svelte';
 	import { mockProfiles } from '$lib/data/mock-profiles';
 	import { toast } from '$lib/state/toast.svelte';
@@ -13,14 +14,15 @@
 
 	let { data } = $props();
 	const profile = $derived(data.profile);
+	const isDemoMode = $derived(Boolean((data as { demoMode?: boolean }).demoMode ?? page.data.demoMode));
 	const following = $derived(follows.value.includes(profile.id));
 
 	type ProfileCategory = 'all' | 'organized' | 'roles';
 	let category = $state('all' as ProfileCategory);
 	let followersOpen = $state(false);
 	let followingOpen = $state(false);
-	let followersProfiles = $derived(mockProfiles.slice().reverse());
-	let followingProfiles = $derived(mockProfiles.slice(0, 4));
+	let followersProfiles = $derived(isDemoMode && profile.followers > 0 ? mockProfiles.slice().reverse() : []);
+	let followingProfiles = $derived(isDemoMode && profile.following > 0 ? mockProfiles.slice(0, 4) : []);
 
 	const organizedEvents = $derived(data.events.filter((event) => event.organizer?.id === profile.id));
 	const roleEvents = $derived(
@@ -195,6 +197,9 @@
 				<button type="button" class="text-label-badge px-3 py-1.5 rounded-full bg-primary text-on-primary font-semibold shrink-0" onclick={(e) => { e.preventDefault(); toggleIn(follows, prof.id); }}>{follows.value.includes(prof.id) ? 'Following' : 'Follow'}</button>
 			</a>
 		{/each}
+		{#if followersProfiles.length === 0}
+			<p class="text-body-sm text-on-surface-variant text-center py-6">No followers yet.</p>
+		{/if}
 	</div>
 </Sheet>
 
@@ -211,6 +216,9 @@
 				<button type="button" class="text-label-badge px-3 py-1.5 rounded-full bg-primary text-on-primary font-semibold shrink-0" onclick={(e) => { e.preventDefault(); toggleIn(follows, prof.id); }}>{follows.value.includes(prof.id) ? 'Following' : 'Follow'}</button>
 			</a>
 		{/each}
+		{#if followingProfiles.length === 0}
+			<p class="text-body-sm text-on-surface-variant text-center py-6">Not following anyone yet.</p>
+		{/if}
 	</div>
 </Sheet>
 

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { ArrowLeft, ArrowRight, Loader2, ShieldCheck, Timer } from '@lucide/svelte';
+	import { toast } from '$lib/state/toast.svelte';
 
 	let { data, form } = $props();
 
@@ -11,31 +12,55 @@
 	let inputsDesk: Array<HTMLInputElement | null> = [];
 	let verifying = $state(false);
 	let resending = $state(false);
+	let resendSuccess = $state(false);
 	const code = $derived(digits.join(''));
 	const complete = $derived(code.length === 6);
+	const email = $derived(form?.email || data.email || '');
 
-	function handleVerifyEnhance({ action }: { action: URL }) {
-		const isResend = action.search.includes('resend');
-		if (isResend) resending = true;
-		else verifying = true;
-		return async ({ update }: { update: () => Promise<void> }) => {
-			try {
-				await update();
-			} finally {
-				verifying = false;
-				resending = false;
-			}
-		};
-	}
-
-	/* resend countdown */
-	let resendIn = $state(42);
+	/* resend countdown: starts at 0 so the user can resend immediately if needed */
+	let resendIn = $state(0);
 	$effect(() => {
 		const iv = setInterval(() => (resendIn = Math.max(0, resendIn - 1)), 1000);
 		return () => clearInterval(iv);
 	});
 	const mm = $derived(String(Math.floor(resendIn / 60)).padStart(2, '0'));
 	const ss = $derived(String(resendIn % 60).padStart(2, '0'));
+
+	function handleVerifyEnhance({ action, submitter }: { action: URL; submitter: HTMLElement | null }) {
+		const isResend = action.search.includes('resend') || submitter?.getAttribute('formaction')?.includes('resend');
+		resendSuccess = false;
+		if (isResend) resending = true;
+		else verifying = true;
+		return async ({
+			result,
+			update
+		}: {
+			result: { type: string; data?: Record<string, unknown> };
+			update: (opts?: { reset?: boolean }) => Promise<void>;
+		}) => {
+			try {
+				await update({ reset: false });
+				if (isResend && result.type === 'success') {
+					resendIn = 60;
+					resendSuccess = true;
+					for (let idx = 0; idx < 6; idx++) {
+						digits[idx] = '';
+						if (inputs[idx]) inputs[idx]!.value = '';
+						if (inputsDesk[idx]) inputsDesk[idx]!.value = '';
+					}
+					toast('A fresh 6-digit code has been sent to your email.', 'success');
+				} else if (result.type === 'failure') {
+					const errMsg = typeof result.data?.error === 'string' ? result.data.error : 'Could not complete request.';
+					toast(errMsg, 'error');
+				}
+			} finally {
+				if (result.type !== 'redirect') {
+					verifying = false;
+				}
+				resending = false;
+			}
+		};
+	}
 
 	function fillFromCode(raw: string, startIndex = 0, targetInputs: Array<HTMLInputElement | null> = inputs) {
 		const cleaned = raw.replace(/\D/g, '');
@@ -158,7 +183,7 @@
 				<h1 class="font-display text-[32px] leading-10 font-bold tracking-tight text-on-surface mt-5">Check your inbox</h1>
 				<p class="text-body-md text-on-surface-variant mt-3 max-w-sm">
 					We sent a 6-digit cryptographic verification code to
-					<span class="block text-on-surface font-semibold mt-1">{data.email || 'your email'}</span>
+					<span class="block text-on-surface font-semibold mt-1">{email || 'your email'}</span>
 				</p>
 				<p class="text-body-sm text-on-surface-variant mt-2">
 					Wrong email?
@@ -166,7 +191,9 @@
 				</p>
 
 				<form method="POST" action="?/verify" use:enhance={handleVerifyEnhance} class="w-full flex flex-col items-center mt-8">
-					<input type="hidden" name="email" value={data.email} />
+					<input type="hidden" name="email" value={email} />
+					<input type="hidden" name="name" value={data.name ?? ''} />
+					<input type="hidden" name="username" value={data.username ?? ''} />
 					<input type="hidden" name="code" value={code} />
 					<div class="flex items-center justify-center gap-3">
 						{#each digits as d, i (i)}
@@ -188,25 +215,35 @@
 
 					<div class="w-full flex items-center justify-between mt-6">
 						<span class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-surface-container-high border border-surface-glass-border {MONO} text-on-surface-variant">
-							<Timer class="w-3.5 h-3.5" /> Resend code in {mm}:{ss}
+							<Timer class="w-3.5 h-3.5" />
+							{#if resendIn > 0}
+								Resend code in {mm}:{ss}
+							{:else}
+								Didn't receive a code?
+							{/if}
 						</span>
 						<button
 							type="submit"
 							formaction="?/resend"
+							formnovalidate
 							disabled={resendIn > 0 || resending || verifying}
-							class="{MONO} text-on-surface-variant enabled:text-primary enabled:hover:underline disabled:opacity-50 transition-colors"
-							onclick={() => (resendIn = 60)}
+							class="{MONO} text-on-surface-variant enabled:text-primary enabled:hover:underline disabled:opacity-50 transition-colors flex items-center gap-1.5"
 						>
-							{resending ? 'Sending…' : 'Resend Code'}
+							{#if resending}
+								<Loader2 class="w-3.5 h-3.5 animate-spin" />
+								<span>Sending code…</span>
+							{:else}
+								<span>Resend Code</span>
+							{/if}
 						</button>
 					</div>
 
-					{#if form?.resent}
-						<p class="text-body-sm text-accent-emerald mt-4">A fresh 6-digit code has been sent to your email.</p>
+					{#if resendSuccess || form?.resent}
+						<p class="text-body-sm text-accent-emerald mt-4" role="status">A fresh 6-digit code has been sent to your email.</p>
 					{/if}
 
 					{#if form?.error}
-						<p class="text-body-sm text-error mt-4">{form.error}</p>
+						<p class="text-body-sm text-error mt-4" role="alert">{form.error}</p>
 					{/if}
 
 					<button
@@ -266,8 +303,8 @@
 				{data.isNew ? 'Confirm your email' : 'Enter login code'}
 			</p>
 			<p class="text-body-sm text-outline max-w-[300px] mt-1">
-				We sent a 6-digit code to <span class="text-on-surface font-medium">{data.email || 'your email'}</span>.
-				{#if !data.email}
+				We sent a 6-digit code to <span class="text-on-surface font-medium">{email || 'your email'}</span>.
+				{#if !email}
 					<span class="block mt-1">No email set — demo mode accepts any code.</span>
 				{/if}
 			</p>
@@ -279,7 +316,9 @@
 		</div>
 
 		<form method="POST" action="?/verify" use:enhance={handleVerifyEnhance} class="flex flex-col gap-space-md">
-			<input type="hidden" name="email" value={data.email} />
+			<input type="hidden" name="email" value={email} />
+			<input type="hidden" name="name" value={data.name ?? ''} />
+			<input type="hidden" name="username" value={data.username ?? ''} />
 			<input type="hidden" name="code" value={code} />
 			<div class="flex items-center justify-center gap-2">
 				{#each digits as d, i (i)}
@@ -299,7 +338,7 @@
 				{/each}
 			</div>
 			{#if form?.error}
-				<p class="text-body-sm text-error text-center">{form.error}</p>
+				<p class="text-body-sm text-error text-center" role="alert">{form.error}</p>
 			{/if}
 			<button
 				disabled={!complete || verifying || resending}
@@ -314,16 +353,23 @@
 				{/if}
 			</button>
 			<button
-				class="text-body-sm text-on-surface-variant hover:text-on-surface mx-auto disabled:opacity-40"
+				class="text-body-sm text-on-surface-variant enabled:text-primary hover:text-on-surface mx-auto disabled:opacity-40 flex items-center justify-center gap-1.5"
 				type="submit"
 				formaction="?/resend"
+				formnovalidate
 				disabled={resendIn > 0 || resending || verifying}
-				onclick={() => (resendIn = 60)}
 			>
-				{resending ? 'Sending…' : resendIn > 0 ? `Resend code in ${mm}:${ss}` : 'Resend code'}
+				{#if resending}
+					<Loader2 class="w-4 h-4 animate-spin" />
+					<span>Sending code…</span>
+				{:else if resendIn > 0}
+					<span>Resend code in {mm}:{ss}</span>
+				{:else}
+					<span>Resend code</span>
+				{/if}
 			</button>
-			{#if form?.resent}
-				<p class="text-body-sm text-accent-emerald text-center">A fresh code has been sent to your email.</p>
+			{#if resendSuccess || form?.resent}
+				<p class="text-body-sm text-accent-emerald text-center" role="status">A fresh code has been sent to your email.</p>
 			{/if}
 		</form>
 	</div>

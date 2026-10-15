@@ -36,7 +36,8 @@
 	let { data } = $props();
 	const session = $derived((data as { session?: typeof page.data.session }).session ?? page.data.session);
 	const isDemoMode = $derived(Boolean((data as { demoMode?: boolean }).demoMode ?? page.data.demoMode));
-	const isFullyVerified = $derived(!!session && Object.values(appSettings.value.verification).every(Boolean));
+	const isGuest = $derived(!session || data.operatingIdentity === 'guest');
+	const isFullyVerified = $derived(!isGuest && Object.values(appSettings.value.verification).every(Boolean));
 	const hasProfileDraft = $derived(profileDraft.value.hasChanges);
 	const name = $derived(hasProfileDraft ? profileDraft.value.name : (data.profile?.name ?? session?.name ?? 'Guest Explorer'));
 	const handle = $derived(hasProfileDraft ? profileDraft.value.username : (data.profile?.handle ?? session?.handle ?? 'guest'));
@@ -49,8 +50,8 @@
 	const lastUsernameChange = $derived(profileDraft.value.usernameChangedAt ?? data.profile?.usernameChangedAt ?? session?.usernameChangedAt ?? null);
 	const usernameCooldownDays = $derived(lastUsernameChange ? Math.max(0, Math.ceil((new Date(lastUsernameChange).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000))) : 0);
 
-	const followersCount = $derived(data.profile?.followers ?? 0);
-	const followingCount = $derived((data.profile?.following ?? 0) + follows.value.length);
+	const followersCount = $derived(isGuest ? 0 : (data.profile?.followers ?? 0));
+	const followingCount = $derived(isGuest ? 0 : ((data.profile?.following ?? 0) + follows.value.length));
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
@@ -74,13 +75,13 @@
 	let followingOpen = $state(false);
 
 	let followingProfiles = $derived.by(() => {
-		if (!session) return [];
+		if (isGuest) return [];
 		const followed = new Set(follows.value);
 		const matched = mockProfiles.filter((p) => followed.has(p.id));
 		if (matched.length) return matched;
 		return isDemoMode ? mockProfiles.slice(0, 4) : [];
 	});
-	let followersProfiles = $derived(session && isDemoMode ? mockProfiles.slice().reverse() : []);
+	let followersProfiles = $derived(!isGuest && isDemoMode ? mockProfiles.slice().reverse() : []);
 	const interestChoices = ['Afrobeats', 'Amapiano', 'Live music', 'Nightlife', 'Tech', 'Art & design', 'Comedy', 'Food', 'Fashion', 'Film', 'Workshops', 'Fitness'];
 
 	// month grid for the current month
@@ -273,7 +274,7 @@
 		</div>
 	</header>
 
-	{#if !session}
+	{#if isGuest}
 		<div class="mx-auto w-full max-w-xl px-6 py-20 flex-1 flex flex-col items-center justify-center text-center">
 			<section class="w-full rounded-2xl border border-surface-glass-border bg-surface-container p-10 flex flex-col items-center gap-5">
 				<div class="w-16 h-16 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center glow-primary">
@@ -571,7 +572,7 @@
 	</header>
 
 	<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
-		{#if !session}
+		{#if isGuest}
 			<div class="flex-1 flex flex-col items-center justify-center px-gutter py-12 text-center">
 				<div class="w-full max-w-sm rounded-2xl border border-surface-glass-border bg-surface-container p-6 flex flex-col items-center gap-4">
 					<div class="w-14 h-14 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center glow-primary">

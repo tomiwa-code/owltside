@@ -22,22 +22,22 @@
 
 	function handleSendCode() {
 		submitting = true;
-		return async ({ update }: { update: () => Promise<void> }) => {
+		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
 			try {
 				await update();
 			} finally {
-				submitting = false;
+				if (result.type !== 'redirect') submitting = false;
 			}
 		};
 	}
 
 	function handleGoogle() {
 		googleLoading = true;
-		return async ({ update }: { update: () => Promise<void> }) => {
+		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
 			try {
 				await update();
 			} finally {
-				googleLoading = false;
+				if (result.type !== 'redirect') googleLoading = false;
 			}
 		};
 	}

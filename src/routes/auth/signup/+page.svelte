@@ -24,16 +24,18 @@
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
-	function handleSignupEnhance({ action }: { action: URL }) {
-		const isGoogle = action.search.includes('google');
+	function handleSignupEnhance({ action, submitter }: { action: URL; submitter: HTMLElement | null }) {
+		const isGoogle = action.search.includes('google') || submitter?.getAttribute('formaction')?.includes('google');
 		if (isGoogle) googleLoading = true;
 		else submitting = true;
-		return async ({ update }: { update: () => Promise<void> }) => {
+		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
 			try {
 				await update();
 			} finally {
-				submitting = false;
-				googleLoading = false;
+				if (result.type !== 'redirect') {
+					submitting = false;
+					googleLoading = false;
+				}
 			}
 		};
 	}

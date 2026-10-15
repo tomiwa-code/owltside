@@ -6,13 +6,28 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, cookies }) => {
 	const source = getSource(createSupabase(cookies));
-	const userId = locals.session?.userId ?? 'demo';
+	if (!locals.session) {
+		const events = await source.listEvents();
+		return {
+			session: null,
+			demoMode: locals.demoMode,
+			tickets: [],
+			profile: null,
+			events
+		};
+	}
 	const [tickets, profile, events] = await Promise.all([
-		source.getTickets(userId),
-		locals.session ? source.getProfile(locals.session.handle) : Promise.resolve(undefined),
+		source.getTickets(locals.session.userId),
+		source.getProfile(locals.session.handle),
 		source.listEvents()
 	]);
-	return { tickets, profile: profile ?? null, events };
+	return {
+		session: locals.session,
+		demoMode: locals.demoMode,
+		tickets,
+		profile: profile ?? null,
+		events
+	};
 };
 
 export const actions: Actions = {
