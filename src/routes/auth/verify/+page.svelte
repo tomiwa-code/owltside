@@ -118,7 +118,8 @@
 							<Timer class="w-3.5 h-3.5" /> Resend code in {mm}:{ss}
 						</span>
 						<button
-							type="button"
+							type="submit"
+							formaction="?/resend"
 							disabled={resendIn > 0}
 							class="{MONO} text-on-surface-variant enabled:text-primary enabled:hover:underline disabled:opacity-50 transition-colors"
 							onclick={() => (resendIn = 60)}
@@ -126,6 +127,10 @@
 							Resend Code
 						</button>
 					</div>
+
+					{#if form?.resent}
+						<p class="text-body-sm text-accent-emerald mt-4">A fresh 6-digit code has been sent to your email.</p>
+					{/if}
 
 					{#if form?.error}
 						<p class="text-body-sm text-error mt-4">{form.error}</p>
@@ -218,9 +223,18 @@
 			>
 				Verify & Enter
 			</button>
-			<button class="text-body-sm text-on-surface-variant hover:text-on-surface mx-auto" type="button">
-				Resend code
+			<button
+				class="text-body-sm text-on-surface-variant hover:text-on-surface mx-auto disabled:opacity-40"
+				type="submit"
+				formaction="?/resend"
+				disabled={resendIn > 0}
+				onclick={() => (resendIn = 60)}
+			>
+				{resendIn > 0 ? `Resend code in ${mm}:${ss}` : 'Resend code'}
 			</button>
+			{#if form?.resent}
+				<p class="text-body-sm text-accent-emerald text-center">A fresh code has been sent to your email.</p>
+			{/if}
 		</form>
 	</div>
 </main>

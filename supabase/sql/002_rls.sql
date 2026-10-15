@@ -8,11 +8,13 @@ alter table public.conversations enable row level security;
 alter table public.messages enable row level security;
 alter table public.notifications enable row level security;
 
--- profiles: everyone can read, owner updates themselves
+-- profiles: everyone can read, owner updates/inserts themselves
 drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles for select using (true);
 drop policy if exists profiles_update on public.profiles;
 create policy profiles_update on public.profiles for update using (auth.uid() = id);
+drop policy if exists profiles_insert on public.profiles;
+create policy profiles_insert on public.profiles for insert with check (auth.uid() = id);
 
 -- events: public read; organisers manage their own
 drop policy if exists events_select on public.events;

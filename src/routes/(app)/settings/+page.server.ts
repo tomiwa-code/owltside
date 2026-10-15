@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import { OPERATING_IDENTITY_COOKIE, isOperatingIdentity } from '$lib/constants/operating-identity';
+import { createSupabase } from '$lib/server/supabase';
 
 export const actions: Actions = {
 	setIdentity: async ({ request, cookies }) => {
@@ -18,6 +19,10 @@ export const actions: Actions = {
 		redirect(303, identity === 'organizer' ? '/organizer' : '/settings');
 	},
 	signout: async ({ cookies }) => {
+		const db = createSupabase(cookies);
+		if (db) {
+			await db.auth.signOut();
+		}
 		cookies.delete('owltside_demo_session', { path: '/' });
 		cookies.delete(OPERATING_IDENTITY_COOKIE, { path: '/' });
 		redirect(303, '/');

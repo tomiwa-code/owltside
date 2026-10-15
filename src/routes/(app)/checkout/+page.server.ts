@@ -49,20 +49,20 @@ export const actions: Actions = {
 
 		const totals = computeTotals(tier.price, qty, promo);
 
-		// Real gateway path
-		if (source.mode === 'supabase' || paystackConfigured()) {
+		// Real gateway path (when Paystack is active and ticket is paid)
+		if (paystackConfigured() && totals.total > 0) {
 			const reference = `OWT-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
 			const init = await initializeTransaction({
 				email: locals.session?.email ?? 'guest@owltside.app',
 				amountKobo: toKobo(totals.total),
 				reference,
-				callbackUrl: `${env.PUBLIC_APP_URL ?? url.origin}/checkout/success?ref=${reference}`
+				callbackUrl: `${env.PUBLIC_APP_URL ?? url.origin}/checkout/success?ref=${reference}&slug=${encodeURIComponent(slug)}&tier=${encodeURIComponent(tierId)}&qty=${qty}`
 			});
 			redirect(303, init.authorizationUrl);
 		}
 
-		// Demo sandbox harness
-		if (scenario === 'decline') {
+		// Demo sandbox decline simulation
+		if (source.mode === 'demo' && scenario === 'decline') {
 			return fail(402, { error: 'declined', totals });
 		}
 
