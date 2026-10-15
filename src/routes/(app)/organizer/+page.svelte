@@ -280,15 +280,6 @@
 		</div>
 	{/if}
 
-	{#if !mainEvent}
-	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-2">
-		<div class="rounded-xl border border-surface-glass-border bg-surface-container p-10 flex flex-col items-center gap-4 text-center">
-			<div class="w-12 h-12 rounded-full bg-surface-container-high flex items-center justify-center"><Megaphone class="w-6 h-6 text-on-surface-variant" /></div>
-			<div><h2 class="font-display text-headline-md text-on-surface">No events yet</h2><p class="text-body-sm text-on-surface-variant mt-1 max-w-md">Launch the wizard and mint your first gate-ready event in five steps.</p></div>
-			<a href="/organizer/create" class="h-11 px-6 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center">Create event</a>
-		</div>
-	</div>
-	{/if}
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 grid xl:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
 		<div class="flex flex-col gap-6 min-w-0">
 			{#if mainEvent}
