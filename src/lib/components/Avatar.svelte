@@ -3,13 +3,11 @@
 		name,
 		color = '#8083ff',
 		src = null,
-		imageStyle = '',
 		size = 'md'
 	}: {
 		name: string;
 		color?: string;
 		src?: string | null;
-		imageStyle?: string;
 		size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 	} = $props();
 
@@ -32,7 +30,7 @@
 
 <div class="relative shrink-0 {sizes[size]}">
 	{#if src}
-		<img src={src} alt={name} style={imageStyle} class="w-full h-full rounded-full object-cover ring-1 ring-surface-glass-border" />
+		<img src={src} alt={name} class="w-full h-full rounded-full object-cover ring-1 ring-surface-glass-border" />
 	{:else}
 		<div
 			class="w-full h-full rounded-full flex items-center justify-center font-semibold text-on-primary-container ring-1 ring-surface-glass-border"

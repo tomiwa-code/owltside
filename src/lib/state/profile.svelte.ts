@@ -12,12 +12,9 @@ export interface ProfileDraft {
 }
 
 export interface ProfileAppearance {
+	/** Already resized + cropped by the upload crop step. */
 	avatarData: string | null;
 	bannerData: string | null;
-	avatarZoom: number;
-	avatarCropY: number;
-	bannerZoom: number;
-	bannerCropY: number;
 }
 
 export const profileDraft = persisted<ProfileDraft>('owltside.profile.draft.v1', {
@@ -33,9 +30,5 @@ export const profileDraft = persisted<ProfileDraft>('owltside.profile.draft.v1',
 
 export const profileAppearance = persisted<ProfileAppearance>('owltside.profile.appearance.v1', {
 	avatarData: null,
-	bannerData: null,
-	avatarZoom: 1,
-	avatarCropY: 50,
-	bannerZoom: 1,
-	bannerCropY: 50
+	bannerData: null
 });

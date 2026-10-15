@@ -25,6 +25,7 @@
 	import { appSettings, type AppSettings } from '$lib/state/settings.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import Sheet from '$components/Sheet.svelte';
+	import ImageCropSheet from '$components/ImageCropSheet.svelte';
 
 	let { category }: { category?: string } = $props();
 
@@ -64,8 +65,10 @@
 	let identityName = $state('');
 	let identityDob = $state('');
 	let identityNumber = $state('');
-	let identityFront = $state<File | null>(null);
-	let identityBack = $state<File | null>(null);
+	let identityFront = $state<{ name: string; preview: string | null } | null>(null);
+	let identityBack = $state<{ name: string; preview: string | null } | null>(null);
+	let cropSide = $state<'front' | 'back' | null>(null);
+	let cropFile = $state<File | null>(null);
 	let identitySelfieDone = $state(false);
 	let identityError = $state('');
 	let payoutOpen = $state(false);
@@ -134,6 +137,35 @@
 		identityError = '';
 		identityStep = 1;
 		identityOpen = true;
+	}
+	/** A chosen document is only attached after the resize/crop step is confirmed. */
+	function chooseIdentityDoc(event: Event, side: 'front' | 'back') {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0] ?? null;
+		input.value = '';
+		if (!file) return;
+		if (!file.type.startsWith('image/')) {
+			// PDFs keep their original bytes — nothing to resize or crop.
+			const attachment = { name: file.name, preview: null };
+			if (side === 'front') identityFront = attachment;
+			else identityBack = attachment;
+			toast(`${file.name} attached — resize and crop apply to images.`, 'info');
+			return;
+		}
+		cropFile = file;
+		cropSide = side;
+	}
+	function closeCrop() {
+		cropSide = null;
+		cropFile = null;
+	}
+	function applyCroppedDocument(preview: string) {
+		const side = cropSide;
+		const attachment = { name: cropFile?.name ?? 'ID photo', preview };
+		if (side === 'front') identityFront = attachment;
+		else if (side === 'back') identityBack = attachment;
+		toast(`${side === 'back' ? 'Back' : 'Front'} of ID resized and attached.`, 'success');
+		closeCrop();
 	}
 	function nextIdentity() {
 		identityError = '';
@@ -452,16 +484,24 @@
 				<div class="flex flex-col gap-3">
 					<p class="text-body-sm text-on-surface-variant">Upload a clear photo/scan of your <span class="font-semibold text-on-surface">{identityDoc}</span> (front and back where applicable).</p>
 					<label class="rounded-lg border border-dashed border-surface-glass-border bg-surface-container-high/30 p-4 flex flex-col items-center gap-2 cursor-pointer hover:bg-surface-container-high/50">
-						<Upload class="w-5 h-5 text-on-surface-variant" />
+						{#if identityFront?.preview}
+							<img src={identityFront.preview} alt="Front of ID preview" class="w-full max-h-32 object-contain rounded-md bg-surface-base" />
+						{:else}
+							<Upload class="w-5 h-5 text-on-surface-variant" />
+						{/if}
 						<span class="text-body-sm font-semibold text-on-surface">Front of ID {identityFront ? `• ${identityFront.name}` : ''}</span>
-						<span class="text-xs text-on-surface-variant">PNG, JPG up to 5MB</span>
-						<input type="file" accept="image/*,.pdf" class="sr-only" onchange={(e) => { const f = (e.currentTarget as HTMLInputElement).files?.[0] || null; identityFront = f; }} />
+						<span class="text-xs text-on-surface-variant">PNG, JPG up to 5MB{identityFront?.preview ? ' • resized & cropped' : ''}</span>
+						<input type="file" accept="image/*,.pdf" class="sr-only" aria-label="Upload front of ID" onchange={(event) => chooseIdentityDoc(event, 'front')} />
 					</label>
 					<label class="rounded-lg border border-dashed border-surface-glass-border bg-surface-container-high/30 p-4 flex flex-col items-center gap-2 cursor-pointer hover:bg-surface-container-high/50">
-						<Upload class="w-5 h-5 text-on-surface-variant" />
+						{#if identityBack?.preview}
+							<img src={identityBack.preview} alt="Back of ID preview" class="w-full max-h-32 object-contain rounded-md bg-surface-base" />
+						{:else}
+							<Upload class="w-5 h-5 text-on-surface-variant" />
+						{/if}
 						<span class="text-body-sm font-semibold text-on-surface">Back of ID {identityBack ? `• ${identityBack.name}` : ''} (if applicable)</span>
 						<span class="text-xs text-on-surface-variant">Skip if single-sided</span>
-						<input type="file" accept="image/*,.pdf" class="sr-only" onchange={(e) => { const f = (e.currentTarget as HTMLInputElement).files?.[0] || null; identityBack = f; }} />
+						<input type="file" accept="image/*,.pdf" class="sr-only" aria-label="Upload back of ID" onchange={(event) => chooseIdentityDoc(event, 'back')} />
 					</label>
 					{#if identityError}<p class="text-body-sm text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">{identityError}</p>{/if}
 					<div class="grid grid-cols-2 gap-2">
@@ -489,6 +529,18 @@
 			{/if}
 		</div>
 	</Sheet>
+
+	<ImageCropSheet
+		open={cropSide !== null}
+		file={cropFile}
+		title={cropSide === 'back' ? 'Resize & crop · back of ID' : 'Resize & crop · front of ID'}
+		maxDimension={1600}
+		maxZoom={2}
+		confirmLabel="Use this image"
+		hint="Resize and crop the document, then confirm. The image is only attached after you confirm."
+		confirm={applyCroppedDocument}
+		close={closeCrop}
+	/>
 
 	<!-- Payout Sheet -->
 	<Sheet open={payoutOpen} title="Verify Payout Account" close={() => (payoutOpen = false)}>

@@ -21,6 +21,7 @@
 		WifiOff
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
+	import ImageCropSheet from '$components/ImageCropSheet.svelte';
 	import SavedEventsList from '$components/SavedEventsList.svelte';
 	import Sheet from '$components/Sheet.svelte';
 	import { mockProfiles } from '$lib/data/mock-profiles';
@@ -44,8 +45,6 @@
 	const interests = $derived(hasProfileDraft ? profileDraft.value.interests : (data.profile?.interests ?? []));
 	const avatarPhoto = $derived(profileAppearance.value.avatarData || data.profile?.avatarUrl || session?.avatarUrl || null);
 	const bannerPhoto = $derived(profileAppearance.value.bannerData || data.profile?.bannerUrl || null);
-	const avatarImageStyle = $derived(`transform: scale(${profileAppearance.value.avatarZoom}); object-position: 50% ${profileAppearance.value.avatarCropY}%;`);
-	const bannerImageStyle = $derived(`transform: scale(${profileAppearance.value.bannerZoom}); object-position: 50% ${profileAppearance.value.bannerCropY}%;`);
 	const lastUsernameChange = $derived(profileDraft.value.usernameChangedAt ?? data.profile?.usernameChangedAt ?? session?.usernameChangedAt ?? null);
 	const usernameCooldownDays = $derived(lastUsernameChange ? Math.max(0, Math.ceil((new Date(lastUsernameChange).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000))) : 0);
 
@@ -160,34 +159,35 @@
 			: [...editInterests, interest].slice(0, 12);
 	}
 
-	async function handleImageUpload(event: Event, kind: 'avatar' | 'banner') {
+	let cropKind = $state<'avatar' | 'banner' | null>(null);
+	let cropFile = $state<File | null>(null);
+
+	/** Picking a file only stages it — resize/crop happens before anything is applied. */
+	function chooseImage(event: Event, kind: 'avatar' | 'banner') {
 		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
+		const file = input.files?.[0] ?? null;
+		input.value = '';
 		if (!file) return;
 		if (!file.type.startsWith('image/')) {
 			toast('Choose an image file to upload.', 'error');
 			return;
 		}
-		try {
-			const bitmap = await createImageBitmap(file);
-			const maxDimension = kind === 'avatar' ? 1200 : 1800;
-			const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
-			const canvas = document.createElement('canvas');
-			canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-			canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-			const context = canvas.getContext('2d');
-			if (!context) throw new Error('Image canvas is unavailable');
-			context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-			bitmap.close();
-			const image = canvas.toDataURL('image/jpeg', 0.82);
-			if (kind === 'avatar') profileAppearance.value.avatarData = image;
-			else profileAppearance.value.bannerData = image;
-			toast(`${kind === 'avatar' ? 'Profile photo' : 'Banner'} uploaded. Adjust the crop before saving.`, 'success');
-		} catch {
-			toast('This image could not be resized on your device.', 'error');
-		} finally {
-			input.value = '';
-		}
+		cropFile = file;
+		cropKind = kind;
+	}
+
+	function closeCrop() {
+		cropKind = null;
+		cropFile = null;
+	}
+
+	/** Called with the resized + cropped image once the user confirms the crop step. */
+	function applyCroppedImage(image: string) {
+		const kind = cropKind;
+		if (kind === 'avatar') profileAppearance.value = { ...profileAppearance.value, avatarData: image };
+		else if (kind === 'banner') profileAppearance.value = { ...profileAppearance.value, bannerData: image };
+		toast(`${kind === 'banner' ? 'Banner' : 'Profile photo'} updated — save changes to keep it.`, 'success');
+		closeCrop();
 	}
 
 	function handleProfileEnhance() {
@@ -262,7 +262,7 @@
 				<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">GATE_PASS_ACTIVE</span>
 			</div>
 			<a href="/profile" aria-label="Your profile" class="shrink-0">
-				<Avatar name={name} src={avatarPhoto} imageStyle={avatarImageStyle} size="sm" />
+				<Avatar name={name} src={avatarPhoto} size="sm" />
 			</a>
 		</div>
 	</header>
@@ -293,7 +293,7 @@
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8">
 		<section class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
 			<div class="relative h-32 overflow-hidden" style="background: linear-gradient(140deg, #312e81 0%, #1e1b4b 45%, #0b1326 100%);">
-				{#if bannerPhoto}<img src={bannerPhoto} alt="Profile banner" class="absolute inset-0 w-full h-full object-cover" style={bannerImageStyle} />{/if}
+				{#if bannerPhoto}<img src={bannerPhoto} alt="Profile banner" class="absolute inset-0 w-full h-full object-cover" />{/if}
 				<div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-surface-container"></div>
 				<span class="absolute top-3 right-4 {MONO} text-on-surface-variant">Node 0x7E3 • {city}</span>
 			</div>
@@ -302,7 +302,7 @@
 					<span class="relative shrink-0">
 						<span class="block w-24 h-24 rounded-full overflow-hidden shadow-2xl p-0.5 bg-gradient-to-tr from-primary to-accent-emerald">
 							<span class="block w-full h-full rounded-full bg-surface-container flex items-center justify-center">
-								<Avatar name={name} src={avatarPhoto} imageStyle={avatarImageStyle} size="xl" />
+								<Avatar name={name} src={avatarPhoto} size="xl" />
 							</span>
 						</span>
 					</span>
@@ -546,7 +546,7 @@
 		<div class="flex flex-col w-full relative md:max-w-3xl md:mx-auto">
 			<!-- cover -->
 			<div class="relative w-full h-44 overflow-hidden" style="background: linear-gradient(140deg, #312e81 0%, #1e1b4b 45%, #0b1326 100%);">
-				{#if bannerPhoto}<img src={bannerPhoto} alt="Profile banner" class="absolute inset-0 w-full h-full object-cover" style={bannerImageStyle} />{/if}
+				{#if bannerPhoto}<img src={bannerPhoto} alt="Profile banner" class="absolute inset-0 w-full h-full object-cover" />{/if}
 				<div class="absolute inset-0 bg-gradient-to-b from-surface/20 via-surface/60 to-surface"></div>
 			</div>
 
@@ -555,7 +555,7 @@
 					<div class="relative">
 						<div class="w-24 h-24 rounded-full overflow-hidden shadow-2xl p-0.5 bg-gradient-to-tr from-primary to-accent-emerald">
 							<div class="w-full h-full rounded-full bg-surface-container flex items-center justify-center">
-								<Avatar name={name} src={avatarPhoto} imageStyle={avatarImageStyle} size="xl" />
+								<Avatar name={name} src={avatarPhoto} size="xl" />
 							</div>
 						</div>
 					</div>
@@ -682,31 +682,25 @@
 		<section class="rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3">
 			<h3 class="text-body-sm font-semibold text-on-surface mb-3">Profile photo</h3>
 			<div class="flex items-center gap-3">
-				<Avatar name={editName || name} src={avatarPhoto} imageStyle={avatarImageStyle} size="xl" />
+				<Avatar name={editName || name} src={avatarPhoto} size="xl" />
 				<label class="inline-flex items-center justify-center h-10 px-4 rounded-full border border-surface-glass-border text-body-sm font-medium text-on-surface hover:bg-surface-container-high cursor-pointer">
 					Choose photo
-					<input type="file" accept="image/*" class="sr-only" aria-label="Upload profile photo" onchange={(event) => handleImageUpload(event, 'avatar')} />
+					<input type="file" accept="image/*" class="sr-only" aria-label="Upload profile photo" onchange={(event) => chooseImage(event, 'avatar')} />
 				</label>
 			</div>
-			<div class="grid grid-cols-2 gap-3 mt-3">
-				<label class="text-xs text-on-surface-variant">Zoom / resize<input type="range" min="1" max="2" step="0.05" bind:value={profileAppearance.value.avatarZoom} class="block w-full mt-1 accent-primary" /></label>
-				<label class="text-xs text-on-surface-variant">Vertical crop<input type="range" min="0" max="100" step="1" bind:value={profileAppearance.value.avatarCropY} class="block w-full mt-1 accent-primary" /></label>
-			</div>
+			<p class="text-xs text-on-surface-variant mt-3">Resize and crop the photo before it is confirmed — the saved picture matches the crop exactly.</p>
 		</section>
 
 		<section class="rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3">
 			<h3 class="text-body-sm font-semibold text-on-surface mb-3">Profile banner</h3>
 			<div class="relative h-24 rounded-lg overflow-hidden bg-gradient-to-r from-primary/50 via-[#312e81] to-surface-base">
-				{#if bannerPhoto}<img src={bannerPhoto} alt="Banner crop preview" class="absolute inset-0 w-full h-full object-cover" style={bannerImageStyle} />{/if}
+				{#if bannerPhoto}<img src={bannerPhoto} alt="Profile banner" class="absolute inset-0 w-full h-full object-cover" />{/if}
 			</div>
 			<label class="inline-flex items-center justify-center h-10 px-4 mt-3 rounded-full border border-surface-glass-border text-body-sm font-medium text-on-surface hover:bg-surface-container-high cursor-pointer">
 				Choose banner
-				<input type="file" accept="image/*" class="sr-only" aria-label="Upload profile banner" onchange={(event) => handleImageUpload(event, 'banner')} />
+				<input type="file" accept="image/*" class="sr-only" aria-label="Upload profile banner" onchange={(event) => chooseImage(event, 'banner')} />
 			</label>
-			<div class="grid grid-cols-2 gap-3 mt-3">
-				<label class="text-xs text-on-surface-variant">Zoom / resize<input type="range" min="1" max="2.5" step="0.05" bind:value={profileAppearance.value.bannerZoom} class="block w-full mt-1 accent-primary" /></label>
-				<label class="text-xs text-on-surface-variant">Vertical crop<input type="range" min="0" max="100" step="1" bind:value={profileAppearance.value.bannerCropY} class="block w-full mt-1 accent-primary" /></label>
-			</div>
+			<p class="text-xs text-on-surface-variant mt-3">Resize and crop the banner before it is confirmed.</p>
 		</section>
 
 		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -751,6 +745,21 @@
 		</fieldset>
 	</form>
 </Sheet>
+
+<ImageCropSheet
+	open={cropKind !== null}
+	file={cropFile}
+	title={cropKind === 'banner' ? 'Resize & crop banner' : 'Resize & crop photo'}
+	aspect={cropKind === 'banner' ? 2.33 : 1}
+	round={cropKind === 'avatar'}
+	maxDimension={cropKind === 'banner' ? 1600 : 640}
+	confirmLabel={cropKind === 'banner' ? 'Use banner' : 'Use photo'}
+	hint={cropKind === 'banner'
+		? 'Zoom and reposition the banner, then confirm. Nothing changes until you tap "Use banner".'
+		: 'Zoom and reposition your photo, then confirm. Nothing changes until you tap "Use photo".'}
+	confirm={applyCroppedImage}
+	close={closeCrop}
+/>
 
 <Sheet open={followersOpen} title="Followers • 342" close={() => (followersOpen = false)}>
 	<div class="flex flex-col gap-3 pt-2">
