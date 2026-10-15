@@ -12,22 +12,32 @@ export const handle: Handle = async ({ event, resolve }) => {
 			data: { user }
 		} = await db.auth.getUser();
 		if (user) {
+			const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+			const metaFullName = (meta.full_name as string | undefined) || (meta.name as string | undefined);
+			const metaAvatarUrl = (meta.avatar_url as string | undefined) || (meta.picture as string | undefined);
 			let { data: profile } = await db.from('profiles').select('*').eq('id', user.id).maybeSingle();
 			if (!profile) {
 				const rawHandle =
-					(user.user_metadata?.handle as string | undefined) ||
+					(meta.handle as string | undefined) ||
 					user.email?.split('@')[0]?.replace(/[^a-z0-9_]/gi, '').toLowerCase() ||
 					`owl_${user.id.slice(0, 6)}`;
-				const rawName =
-					(user.user_metadata?.full_name as string | undefined) ||
-					user.email?.split('@')[0] ||
-					'Explorer';
+				const { data: clash } = await db.from('profiles').select('id').eq('handle', rawHandle).neq('id', user.id).maybeSingle();
+				const finalHandle = clash ? `${rawHandle}_${user.id.slice(0, 6)}` : rawHandle;
+				const rawName = metaFullName || user.email?.split('@')[0] || 'Explorer';
 				const { data: created } = await db
 					.from('profiles')
-					.upsert({ id: user.id, handle: rawHandle, name: rawName }, { onConflict: 'id' })
+					.upsert({ id: user.id, handle: finalHandle, name: rawName, avatar_url: metaAvatarUrl ?? null }, { onConflict: 'id' })
 					.select('*')
 					.maybeSingle();
 				profile = created;
+			} else {
+				const updates: Record<string, unknown> = {};
+				if (metaFullName && metaFullName !== profile.name) updates.name = metaFullName;
+				if (metaAvatarUrl && metaAvatarUrl !== profile.avatar_url) updates.avatar_url = metaAvatarUrl;
+				if (Object.keys(updates).length > 0) {
+					const { data: updated } = await db.from('profiles').update(updates).eq('id', user.id).select('*').maybeSingle();
+					if (updated) profile = updated;
+				}
 			}
 			event.locals.session = {
 				userId: user.id,

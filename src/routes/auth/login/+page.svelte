@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import {
 		AtSign,
@@ -22,7 +23,11 @@
 
 	function handleSendCode() {
 		submitting = true;
-		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
+		return async ({ result, update }: { result: { type: string; location?: string }; update: () => Promise<void> }) => {
+			if (result.type === 'redirect' && result.location) {
+				window.location.assign(result.location);
+				return;
+			}
 			try {
 				await update();
 			} finally {
@@ -33,7 +38,11 @@
 
 	function handleGoogle() {
 		googleLoading = true;
-		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
+		return async ({ result, update }: { result: { type: string; location?: string }; update: () => Promise<void> }) => {
+			if (result.type === 'redirect' && result.location) {
+				window.location.assign(result.location);
+				return;
+			}
 			try {
 				await update();
 			} finally {
@@ -127,6 +136,9 @@
 						</div>
 						{#if form?.error}
 							<p class="text-body-sm text-error">{form.error}</p>
+						{/if}
+						{#if page.url.searchParams.get('error')}
+							<p class="text-body-sm text-error">{page.url.searchParams.get('error')}</p>
 						{/if}
 						<p class="text-body-sm text-on-surface-variant flex items-center gap-1.5 mt-0.5">
 							<Mail class="w-4 h-4 text-primary shrink-0" /> We'll send a 6-digit login verification code to your email.
@@ -261,6 +273,9 @@
 				</div>
 				{#if form?.error}
 					<p class="text-body-sm text-error">{form.error}</p>
+				{/if}
+				{#if page.url.searchParams.get('error')}
+					<p class="text-body-sm text-error">{page.url.searchParams.get('error')}</p>
 				{/if}
 				<p class="text-body-sm text-outline flex items-center gap-1.5 mt-0.5">
 					<Mail class="w-4 h-4 text-on-surface" /> We'll send a 6-digit login verification code to your email.

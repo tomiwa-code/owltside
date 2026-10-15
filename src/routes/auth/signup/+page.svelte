@@ -28,7 +28,11 @@
 		const isGoogle = action.search.includes('google') || submitter?.getAttribute('formaction')?.includes('google');
 		if (isGoogle) googleLoading = true;
 		else submitting = true;
-		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
+		return async ({ result, update }: { result: { type: string; location?: string }; update: () => Promise<void> }) => {
+			if (result.type === 'redirect' && result.location) {
+				window.location.assign(result.location);
+				return;
+			}
 			try {
 				await update();
 			} finally {
@@ -190,7 +194,7 @@
 							<span>Create Account</span>
 						{/if}
 					</button>
-					<button type="submit" formaction="?/google" formnovalidate disabled={!terms || !ageConfirmed || submitting || googleLoading} class="w-full h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md font-semibold flex items-center justify-center gap-2 hover:border-primary/40 disabled:opacity-40">
+					<button type="submit" formaction="?/google" formnovalidate disabled={submitting || googleLoading} class="w-full h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md font-semibold flex items-center justify-center gap-2 hover:border-primary/40 disabled:opacity-40">
 						{#if googleLoading}
 							<Loader2 class="w-5 h-5 animate-spin" />
 							<span>Connecting to Google…</span>
@@ -337,7 +341,7 @@
 					<span>Create Account</span>
 				{/if}
 			</button>
-			<button type="submit" formaction="?/google" formnovalidate disabled={!terms || !ageConfirmed || submitting || googleLoading} class="w-full h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md font-semibold flex items-center justify-center gap-2 hover:border-primary/40 disabled:opacity-40">
+			<button type="submit" formaction="?/google" formnovalidate disabled={submitting || googleLoading} class="w-full h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md font-semibold flex items-center justify-center gap-2 hover:border-primary/40 disabled:opacity-40">
 				{#if googleLoading}
 					<Loader2 class="w-5 h-5 animate-spin" />
 					<span>Connecting to Google…</span>
