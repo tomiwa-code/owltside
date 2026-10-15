@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { BadgeCheck, Globe, UserPlus, UserCheck, Users, Mic, CalendarDays, Crown } from '@lucide/svelte';
+	import { BadgeCheck, Bell, Globe, Search, UserPlus, UserCheck, Users, Mic, CalendarDays, Crown } from '@lucide/svelte';
 
 	import Avatar from '$components/Avatar.svelte';
 	import Chip from '$components/Chip.svelte';
@@ -50,13 +50,166 @@
 			(speaker) => speaker.id === profile.id && (!speaker.invited || speaker.inviteStatus === 'accepted')
 		);
 	}
+
+	const MONO = 'font-code text-[11px] tracking-[0.12em] uppercase';
 </script>
 
 <svelte:head><title>{profile.name} • Owltside</title></svelte:head>
 
+<!-- ── Desktop console (md+) — mirrors app header + community profile ── -->
+<div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
+	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
+			<a href="/home" class="flex items-center gap-2.5 shrink-0">
+				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
+				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
+			</a>
+			<nav class="flex items-center gap-1" aria-label="Primary">
+				{#each [['/home','Home'],['/explore','Explore'],['/tickets','Tickets'],['/organizer','Organizer']] as [href,label]}
+					<a {href} class="px-3 h-9 rounded-lg flex items-center text-body-sm text-on-surface-variant hover:text-on-surface transition-colors">{label}</a>
+				{/each}
+			</nav>
+			<div class="flex-1"></div>
+			<span class="relative hidden lg:flex items-center w-72 h-10">
+				<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
+				<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, gates, artists…</span>
+				<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
+			</span>
+			<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
+				<Bell class="w-4.5 h-4.5" />
+				<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
+			</a>
+			<a href="/profile" aria-label="Your profile" class="shrink-0"><Avatar name={page.data.session?.handle ?? profile.name} color={profile.avatarColor} size="sm" /></a>
+		</div>
+	</header>
+	<main class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-10 pb-2 flex flex-wrap items-end justify-between gap-4">
+		<div class="min-w-0">
+			<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
+				<span>Identity_Node</span>
+				<span class="text-outline-variant">/</span>
+				<span>Community_Profile</span>
+			</span>
+			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-3">Community Profile</h1>
+			<p class="text-body-md text-on-surface-variant mt-2">Public identity and event portfolio for this member.</p>
+		</div>
+		<button class="h-10 px-5 rounded-lg flex items-center gap-2 text-body-sm font-semibold active:scale-95 transition-all shadow-md {following ? 'bg-surface-container-high text-on-surface border border-surface-glass-border' : 'bg-primary text-on-primary glow-primary'}" onclick={() => { const added = toggleIn(follows, profile.id); toast(added ? `Following ${profile.name}` : 'Unfollowed', 'info'); }}>{#if following}<UserCheck class="w-4 h-4" /> Following{:else}<UserPlus class="w-4 h-4" /> Follow{/if}</button>
+	</main>
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8">
+		<section class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
+			<div class="relative h-32 overflow-hidden" style="background: linear-gradient(140deg, {profile.avatarColor}33 0%, #0b1326 80%), linear-gradient(#131b2e, #0b1120);">
+				<div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-surface-container"></div>
+				<span class="absolute top-3 right-4 {MONO} text-on-surface-variant">@{profile.handle} • {profile.city ?? 'Somewhere loud'}</span>
+			</div>
+			<div class="px-6 pb-6 flex flex-wrap items-start gap-6 justify-between">
+				<span class="flex items-start gap-5 -mt-10 relative min-w-0">
+					<span class="relative shrink-0">
+						<span class="block w-24 h-24 rounded-full overflow-hidden shadow-2xl p-0.5 bg-surface">
+							<Avatar name={profile.name} color={profile.avatarColor} size="xl" />
+						</span>
+					</span>
+					<span class="min-w-0 pt-1">
+						<span class="flex items-center flex-wrap gap-2">
+							<span class="font-display text-headline-lg text-on-surface tracking-tight">{profile.name}</span>
+							{#if profile.verified}<BadgeCheck class="w-5 h-5 text-tertiary shrink-0" aria-label="Verified member" />{/if}
+						</span>
+						<span class="{MONO} text-outline block mt-1.5">@{profile.handle} • {profile.city ?? 'Somewhere loud'}</span>
+						{#if profile.bio}<span class="block text-body-md text-on-surface-variant mt-2 leading-relaxed max-w-xl">{profile.bio}</span>{/if}
+						<span class="flex items-center gap-4 mt-2.5 flex-wrap">
+							<span class="inline-flex items-center gap-1.5 {MONO} text-tertiary"><Globe class="w-3.5 h-3.5" /> Owltside.com/{profile.handle}</span>
+							{#if profile.link}<a href={profile.link} target="_blank" rel="noreferrer" class="inline-flex items-center gap-1.5 {MONO} text-on-surface-variant hover:text-primary"><Globe class="w-3.5 h-3.5" /> {profile.link.replace('https://','')}</a>{/if}
+						</span>
+					</span>
+				</span>
+				<span class="flex items-center gap-3 flex-wrap pt-2">
+					<button type="button" onclick={() => (followersOpen = true)} class="rounded-lg border border-surface-glass-border bg-surface-container-high/60 px-6 py-3 text-center hover:bg-surface-container-high transition-colors text-left">
+						<span class="block font-display text-headline-md font-semibold text-primary">{profile.followers.toLocaleString()}</span>
+						<span class="{MONO} text-on-surface-variant block mt-0.5">Followers</span>
+					</button>
+					<button type="button" onclick={() => (followingOpen = true)} class="rounded-lg border border-surface-glass-border bg-surface-container-high/60 px-6 py-3 text-center hover:bg-surface-container-high transition-colors text-left">
+						<span class="block font-display text-headline-md font-semibold text-on-surface">{profile.following.toLocaleString()}</span>
+						<span class="{MONO} text-on-surface-variant block mt-0.5">Following</span>
+					</button>
+				</span>
+			</div>
+		</section>
+	</div>
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-6 pb-10 flex flex-col gap-4">
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<span class="font-display text-headline-md text-on-surface">{heading}</span>
+			<span class="{MONO} text-on-surface-variant">{filtered.length} total</span>
+		</div>
+		<div class="flex gap-2 flex-wrap">
+			<Chip label={`All · ${data.events.length}`} icon={CalendarDays} active={category === 'all'} onclick={() => (category = 'all')} />
+			<Chip label={`Organized · ${organizedEvents.length}`} icon={Crown} active={category === 'organized'} onclick={() => (category = 'organized')} />
+			<Chip label={`Event Roles · ${roleEvents.length}`} icon={Mic} active={category === 'roles'} onclick={() => (category = 'roles')} />
+		</div>
+		{#if data.events.length}
+			{#if category === 'all'}
+				{#if organizedEvents.length}
+					<div class="flex flex-col gap-3 pt-2">
+						<span class="{MONO} text-on-surface-variant">Organized</span>
+						<div class="grid md:grid-cols-2 gap-3">
+						{#each organizedEvents as event (event.id)}
+							{@const profileSpeaker = speakerFor(event)}
+							<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Organizer'} />
+						{/each}
+						</div>
+					</div>
+				{/if}
+				<div class="flex flex-col gap-3 pt-2">
+					<span class="flex items-center gap-1.5 {MONO} text-on-surface-variant"><Mic class="w-3.5 h-3.5" /> Event Roles {#if roleEvents.length}<span class="normal-case tracking-normal text-outline-variant">· {roleEvents.length} accepted</span>{/if}</span>
+					{#if roleEvents.length}
+						<div class="grid md:grid-cols-2 gap-3">
+						{#each roleEvents as event (event.id)}
+							{@const profileSpeaker = speakerFor(event)}
+							<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Speaker'} />
+						{/each}
+						</div>
+					{:else}
+						<p class="text-body-sm text-on-surface-variant bg-surface-container rounded-xl p-4 border border-surface-glass-border">No accepted event roles yet - when {profile.name} accepts a speaker invitation, the role will appear here for anyone viewing this profile.</p>
+					{/if}
+				</div>
+			{:else if category === 'organized'}
+				<div class="flex flex-col gap-3 pt-2">
+					{#if organizedEvents.length}
+						<div class="grid md:grid-cols-2 gap-3">
+						{#each organizedEvents as event (event.id)}
+							{@const profileSpeaker = speakerFor(event)}
+							<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Organizer'} />
+						{/each}
+						</div>
+					{:else}
+						<p class="text-body-sm text-on-surface-variant bg-surface-container rounded-xl p-4 border border-surface-glass-border">No organized events yet.</p>
+					{/if}
+				</div>
+			{:else}
+				<div class="flex flex-col gap-3 pt-2">
+					{#if roleEvents.length}
+						<div class="grid md:grid-cols-2 gap-3">
+						{#each roleEvents as event (event.id)}
+							{@const profileSpeaker = speakerFor(event)}
+							<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Speaker'} />
+						{/each}
+						</div>
+					{:else}
+						<p class="text-body-sm text-on-surface-variant bg-surface-container rounded-xl p-4 border border-surface-glass-border">No accepted event roles yet - when {profile.name} accepts a speaker invitation, the role will appear here for anyone viewing this profile.</p>
+					{/if}
+				</div>
+			{/if}
+		{:else}
+			<div class="flex flex-col gap-3 pt-2">
+				<p class="text-body-sm text-on-surface-variant">No events yet.</p>
+				<p class="text-body-sm text-on-surface-variant bg-surface-container rounded-xl p-4 border border-surface-glass-border">No accepted event roles yet - when this member accepts a speaker invitation, the role will appear here for anyone viewing this profile.</p>
+			</div>
+		{/if}
+	</div>
+</div>
+
+<!-- ── Mobile (unchanged layout, now md:hidden) ── -->
+<div class="md:hidden flex flex-col min-h-dvh bg-surface">
 <TopBar back title={`@${profile.handle}`} subtitle="Community profile" />
 
-<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
+<main class="flex flex-col relative w-full pt-mobile-header pb-28 bg-surface min-h-dvh">
 	<div class="flex flex-col w-full md:max-w-3xl md:mx-auto">
 		<div class="relative w-full h-36 overflow-hidden">
 			<div class="w-full h-full" style="background: linear-gradient(140deg, {profile.avatarColor}33 0%, #0b1326 80%), linear-gradient(#131b2e, #0b1120);"></div>
@@ -183,6 +336,7 @@
 		</div>
 	</div>
 </main>
+</div>
 
 <Sheet open={followersOpen} title="Followers • {profile.followers.toLocaleString()}" close={() => (followersOpen = false)}>
 	<div class="flex flex-col gap-3 pt-2">
