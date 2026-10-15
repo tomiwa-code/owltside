@@ -17,7 +17,7 @@ test('event detail → checkout → wallet flow', async ({ page }) => {
 	await page.goto('/events/afrobeats-sound-sunset');
 	await expect(page.getByText('Select Tickets')).toBeVisible();
 	await page.getByRole('button', { name: /Select & Checkout/ }).click();
-	await expect(page.getByText('Payment Method')).toBeVisible();
+	await expect(page.getByText('Powered by Paystack')).toBeVisible();
 	await page.getByRole('button', { name: /Pay Securely/ }).click();
 	// demo approve scenario redirects to the wallet pass
 	await expect(page.getByText('Manual Gate Code')).toBeVisible({ timeout: 10_000 });

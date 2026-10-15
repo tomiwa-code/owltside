@@ -85,8 +85,8 @@ begin
     );
     v_total := v_total + (v_tier->>'price')::numeric * v_qty;
 
-    insert into public.orders (owner_id, event_id, reference, total, status)
-    values (p_owner, v_event.id, v_reference, v_total, 'paid')
+    insert into public.orders (owner_id, event_id, reference, total, status, owner_name, items_label)
+    values (p_owner, v_event.id, v_reference, v_total, 'paid', coalesce(v_holder, 'Attendee'), v_qty || 'x ' || (v_tier->>'name'))
     returning id into v_order_id;
 
     insert into public.order_items (order_id, tier_id, qty, unit_price)

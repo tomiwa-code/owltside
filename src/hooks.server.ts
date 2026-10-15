@@ -12,7 +12,23 @@ export const handle: Handle = async ({ event, resolve }) => {
 			data: { user }
 		} = await db.auth.getUser();
 		if (user) {
-			const { data: profile } = await db.from('profiles').select('*').eq('id', user.id).maybeSingle();
+			let { data: profile } = await db.from('profiles').select('*').eq('id', user.id).maybeSingle();
+			if (!profile) {
+				const rawHandle =
+					(user.user_metadata?.handle as string | undefined) ||
+					user.email?.split('@')[0]?.replace(/[^a-z0-9_]/gi, '').toLowerCase() ||
+					`owl_${user.id.slice(0, 6)}`;
+				const rawName =
+					(user.user_metadata?.full_name as string | undefined) ||
+					user.email?.split('@')[0] ||
+					'Explorer';
+				const { data: created } = await db
+					.from('profiles')
+					.upsert({ id: user.id, handle: rawHandle, name: rawName }, { onConflict: 'id' })
+					.select('*')
+					.maybeSingle();
+				profile = created;
+			}
 			event.locals.session = {
 				userId: user.id,
 				email: user.email ?? '',

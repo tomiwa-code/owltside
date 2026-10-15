@@ -1,16 +1,37 @@
 import { createServerClient } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Cookies } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
+import { env as privateEnv } from '$env/dynamic/private';
+import { env as publicEnv } from '$env/dynamic/public';
+
+function resolveSupabaseUrl(): string {
+	return (
+		publicEnv.PUBLIC_SUPABASE_URL ||
+		privateEnv.SUPABASE_URL ||
+		privateEnv.VITE_SUPABASE_URL ||
+		''
+	).trim();
+}
+
+function resolveSupabaseAnonKey(): string {
+	return (
+		publicEnv.PUBLIC_SUPABASE_ANON_KEY ||
+		privateEnv.SUPABASE_ANON_KEY ||
+		privateEnv.VITE_SUPABASE_ANON_KEY ||
+		''
+	).trim();
+}
 
 export function supabaseConfigured(): boolean {
-	return Boolean(env.PUBLIC_SUPABASE_URL && env.PUBLIC_SUPABASE_ANON_KEY);
+	return Boolean(resolveSupabaseUrl() && resolveSupabaseAnonKey());
 }
 
 /** Server-side Supabase client bound to the request's cookies (auth session). */
 export function createSupabase(cookies: Cookies): SupabaseClient | null {
-	if (!supabaseConfigured()) return null;
-	return createServerClient(env.PUBLIC_SUPABASE_URL!, env.PUBLIC_SUPABASE_ANON_KEY!, {
+	const url = resolveSupabaseUrl();
+	const key = resolveSupabaseAnonKey();
+	if (!url || !key) return null;
+	return createServerClient(url, key, {
 		cookies: {
 			getAll() {
 				return cookies.getAll();

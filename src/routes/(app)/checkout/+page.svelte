@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { goto } from '$app/navigation';
 	import {
 		ArrowLeft,
 		ArrowRight,
@@ -8,42 +9,37 @@
 		Clock,
 		CreditCard,
 		Info,
-		Landmark,
+		Loader2,
 		Lock,
 		MapPin,
-		PieChart,
 		QrCode,
 		ScanLine,
 		Search,
 		ShieldCheck,
-		Smartphone,
 		Tag,
 		Timer,
 		User,
 		AtSign,
-		FlaskConical,
 		Hourglass,
-		XCircle,
-		Fingerprint
+		XCircle
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import Cover from '$components/Cover.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { formatMoney } from '$lib/utils/money';
 	import { fmtDate } from '$lib/utils/dates';
-	import type { PaymentScenario } from '$lib/types';
 
-	let { data, form } = $props();
+	let { data } = $props();
 	const event = $derived(data.event);
 
 	let tierId = $state(data.tierId);
 	let qty = $state(data.qty);
 	let promoInput = $state('');
 	let appliedPromo = $state<string | null>(data.promo ?? null);
-	let method = $state<'card' | 'transfer' | 'ussd' | 'split'>('card');
-	let scenario = $state<PaymentScenario>('approve');
+	let paystackReference = $state('');
+	let submitting = $state(false);
 
-	let modal = $state<null | 'verifying' | '3ds' | 'declined' | 'success'>(null);
+	let modal = $state<null | 'verifying' | 'declined'>(null);
 
 	const tier = $derived(event.tiers.find((t) => t.id === tierId)!);
 	const base = $derived(tier.price * qty);
@@ -76,50 +72,137 @@
 		}
 	}
 
-	const methods = [
-		{ id: 'card', icon: CreditCard, title: 'Debit / Credit Card', sub: 'Visa, Mastercard, Verve via Paystack', tag: 'Fastest' },
-		{ id: 'transfer', icon: Landmark, title: 'Direct Bank Transfer', sub: 'Instant virtual account assignment' },
-		{ id: 'ussd', icon: Smartphone, title: 'Offline USSD String', sub: 'GTBank (*737#), FirstBank (*894#), Zenith' },
-		{ id: 'split', icon: PieChart, title: 'Split Bill / Pay Later', sub: 'Spread across 2 friends or 3 installments' }
-	] as const;
-
-	function onPay() {
-		if (scenario === '3ds') {
-			modal = '3ds';
-			return;
-		}
-		submitForm();
-	}
-
 	let formEl: HTMLFormElement | undefined;
 	let formElDesktop: HTMLFormElement | undefined;
-	let storeToken = $state(true);
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 	const orderId = $derived(
 		`ORD-${([...event.id].reduce((a, c) => a + c.charCodeAt(0), 0) % 9000) + 1000}-NG`
 	);
 
-	function payHandler() {
-		return async ({ result }: { result: { type: string; status?: number } }) => {
-			if (result.type === 'failure') {
-				modal = 'declined';
-				if (result.status === 402) toast('Payment declined by gateway', 'error');
+	type PaystackPopInstance = {
+		setup: (opts: {
+			key: string;
+			email: string;
+			amount: number;
+			currency?: string;
+			ref?: string;
+			metadata?: Record<string, unknown>;
+			callback?: (response: { reference?: string }) => void;
+			onClose?: () => void;
+		}) => { openIframe: () => void };
+	};
+
+	function ensurePaystackInline(): Promise<PaystackPopInstance | null> {
+		if (typeof window === 'undefined') return Promise.resolve(null);
+		const existing = (window as unknown as { PaystackPop?: PaystackPopInstance }).PaystackPop;
+		if (existing) return Promise.resolve(existing);
+		return new Promise((resolve) => {
+			const script = document.createElement('script');
+			script.src = 'https://js.paystack.co/v1/inline.js';
+			script.async = true;
+			script.onload = () => {
+				resolve((window as unknown as { PaystackPop?: PaystackPopInstance }).PaystackPop ?? null);
+			};
+			script.onerror = () => resolve(null);
+			document.head.appendChild(script);
+		});
+	}
+
+	async function onPay() {
+		if (submitting) return;
+		if (!data.demoMode && !data.holder?.authenticated) {
+			toast('Please sign in to complete your ticket purchase.', 'info');
+			goto('/auth/login');
+			return;
+		}
+
+		// Open Paystack Inline Popup when a Paystack public key is configured and total > 0
+		if (total > 0 && data.paystackPublicKey) {
+			submitting = true;
+			const pop = await ensurePaystackInline();
+			if (pop) {
+				const reference = `OWT-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
+				try {
+					const handler = pop.setup({
+						key: data.paystackPublicKey,
+						email: data.holder.email,
+						amount: Math.round(total * 100),
+						currency: 'NGN',
+						ref: reference,
+						metadata: {
+							custom_fields: [
+								{ display_name: 'Event', variable_name: 'event', value: event.title },
+								{ display_name: 'Tier', variable_name: 'tier', value: tier.name },
+								{ display_name: 'Quantity', variable_name: 'qty', value: String(qty) }
+							]
+						},
+						callback: (response) => {
+							paystackReference = response?.reference || reference;
+							submitForm();
+						},
+						onClose: () => {
+							submitting = false;
+							modal = null;
+						}
+					});
+					handler.openIframe();
+					return;
+				} catch {
+					// Fallback to server-side Paystack initialization
+				}
 			}
+		}
+
+		submitForm();
+	}
+
+	function payHandler() {
+		submitting = true;
+		return async ({
+			result,
+			update
+		}: {
+			result: { type: string; status?: number; location?: string; data?: Record<string, unknown> };
+			update: () => Promise<void>;
+		}) => {
+			if (result.type === 'redirect' && result.location) {
+				if (/^https?:\/\//i.test(result.location)) {
+					window.location.assign(result.location);
+					return;
+				}
+				await update();
+				return;
+			}
+			if (result.type === 'failure') {
+				submitting = false;
+				modal = 'declined';
+				const errMsg =
+					typeof result.data?.error === 'string' && result.data.error !== 'declined'
+						? result.data.error
+						: 'Payment declined by gateway';
+				toast(errMsg, 'error');
+				return;
+			}
+			await update();
+			submitting = false;
 		};
 	}
 
 	function submitForm() {
+		submitting = true;
 		modal = 'verifying';
-		// let the modal paint, then submit the visible form through enhance
 		setTimeout(() => {
 			const desktop = window.matchMedia('(min-width: 768px)').matches;
 			(desktop ? formElDesktop : formEl)?.requestSubmit();
-		}, 60);
+		}, 40);
 	}
 </script>
 
-<svelte:head><title>Checkout • Owltside</title></svelte:head>
+<svelte:head>
+	<title>Checkout • Owltside</title>
+	<script src="https://js.paystack.co/v1/inline.js"></script>
+</svelte:head>
 
 <!-- ── desktop (md+) "Checkout Node" composition — same design language as the
      desktop home/login, themed with Evently Pulse tokens; mobile below unchanged ── -->
@@ -234,8 +317,7 @@
 		<input type="hidden" name="tier" value={tierId} />
 		<input type="hidden" name="qty" value={qty} />
 		<input type="hidden" name="promo" value={appliedPromo ?? ''} />
-		<input type="hidden" name="method" value={method} />
-		<input type="hidden" name="scenario" value={scenario} />
+		<input type="hidden" name="paystackReference" value={paystackReference} />
 
 		<!-- left column -->
 		<div class="flex flex-col gap-6 min-w-0">
@@ -249,100 +331,25 @@
 						<span class="text-body-lg font-semibold text-on-surface truncate">{data.holder.name}</span>
 						<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded shrink-0">{tier.name} Holder</span>
 					</span>
-					<span class="block text-body-sm text-on-surface-variant truncate pt-0.5">{data.holder.email} • +234 812 490 8821</span>
+					<span class="block text-body-sm text-on-surface-variant truncate pt-0.5">{data.holder.email}</span>
 				</div>
 				<a href="/settings" class="{MONO} text-on-surface underline underline-offset-4 hover:text-primary shrink-0">Modify</a>
 			</div>
 
-			<!-- settlement protocol -->
-			<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
-				<div class="p-6 flex items-start justify-between gap-4">
-					<div>
-						<h2 class="font-display text-headline-lg text-on-surface">Select Settlement Protocol</h2>
-						<p class="text-body-sm text-on-surface-variant pt-1">All transactions cleared strictly in Nigerian Naira (₦ / NGN).</p>
+			<!-- paystack checkout summary -->
+			<div class="rounded-xl border border-surface-glass-border bg-surface-container p-6 flex items-start justify-between gap-4">
+				<div class="flex items-start gap-4 min-w-0">
+					<span class="w-11 h-11 rounded-lg bg-surface-container-high border border-surface-glass-border text-primary flex items-center justify-center shrink-0">
+						<CreditCard class="w-5 h-5" />
+					</span>
+					<div class="min-w-0">
+						<h2 class="font-display text-headline-lg text-on-surface">Paystack Secure Checkout</h2>
+						<p class="text-body-sm text-on-surface-variant pt-1 leading-relaxed">
+							Choose your preferred payment method (Card, Bank Transfer, USSD, or Apple Pay) directly inside the Paystack popup when you click Complete Payment. All transactions are settled in Nigerian Naira (₦ / NGN).
+						</p>
 					</div>
-					<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2.5 py-1 rounded shrink-0">Zero Foreign Surcharge</span>
 				</div>
-				<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 px-6 pb-6">
-					{#each methods as m (m.id)}
-						<button
-							type="button"
-							onclick={() => (method = m.id)}
-							aria-pressed={method === m.id}
-							class="rounded-lg border p-4 flex flex-col items-center gap-2 text-center transition-colors
-								{method === m.id
-									? 'border-primary/60 bg-surface-container-high glow-primary'
-									: 'border-surface-glass-border bg-surface-container-low hover:border-primary/30'}"
-						>
-							<m.icon class="w-5 h-5 {method === m.id ? 'text-primary' : 'text-on-surface-variant'}" />
-							<span class="font-code text-label-badge font-bold text-on-surface leading-tight">{m.title}</span>
-							<span class="font-code text-[10px] tracking-[0.08em] text-on-surface-variant leading-tight">{m.sub}</span>
-						</button>
-					{/each}
-				</div>
-
-				<div class="border-t border-surface-glass-border p-6 flex flex-col gap-5">
-					<!-- sandbox harness -->
-					<div class="rounded-lg border border-surface-glass-border bg-surface-container-low p-4 flex flex-wrap items-center justify-between gap-4">
-						<div class="flex items-center gap-3 min-w-0">
-							<FlaskConical class="w-4.5 h-4.5 text-accent-amber shrink-0" />
-							<div class="min-w-0">
-								<span class="{MONO} text-on-surface font-bold">Gateway Sandbox Mode</span>
-								<p class="text-body-sm text-on-surface-variant truncate">Pre-validate response vectors before ticket minting</p>
-							</div>
-						</div>
-						<div class="flex items-center gap-1 p-1 rounded-lg bg-surface-container border border-surface-glass-border">
-							{#each [['approve', 'Approve'], ['3ds', '3-D Secure'], ['decline', 'Decline']] as [id, label]}
-								<button
-									type="button"
-									onclick={() => (scenario = id as PaymentScenario)}
-									class="px-3 py-1.5 rounded font-code text-label-badge transition-colors
-										{scenario === id ? 'bg-primary text-on-primary font-bold' : 'text-on-surface-variant hover:text-on-surface'}"
-								>
-									{label}
-								</button>
-							{/each}
-						</div>
-					</div>
-
-					{#if method === 'card'}
-						<div class="flex flex-col gap-4">
-							<div>
-								<span class="{MONO} text-on-surface-variant">Card Number</span>
-								<div class="mt-2 flex items-center gap-3 bg-surface-base border border-surface-glass-border rounded-lg px-4 h-12">
-									<input readonly value="5399 •••• •••• 8820" class="flex-1 bg-transparent font-code text-body-md text-on-surface focus:outline-none" />
-									<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">Mastercard</span>
-									<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">Verve</span>
-								</div>
-							</div>
-							<div class="grid grid-cols-2 gap-4">
-								<div>
-									<span class="{MONO} text-on-surface-variant">Expiry Date</span>
-									<div class="mt-2 bg-surface-base border border-surface-glass-border rounded-lg px-4 h-12 flex items-center">
-										<input readonly value="09 / 27" class="w-full bg-transparent font-code text-body-md text-on-surface focus:outline-none" />
-									</div>
-								</div>
-								<div>
-									<span class="{MONO} text-on-surface-variant flex items-center justify-between">
-										<span>CVV / CVC</span>
-										<span class="text-on-surface-variant normal-case tracking-normal font-code text-[11px]">3-digits back</span>
-									</span>
-									<div class="mt-2 bg-surface-base border border-surface-glass-border rounded-lg px-4 h-12 flex items-center">
-										<input readonly type="password" value="123" class="w-full bg-transparent font-code text-body-md text-on-surface focus:outline-none" />
-									</div>
-								</div>
-							</div>
-						</div>
-					{/if}
-
-					<label class="flex items-center justify-between gap-4 cursor-pointer">
-						<span class="flex items-center gap-3 min-w-0">
-							<input type="checkbox" bind:checked={storeToken} class="accent-[#c0c1ff] w-4 h-4 rounded" />
-							<span class="text-body-md text-on-surface truncate">Store cryptographic token for 1-click turnstile recharge</span>
-						</span>
-						<Info class="w-4 h-4 text-on-surface-variant shrink-0" />
-					</label>
-				</div>
+				<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2.5 py-1 rounded shrink-0">Paystack</span>
 			</div>
 
 			<!-- voucher -->
@@ -384,11 +391,9 @@
 					<ShieldCheck class="w-5 h-5 text-primary" />
 				</span>
 				<div class="min-w-0">
-					<h3 class="text-body-lg font-semibold text-on-surface">Zero Scalping &amp; Cryptographic Turnstile Assurance</h3>
+					<h3 class="text-body-lg font-semibold text-on-surface">Zero Scalping &amp; Verified Entry Assurance</h3>
 					<p class="text-body-sm text-on-surface-variant leading-relaxed pt-2">
-						Tickets issued through OWLTSIDE utilize dynamic 256-bit HMAC payloads rotating every 15
-						seconds. Counterfeiting, unauthorized screenshots, and secondary scalping are
-						mathematically prevented at {event.venue} turnstiles.
+						Tickets issued through OWLTSIDE use dynamic QR codes that refresh every 30 seconds so screenshots and counterfeit passes are blocked at {event.venue} gates.
 					</p>
 					<div class="flex flex-wrap items-center gap-6 pt-4">
 						<span class="flex items-center gap-2 font-code text-label-badge text-on-surface">
@@ -437,7 +442,7 @@
 								<span class="text-body-md text-on-surface font-semibold">{qty}x {tier.name}</span>
 								<span class="font-code text-body-md font-bold text-on-surface">{formatMoney(base)}</span>
 							</div>
-							<p class="text-body-sm text-on-surface-variant pt-0.5">{tier.benefits ?? 'Rotating HMAC gate pass'}</p>
+							<p class="text-body-sm text-on-surface-variant pt-0.5">{tier.benefits ?? 'Verified Digital Gate Pass'}</p>
 						</div>
 						<div class="flex items-center justify-between gap-3">
 							<span class="flex items-center gap-1.5 text-body-sm text-on-surface-variant">
@@ -467,13 +472,23 @@
 						</div>
 					</div>
 
-					<button type="button" onclick={onPay} class="w-full h-12 rounded-lg bg-primary text-on-primary text-body-lg font-semibold flex items-center justify-center gap-2.5 hover:bg-primary-container transition-colors glow-primary">
-						<Lock class="w-4 h-4" />
-						<span>Complete Payment • {formatMoney(total)}</span>
+					<button
+						type="button"
+						disabled={submitting}
+						onclick={onPay}
+						class="w-full h-12 rounded-lg bg-primary text-on-primary text-body-lg font-semibold flex items-center justify-center gap-2.5 hover:bg-primary-container transition-colors disabled:opacity-50 glow-primary"
+					>
+						{#if submitting}
+							<Loader2 class="w-4.5 h-4.5 animate-spin" />
+							<span>Opening Paystack…</span>
+						{:else}
+							<Lock class="w-4 h-4" />
+							<span>Complete Payment • {formatMoney(total)}</span>
+						{/if}
 					</button>
 					<span class="flex items-center justify-center gap-1.5 text-body-sm text-on-surface-variant">
 						<ShieldCheck class="w-4 h-4 text-accent-emerald shrink-0" />
-						Instant cryptographic pass minted directly to your OWLTSIDE wallet
+						Instant pass added directly to your OWLTSIDE wallet after Paystack confirmation
 					</span>
 				</div>
 				<div class="grid grid-cols-3 border-t border-surface-glass-border bg-surface-base">
@@ -487,7 +502,7 @@
 					</span>
 					<span class="flex flex-col items-center gap-2 py-4 px-2 text-center">
 						<QrCode class="w-4 h-4 text-on-surface" />
-						<span class="{MONO} text-on-surface-variant">Instant HMAC QR Turnstile</span>
+						<span class="{MONO} text-on-surface-variant">Instant QR Pass</span>
 					</span>
 				</div>
 			</div>
@@ -578,8 +593,7 @@
 			<input type="hidden" name="tier" value={tierId} />
 			<input type="hidden" name="qty" value={qty} />
 			<input type="hidden" name="promo" value={appliedPromo ?? ''} />
-			<input type="hidden" name="method" value={method} />
-			<input type="hidden" name="scenario" value={scenario} />
+			<input type="hidden" name="paystackReference" value={paystackReference} />
 
 			<!-- order summary -->
 			<div class="bg-surface-container rounded-xl border border-surface-glass-border overflow-hidden relative p-space-md flex flex-col gap-space-sm">
@@ -603,7 +617,7 @@
 						</span>
 						<div class="truncate">
 							<div class="text-label-badge text-on-surface uppercase">{qty}x {tier.name}</div>
-							<div class="font-code text-label-code text-on-surface-variant">Rotating HMAC gate pass</div>
+							<div class="font-code text-label-code text-on-surface-variant">Verified Digital Gate Pass</div>
 						</div>
 					</div>
 					<span class="font-display text-headline-md text-on-surface font-semibold">{formatMoney(base)}</span>
@@ -680,72 +694,19 @@
 				</div>
 			</div>
 
-			<!-- payment methods -->
-			<div class="bg-surface-container rounded-xl p-space-md border border-surface-glass-border flex flex-col gap-space-sm">
-				<div class="flex items-center justify-between">
-					<h3 class="font-display text-headline-md text-on-surface flex items-center gap-2"><Landmark class="w-5 h-5 text-on-surface-variant" /> Payment Method</h3>
-					<span class="text-label-badge text-on-surface-variant">4 Options</span>
-				</div>
-				{#each methods as m (m.id)}
-					<label class="cursor-pointer flex items-center justify-between p-3 rounded-lg border border-surface-glass-border transition-all {method === m.id ? 'bg-surface-container-high' : 'bg-surface-container-low'}">
-						<span class="flex items-center gap-3">
-							<input type="radio" name="methodRadio" checked={method === m.id} onchange={() => (method = m.id)} class="accent-[#c0c1ff] w-4 h-4" />
-							<span class="flex flex-col">
-								<span class="text-body-md text-on-surface font-semibold flex items-center gap-1.5">
-									{m.title}
-									{#if 'tag' in m && m.tag}
-										<span class="px-1.5 py-0.2 rounded bg-surface-bright text-on-surface text-[10px] font-bold border border-surface-glass-border">{m.tag}</span>
-									{/if}
-								</span>
-								<span class="text-body-sm text-on-surface-variant">{m.sub}</span>
-							</span>
-						</span>
-						<m.icon class="w-5 h-5 text-on-surface-variant" />
-					</label>
-				{/each}
-				{#if method === 'card'}
-					<div class="mt-1 p-3 rounded-lg bg-surface-container-low border border-surface-glass-border flex flex-col gap-3">
-						<span class="flex items-center gap-2 text-on-surface font-code text-label-code">
-							<CreditCard class="w-4.5 h-4.5 text-on-surface-variant" /> Card {data.paystack ? 'charged via Paystack checkout' : 'vault (demo)'}
-						</span>
-						<label class="flex flex-col gap-1 text-label-badge text-on-surface-variant">
-							Card number
-							<input readonly aria-label="Card number" value="5399 •••• •••• 8820" class="w-full bg-surface-container border border-surface-glass-border px-3 py-2.5 rounded font-code text-body-sm text-on-surface focus:outline-none" />
-						</label>
-						<div class="grid grid-cols-2 gap-3">
-							<label class="flex flex-col gap-1 text-label-badge text-on-surface-variant">
-								MM/YY
-								<input readonly aria-label="Expiry date, month and year" value="09/27" class="w-full bg-surface-container border border-surface-glass-border px-3 py-2.5 rounded font-code text-body-sm text-on-surface focus:outline-none" />
-							</label>
-							<label class="flex flex-col gap-1 text-label-badge text-on-surface-variant">
-								CVV
-								<input readonly aria-label="Card security code" type="password" value="123" class="w-full bg-surface-container border border-surface-glass-border px-3 py-2.5 rounded font-code text-body-sm text-on-surface focus:outline-none" />
-							</label>
-						</div>
+			<!-- paystack notice -->
+			<div class="bg-surface-container rounded-xl p-space-md border border-surface-glass-border flex items-start gap-3">
+				<span class="w-10 h-10 rounded-full bg-primary/15 text-primary flex items-center justify-center flex-shrink-0">
+					<CreditCard class="w-5 h-5" />
+				</span>
+				<div class="flex-1 min-w-0">
+					<div class="text-body-md text-on-surface font-semibold flex items-center justify-between gap-2">
+						<span>Powered by Paystack</span>
+						<span class="text-label-badge text-on-surface-variant bg-surface-container-high px-2 py-0.5 rounded">NGN</span>
 					</div>
-				{/if}
-			</div>
-
-			<!-- sandbox harness -->
-			<div class="bg-surface-raised rounded-xl p-space-md shadow-md flex flex-col gap-space-xs">
-				<div class="flex items-center justify-between">
-					<span class="flex items-center gap-1.5">
-						<FlaskConical class="w-4.5 h-4.5 text-accent-amber" />
-						<span class="text-label-badge text-accent-amber uppercase tracking-wider font-semibold">Sandbox Test Harness</span>
-					</span>
-					<span class="font-code text-[11px] text-on-surface-variant">{data.paystack ? 'Live Paystack' : 'Demo gateway'}</span>
-				</div>
-				<p class="text-body-sm text-on-surface-variant">Select gateway response simulation to verify client handling:</p>
-				<div class="grid grid-cols-3 gap-1.5 p-1 bg-surface-container rounded-lg mt-1">
-					{#each [['approve', 'Approve (200)'], ['3ds', 'Require 3DS'], ['decline', 'Decline (402)']] as [id, label]}
-						<button
-							type="button"
-							onclick={() => (scenario = id as PaymentScenario)}
-							class="py-1.5 px-2 rounded text-label-badge text-center transition-all {scenario === id ? 'bg-accent-emerald text-surface-container-lowest font-bold shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}"
-						>
-							{label}
-						</button>
-					{/each}
+					<p class="text-body-sm text-on-surface-variant leading-relaxed mt-1">
+						Tap Pay Securely below to open the Paystack popup and pay with Card, Bank Transfer, or USSD.
+					</p>
 				</div>
 			</div>
 
@@ -756,10 +717,10 @@
 				</span>
 				<div class="flex-1 min-w-0">
 					<div class="text-label-badge text-on-surface font-semibold flex items-center gap-1">
-						<span>End-to-End Dynamic Protection</span><Lock class="w-3.5 h-3.5 text-accent-emerald" />
+						<span>End-to-End Protected Checkout</span><Lock class="w-3.5 h-3.5 text-accent-emerald" />
 					</div>
 					<p class="text-body-sm text-on-surface-variant leading-tight mt-0.5">
-						256-Bit SSL Encrypted • Instant Dynamic HMAC Ticket in Wallet • 100% Verified
+						256-Bit SSL Encrypted • Instant Ticket Delivery to Wallet • 100% Verified
 					</p>
 				</div>
 			</div>
@@ -773,16 +734,26 @@
 				<span class="text-label-badge text-on-surface-variant uppercase">Total</span>
 				<span class="font-display text-headline-md text-on-surface font-bold">{formatMoney(total)}</span>
 			</div>
-			<button class="flex-1 h-12 rounded-full bg-primary-fixed hover:bg-white active:scale-[0.98] text-surface-base font-semibold flex items-center justify-center gap-2 shadow-md" onclick={onPay}>
-				<span>Pay Securely</span>
-				<ArrowRight class="w-4.5 h-4.5" />
+			<button
+				type="button"
+				disabled={submitting}
+				class="flex-1 h-12 rounded-full bg-primary-fixed hover:bg-white active:scale-[0.98] disabled:opacity-50 text-surface-base font-semibold flex items-center justify-center gap-2 shadow-md"
+				onclick={onPay}
+			>
+				{#if submitting}
+					<Loader2 class="w-4.5 h-4.5 animate-spin" />
+					<span>Processing…</span>
+				{:else}
+					<span>Pay Securely</span>
+					<ArrowRight class="w-4.5 h-4.5" />
+				{/if}
 			</button>
 		</div>
 	</div>
 </main>
 </div>
 
-<!-- simulation modal -->
+<!-- confirmation modal -->
 {#if modal}
 	<div class="fixed inset-0 z-[85] bg-surface-base/80 backdrop-blur-md flex items-end sm:items-center justify-center p-gutter">
 		<div class="w-full max-w-sm bg-surface-raised rounded-xl p-space-lg shadow-2xl flex flex-col items-center text-center relative overflow-hidden">
@@ -790,29 +761,17 @@
 				<div class="w-16 h-16 rounded-full bg-surface-container-high flex items-center justify-center mb-3">
 					<Hourglass class="w-8 h-8 text-accent-amber animate-pulse" />
 				</div>
-				<h3 class="font-display text-headline-md text-on-surface font-bold">Verifying Order...</h3>
+				<h3 class="font-display text-headline-md text-on-surface font-bold">Confirming your order…</h3>
 				<p class="text-body-md text-on-surface-variant mt-1 mb-4">
-					Connecting with the gateway node and issuing cryptographic HMAC keys.
+					Completing your checkout and adding your ticket pass to your wallet.
 				</p>
-			{:else if modal === '3ds'}
-				<div class="w-16 h-16 rounded-full bg-tertiary-container flex items-center justify-center mb-3">
-					<Fingerprint class="w-8 h-8 text-on-tertiary-container" />
-				</div>
-				<h3 class="font-display text-headline-md text-on-surface font-bold">3-D Secure Check</h3>
-				<p class="text-body-md text-on-surface-variant mt-1 mb-4">
-					Your bank app is asking you to approve this payment of {formatMoney(total)}.
-				</p>
-				<div class="w-full flex gap-2">
-					<button class="flex-1 py-3 rounded-full bg-surface-container text-on-surface text-label-badge uppercase tracking-wider font-semibold" onclick={() => (modal = null)}>Cancel</button>
-					<button class="flex-1 py-3 rounded-full bg-primary text-on-primary text-label-badge uppercase tracking-wider font-semibold" onclick={() => { modal = 'verifying'; setTimeout(() => formEl?.requestSubmit(), 60); }}>Approve</button>
-				</div>
 			{:else}
 				<div class="w-16 h-16 rounded-full bg-error-container flex items-center justify-center mb-3">
 					<XCircle class="w-8 h-8 text-error" />
 				</div>
-				<h3 class="font-display text-headline-md text-on-surface font-bold">Payment Declined (402)</h3>
+				<h3 class="font-display text-headline-md text-on-surface font-bold">Payment Not Completed</h3>
 				<p class="text-body-md text-on-surface-variant mt-1 mb-4">
-					The gateway declined this transaction. No money moved — try another method or scenario.
+					We couldn't confirm this transaction with Paystack. No ticket was charged — please try again.
 				</p>
 				<button class="w-full py-3 rounded-full bg-surface-container text-on-surface text-label-badge uppercase tracking-wider font-semibold" onclick={() => (modal = null)}>Dismiss</button>
 			{/if}
