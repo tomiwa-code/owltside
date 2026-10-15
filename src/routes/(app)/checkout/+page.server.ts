@@ -2,7 +2,7 @@ import { minPrice, getSource } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
 import { paystackConfigured, initializeTransaction } from '$lib/server/paystack';
 import { toKobo } from '$lib/utils/money';
-import { env } from '$env/dynamic/private';
+import { env as publicEnv } from '$env/dynamic/public';
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -59,7 +59,7 @@ export const actions: Actions = {
 				email: locals.session?.email ?? 'guest@owltside.app',
 				amountKobo: toKobo(totals.total),
 				reference,
-				callbackUrl: `${env.PUBLIC_APP_URL ?? url.origin}/checkout/success?ref=${reference}&slug=${encodeURIComponent(slug)}&tier=${encodeURIComponent(tierId)}&qty=${qty}`
+				callbackUrl: `${publicEnv.PUBLIC_APP_URL || url.origin}/checkout/success?ref=${reference}&slug=${encodeURIComponent(slug)}&tier=${encodeURIComponent(tierId)}&qty=${qty}`
 			});
 			redirect(303, init.authorizationUrl);
 		}

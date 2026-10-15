@@ -1,11 +1,12 @@
-import { createSupabase } from '$lib/server/supabase';
+import { createSupabase, supabaseConfigured } from '$lib/server/supabase';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = ({ url }) => ({
 	email: url.searchParams.get('email') ?? '',
 	name: url.searchParams.get('name'),
-	isNew: url.searchParams.get('new') === '1'
+	isNew: url.searchParams.get('new') === '1',
+	demoMode: !supabaseConfigured()
 });
 
 export const actions: Actions = {
@@ -18,7 +19,16 @@ export const actions: Actions = {
 
 		const db = createSupabase(cookies);
 		if (db) {
-			const { error } = await db.auth.verifyOtp({ email, token: code, type: 'email' });
+			let { error } = await db.auth.verifyOtp({ email, token: code, type: 'email' });
+			if (error) {
+				const signupRetry = await db.auth.verifyOtp({ email, token: code, type: 'signup' });
+				if (!signupRetry.error) {
+					error = null;
+				} else {
+					const magicRetry = await db.auth.verifyOtp({ email, token: code, type: 'magiclink' });
+					if (!magicRetry.error) error = null;
+				}
+			}
 			if (error) return fail(400, { error: error.message, email });
 		} else {
 			// Demo mode: any 6-digit code is accepted (hint shown in UI).

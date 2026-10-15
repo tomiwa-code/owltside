@@ -201,7 +201,9 @@
 						<span>Verify & Enter OWLTSIDE</span>
 						<ArrowRight class="w-4 h-4" />
 					</button>
-					<p class="{MONO} text-on-surface-variant mt-4">Demo mode: any 6 digits work</p>
+					{#if data.demoMode}
+						<p class="{MONO} text-on-surface-variant mt-4">Demo mode: any 6 digits work</p>
+					{/if}
 				</form>
 			</div>
 			<div class="rounded-b-xl border border-t-0 border-surface-glass-border bg-surface-container-low px-10 py-5 flex flex-col items-center gap-2 text-center">
@@ -248,9 +250,11 @@
 					<span class="block mt-1">No email set — demo mode accepts any code.</span>
 				{/if}
 			</p>
-			<p class="mt-2 font-code text-label-code text-tertiary bg-tertiary/10 border border-tertiary/20 px-2.5 py-1 rounded-full">
-				DEMO HINT: ANY 6 DIGITS WORK, E.G. 000000
-			</p>
+			{#if data.demoMode}
+				<p class="mt-2 font-code text-label-code text-tertiary bg-tertiary/10 border border-tertiary/20 px-2.5 py-1 rounded-full">
+					DEMO HINT: ANY 6 DIGITS WORK, E.G. 000000
+				</p>
+			{/if}
 		</div>
 
 		<form method="POST" action="?/verify" use:enhance class="flex flex-col gap-space-md">
