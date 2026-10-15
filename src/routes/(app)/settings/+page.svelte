@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import {
 		Accessibility,
 		BadgeCheck,
@@ -30,6 +30,7 @@
 	import Avatar from '$components/Avatar.svelte';
 	import CurrencyPill from '$components/CurrencyPill.svelte';
 	import Sheet from '$components/Sheet.svelte';
+	import RoleSwitcher from '$components/RoleSwitcher.svelte';
 	import { page } from '$app/state';
 	import { toast } from '$lib/state/toast.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
@@ -41,12 +42,6 @@
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
 	const role = $derived(data.operatingIdentity ?? 'attendee');
-
-	const roles = [
-		{ id: 'attendee', label: 'Attendee', icon: Ticket, sub: 'Wallet, drops & gate passes' },
-		{ id: 'guest', label: 'Guest', icon: UserRound, sub: 'Browse-only, no stored passes' },
-		{ id: 'organizer', label: 'Organizer', icon: Megaphone, sub: 'Console, gates & settlement' }
-	] as const;
 
 	const securityRows: Array<[string, string]> = [
 		['Cipher_Suite', 'RSA-4096 / TLS 1.3'],
@@ -67,47 +62,7 @@
      language (design source unavailable this turn — extrapolated); mobile
      settings below unchanged ── -->
 <div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
-	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
-		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
-			<a href="/home" class="flex items-center gap-2.5 shrink-0">
-				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
-				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
 
-			</a>
-			<nav class="flex items-center gap-1" aria-label="Primary">
-				{#each [
-					['/home', 'Home'],
-					['/explore', 'Explore'],
-					['/tickets', 'Tickets'],
-					['/organizer', 'Organizer']
-				] as [href, label]}
-					<a
-						{href}
-						class="px-3 h-9 rounded-lg flex items-center text-body-sm text-on-surface-variant hover:text-on-surface transition-colors"
-					>
-						{label}
-					</a>
-				{/each}
-			</nav>
-			<div class="flex-1"></div>
-			<span class="relative hidden lg:flex items-center w-72 h-10">
-				<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
-				<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, gates, artists…</span>
-				<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
-			</span>
-			<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
-				<Bell class="w-4.5 h-4.5" />
-				<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
-			</a>
-			<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
-				<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
-				<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">GATE_PASS_ACTIVE</span>
-			</div>
-			<a href="/profile" aria-label="Your profile" class="shrink-0">
-				<Avatar name={session?.name ?? 'Guest'} size="sm" />
-			</a>
-		</div>
-	</header>
 
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-10 pb-2 flex flex-wrap items-end justify-between gap-4">
 		<div class="min-w-0">
@@ -252,7 +207,7 @@
 		{/snippet}
 	</TopBar>
 
-	<main class="flex-1 flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
+	<main class="flex-1 flex flex-col relative w-full  pb-28 md:pb-16 bg-surface min-h-dvh">
 		<div class="flex flex-col w-full md:max-w-2xl md:mx-auto pb-10">
 			<!-- snapshot -->
 			<section class="px-margin pt-space-sm pb-space-md">
@@ -354,21 +309,7 @@
 
 	<!-- popups for desktop categories -->
 	<Sheet open={openCategory === 'identity'} title="Operating Identity" close={() => (openCategory = null)}>
-		<div class="flex flex-col gap-4">
-			<div class="flex items-center justify-between"><span class="text-body-sm text-on-surface-variant">Current role</span><span class="{MONO} px-2 py-0.5 rounded bg-primary text-on-primary">{role}</span></div>
-			<p class="text-body-sm text-on-surface-variant">Switch views to toggle permissions & venue tools</p>
-			{#each roles as r (r.id)}
-				{@const RIcon = r.icon}
-				<form method="POST" action="?/setIdentity">
-					<input type="hidden" name="identity" value={r.id} />
-					<button type="submit" class="w-full flex items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors {role === r.id ? 'border-primary/50 bg-primary/10' : 'border-surface-glass-border bg-surface-container-high/50 hover:bg-surface-container-high'}">
-						<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0"><RIcon class="w-4 h-4 text-on-surface-variant" /></span>
-						<span class="flex-1 min-w-0"><span class="block text-body-sm font-medium text-on-surface">{r.label}</span><span class="block text-xs text-on-surface-variant mt-0.5">{r.sub}</span></span>
-						{#if role === r.id}<span class="w-1.5 h-1.5 rounded-full bg-primary glow-primary shrink-0"></span>{/if}
-					</button>
-				</form>
-			{/each}
-		</div>
+		<RoleSwitcher currentRole={role} signedIn={!!session} expanded />
 	</Sheet>
 
 	<Sheet open={openCategory === 'preferences'} title="Preferences" close={() => (openCategory = null)}>

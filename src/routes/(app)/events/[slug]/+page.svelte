@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FollowButton from '$components/FollowButton.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
@@ -28,7 +29,7 @@
 	import Cover from '$components/Cover.svelte';
 	import Stepper from '$components/Stepper.svelte';
 	import SpeakerInviteNotice from '$components/SpeakerInviteNotice.svelte';
-	import { bookmarks, follows, toggleIn } from '$lib/state/prefs.svelte';
+	import { bookmarks, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { countdownLabel, fmtDate, fmtDateFull, fmtTime } from '$lib/utils/dates';
 	import { formatMoney } from '$lib/utils/money';
@@ -66,7 +67,6 @@
 	const tier = $derived(event.tiers.find((t) => t.id === tierId)!);
 	const left = $derived(tier.capacity - tier.sold);
 	const saved = $derived(bookmarks.value.includes(event.id));
-	const following = $derived(follows.value.includes(event.organizer.id));
 
 	/* ── desktop ticket selector extras ── */
 	let promoInput = $state('');
@@ -203,51 +203,7 @@
      source, themed with Evently Pulse tokens; mobile below unchanged ── -->
 <div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
 	<!-- top bar -->
-	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
-		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
-			<a href="/home" class="flex items-center gap-2.5 shrink-0">
-				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
-				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
 
-			</a>
-			<nav class="flex items-center gap-1" aria-label="Primary">
-				{#each [
-					['/home', 'Home'],
-					['/explore', 'Explore'],
-					['/tickets', 'Tickets'],
-					['/organizer', 'Organizer']
-				] as [href, label]}
-					<a
-						{href}
-						aria-current={href === '/explore' ? 'page' : undefined}
-						class="px-3 h-9 rounded-lg flex items-center text-body-sm transition-colors
-							{href === '/explore'
-								? 'text-on-surface font-semibold bg-surface-container border border-surface-glass-border'
-								: 'text-on-surface-variant hover:text-on-surface'}"
-					>
-						{label}
-					</a>
-				{/each}
-			</nav>
-			<div class="flex-1"></div>
-			<a href="/explore" class="relative hidden lg:flex items-center w-72 h-10">
-				<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
-				<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, gates, artists…</span>
-				<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
-			</a>
-			<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
-				<Bell class="w-4.5 h-4.5" />
-				<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
-			</a>
-			<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
-				<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
-				<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">GATE_PASS_ACTIVE</span>
-			</div>
-			<a href="/profile" aria-label="Your profile" class="shrink-0">
-				<Avatar name="Guest Explorer" size="sm" />
-			</a>
-		</div>
-	</header>
 
 	<!-- breadcrumb strip -->
 	<div class="border-b border-surface-glass-border bg-surface-container-low/60">
@@ -300,19 +256,7 @@
 						</a>
 					</span>
 					<span class="flex items-center gap-2">
-						<button
-							type="button"
-							onclick={() => {
-								const added = toggleIn(follows, event.organizer.id);
-								toast(added ? `Following ${event.organizer.name}` : `Unfollowed ${event.organizer.name}`, 'info');
-							}}
-							class="h-10 px-4 rounded-lg text-body-sm font-semibold flex items-center gap-2 transition-colors border
-								{following
-									? 'bg-primary/15 text-primary border-primary/30'
-									: 'bg-surface-container border-surface-glass-border text-on-surface hover:bg-primary hover:text-on-primary hover:border-primary'}"
-						>
-							{following ? 'Following' : '+ Follow'}
-						</button>
+						<FollowButton profileId={event.organizer.id} />
 						{#if !session}
 							<a href="/auth/login" class="h-10 px-4 rounded-lg text-body-sm font-semibold flex items-center gap-2 bg-surface-container border border-surface-glass-border text-on-surface hover:border-primary/50 transition-colors"><MessageSquare class="w-4 h-4" />Message organizer</a>
 						{:else if isOrganizer}
@@ -683,7 +627,7 @@
 
 <div class="md:hidden">
 
-<header class="fixed top-0 inset-x-0 z-50 bg-surface/80 backdrop-blur-xl pt-safe md:left-20">
+<section class="border-b border-surface-glass-border">
 	<div class="h-16 px-gutter md:max-w-5xl md:mx-auto flex items-center justify-between gap-space-sm">
 		<div class="flex items-center gap-space-xs">
 			<button aria-label="Go back" onclick={() => history.back()} class="w-11 h-11 -ml-2 flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors">
@@ -697,9 +641,9 @@
 		</div>
 
 	</div>
-</header>
+</section>
 
-<main class="flex flex-col relative w-full pt-mobile-header pb-safe bg-surface min-h-dvh">
+<main class="flex flex-col relative w-full  pb-safe bg-surface min-h-dvh">
 	<div class="flex flex-col w-full pb-28 md:pb-32 md:max-w-5xl md:mx-auto">
 		<!-- hero -->
 		<div class="relative w-full aspect-[16/10] overflow-hidden bg-surface-container-low shadow-lg">
@@ -758,15 +702,7 @@
 						<span class="text-body-sm text-on-surface-variant truncate">{event.organizer.followers.toLocaleString()} followers</span>
 					</div>
 				</a>
-				<button
-					class="flex-shrink-0 px-4 py-2 rounded-full text-body-sm active:scale-95 transition-all shadow-sm {following ? 'bg-primary text-on-primary' : 'bg-surface-bright text-on-surface'}"
-					onclick={() => {
-						const added = toggleIn(follows, event.organizer.id);
-						toast(added ? `Following ${event.organizer.name}` : 'Unfollowed', 'info');
-					}}
-				>
-					{following ? 'Following' : 'Follow'}
-				</button>
+				<FollowButton profileId={event.organizer.id} />
 				{#if !session}
 					<a href="/auth/login" aria-label="Sign in to message organizer" class="h-10 px-3 rounded-full bg-surface-bright text-on-surface text-body-sm font-semibold flex items-center gap-1.5 shrink-0"><MessageSquare class="w-4 h-4" />Message</a>
 				{:else if isOrganizer}

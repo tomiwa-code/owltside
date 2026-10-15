@@ -86,6 +86,9 @@
 	let camEl: HTMLVideoElement | undefined;
 	let camOn = $state(false);
 	let camError = $state(false);
+	let startingCamera = $state(false);
+	let verifying = $state(false);
+	let flushingQueue = false;
 	let manualCode = $state('');
 	let last = $state<Checkin | null>(null);
 	let counts = $state({ verified: 0, duplicate: 0, invalid: 0 });
@@ -123,29 +126,31 @@
 		localStorage.setItem('owltside.scan-queue', JSON.stringify(q));
 	}
 	async function flushQueue() {
-		while (queue.length > 0 && online) {
-			const item = queue[0];
-			const ok = await postScan(item.code);
-			queue = ok ? queue.slice(1) : queue;
-			saveQueue(queue);
-		}
+		if (flushingQueue) return;
+		flushingQueue = true;
+		try {
+			while (queue.length > 0 && online) {
+				if (!await postScan(queue[0].code, false)) break;
+				queue = queue.slice(1); saveQueue(queue);
+			}
+		} finally { flushingQueue = false; }
 	}
 
-	async function postScan(code: string): Promise<boolean> {
+	async function postScan(code: string, queueOnFailure = true): Promise<boolean> {
 		try {
 			const res = await fetch('/api/scan', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ eventId: event.id, code, gate })
 			});
-			if (!res.ok) throw new Error(String(res.status));
+			if (!res.ok) { toast('Scan could not be verified. Please try again.', 'error'); return false; }
 			const ck: Checkin = await res.json();
 			last = ck;
 			counts[ck.result] += 1;
 			counts = counts;
 			return true;
 		} catch {
-			queue = [...queue, { code, at: new Date().toISOString() }];
+			if (queueOnFailure) queue = [...queue, { code, at: new Date().toISOString() }];
 			saveQueue(queue);
 			toast('Offline — scan queued, will sync', 'info');
 			return false;
@@ -154,21 +159,24 @@
 
 	async function verify(codeRaw: string) {
 		const code = codeRaw.trim();
-		if (!code) return;
+		if (!code || verifying) return;
 		if (!online) {
 			queue = [...queue, { code, at: new Date().toISOString() }];
 			saveQueue(queue);
 			toast('Offline — scan queued, will sync', 'info');
 			return;
 		}
-		await postScan(code);
+		verifying = true;
+		try { await postScan(code); } finally { verifying = false; }
 	}
 
 	async function simulate() {
+		if (verifying) return;
 		if (!online) {
 			toast('Simulator needs the demo server', 'info');
 			return;
 		}
+		verifying = true;
 		try {
 			const res = await fetch('/api/scan', {
 				method: 'POST',
@@ -182,11 +190,13 @@
 			counts = counts;
 		} catch {
 			toast('No more tickets to scan', 'info');
-		}
+		} finally { verifying = false; }
 	}
 
 	/* camera */
 	async function startCam() {
+		if (startingCamera) return;
+		startingCamera = true;
 		try {
 			stream = await navigator.mediaDevices.getUserMedia({
 				video: { facingMode: 'environment' }
@@ -214,7 +224,7 @@
 		} catch {
 			camError = true;
 			toast('Camera unavailable — use manual codes', 'info');
-		}
+		} finally { startingCamera = false; }
 	}
 	function stopCam() {
 		if (detectTimer) clearInterval(detectTimer);
@@ -231,46 +241,7 @@
      language (design source unavailable this turn — extrapolated); mobile
      scanner below unchanged ── -->
 <div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
-	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
-		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
-			<a href="/home" class="flex items-center gap-2.5 shrink-0">
-				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
-				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
-			</a>
-			<nav class="flex items-center gap-1" aria-label="Primary">
-				{#each [
-					['/home', 'Home'],
-					['/explore', 'Explore'],
-					['/tickets', 'Tickets'],
-					['/organizer', 'Organizer']
-				] as [href, label]}
-					<a
-						{href}
-						class="px-3 h-9 rounded-lg flex items-center text-body-sm transition-colors {href === '/organizer' ? 'bg-surface-container-high text-on-surface' : 'text-on-surface-variant hover:text-on-surface'}"
-					>
-						{label}
-					</a>
-				{/each}
-			</nav>
-			<div class="flex-1"></div>
-			<span class="relative hidden lg:flex items-center w-64 h-10">
-				<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
-				<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, venues…</span>
-				<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
-			</span>
-			<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
-				<Bell class="w-4.5 h-4.5" />
-				<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
-			</a>
-			<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
-				<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
-				<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">Connected</span>
-			</div>
-			<a href="/profile" aria-label="Your profile" class="shrink-0">
-				<Avatar name={page.data.session?.name ?? 'Guest'} size="sm" />
-			</a>
-		</div>
-	</header>
+
 
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-10 pb-2 flex flex-wrap items-end justify-between gap-4">
 		<div class="min-w-0">
@@ -391,8 +362,8 @@
 							<div class="flex flex-col items-center gap-3 p-6 text-center">
 								<ScanLine class="w-10 h-10 text-on-surface-variant" />
 								<p class="text-body-sm text-on-surface-variant max-w-xs">Point the camera at a ticket QR, or verify a code manually on the right.</p>
-								<button class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary" onclick={startCam}>
-									<Camera class="w-4 h-4" /> Start camera
+								<button class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary" disabled={startingCamera} aria-busy={startingCamera} onclick={startCam}>
+									<Camera class="w-4 h-4" /> {startingCamera ? 'Starting…' : 'Start camera'}
 								</button>
 								{#if camError}<p class="{MONO} text-accent-amber">Camera blocked — manual entry still works.</p>{/if}
 							</div>
@@ -408,12 +379,12 @@
 								class="flex-1 min-w-0 px-4 py-3 rounded-lg bg-surface-container-low border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary font-code"
 								onkeydown={(e) => { if (e.key === 'Enter') { verify(manualCode); manualCode = ''; } }}
 							/>
-							<button class="h-12 px-5 rounded-lg bg-on-surface text-surface-base text-body-sm font-semibold shrink-0" onclick={() => { verify(manualCode); manualCode = ''; }}>
-								Verify
+							<button class="h-12 px-5 rounded-lg bg-on-surface text-surface-base text-body-sm font-semibold shrink-0" disabled={verifying} aria-busy={verifying} onclick={() => { verify(manualCode); manualCode = ''; }}>
+								{verifying ? 'Verifying…' : 'Verify'}
 							</button>
 						</div>
-						<button class="h-11 rounded-lg border border-dashed border-surface-glass-border text-on-surface-variant text-body-sm font-medium flex items-center justify-center gap-2 hover:border-primary hover:text-primary transition-colors" onclick={simulate}>
-							<Zap class="w-4 h-4" /> Simulate a scan (demo)
+						<button class="h-11 rounded-lg border border-dashed border-surface-glass-border text-on-surface-variant text-body-sm font-medium flex items-center justify-center gap-2 hover:border-primary hover:text-primary transition-colors" disabled={verifying} aria-busy={verifying} onclick={simulate}>
+							<Zap class="w-4 h-4" /> {verifying ? 'Verifying…' : 'Simulate a scan (demo)'}
 						</button>
 						<p class="text-xs text-on-surface-variant mt-auto">Scans verify against the rotating HMAC window; offline scans settle from the local queue when the link returns.</p>
 					</section>
@@ -528,8 +499,8 @@
 </div>
 
 <div class="md:hidden">
-<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
-	<header class="fixed top-0 left-0 w-full z-30 bg-surface/85 backdrop-blur-xl border-b border-surface-glass-border pt-safe">
+<main class="flex flex-col relative w-full  pb-28 md:pb-16 bg-surface min-h-dvh">
+	<section class="border-b border-surface-glass-border">
 		<div class="flex items-center px-gutter h-16 md:max-w-3xl md:mx-auto w-full gap-2">
 			<button
 				onclick={() => (phase === 'scan' ? (phase = 'pin') : goto('/organizer'))}
@@ -550,7 +521,7 @@
 				</select>
 			{/if}
 		</div>
-	</header>
+	</section>
 
 	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md pt-space-sm">
 		{#if phase === 'pin'}
@@ -665,8 +636,8 @@
 					<div class="flex flex-col items-center gap-3 p-6 text-center">
 						<ScanLine class="w-10 h-10 text-on-surface-variant" />
 						<p class="text-body-sm text-on-surface-variant">Point the camera at a ticket QR, or enter the code manually.</p>
-						<button class="h-11 px-5 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary" onclick={startCam}>
-							<Camera class="w-4 h-4" /> Start camera
+						<button class="h-11 px-5 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary" disabled={startingCamera} aria-busy={startingCamera} onclick={startCam}>
+							<Camera class="w-4 h-4" /> {startingCamera ? 'Starting…' : 'Start camera'}
 						</button>
 						{#if camError}<p class="text-label-badge text-accent-amber">Camera blocked — manual entry below still works.</p>{/if}
 					</div>
@@ -682,12 +653,12 @@
 					class="flex-1 px-4 py-3 rounded-full bg-surface-container-low border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline font-code"
 					onkeydown={(e) => { if (e.key === 'Enter') { verify(manualCode); manualCode = ''; } }}
 				/>
-				<button class="h-12 px-5 rounded-full bg-on-surface text-surface text-body-sm font-semibold" onclick={() => { verify(manualCode); manualCode = ''; }}>
-					Verify
+				<button class="h-12 px-5 rounded-full bg-on-surface text-surface text-body-sm font-semibold" disabled={verifying} aria-busy={verifying} onclick={() => { verify(manualCode); manualCode = ''; }}>
+					{verifying ? 'Verifying…' : 'Verify'}
 				</button>
 			</div>
-			<button class="h-11 rounded-full border border-dashed border-outline-variant/60 text-on-surface-variant text-body-sm font-medium flex items-center justify-center gap-2 hover:border-primary hover:text-primary transition-colors" onclick={simulate}>
-				<Zap class="w-4 h-4" /> Simulate a scan (demo)
+			<button class="h-11 rounded-full border border-dashed border-outline-variant/60 text-on-surface-variant text-body-sm font-medium flex items-center justify-center gap-2 hover:border-primary hover:text-primary transition-colors" disabled={verifying} aria-busy={verifying} onclick={simulate}>
+				<Zap class="w-4 h-4" /> {verifying ? 'Verifying…' : 'Simulate a scan (demo)'}
 			</button>
 
 			<!-- last result -->

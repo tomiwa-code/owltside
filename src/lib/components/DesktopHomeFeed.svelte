@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FollowButton from '$components/FollowButton.svelte';
 	/**
 	 * Desktop (md+) composition of the home feed, adapted from the supplied
 	 * desktop design source. All colours come from the Evently Pulse theme
@@ -7,7 +8,6 @@
 	 * original phone-first feed.
 	 */
 	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
 	import {
 		ArrowRight,
 		ArrowUpRight,
@@ -28,25 +28,19 @@
 	import EventCard from './EventCard.svelte';
 	import Cover from './Cover.svelte';
 	import { categories } from './iconMap';
-	import { useQuery } from '$lib/state/query.svelte';
-	import { bookmarks, currency, follows, toggleIn } from '$lib/state/prefs.svelte';
+	import { bookmarks, currency, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { fmtDate, fmtTime, fmtDateFull } from '$lib/utils/dates';
 	import { formatMoney } from '$lib/utils/money';
-	import type { CategoryId, EventItem, Ticket } from '$lib/types';
+	import type { CategoryId, EventItem } from '$lib/types';
 
-	let {
-		events,
-		unread,
-		initialTickets
-	}: { events: EventItem[]; unread: number; initialTickets?: Ticket[] } = $props();
+	let { events }: { events: EventItem[] } = $props();
 
 	const WRAP = 'mx-auto w-full max-w-[1400px] px-6 xl:px-10';
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
 	/* ── feed state ─────────────────────────────────────────────────────── */
 	let category = $state<CategoryId>('all');
-	let search = $state('');
 	let curatedPage = $state(0);
 
 	const rail = $derived(
@@ -87,18 +81,6 @@
 		return [...map.values()].sort((a, b) => b.events - a.events).slice(0, 3);
 	});
 
-	/* ── header ticket status ─────────────────────────────────── */
-	const tickets = useQuery<Ticket[]>(
-		'tickets:desktop-home',
-		async () => {
-			const res = await fetch('/api/tickets');
-			return res.json();
-		},
-		{ staleTime: 30_000 },
-		initialTickets
-	);
-	const ticket = $derived((tickets.data ?? []).find((t) => t.status === 'valid'));
-
 	/* ── helpers ────────────────────────────────────────────────────────── */
 	const minPrice = (e: EventItem) => Math.min(...e.tiers.map((t) => t.price));
 	const spotsLeft = (e: EventItem) => Math.min(...e.tiers.map((t) => t.capacity - t.sold));
@@ -114,79 +96,11 @@
 	const seatTier = (e: EventItem) =>
 		minPrice(e) === 0 ? 'Free / Invite' : formatMoney(minPrice(e), currency.value);
 	const saved = (id: string) => bookmarks.value.includes(id);
-	const following = (id: string) => follows.value.includes(id);
-	const navActive = (href: string) =>
-		page.url.pathname === href || page.url.pathname.startsWith(href + '/');
-
-	const nav = [
-		{ href: '/home', label: 'Home' },
-		{ href: '/explore', label: 'Explore' },
-		{ href: '/tickets', label: 'Tickets' },
-		{ href: '/organizer', label: 'Organizer' }
-	];
-
-	function submitSearch(e: Event) {
-		e.preventDefault();
-		goto(search.trim() ? `/explore?q=${encodeURIComponent(search.trim())}` : '/explore');
-	}
 </script>
 
 <div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
 	<!-- ── top bar ──────────────────────────────────────────────────────── -->
-	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
-		<div class="{WRAP} h-16 flex items-center gap-5">
-			<a href="/home" aria-label="Owltside home" class="flex items-center gap-2.5 shrink-0">
-				<img src="/logo.png" alt="Owltside logo" class="h-6 w-auto object-contain" />
 
-			</a>
-			<nav class="flex items-center gap-1" aria-label="Primary">
-				{#each nav as item (item.href)}
-					<a
-						href={item.href}
-						aria-current={navActive(item.href) ? 'page' : undefined}
-						class="px-3 h-9 rounded-lg flex items-center text-body-sm transition-colors
-							{navActive(item.href)
-								? 'text-on-surface font-semibold bg-surface-container'
-								: 'text-on-surface-variant hover:text-on-surface'}"
-					>
-						{item.label}
-					</a>
-				{/each}
-			</nav>
-			<div class="flex-1"></div>
-			<form class="relative hidden lg:block w-80" onsubmit={submitSearch}>
-				<Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-outline-variant pointer-events-none" />
-				<input
-					type="search"
-					placeholder="Search events, gates, artists…"
-					bind:value={search}
-					class="w-full h-10 rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 text-body-md text-on-surface placeholder:text-outline-variant focus:outline-none focus:border-primary/40 focus:bg-surface-container transition-colors"
-				/>
-				<kbd class="{MONO} absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
-			</form>
-			<a
-				href="/notifications"
-				aria-label="Notifications"
-				class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0"
-			>
-				<Bell class="w-4.5 h-4.5" />
-				{#if unread > 0}
-					<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
-				{/if}
-			</a>
-			<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
-				<span class="font-code text-label-badge text-on-surface">
-					{ticket ? `${ticket.code.slice(0, 7)}…${ticket.code.slice(-3)}` : '0x7E3…A14'}
-				</span>
-				<span class="font-code text-[10px] tracking-[0.14em] {ticket ? 'text-accent-emerald' : 'text-on-surface-variant'}">
-					{ticket ? 'GATE_PASS_ACTIVE' : 'GATE_PASS_IDLE'}
-				</span>
-			</div>
-			<a href="/profile" aria-label="Your profile" class="shrink-0">
-				<Avatar name={page.data.session?.name ?? 'Guest'} size="sm" />
-			</a>
-		</div>
-	</header>
 
 	<!-- ── feed header ──────────────────────────────────────────────────── -->
 	<div class="{WRAP} pt-10 pb-2">
@@ -460,18 +374,7 @@
 									<span class="block text-body-sm text-on-surface-variant truncate">{org.events} Events • {compact(org.attended)} Attended</span>
 								</span>
 							</a>
-							<button
-								onclick={() => {
-									const added = toggleIn(follows, org.id);
-									toast(added ? `Following ${org.name}` : `Unfollowed ${org.name}`, 'info');
-								}}
-								class="h-8 px-3 rounded-lg text-body-sm font-semibold shrink-0 transition-colors border
-									{following(org.id)
-										? 'bg-primary/15 text-primary border-primary/30'
-										: 'bg-surface-container-high text-on-surface border-surface-glass-border hover:bg-primary hover:text-on-primary hover:border-primary'}"
-							>
-								{following(org.id) ? 'Following' : 'Follow'}
-							</button>
+							<FollowButton profileId={org.id} />
 						</div>
 					{/each}
 				</div>

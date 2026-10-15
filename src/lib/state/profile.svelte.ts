@@ -1,6 +1,7 @@
 import { persisted } from './persist.svelte';
 
 export interface ProfileDraft {
+	ownerId?: string;
 	hasChanges: boolean;
 	name: string;
 	username: string;
@@ -12,6 +13,7 @@ export interface ProfileDraft {
 }
 
 export interface ProfileAppearance {
+	ownerId?: string;
 	/** Already resized + cropped by the upload crop step. */
 	avatarData: string | null;
 	bannerData: string | null;

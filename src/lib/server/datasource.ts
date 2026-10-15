@@ -20,6 +20,7 @@ import * as demo from './demo/seed';
 import { newTicketCode } from '$lib/utils/qr';
 
 const demoMeId = 'u-ada';
+const demoFollows = new Map<string, Set<string>>();
 
 type DemoPrivateConversation = {
 	id: string;
@@ -78,6 +79,9 @@ export interface DataSource {
 	getNotifications(userId: string): Promise<NotificationItem[]>;
 	getProfile(handle: string): Promise<Profile | undefined>;
 	searchProfiles(handlePrefix: string): Promise<Profile[]>;
+	getFollowingIds(userId: string): Promise<string[]>;
+	getConnections(profileId: string, kind: 'followers' | 'following'): Promise<Profile[]>;
+	setFollow(userId: string, targetId: string, following: boolean): Promise<void>;
 	getProfileEvents(profileId: string): Promise<EventItem[]>;
 	respondToSpeakerInvite(inviteeId: string, eventSlug: string, accept: boolean): Promise<SpeakerInviteStatus>;
 	createMessageRequest(requesterId: string, eventSlug: string, body: string): Promise<MessageRequest>;
@@ -115,8 +119,8 @@ function matches(e: EventItem, f: EventFilters): boolean {
 	if (f.freeOnly && e.tiers.some((t) => t.price > 0) === true && !e.tiers.some((t) => t.price === 0))
 		return false;
 	if (f.query) {
-		const q = f.query.toLowerCase();
-		const hay = `${e.title} ${e.venue} ${e.city} ${e.tags.join(' ')}`.toLowerCase();
+		const q = f.query.trim().toLowerCase();
+		const hay = `${e.title} ${e.venue} ${e.city} ${e.organizer.name} ${e.tags.join(' ')}`.toLowerCase();
 		if (!hay.includes(q)) return false;
 	}
 	if (f.dateFrom && new Date(e.startsAt) < new Date(f.dateFrom)) return false;
@@ -176,15 +180,32 @@ export const demoSource: DataSource = {
 			.sort((a, b) => +new Date(b.at) - +new Date(a.at));
 	},
 	async getProfile(handle) {
-		return Object.values(demo.people).find((p) => p.handle === handle);
+		const profile = Object.values(demo.people).find((p) => p.handle === handle);
+		return profile ? { ...profile, following: (demoFollows.get(profile.id) ?? new Set()).size, followers: [...demoFollows.values()].filter((ids) => ids.has(profile.id)).length } : undefined;
 	},
 	async searchProfiles(handlePrefix) {
 		const prefix = handlePrefix.replace(/^@/, '').toLowerCase();
 		if (!prefix) return [];
 		return Object.values(demo.people)
-			.filter((profile) => profile.handle.toLowerCase().startsWith(prefix))
+			.filter((profile) => `${profile.handle} ${profile.name} ${profile.city}`.toLowerCase().includes(prefix))
 			.slice(0, 8);
 	},
+	async getFollowingIds(userId) {
+		return [...(demoFollows.get(userId) ?? [])];
+	},
+	async getConnections(profileId, kind) {
+		const ids = kind === 'following' ? [...(demoFollows.get(profileId) ?? [])]
+			: [...demoFollows].filter(([, ids]) => ids.has(profileId)).map(([id]) => id);
+		return Object.values(demo.people).filter((p) => ids.includes(p.id));
+	},
+	async setFollow(userId, targetId, following) {
+		if (userId === targetId) throw new Error('You cannot follow yourself.');
+		if (!Object.values(demo.people).some((p) => p.id === targetId)) throw new Error('Profile not found.');
+		const ids = demoFollows.get(userId) ?? new Set<string>();
+		if (following) ids.add(targetId); else ids.delete(targetId);
+		demoFollows.set(userId, ids);
+	},
+
 	async getProfileEvents(profileId) {
 		return demo.events.filter(
 			(event) => event.organizer?.id === profileId || event.speakers?.some((speaker) =>
@@ -713,11 +734,11 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 		async listEvents(filters = {}) {
 			let q = db.from('events').select('*, organizer:profiles(*)').order('starts_at');
 			if (filters.category && filters.category !== 'all') q = q.eq('category', filters.category);
-			if (filters.query) q = q.ilike('title', `%${filters.query}%`);
+			// Apply the same text, venue, date, and price semantics as demo mode below.
 			if (filters.dateFrom) q = q.gte('starts_at', filters.dateFrom);
 			const { data, error } = await q;
 			if (error) throw error;
-			return sortEvents((data ?? []).map((r) => toEvent(r, toProfile(r.organizer))), filters.sort);
+			return sortEvents((data ?? []).map((r) => toEvent(r, toProfile(r.organizer))).filter((event) => matches(event, filters)), filters.sort);
 		},
 		async getEvent(slug) {
 			const { data, error } = await db
@@ -795,10 +816,34 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 		async searchProfiles(handlePrefix) {
 			const prefix = handlePrefix.replace(/^@/, '').toLowerCase();
 			if (!prefix) return [];
-			const { data, error } = await db.from('profiles').select('*').ilike('handle', `${prefix}%`).order('handle').limit(8);
+			const safe = prefix.replace(/[^\p{L}\p{N}_ -]/gu, '').slice(0, 80);
+			if (!safe) return [];
+			const { data, error } = await db.from('profiles').select('*').or(`handle.ilike.%${safe}%,name.ilike.%${safe}%,city.ilike.%${safe}%`).order('handle').limit(30);
 			if (error) throw error;
 			return (data ?? []).map(toProfile);
 		},
+		async getFollowingIds(userId) {
+			const { data, error } = await db.from('profile_follows').select('following_id').eq('follower_id', userId);
+			if (error) throw error;
+			return (data ?? []).map((r) => r.following_id);
+		},
+		async getConnections(profileId, kind) {
+			const column = kind === 'following' ? 'following_id' : 'follower_id';
+			const { data, error } = await db.from('profile_follows')
+				.select(`profile:profiles!profile_follows_${column}_fkey(*)`)
+				.eq(kind === 'following' ? 'follower_id' : 'following_id', profileId)
+				.order('created_at', { ascending: false });
+			if (error) throw error;
+			return (data ?? []).map((r) => toProfile(r.profile));
+		},
+		async setFollow(userId, targetId, following) {
+			if (userId === targetId) throw new Error('You cannot follow yourself.');
+			const result = following
+				? await db.from('profile_follows').upsert({ follower_id: userId, following_id: targetId }, { onConflict: 'follower_id,following_id', ignoreDuplicates: true })
+				: await db.from('profile_follows').delete().eq('follower_id', userId).eq('following_id', targetId);
+			if (result.error) throw result.error;
+		},
+
 		async getProfileEvents(profileId) {
 			if (!isUuid(profileId)) return [];
 			const { data, error } = await db
@@ -1022,7 +1067,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			const slug = payload.title
 				.toLowerCase()
 				.replace(/[^a-z0-9]+/g, '-')
-				.replace(/(^-|-$)/g, '');
+				.replace(/(^-|-$)/g, '') + '-' + crypto.randomUUID().slice(0, 8);
 			const { data, error } = await db
 				.from('events')
 				.insert({

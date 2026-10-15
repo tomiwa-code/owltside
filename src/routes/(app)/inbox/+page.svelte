@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { BadgeCheck, MessageSquare, MessageSquarePlus, Search, Bell, Users, Megaphone, Star, Wifi } from '@lucide/svelte';
+	import { toast } from '$lib/state/toast.svelte';
 	import { goto } from '$app/navigation';
 	import Avatar from '$components/Avatar.svelte';
 	import DesktopInboxList from '$components/DesktopInboxList.svelte';
@@ -51,7 +52,7 @@
 			queryClient.invalidate('conversations:mine');
 			if (accept && result.request?.conversationId) await goto(`/inbox/${result.request.conversationId}`);
 		} catch (error) {
-			console.error('Message request response failed', error);
+			toast(error instanceof Error ? error.message : 'Could not update the request.', 'error');
 		}
 	}
 
@@ -82,47 +83,7 @@
 <!-- ── desktop (md+) "Direct Comms" session index per the desktop design
      source, themed with Evently Pulse tokens; mobile inbox below unchanged ── -->
 <div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
-	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
-		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
-			<a href="/home" class="flex items-center gap-2.5 shrink-0">
-				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
-				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
 
-			</a>
-			<nav class="flex items-center gap-1" aria-label="Primary">
-				{#each [
-					['/home', 'Home'],
-					['/explore', 'Explore'],
-					['/tickets', 'Tickets'],
-					['/organizer', 'Organizer']
-				] as [href, label]}
-					<a
-						{href}
-						class="px-3 h-9 rounded-lg flex items-center text-body-sm text-on-surface-variant hover:text-on-surface transition-colors"
-					>
-						{label}
-					</a>
-				{/each}
-			</nav>
-			<div class="flex-1"></div>
-			<span class="relative hidden lg:flex items-center w-72 h-10">
-				<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
-				<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, gates, artists…</span>
-				<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
-			</span>
-			<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
-				<Bell class="w-4.5 h-4.5" />
-				<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
-			</a>
-			<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
-				<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
-				<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">GATE_PASS_ACTIVE</span>
-			</div>
-			<a href="/profile" aria-label="Your profile" class="shrink-0">
-				<Avatar name={page.data.session?.name ?? 'Guest'} size="sm" />
-			</a>
-		</div>
-	</header>
 
 	<div class="border-b border-surface-glass-border bg-surface-container-low/60">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-5 flex flex-wrap items-center justify-between gap-4">
@@ -190,7 +151,7 @@
 <div class="md:hidden">
 <TopBar title="Inbox" subtitle="Organisers, friends & channels" />
 
-<main class="flex-1 flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
+<main class="flex-1 flex flex-col relative w-full  pb-28 md:pb-16 bg-surface min-h-dvh">
 	<div class="flex flex-col w-full md:max-w-2xl md:mx-auto">
 		<div class="px-space-md py-space-sm bg-surface sticky top-16 z-30">
 			<div role="tablist" aria-label="Inbox sections" class="grid grid-cols-2 gap-1 rounded-full border border-surface-glass-border bg-surface-container-low p-1 mb-3">

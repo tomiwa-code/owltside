@@ -109,6 +109,7 @@ export type CategoryId =
 	| 'nightlife';
 
 export interface CoverArt {
+	src?: string; // Uploaded and server-validated event poster
 	from: string;
 	to: string;
 	icon: string; // lucide icon key
