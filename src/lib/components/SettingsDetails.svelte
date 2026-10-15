@@ -25,6 +25,7 @@
 	import { appSettings, type AppSettings } from '$lib/state/settings.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import Sheet from '$components/Sheet.svelte';
+	import ImageCropSheet from '$components/ImageCropSheet.svelte';
 
 	let { category }: { category?: string } = $props();
 
@@ -64,8 +65,10 @@
 	let identityName = $state('');
 	let identityDob = $state('');
 	let identityNumber = $state('');
-	let identityFront = $state<File | null>(null);
-	let identityBack = $state<File | null>(null);
+	let identityFront = $state<{ name: string; preview: string | null } | null>(null);
+	let identityBack = $state<{ name: string; preview: string | null } | null>(null);
+	let cropSide = $state<'front' | 'back' | null>(null);
+	let cropFile = $state<File | null>(null);
 	let identitySelfieDone = $state(false);
 	let identityError = $state('');
 	let payoutOpen = $state(false);
@@ -134,6 +137,35 @@
 		identityError = '';
 		identityStep = 1;
 		identityOpen = true;
+	}
+	/** A chosen document is only attached after the resize/crop step is confirmed. */
+	function chooseIdentityDoc(event: Event, side: 'front' | 'back') {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0] ?? null;
+		input.value = '';
+		if (!file) return;
+		if (!file.type.startsWith('image/')) {
+			// PDFs keep their original bytes — nothing to resize or crop.
+			const attachment = { name: file.name, preview: null };
+			if (side === 'front') identityFront = attachment;
+			else identityBack = attachment;
+			toast(`${file.name} attached — resize and crop apply to images.`, 'info');
+			return;
+		}
+		cropFile = file;
+		cropSide = side;
+	}
+	function closeCrop() {
+		cropSide = null;
+		cropFile = null;
+	}
+	function applyCroppedDocument(preview: string) {
+		const side = cropSide;
+		const attachment = { name: cropFile?.name ?? 'ID photo', preview };
+		if (side === 'front') identityFront = attachment;
+		else if (side === 'back') identityBack = attachment;
+		toast(`${side === 'back' ? 'Back' : 'Front'} of ID fitted to the frame and attached.`, 'success');
+		closeCrop();
 	}
 	function nextIdentity() {
 		identityError = '';
@@ -293,15 +325,6 @@
 						<button type="button" class="h-9 px-4 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface text-body-sm font-semibold shrink-0" onclick={openPhone}>Re-verify</button>
 					{/if}
 				</div>
-				<div class="mt-3 rounded-lg bg-surface-base border border-surface-glass-border p-3">
-					<p class="text-label-badge uppercase tracking-wider text-on-surface-variant mb-2">Verification Process:</p>
-					<ol class="list-decimal list-inside text-body-sm text-on-surface-variant space-y-1">
-						<li>Click <span class="font-semibold text-on-surface">Start</span>.</li>
-						<li>Enter your phone number starting with the country code (<span class="font-mono text-on-surface">+234</span>).</li>
-						<li>A 4-digit or 6-digit <span class="font-semibold text-on-surface">One-Time Password (OTP)</span> will be sent to your phone via SMS or WhatsApp.</li>
-						<li>Enter the OTP code into the prompt to confirm ownership.</li>
-					</ol>
-				</div>
 			</div>
 		</div>
 
@@ -324,19 +347,11 @@
 				</div>
 				<div class="mt-3 rounded-lg bg-surface-base border border-surface-glass-border p-3">
 					<p class="text-label-badge uppercase tracking-wider text-on-surface-variant mb-2">Accepted Documents in Nigeria:</p>
-					<div class="flex flex-wrap gap-1.5 mb-3">
+					<div class="flex flex-wrap gap-1.5">
 						{#each ['NIN (National Identification Number / Slip / vNIN)', 'International Passport', "Driver's License", "Permanent Voter's Card (PVC)", "BVN (Bank Verification Number)"] as doc}
 							<span class="text-xs px-2 py-1 rounded-full bg-surface-container-high border border-surface-glass-border text-on-surface-variant">{doc}</span>
 						{/each}
 					</div>
-					<p class="text-label-badge uppercase tracking-wider text-on-surface-variant mb-2">Verification Process:</p>
-					<ol class="list-decimal list-inside text-body-sm text-on-surface-variant space-y-1">
-						<li>Click <span class="font-semibold text-on-surface">Start</span>.</li>
-						<li>Enter your legal name and date of birth exactly as they appear on your official IDs.</li>
-						<li>Enter your ID number (e.g. 11-digit NIN or BVN).</li>
-						<li>Upload a clear photo/scan of your ID document (front and back where applicable).</li>
-						<li><span class="font-semibold text-on-surface">Facial Verification / Liveness Check:</span> You may be asked to take a quick selfie or do a liveness scan (smiling, blinking, or moving your head) to ensure your face matches the ID document.</li>
-					</ol>
 				</div>
 			</div>
 		</div>
@@ -360,16 +375,6 @@
 					{:else}
 						<button type="button" class="h-9 px-4 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface text-body-sm font-semibold shrink-0" onclick={openPayout}>Re-verify</button>
 					{/if}
-				</div>
-				<div class="mt-3 rounded-lg bg-surface-base border border-surface-glass-border p-3">
-					<p class="text-label-badge uppercase tracking-wider text-on-surface-variant mb-2">Verification Process:</p>
-					<ol class="list-decimal list-inside text-body-sm text-on-surface-variant space-y-1">
-						<li>Click <span class="font-semibold text-on-surface">Start</span>.</li>
-						<li>Select your <span class="font-semibold text-on-surface">Bank Name</span> (e.g., GTBank, Access Bank, Zenith, Kuda, Moniepoint, etc.).</li>
-						<li>Enter your <span class="font-semibold text-on-surface">10-digit NUBAN Account Number</span>.</li>
-						<li>The platform will perform an automated account name lookup via NIBSS/Paystack/Flutterwave to verify that the <span class="font-semibold text-on-surface">Account Name matches the Identity Name</span> on your profile.</li>
-						<li>Once confirmed, your settlement details will be saved for payouts.</li>
-					</ol>
 				</div>
 			</div>
 		</div>
@@ -479,16 +484,24 @@
 				<div class="flex flex-col gap-3">
 					<p class="text-body-sm text-on-surface-variant">Upload a clear photo/scan of your <span class="font-semibold text-on-surface">{identityDoc}</span> (front and back where applicable).</p>
 					<label class="rounded-lg border border-dashed border-surface-glass-border bg-surface-container-high/30 p-4 flex flex-col items-center gap-2 cursor-pointer hover:bg-surface-container-high/50">
-						<Upload class="w-5 h-5 text-on-surface-variant" />
+						{#if identityFront?.preview}
+							<img src={identityFront.preview} alt="Front of ID preview" class="w-full max-h-32 object-contain rounded-md bg-surface-base" />
+						{:else}
+							<Upload class="w-5 h-5 text-on-surface-variant" />
+						{/if}
 						<span class="text-body-sm font-semibold text-on-surface">Front of ID {identityFront ? `• ${identityFront.name}` : ''}</span>
-						<span class="text-xs text-on-surface-variant">PNG, JPG up to 5MB</span>
-						<input type="file" accept="image/*,.pdf" class="sr-only" onchange={(e) => { const f = (e.currentTarget as HTMLInputElement).files?.[0] || null; identityFront = f; }} />
+						<span class="text-xs text-on-surface-variant">PNG, JPG up to 5MB{identityFront?.preview ? ' • resized & cropped' : ''}</span>
+						<input type="file" accept="image/*,.pdf" class="sr-only" aria-label="Upload front of ID" onchange={(event) => chooseIdentityDoc(event, 'front')} />
 					</label>
 					<label class="rounded-lg border border-dashed border-surface-glass-border bg-surface-container-high/30 p-4 flex flex-col items-center gap-2 cursor-pointer hover:bg-surface-container-high/50">
-						<Upload class="w-5 h-5 text-on-surface-variant" />
+						{#if identityBack?.preview}
+							<img src={identityBack.preview} alt="Back of ID preview" class="w-full max-h-32 object-contain rounded-md bg-surface-base" />
+						{:else}
+							<Upload class="w-5 h-5 text-on-surface-variant" />
+						{/if}
 						<span class="text-body-sm font-semibold text-on-surface">Back of ID {identityBack ? `• ${identityBack.name}` : ''} (if applicable)</span>
 						<span class="text-xs text-on-surface-variant">Skip if single-sided</span>
-						<input type="file" accept="image/*,.pdf" class="sr-only" onchange={(e) => { const f = (e.currentTarget as HTMLInputElement).files?.[0] || null; identityBack = f; }} />
+						<input type="file" accept="image/*,.pdf" class="sr-only" aria-label="Upload back of ID" onchange={(event) => chooseIdentityDoc(event, 'back')} />
 					</label>
 					{#if identityError}<p class="text-body-sm text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">{identityError}</p>{/if}
 					<div class="grid grid-cols-2 gap-2">
@@ -516,6 +529,18 @@
 			{/if}
 		</div>
 	</Sheet>
+
+	<ImageCropSheet
+		open={cropSide !== null}
+		file={cropFile}
+		title={cropSide === 'back' ? 'Fit ID photo · back' : 'Fit ID photo · front'}
+		maxDimension={1600}
+		maxZoom={2}
+		confirmLabel="Use this image"
+		hint="Pinch to zoom and drag to fit the document, then confirm. The image is only attached after you confirm."
+		confirm={applyCroppedDocument}
+		close={closeCrop}
+	/>
 
 	<!-- Payout Sheet -->
 	<Sheet open={payoutOpen} title="Verify Payout Account" close={() => (payoutOpen = false)}>

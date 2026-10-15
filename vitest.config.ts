@@ -15,6 +15,8 @@ export default defineConfig({
 			$utils: p('./src/lib/utils'),
 			$server: p('./src/lib/server'),
 			'$app/environment': p('./tests/mocks/app-environment.ts'),
+			'$app/forms': p('./tests/mocks/app-forms.ts'),
+			'$app/state': p('./tests/mocks/app-state.ts'),
 			'$app/navigation': p('./tests/mocks/app-navigation.ts'),
 			'$app/paths': p('./tests/mocks/app-paths.ts')
 		}
