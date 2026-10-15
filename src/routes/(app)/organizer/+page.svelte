@@ -192,8 +192,8 @@
 					<ArrowLeftRight class="w-4 h-4 text-on-surface-variant" /><span>Switch Organization</span>
 				</a>
 				<span class="h-9 px-3.5 rounded-lg flex items-center gap-2 {MONO} text-on-surface-variant border border-surface-glass-border">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>
-					{mainEvent?.live ? 'Live' : 'Standby'} • {gateCount} Gates Active
+					<span class="w-1.5 h-1.5 rounded-full {mainEvent?.live ? 'bg-accent-emerald animate-pulse' : 'bg-outline-variant'}"></span>
+					{mainEvent?.live ? `Live • ${gateCount} Gates Active` : 'No live gate.'}
 				</span>
 			</span>
 			<span class="flex items-center gap-3 flex-wrap">
@@ -420,6 +420,7 @@
 				</div>
 				<div class="rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-4 mt-4">
 					<span class="{MONO} text-on-surface-variant">Door Scanner PWA Access PIN</span>
+					{#if mainEvent}
 					<div class="flex items-center justify-between gap-3 mt-2">
 						<span class="font-code text-[30px] leading-9 tracking-[0.18em] text-primary">{deskPin}</span>
 						<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">Exp: 18h 42m</span>
@@ -433,6 +434,16 @@
 							<RefreshCw class="w-3.5 h-3.5" /><span>Regenerate PIN</span>
 						</button>
 					</div>
+					{:else}
+					<div class="flex flex-col gap-2 mt-3">
+						<span class="font-code text-[30px] leading-9 tracking-[0.18em] text-outline-variant">••••-••</span>
+						<p class="text-body-sm text-on-surface-variant">No event yet — PIN appears once you create an event.</p>
+						<div class="grid grid-cols-2 gap-2.5 opacity-50 pointer-events-none">
+							<button class="h-9 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm"> <Copy class="w-3.5 h-3.5" /><span>Copy Scanner Link</span></button>
+							<button class="h-9 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm"> <RefreshCw class="w-3.5 h-3.5" /><span>Regenerate PIN</span></button>
+						</div>
+					</div>
+					{/if}
 				</div>
 				<span class="{MONO} text-on-surface-variant block mt-5">Active Gate Terminals</span>
 				<div class="flex flex-col gap-2.5 mt-3">
@@ -477,14 +488,22 @@
 			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
 				<div class="flex items-center justify-between">
 					<h2 class="font-display text-headline-md text-on-surface">Settlement Account</h2>
-					<span class="flex items-center gap-1.5 {MONO} text-on-surface-variant"><ShieldCheck class="w-3.5 h-3.5 text-accent-emerald" /> KYC Active</span>
+					<span class="flex items-center gap-1.5 {MONO} {appSettings.value.verification.payoutAccount ? 'text-accent-emerald' : 'text-on-surface-variant'}"><ShieldCheck class="w-3.5 h-3.5 {appSettings.value.verification.payoutAccount ? 'text-accent-emerald' : 'text-outline-variant'}" /> {appSettings.value.verification.payoutAccount ? 'KYC Active' : 'Not verified'}</span>
 				</div>
 				<div class="rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-4 mt-4">
+					{#if appSettings.value.verification.payoutAccount && appSettings.value.payout.bank}
 					<div class="flex items-center justify-between gap-3">
-						<span class="font-display text-body-lg font-bold text-on-surface">Guaranty Trust Bank</span>
+						<span class="font-display text-body-lg font-bold text-on-surface">{appSettings.value.payout.bank}</span>
 						<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">NGN Default</span>
 					</div>
-					<span class="{MONO} text-on-surface-variant block mt-2">Account: ••••••••4821</span>
+					<span class="{MONO} text-on-surface-variant block mt-2">Account: ••••••{appSettings.value.payout.accountNumber.slice(-4) || '••••'} {#if appSettings.value.payout.accountName}<span class="text-on-surface">— {appSettings.value.payout.accountName}</span>{/if}</span>
+					{:else}
+					<div class="flex items-center justify-between gap-3">
+						<span class="font-display text-body-lg font-bold text-on-surface">{appSettings.value.payout.bank || 'No payout account linked'}</span>
+						<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">NGN Default</span>
+					</div>
+					<span class="{MONO} text-on-surface-variant block mt-2">{appSettings.value.payout.accountNumber ? `Account: ••••••${appSettings.value.payout.accountNumber.slice(-4)}` : 'Account: —'}</span>
+					{/if}
 					<div class="flex flex-col gap-2 mt-4 pt-4 border-t border-surface-glass-border text-body-sm">
 						<div class="flex items-center justify-between gap-3">
 							<span class="text-on-surface-variant">Split Mechanism</span>
@@ -562,8 +581,10 @@
 					<a href="/organizer/create" class="h-11 px-6 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center glow-primary">Create event</a>
 				{/snippet}
 			</EmptyState>
-		{:else}
-			<!-- scanner launch -->
+		{/if}
+
+		<!-- scanner launch - always visible, only enabled when an event is live -->
+		{#if mainEvent?.live}
 			<a href="/organizer/scan" class="relative overflow-hidden rounded-xl border border-outline-variant/40 bg-surface-container p-0.5 shadow-sm block">
 				<div class="w-full flex flex-col gap-space-sm rounded-[10px] bg-surface-container-low p-space-md text-left group">
 					<div class="flex items-center justify-between w-full">
@@ -587,79 +608,104 @@
 					</div>
 				</div>
 			</a>
+		{:else}
+			<div class="relative overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container p-0.5 shadow-sm opacity-60">
+				<div class="w-full flex flex-col gap-space-sm rounded-[10px] bg-surface-container-low p-space-md text-left">
+					<div class="flex items-center justify-between w-full">
+						<span class="inline-flex items-center gap-2 rounded-full bg-surface-container-highest px-2.5 py-1 border border-outline-variant/30">
+							<span class="relative flex h-2 w-2">
+								<span class="relative inline-flex rounded-full h-2 w-2 bg-outline-variant"></span>
+							</span>
+							<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">No live gate</span>
+						</span>
+						<span class="rounded-full bg-surface-container-highest border border-outline-variant/40 p-1.5 text-on-surface-variant">
+							<ScanBarcode class="w-4.5 h-4.5" />
+						</span>
+					</div>
+					<div class="flex items-end justify-between w-full pt-1">
+						<div class="flex flex-col">
+							<span class="font-display text-headline-lg-mobile text-on-surface">Open Ticket Scanner</span>
+							<span class="text-body-sm text-on-surface-variant">Disabled — create and activate an event to enable scanning</span>
+						</div>
+						<span class="h-9 px-4 rounded-full bg-surface-container-high border border-outline-variant/30 text-on-surface-variant text-[13px] font-semibold flex items-center justify-center">Disabled</span>
+					</div>
+				</div>
+			</div>
+		{/if}
 
+		{#if mainEvent}
 			<section class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm flex flex-col gap-space-sm">
 				<div class="flex items-start justify-between gap-3"><div class="min-w-0"><span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Primary event</span><h2 class="font-display text-headline-md text-on-surface pt-1 truncate">{mainEvent.title}</h2><p class="text-body-sm text-on-surface-variant pt-1">{dateLabel} · {mainEvent.venue}, {mainEvent.city}</p></div><span class="shrink-0 rounded-full px-2.5 py-1 text-label-badge {mainEvent.live ? 'bg-accent-emerald/10 text-accent-emerald' : 'bg-surface-container-highest text-on-surface-variant'}">{mainEvent.live ? 'Live' : 'Scheduled'}</span></div>
 				<div class="grid grid-cols-2 gap-2 pt-1"><a href="/organizer/events/{mainEvent.id}" class="h-10 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center gap-1.5"><LayoutGrid class="w-4 h-4" />Manage event</a><a href="/organizer/create" class="h-10 rounded-lg bg-surface-container-high border border-outline-variant/30 text-on-surface text-body-sm font-semibold flex items-center justify-center gap-1.5"><PenLine class="w-4 h-4" />Edit wizard</a></div>
 				<div class="grid grid-cols-2 gap-2 border-t border-outline-variant/20 pt-3"><div><span class="text-label-badge text-on-surface-variant block">Rejected scans</span><span class="text-body-sm font-semibold text-on-surface">{rejected} blocked</span></div><div><span class="text-label-badge text-on-surface-variant block">Offline cache sync</span><span class="text-body-sm font-semibold text-on-surface">100% up to date</span></div></div>
 			</section>
+		{/if}
 
-			<!-- stats grid -->
-			{#if stats}
-				<div class="grid grid-cols-2 gap-space-sm">
-					<div class="flex flex-col justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
-						<div class="flex items-center justify-between">
-							<span class="text-body-sm text-on-surface-variant">Total Revenue</span>
-							<span class="p-1 rounded-lg bg-surface-container-highest text-accent-emerald"><Banknote class="w-4 h-4" /></span>
-						</div>
-						<div class="my-space-xs">
-							<span class="font-display text-headline-lg-mobile text-on-surface block tracking-tight">{formatMoney(stats.revenue)}</span>
-							<span class="inline-flex items-center gap-1 mt-1 text-accent-emerald">
-								<TrendingUp class="w-3.5 h-3.5" />
-								<span class="text-label-badge">+{stats.revenueDeltaPct}% this week</span>
-							</span>
-						</div>
-						<div class="w-full bg-surface-container-highest h-1 rounded-full overflow-hidden mt-1">
-							<div class="bg-accent-emerald h-full rounded-full" style="width: {goalPct}%"></div>
-						</div>
-						<span class="text-label-badge text-on-surface-variant pt-1">Target: {formatMoney(potential)} · {goalPct}% to goal</span>
+		<!-- analytics - always visible even when no event -->
+		<div class="grid grid-cols-2 gap-space-sm">
+				<div class="flex flex-col justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
+					<div class="flex items-center justify-between">
+						<span class="text-body-sm text-on-surface-variant">Total Revenue</span>
+						<span class="p-1 rounded-lg bg-surface-container-highest text-accent-emerald"><Banknote class="w-4 h-4" /></span>
 					</div>
-					<div class="flex flex-col justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
-						<div class="flex items-center justify-between">
-							<span class="text-body-sm text-on-surface-variant">Gate Checked-in</span>
-							<span class="p-1 rounded-lg bg-surface-container-highest text-on-surface"><UserCheck class="w-4 h-4" /></span>
-						</div>
-						<div class="my-space-xs">
-							<div class="flex items-baseline gap-1">
-								<span class="font-display text-headline-lg-mobile text-on-surface tracking-tight">{stats.checkedIn}</span>
-								<span class="text-body-sm text-on-surface-variant">/ {stats.capacity.toLocaleString()}</span>
-							</div>
-							<span class="text-label-badge text-on-surface-variant">{checkinRate}% rate</span>
-						</div>
-						<div class="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden mt-1">
-							<div class="bg-on-surface h-full rounded-full transition-all duration-700" style="width: {checkinRate}%"></div>
-						</div>
-					</div>
-					<div class="flex flex-col justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
-						<div class="flex items-center justify-between">
-							<span class="text-body-sm text-on-surface-variant">Total Sales</span>
-							<span class="p-1 rounded-lg bg-surface-container-highest text-on-surface"><ShoppingBag class="w-4 h-4" /></span>
-						</div>
-						<div class="my-space-xs">
-							<span class="font-display text-headline-lg-mobile text-on-surface block tracking-tight">{stats.orders.toLocaleString()} Orders</span>
-							<span class="text-body-sm text-on-surface-variant block mt-1">{stats.soldPct}% Sold</span>
-						</div>
-						<span class="flex items-center gap-1 text-on-surface-variant pt-1">
-							<TrendingUp class="w-3 h-3 text-accent-emerald" />
-							<span class="text-label-badge">{stats.soldLastHour} sold last hour</span>
+					<div class="my-space-xs">
+						<span class="font-display text-headline-lg-mobile text-on-surface block tracking-tight">{formatMoney(stats?.revenue ?? 0)}</span>
+						<span class="inline-flex items-center gap-1 mt-1 text-accent-emerald">
+							<TrendingUp class="w-3.5 h-3.5" />
+							<span class="text-label-badge">+{stats?.revenueDeltaPct ?? 0}% this week</span>
 						</span>
 					</div>
-					<div class="flex flex-col justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
-						<div class="flex items-center justify-between">
-							<span class="text-body-sm text-on-surface-variant">Payout Balance</span>
-							<span class="p-1 rounded-lg bg-surface-container-highest text-accent-amber"><Wallet class="w-4 h-4" /></span>
+					<div class="w-full bg-surface-container-highest h-1 rounded-full overflow-hidden mt-1">
+						<div class="bg-accent-emerald h-full rounded-full" style="width: {goalPct ?? 0}%"></div>
+					</div>
+					<span class="text-label-badge text-on-surface-variant pt-1">Target: {formatMoney(potential ?? 0)} · {goalPct ?? 0}% to goal</span>
+				</div>
+				<div class="flex flex-col justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
+					<div class="flex items-center justify-between">
+						<span class="text-body-sm text-on-surface-variant">Gate Checked-in</span>
+						<span class="p-1 rounded-lg bg-surface-container-highest text-on-surface"><UserCheck class="w-4 h-4" /></span>
+					</div>
+					<div class="my-space-xs">
+						<div class="flex items-baseline gap-1">
+							<span class="font-display text-headline-lg-mobile text-on-surface tracking-tight">{stats?.checkedIn ?? 0}</span>
+							<span class="text-body-sm text-on-surface-variant">/ {(stats?.capacity ?? 0).toLocaleString()}</span>
 						</div>
-						<div class="my-space-xs">
-							<span class="font-display text-headline-lg-mobile text-on-surface block tracking-tight">{formatMoney(stats.payout)}</span>
-							<span class="text-label-badge text-on-surface-variant block mt-1">Ready for transfer</span>
-						</div>
-						<button class="w-full h-8 mt-1 rounded-full bg-primary-fixed text-surface font-medium flex items-center justify-center gap-1 transition-all active:scale-95 shadow-sm" onclick={() => toast('Payout of ' + formatMoney(stats.payout) + ' on its way', 'success')}>
-							<Send class="w-3.5 h-3.5" /><span class="text-label-badge font-semibold">Instant Payout</span>
-						</button>
+						<span class="text-label-badge text-on-surface-variant">{checkinRate ?? 0}% rate</span>
+					</div>
+					<div class="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden mt-1">
+						<div class="bg-on-surface h-full rounded-full transition-all duration-700" style="width: {checkinRate ?? 0}%"></div>
 					</div>
 				</div>
-			{/if}
+				<div class="flex flex-col justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
+					<div class="flex items-center justify-between">
+						<span class="text-body-sm text-on-surface-variant">Total Sales</span>
+						<span class="p-1 rounded-lg bg-surface-container-highest text-on-surface"><ShoppingBag class="w-4 h-4" /></span>
+					</div>
+					<div class="my-space-xs">
+						<span class="font-display text-headline-lg-mobile text-on-surface block tracking-tight">{(stats?.orders ?? 0).toLocaleString()} Orders</span>
+						<span class="text-body-sm text-on-surface-variant block mt-1">{stats?.soldPct ?? 0}% Sold</span>
+					</div>
+					<span class="flex items-center gap-1 text-on-surface-variant pt-1">
+						<TrendingUp class="w-3 h-3 text-accent-emerald" />
+						<span class="text-label-badge">{stats?.soldLastHour ?? 0} sold last hour</span>
+					</span>
+				</div>
+				<div class="flex flex-col justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
+					<div class="flex items-center justify-between">
+						<span class="text-body-sm text-on-surface-variant">Payout Balance</span>
+						<span class="p-1 rounded-lg bg-surface-container-highest text-accent-amber"><Wallet class="w-4 h-4" /></span>
+					</div>
+					<div class="my-space-xs">
+						<span class="font-display text-headline-lg-mobile text-on-surface block tracking-tight">{formatMoney(stats?.payout ?? 0)}</span>
+						<span class="text-label-badge text-on-surface-variant block mt-1">Ready for transfer</span>
+					</div>
+					<button class="w-full h-8 mt-1 rounded-full bg-primary-fixed text-surface font-medium flex items-center justify-center gap-1 transition-all active:scale-95 shadow-sm" onclick={() => toast('Payout of ' + formatMoney(stats?.payout ?? 0) + ' on its way', 'success')}>
+						<Send class="w-3.5 h-3.5" /><span class="text-label-badge font-semibold">Instant Payout</span>
+					</button>
+				</div>
+			</div>
 
+		{#if mainEvent}
 			<!-- live check-in stream -->
 			<div class="flex flex-col rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm gap-space-sm">
 				<div class="flex items-center justify-between">
@@ -709,23 +755,58 @@
 					</div>
 				{/each}
 			</section>
-
-			<section class="flex flex-col gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
-				<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Hardware &amp; Gates</h2><Radio class="w-4 h-4 text-on-surface-variant" /></div>
-				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3"><span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Door scanner PWA access PIN</span><div class="flex items-center justify-between gap-2 pt-1"><span class="font-code text-headline-lg-mobile tracking-[0.16em] text-primary">{deskPin}</span><span class="text-label-badge text-on-surface-variant">Exp: 18h 42m</span></div><p class="text-body-sm text-on-surface-variant pt-2">Rotating passkey for door leads—no admin credentials required.</p><div class="grid grid-cols-2 gap-2 pt-3"><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={copyScannerLink}><Copy class="w-3.5 h-3.5" />Copy scanner link</button><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={regenPin}><RefreshCw class="w-3.5 h-3.5" />Rotate PIN</button></div></div>
-				<div><span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Active gate terminals</span><div class="flex flex-col gap-2 pt-2">{#each terminals as term}<div class="flex items-center justify-between gap-2 rounded-lg bg-surface-container-high/60 border border-outline-variant/20 px-3 py-2"><span class="flex items-center gap-2 min-w-0"><span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span><span class="min-w-0"><span class="block text-body-sm text-on-surface truncate">{term.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{term.sub}</span></span></span><span class="text-label-badge text-on-surface-variant shrink-0">{term.ms}</span></div>{:else}<p class="text-body-sm text-on-surface-variant pt-2">No active terminals reported.</p>{/each}</div></div>
-			</section>
-
-			<section class="flex flex-col gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
-				<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Settlement Account</h2><span class="inline-flex items-center gap-1 text-label-badge text-accent-emerald"><ShieldCheck class="w-3.5 h-3.5" />KYC active</span></div>
-				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3"><div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">Guaranty Trust Bank</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div><span class="block font-code text-label-badge text-on-surface-variant pt-1">Account: ••••••••4821</span><div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">Paystack Split Active</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Protocol processing fee</span><span class="text-on-surface">0.00% (Genesis Tier)</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">Tonight at 23:59 WAT</span></div></div></div>
-			</section>
+		{:else}
+			<!-- when no event, show placeholders for live sections to indicate no data -->
+			<div class="flex flex-col rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm gap-space-sm opacity-60">
+				<div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-outline-variant"></span><span class="font-display text-headline-md text-on-surface">Live Check-in Stream</span></div>
+				<p class="text-body-sm text-on-surface-variant">No live stream — create an event to see check-ins.</p>
+			</div>
+			<div class="flex flex-col gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm opacity-60">
+				<h2 class="font-display text-headline-md text-on-surface">Ticket Tier Breakdown</h2>
+				<p class="text-body-sm text-on-surface-variant">No tiers yet — create an event to configure ticket categories.</p>
+			</div>
 		{/if}
 
-		<!-- quick management -->
+		<!-- Hardware & Gates - always visible, PIN gated -->
+		<section class="flex flex-col gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
+			<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Hardware &amp; Gates</h2><Radio class="w-4 h-4 text-on-surface-variant" /></div>
+			<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3">
+				<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Door scanner PWA access PIN</span>
+				{#if mainEvent}
+					<div class="flex items-center justify-between gap-2 pt-1"><span class="font-code text-headline-lg-mobile tracking-[0.16em] text-primary">{deskPin}</span><span class="text-label-badge text-on-surface-variant">Exp: 18h 42m</span></div>
+					<p class="text-body-sm text-on-surface-variant pt-2">Rotating passkey for door leads—no admin credentials required.</p>
+					<div class="grid grid-cols-2 gap-2 pt-3"><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={copyScannerLink}><Copy class="w-3.5 h-3.5" />Copy scanner link</button><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={regenPin}><RefreshCw class="w-3.5 h-3.5" />Rotate PIN</button></div>
+				{:else}
+					<div class="flex flex-col gap-2 pt-2">
+						<span class="font-code text-headline-lg-mobile tracking-[0.16em] text-outline-variant">••••-••</span>
+						<p class="text-body-sm text-on-surface-variant">No event yet — PIN appears once you create an event.</p>
+						<div class="grid grid-cols-2 gap-2 opacity-50 pointer-events-none"><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5"><Copy class="w-3.5 h-3.5" />Copy scanner link</button><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5"><RefreshCw class="w-3.5 h-3.5" />Rotate PIN</button></div>
+					</div>
+				{/if}
+			</div>
+			<div><span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Active gate terminals</span><div class="flex flex-col gap-2 pt-2">{#each terminals as term}<div class="flex items-center justify-between gap-2 rounded-lg bg-surface-container-high/60 border border-outline-variant/20 px-3 py-2"><span class="flex items-center gap-2 min-w-0"><span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span><span class="min-w-0"><span class="block text-body-sm text-on-surface truncate">{term.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{term.sub}</span></span></span><span class="text-label-badge text-on-surface-variant shrink-0">{term.ms}</span></div>{:else}<p class="text-body-sm text-on-surface-variant pt-2">No active terminals reported.</p>{/each}</div></div>
+		</section>
+
+		<!-- Settlement Account - always visible, pulled from verified payout settings -->
+		<section class="flex flex-col gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
+			<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Settlement Account</h2><span class="inline-flex items-center gap-1 text-label-badge {appSettings.value.verification.payoutAccount ? 'text-accent-emerald' : 'text-on-surface-variant'}"><ShieldCheck class="w-3.5 h-3.5 {appSettings.value.verification.payoutAccount ? 'text-accent-emerald' : 'text-outline-variant'}" />{appSettings.value.verification.payoutAccount ? 'KYC active' : 'Not verified'}</span></div>
+			{#if appSettings.value.verification.payoutAccount && appSettings.value.payout.bank}
+				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3"><div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">{appSettings.value.payout.bank}</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div><span class="block font-code text-label-badge text-on-surface-variant pt-1">Account: ••••••{appSettings.value.payout.accountNumber.slice(-4) || '••••'} {#if appSettings.value.payout.accountName}<span class="text-on-surface">— {appSettings.value.payout.accountName}</span>{/if}</span><div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">Paystack Split Active</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Protocol processing fee</span><span class="text-on-surface">0.00% (Genesis Tier)</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">Tonight at 23:59 WAT</span></div></div></div>
+			{:else}
+				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3">
+					<div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">{appSettings.value.payout.bank || 'No payout account linked'}</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div>
+					<span class="block font-code text-label-badge text-on-surface-variant pt-1">{appSettings.value.payout.accountNumber ? `Account: ••••••${appSettings.value.payout.accountNumber.slice(-4)}` : 'Account: —'}</span>
+					{#if appSettings.value.payout.accountName}<span class="block text-body-sm text-on-surface pt-1">{appSettings.value.payout.accountName}</span>{/if}
+					<div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">{appSettings.value.verification.payoutAccount ? 'Paystack Split Active' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Protocol processing fee</span><span class="text-on-surface">{appSettings.value.verification.payoutAccount ? '0.00% (Genesis Tier)' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">{appSettings.value.verification.payoutAccount ? 'Tonight at 23:59 WAT' : '—'}</span></div></div>
+					<p class="text-xs text-on-surface-variant mt-3">Verify your payout account in Settings → Verification to enable settlements.</p>
+				</div>
+			{/if}
+		</section>
+
+		<!-- Management Shortcuts - always visible -->
 		<div class="flex flex-col gap-space-sm">
 			<div class="flex items-center justify-between">
-				<h2 class="font-display text-headline-md text-on-surface">Quick Management</h2>
+				<h2 class="font-display text-headline-md text-on-surface">Management Shortcuts</h2>
 				<span class="text-body-sm text-on-surface-variant">Organizer Tools</span>
 			</div>
 			<div class="grid grid-cols-1 gap-2.5">
@@ -766,6 +847,31 @@
 						</div>
 						<ChevronRight class="w-5 h-5 text-outline-variant group-hover:text-accent-amber" />
 					</button>
+				{:else}
+					<div class="flex items-center justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm opacity-60">
+						<div class="flex items-center gap-space-md min-w-0">
+							<div class="w-10 h-10 rounded-full bg-surface-container-highest border border-outline-variant/30 text-on-surface flex items-center justify-center flex-shrink-0">
+								<Users class="w-5 h-5" />
+							</div>
+							<div class="flex flex-col min-w-0">
+								<span class="text-body-lg text-on-surface font-semibold truncate">Attendee Roster & Export CSV</span>
+								<span class="text-body-sm text-on-surface-variant truncate">No event yet — create one to manage roster</span>
+							</div>
+						</div>
+						<ChevronRight class="w-5 h-5 text-outline-variant" />
+					</div>
+					<div class="flex items-center justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm opacity-60">
+						<div class="flex items-center gap-space-md min-w-0">
+							<div class="w-10 h-10 rounded-full bg-surface-container-highest border border-outline-variant/30 text-accent-amber flex items-center justify-center flex-shrink-0">
+								<Megaphone class="w-5 h-5" />
+							</div>
+							<div class="flex flex-col min-w-0">
+								<span class="text-body-lg text-on-surface font-semibold truncate">Broadcast Announcement</span>
+								<span class="text-body-sm text-on-surface-variant truncate">No holders yet — create an event first</span>
+							</div>
+						</div>
+						<ChevronRight class="w-5 h-5 text-outline-variant" />
+					</div>
 				{/if}
 				<button onclick={() => (staffOpen = true)} class="flex items-center justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm hover:bg-surface-container-high transition-colors group text-left">
 					<div class="flex items-center gap-space-md min-w-0">
@@ -779,7 +885,6 @@
 					</div>
 					<ChevronRight class="w-5 h-5 text-outline-variant group-hover:text-on-surface" />
 				</button>
-
 			</div>
 		</div>
 	</div>

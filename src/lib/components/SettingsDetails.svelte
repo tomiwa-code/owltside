@@ -230,6 +230,7 @@
 			payoutName = baseName.toUpperCase();
 			// compare to identity name - if mismatch we still pass for demo but show warning?
 			appSettings.value.verification.payoutAccount = true;
+			appSettings.value.payout = { bank: payoutBank, accountNumber: payoutAccount, accountName: payoutName };
 			toast(`Payout account verified — ${payoutBank} ••${payoutAccount.slice(-4)} matches ${payoutName}`, 'success');
 			payoutOpen = false;
 		}, 900);
