@@ -2,25 +2,15 @@
 	import {
 	BadgeCheck,
 	Bell,
-	BookmarkCheck,
 	CalendarDays,
-	ChevronLeft,
-	ChevronRight,
-	Copy,
 	Crown,
 	Globe,
 	Link2,
 	Mic,
-	QrCode,
-	RefreshCw,
 	Search,
-	Settings2,
-	Share2,
-	ShieldCheck,
 	UserCheck,
 	UserPlus,
-	Users,
-	WifiOff
+	Users
 } from '@lucide/svelte';
 
 	import Avatar from '$components/Avatar.svelte';
@@ -32,8 +22,7 @@
 	import { follows, toggleIn } from '$lib/state/prefs.svelte';
 	import { mockProfiles } from '$lib/data/mock-profiles';
 	import { toast } from '$lib/state/toast.svelte';
-	import { fmtDate, fmtTime } from '$lib/utils/dates';
-	import type { EventItem } from '$lib/types';
+import type { EventItem } from '$lib/types';
 
 	let { data } = $props();
 	const profile = $derived(data.profile);
@@ -84,57 +73,7 @@
 	const sessionAvatar = $derived((session as { avatarUrl?: string | null })?.avatarUrl ?? null);
 	const sessionAvatarColor = $derived((session as { avatarColor?: string | null })?.avatarColor ?? profile.avatarColor);
 
-	// calendar state mirrors profile page but sourced from this profile's events
-	let profileTab = $state<'calendar' | 'events'>('calendar');
-	let monthOffset = $state(0);
-	let selectedDay = $state<number | null>(null);
-	const now = new Date();
-	const year = now.getFullYear();
-	const month = now.getMonth();
-	const upcoming = $derived(
-		[...data.events]
-			.filter((e) => {
-				const d = new Date(e.startsAt ?? (e as unknown as { startsAt: string }).startsAt);
-				return !isNaN(d.getTime()) && d > now;
-			})
-			.sort((a, b) => new Date(a.startsAt ?? (a as unknown as { startsAt: string }).startsAt).getTime() - new Date(b.startsAt ?? (b as unknown as { startsAt: string }).startsAt).getTime())
-	);
-	// fall back to all events sorted if none upcoming
-	const upcomingForCal = $derived(upcoming.length ? upcoming : [...data.events].sort((a,b)=> new Date(a.startsAt??'').getTime()-new Date(b.startsAt??'').getTime()));
-	const view = $derived(new Date(year, month + monthOffset, 1));
-	const viewLabel = $derived(view.toLocaleDateString('en-NG', { month: 'long', year: 'numeric' }));
-	const viewFirst = $derived((view.getDay() + 6) % 7);
-	const viewDays = $derived(new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate());
-	const todayInView = $derived(view.getFullYear() === year && view.getMonth() === month);
-	const activeDay = $derived(selectedDay ?? (todayInView ? now.getDate() : null));
-	const passesOn = (d: number) =>
-		upcomingForCal.filter((e) => {
-			const s = new Date((e as unknown as { startsAt: string }).startsAt ?? (e as unknown as { date: string }).date ?? '');
-			return s.getFullYear() === view.getFullYear() && s.getMonth() === view.getMonth() && s.getDate() === d;
-		});
-	const monthCount = $derived(
-		upcomingForCal.filter((e) => {
-			const s = new Date((e as unknown as { startsAt: string }).startsAt ?? (e as unknown as { date: string }).date ?? '');
-			return s.getFullYear() === view.getFullYear() && s.getMonth() === view.getMonth();
-		}).length
-	);
-	const daySchedule = $derived(activeDay ? passesOn(activeDay) : []);
-	const activeLabel = $derived(
-		activeDay ? fmtDate(new Date(view.getFullYear(), view.getMonth(), activeDay, 12).toISOString()) : ''
-	);
-	const vaultRows = $derived([
-		{ icon: WifiOff, label: 'Offline Cache', value: 'Enabled' },
-		{ icon: QrCode, label: 'Events On Device', value: String(data.events.length) },
-		{ icon: ShieldCheck, label: 'Gate Biometrics', value: 'Active' },
-		{ icon: RefreshCw, label: 'Last Vault Sync', value: '12m ago' }
-	]);
-	function shareProfile() {
-		void navigator.clipboard?.writeText(`https://owltside.com/${profile.handle}`);
-		toast('Profile link copied', 'success');
-	}
-	async function copyText(value: string, label: string) {
-		try { await navigator.clipboard.writeText(value); toast(`${label} copied`, 'success'); } catch { toast(label, 'info'); }
-	}
+
 
 
 </script>
@@ -186,12 +125,6 @@
 			<p class="text-body-md text-on-surface-variant mt-2">Public identity, vault readiness and the pass calendar for {profile.name}.</p>
 		</div>
 		<div class="flex items-center gap-3">
-			<a href="/settings" aria-label="Settings" class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors">
-				<Settings2 class="w-4 h-4" />
-			</a>
-			<button class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={shareProfile}>
-				<Share2 class="w-4 h-4 text-on-surface-variant" /><span>Share Profile</span>
-			</button>
 			<button class="h-10 px-4 rounded-lg flex items-center gap-2 text-body-sm font-semibold active:scale-95 transition-all {following ? 'bg-surface-container-high text-on-surface border border-surface-glass-border' : 'bg-on-surface text-surface-base hover:opacity-90'}" onclick={() => { const added = toggleIn(follows, profile.id); toast(added ? `Following ${profile.name}` : 'Unfollowed', 'info'); }}>
 				{#if following}<UserCheck class="w-4 h-4" /> Following{:else}<UserPlus class="w-4 h-4" /> Follow{/if}
 			</button>
@@ -246,13 +179,11 @@
 
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-5">
 		<div role="tablist" aria-label="Profile sections" class="inline-flex items-center gap-1 rounded-full border border-surface-glass-border bg-surface-container p-1">
-			<button type="button" role="tab" aria-selected={profileTab === 'calendar'} onclick={() => (profileTab = 'calendar')} class="h-10 px-4 rounded-full text-body-sm font-semibold flex items-center gap-2 transition-colors {profileTab === 'calendar' ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:text-on-surface'}"><CalendarDays class="w-4 h-4" />Calendar</button>
-			<button type="button" role="tab" aria-selected={profileTab === 'events'} onclick={() => (profileTab = 'events')} class="h-10 px-4 rounded-full text-body-sm font-semibold flex items-center gap-2 transition-colors {profileTab === 'events' ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:text-on-surface'}"><BookmarkCheck class="w-4 h-4" />Events <span class="font-code text-label-badge">{data.events.length}</span></button>
+			<button type="button" role="tab" aria-selected="true" class="h-10 px-4 rounded-full text-body-sm font-semibold flex items-center gap-2 bg-primary text-on-primary">Events <span class="font-code text-label-badge">{data.events.length}</span></button>
 		</div>
 	</div>
 
-	{#if profileTab === 'events'}
-		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col gap-6">
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col gap-6">
 			<div class="flex items-center justify-between">
 				<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">{heading}</span>
 				<span class="text-label-badge text-outline-variant">{filtered.length} total</span>
@@ -321,168 +252,6 @@
 				</div>
 			{/if}
 		</div>
-	{:else}
-	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 grid lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px] gap-6 items-start">
-		<div class="flex flex-col gap-6 min-w-0">
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<div class="flex flex-wrap items-center justify-between gap-3">
-					<span class="flex items-center gap-2.5">
-						<CalendarDays class="w-4.5 h-4.5 text-primary" />
-						<span class="font-display text-headline-md text-on-surface">{viewLabel}</span>
-					</span>
-					<span class="flex items-center gap-2">
-						<button class="w-9 h-9 rounded-md bg-surface-container-high border border-surface-glass-border text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Previous month" onclick={() => { monthOffset -= 1; selectedDay = null; }}>
-							<ChevronLeft class="w-4 h-4" />
-						</button>
-						<button class="h-9 px-3 rounded-md bg-surface-container-high border border-surface-glass-border {MONO_DESKTOP} text-on-surface-variant hover:text-on-surface transition-colors" onclick={() => { monthOffset = 0; selectedDay = null; }}>
-							Today
-						</button>
-						<button class="w-9 h-9 rounded-md bg-surface-container-high border border-surface-glass-border text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Next month" onclick={() => { monthOffset += 1; selectedDay = null; }}>
-							<ChevronRight class="w-4 h-4" />
-						</button>
-					</span>
-				</div>
-				<div class="grid grid-cols-7 gap-1.5 text-center {MONO_DESKTOP} text-outline py-2 mt-3">
-					{#each ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as d}<span>{d}</span>{/each}
-				</div>
-				<div class="grid grid-cols-7 gap-1.5">
-					{#each Array(viewFirst) as _, i (i)}<span></span>{/each}
-					{#each Array(viewDays) as _, i (i)}
-						{@const day = i + 1}
-						{@const evs = passesOn(day)}
-						{@const isSel = activeDay === day}
-						{@const isToday = todayInView && now.getDate() === day}
-						<button
-							class="h-14 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors {isSel ? 'bg-primary text-on-primary' : evs.length ? 'bg-surface-container-high/70 text-on-surface hover:bg-surface-container-high' : 'bg-surface-container-high/40 text-on-surface-variant hover:bg-surface-container-high/60'} {isToday && !isSel ? 'ring-1 ring-primary/50' : ''}"
-							onclick={() => (selectedDay = day)}
-							aria-label="{viewLabel} day {day}{evs.length ? `, ${evs.length} events` : ''}"
-						>
-							<span class="text-body-sm {isSel ? 'font-bold' : ''}">{day}</span>
-							{#if evs.length}<span class="w-1.5 h-1.5 rounded-full {isSel ? 'bg-on-primary' : 'bg-primary'}"></span>{/if}
-						</button>
-					{/each}
-				</div>
-				<div class="flex items-center gap-4 mt-4 pt-3 border-t border-surface-glass-border {MONO_DESKTOP} text-on-surface-variant">
-					<span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-primary"></span> Event day</span>
-					<span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full ring-1 ring-primary/60"></span> Today</span>
-					<span class="ml-auto">{monthCount} Events This Month</span>
-				</div>
-			</section>
-
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<div class="flex flex-wrap items-center justify-between gap-3">
-					<span class="flex items-center gap-2.5">
-						<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
-						<span class="font-display text-headline-md text-on-surface">Day Schedule{activeLabel ? ` — ${activeLabel}` : ''}</span>
-					</span>
-					<span class="{MONO_DESKTOP} text-on-surface-variant">{daySchedule.length} Events</span>
-				</div>
-				<div class="flex flex-col gap-2.5 mt-4">
-					{#each daySchedule as event (event.id)}
-						{@const profileSpeaker = speakerFor(event)}
-						<a href="/events/{event.id}" class="flex items-center gap-4 rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-3 hover:bg-surface-container-high transition-colors">
-							<span class="{MONO_DESKTOP} text-on-surface shrink-0 w-16">{fmtTime((event as unknown as { startsAt: string }).startsAt ?? new Date().toISOString())}</span>
-							<span class="flex-1 min-w-0">
-								<span class="block text-body-md font-semibold text-on-surface truncate">{event.title}</span>
-								<span class="block text-body-sm text-on-surface-variant truncate">{event.venue ?? profile.city} · {profileSpeaker?.role ?? (event.organizer?.id===profile.id ? 'Organizer' : 'Speaker')}</span>
-							</span>
-							<span class="{MONO_DESKTOP} px-2 py-1 rounded bg-surface-container-high border border-surface-glass-border text-on-surface-variant shrink-0">{event.category ?? 'Event'}</span>
-							<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
-						</a>
-					{:else}
-						<p class="text-body-sm text-on-surface-variant py-6 text-center">No events on this day — pick a marked date or browse the events tab.</p>
-					{/each}
-				</div>
-			</section>
-		</div>
-
-		<div class="flex flex-col gap-6 min-w-0">
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<div class="flex items-center justify-between gap-3">
-					<h2 class="font-display text-headline-md text-on-surface">Next Up</h2>
-					<span class="{MONO_DESKTOP} text-on-surface-variant">{upcomingForCal.length} Upcoming</span>
-				</div>
-				<div class="flex flex-col gap-2.5 mt-4">
-					{#each upcomingForCal.slice(0, 4) as event (event.id)}
-						{@const d = new Date((event as unknown as { startsAt: string }).startsAt ?? '')}
-						<a href="/events/{event.id}" class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5 hover:bg-surface-container-high transition-colors">
-							<span class="w-10 h-10 rounded-md bg-surface-container-highest border border-surface-glass-border flex flex-col items-center justify-center shrink-0">
-								<span class="font-code text-[9px] tracking-[0.14em] text-on-surface-variant uppercase">{isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-NG', { month: 'short' })}</span>
-								<span class="font-display text-body-sm font-bold text-on-surface leading-4">{isNaN(d.getTime()) ? '•' : d.getDate()}</span>
-							</span>
-							<span class="flex-1 min-w-0">
-								<span class="block text-body-sm font-medium text-on-surface truncate">{event.title}</span>
-								<span class="block text-xs text-on-surface-variant truncate">{isNaN(d.getTime()) ? '' : fmtDate(d.toISOString())} • {event.venue ?? profile.city}</span>
-							</span>
-							<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
-						</a>
-					{:else}
-						<p class="text-body-sm text-on-surface-variant">No upcoming events for {profile.name}.</p>
-					{/each}
-				</div>
-			</section>
-
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<div class="flex items-center justify-between gap-3">
-					<h2 class="font-display text-headline-md text-on-surface">Vault Readiness</h2>
-					<span class="{MONO_DESKTOP} text-on-surface-variant">Local_Cache</span>
-				</div>
-				<div class="flex flex-col gap-2.5 mt-4">
-					{#each vaultRows as row (row.label)}
-						{@const VIcon = row.icon}
-						<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5">
-							<span class="w-8 h-8 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0">
-								<VIcon class="w-4 h-4 text-on-surface-variant" />
-							</span>
-							<span class="flex-1 text-body-sm font-medium text-on-surface">{row.label}</span>
-							<span class="{MONO_DESKTOP} text-accent-emerald">{row.value}</span>
-						</div>
-					{/each}
-				</div>
-			</section>
-
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<div class="flex items-center justify-between gap-3">
-					<h2 class="font-display text-headline-md text-on-surface">Identity Links</h2>
-					<span class="{MONO_DESKTOP} text-on-surface-variant">Public_DNS</span>
-				</div>
-				<div class="flex flex-col gap-2.5 mt-4">
-					<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5">
-						<Globe class="w-4 h-4 text-tertiary shrink-0" />
-						<span class="flex-1 min-w-0 {MONO_DESKTOP} text-on-surface truncate">Owltside.com/{profile.handle}</span>
-						<button class="w-8 h-8 rounded-md flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors shrink-0" aria-label="Copy profile link" onclick={() => copyText(`https://owltside.com/${profile.handle}`, 'Profile link')}>
-							<Copy class="w-3.5 h-3.5" />
-						</button>
-					</div>
-					<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5">
-						<Link2 class="w-4 h-4 text-on-surface-variant shrink-0" />
-						<span class="flex-1 min-w-0 {MONO_DESKTOP} text-on-surface truncate">@{profile.handle}</span>
-						<button class="w-8 h-8 rounded-md flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors shrink-0" aria-label="Copy handle" onclick={() => copyText(`@${profile.handle}`, 'Handle')}>
-							<Copy class="w-3.5 h-3.5" />
-						</button>
-					</div>
-					<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5">
-						<ShieldCheck class="w-4 h-4 text-accent-emerald shrink-0" />
-						<span class="flex-1 min-w-0 text-body-sm text-on-surface truncate">{profile.link ?? `No external link`}</span>
-						<span class="{MONO_DESKTOP} px-2 py-0.5 rounded text-accent-emerald bg-accent-emerald/10 border border-accent-emerald/20 shrink-0">Verified</span>
-					</div>
-				</div>
-			</section>
-
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-				<h2 class="font-display text-headline-md text-on-surface">Quick Routes</h2>
-				<div class="flex flex-col gap-2.5 mt-4">
-					{#each [['/tickets', 'Ticket Wallet & Passes'],['/organizer', 'Organizer Console'],['/settings', 'Settings & Identity']] as [href, label]}
-						<a {href} class="flex items-center justify-between gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5 hover:bg-surface-container-high transition-colors">
-							<span class="text-body-sm font-medium text-on-surface">{label}</span>
-							<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
-						</a>
-					{/each}
-				</div>
-			</section>
-		</div>
-	</div>
-	{/if}
 	<footer class="mt-4 border-t border-surface-glass-border">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
 			<span class="flex items-center gap-3">
