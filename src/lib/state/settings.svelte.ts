@@ -36,6 +36,11 @@ export interface AppSettings {
 	payments: {
 		savedMethods: Array<{ id: string; brand: string; last4: string; isDefault: boolean }>;
 	};
+	payout: {
+		bank: string;
+		accountNumber: string;
+		accountName: string;
+	};
 	accessibility: {
 		appearance: 'dark' | 'light';
 		reduceMotion: boolean;
@@ -71,6 +76,7 @@ const defaults: AppSettings = {
 			{ id: 'verve-1906', brand: 'Verve', last4: '1906', isDefault: false }
 		]
 	},
+	payout: { bank: '', accountNumber: '', accountName: '' },
 	accessibility: {
 		appearance: 'dark',
 		reduceMotion: false,
@@ -87,6 +93,13 @@ const stored = settings.value as AppSettings & {
 	accessibility?: AppSettings['accessibility'] & { textSize?: string; largerText?: boolean };
 };
 const oldAccessibility = stored.accessibility;
+if (!('payout' in stored) || !stored.payout || typeof stored.payout.bank !== 'string') {
+	settings.value = {
+		...settings.value,
+		payout: { bank: '', accountNumber: '', accountName: '' }
+	};
+}
+
 if (!oldAccessibility || !Number.isFinite(oldAccessibility.pageSize)) {
 	const legacySize = Number(oldAccessibility?.textSize?.replace('%', ''));
 	const migratedPageSize = Number.isFinite(legacySize) && legacySize > 0
