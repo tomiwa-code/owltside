@@ -688,7 +688,7 @@
 					<input type="file" accept="image/*" class="sr-only" aria-label="Upload profile photo" onchange={(event) => chooseImage(event, 'avatar')} />
 				</label>
 			</div>
-			<p class="text-xs text-on-surface-variant mt-3">Resize and crop the photo before it is confirmed — the saved picture matches the crop exactly.</p>
+			<p class="text-xs text-on-surface-variant mt-3">Pinch to zoom and drag to fit — the crop is applied when you confirm it, and the saved picture matches it exactly.</p>
 		</section>
 
 		<section class="rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3">
@@ -700,7 +700,7 @@
 				Choose banner
 				<input type="file" accept="image/*" class="sr-only" aria-label="Upload profile banner" onchange={(event) => chooseImage(event, 'banner')} />
 			</label>
-			<p class="text-xs text-on-surface-variant mt-3">Resize and crop the banner before it is confirmed.</p>
+			<p class="text-xs text-on-surface-variant mt-3">Pinch to zoom and drag to fit the banner before confirming it.</p>
 		</section>
 
 		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -755,8 +755,8 @@
 	maxDimension={cropKind === 'banner' ? 1600 : 640}
 	confirmLabel={cropKind === 'banner' ? 'Use banner' : 'Use photo'}
 	hint={cropKind === 'banner'
-		? 'Zoom and reposition the banner, then confirm. Nothing changes until you tap "Use banner".'
-		: 'Zoom and reposition your photo, then confirm. Nothing changes until you tap "Use photo".'}
+		? 'Pinch to zoom and drag to fit the banner, then confirm. Nothing changes until you tap "Use banner".'
+		: 'Pinch to zoom and drag to fit your photo, then confirm. Nothing changes until you tap "Use photo".'}
 	confirm={applyCroppedImage}
 	close={closeCrop}
 />

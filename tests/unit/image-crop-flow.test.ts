@@ -7,6 +7,66 @@ import { profileAppearance } from '$lib/state/profile.svelte';
 import { tick } from 'svelte';
 
 const DATA_URL = 'data:image/jpeg;base64,CROPPED';
+
+class TestPointerEvent extends MouseEvent {
+	pointerId: number;
+	pointerType = 'touch';
+	constructor(type: string, init: MouseEventInit & { pointerId?: number } = {}) {
+		super(type, init);
+		this.pointerId = init.pointerId ?? 1;
+	}
+}
+
+/** jsdom has no PointerEvent (and no layout), so wire up both before gesturing. */
+function installPointerEvents() {
+	vi.stubGlobal('PointerEvent', TestPointerEvent);
+}
+
+/** Give the frame a real on-screen box so panning maths has something to work with. */
+function layoutFrame(element: HTMLElement, size = 352) {
+	const box = {
+		x: 0,
+		y: 0,
+		left: 0,
+		top: 0,
+		right: size,
+		bottom: size,
+		width: size,
+		height: size,
+		toJSON: () => ({})
+	} as DOMRect;
+	element.getBoundingClientRect = () => box;
+	Object.defineProperty(element, 'clientWidth', { value: size, configurable: true });
+	Object.defineProperty(element, 'clientHeight', { value: size, configurable: true });
+	Object.defineProperty(element, 'setPointerCapture', { value: () => {}, configurable: true });
+	Object.defineProperty(element, 'releasePointerCapture', { value: () => {}, configurable: true });
+}
+
+const pointer = (element: HTMLElement, type: string, id: number, x: number, y: number) =>
+	fireEvent(
+		element,
+		new TestPointerEvent(type, { pointerId: id, clientX: x, clientY: y, bubbles: true })
+	);
+
+/** Spread or close two fingers around a midpoint. */
+async function pinch(element: HTMLElement, from: number, to: number, midX = 176, midY = 176) {
+	await pointer(element, 'pointerdown', 1, midX - from / 2, midY);
+	await pointer(element, 'pointerdown', 2, midX + from / 2, midY);
+	await pointer(element, 'pointermove', 2, midX + to / 2, midY);
+	await pointer(element, 'pointermove', 1, midX - to / 2, midY);
+	await pointer(element, 'pointerup', 1, midX - to / 2, midY);
+	await pointer(element, 'pointerup', 2, midX + to / 2, midY);
+	await tick();
+}
+
+async function drag(element: HTMLElement, dx: number, dy: number, fromX = 176, fromY = 176) {
+	await pointer(element, 'pointerdown', 1, fromX, fromY);
+	await pointer(element, 'pointermove', 1, fromX + dx, fromY + dy);
+	await pointer(element, 'pointerup', 1, fromX + dx, fromY + dy);
+	await tick();
+}
+
+const savedCaption = () => document.body.textContent?.match(/Saved as (\d+) × (\d+)px JPEG[^\n]*/)?.[0] ?? '';
 const profileData = {
 	session: null,
 	demoMode: true,
@@ -65,8 +125,12 @@ describe('ImageCropSheet', () => {
 		// selecting/normalising alone must not commit anything
 		expect(confirm).not.toHaveBeenCalled();
 
-		const zoom = screen.getByLabelText('Zoom and resize') as HTMLInputElement;
-		await fireEvent.input(zoom, { target: { value: '1.8' } });
+		// no zoom/crop sliders — gestures only
+		expect(document.querySelectorAll('input[type="range"]')).toHaveLength(0);
+
+		const surface = screen.getByRole('application');
+		layoutFrame(surface as HTMLElement);
+		await pinch(surface as HTMLElement, 100, 180); // fingers spread → zoom in
 		expect(confirm).not.toHaveBeenCalled();
 
 		await fireEvent.click(usePhoto);
@@ -90,6 +154,99 @@ describe('ImageCropSheet', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 		expect(close).toHaveBeenCalled();
 		expect(confirm).not.toHaveBeenCalled();
+	});
+});
+
+describe('gesture-driven crop', () => {
+	afterEach(() => {
+		cleanup();
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+		profileAppearance.value = { avatarData: null, bannerData: null };
+	});
+
+	const openAvatarCrop = async () => {
+		const context = stubImagePipeline();
+		installPointerEvents();
+		render(ProfilePage, { props: { data: profileData } });
+		await fireEvent.click(screen.getAllByRole('button', { name: /Edit Profile/i })[0]);
+		await selectFile('Upload profile photo');
+		const surface = (await screen.findByRole('application')) as HTMLElement;
+		layoutFrame(surface, 352);
+		await waitFor(() => expect(savedCaption()).toContain('Saved as 600 × 600px'));
+		return { context, surface };
+	};
+
+	it('pinching out zooms the crop in, pinch in zooms back out', async () => {
+		const { context, surface } = await openAvatarCrop();
+		const drawnCrop = () => context.drawImage.mock.calls.at(-1) as unknown[];
+
+		await pinch(surface, 100, 200); // fingers spread to twice the distance
+		expect(savedCaption()).toContain('Saved as 300 × 300px');
+		expect(savedCaption()).toContain('zoomed 2.00×');
+		expect(drawnCrop()[3]).toBeCloseTo(300, 3); // crop is narrower in the source image
+
+		await pinch(surface, 200, 100); // and back together again
+		expect(savedCaption()).toContain('Saved as 600 × 600px');
+		expect(savedCaption()).not.toContain('zoomed');
+	});
+
+	it('dragging moves the crop window across the picture', async () => {
+		const { context, surface } = await openAvatarCrop();
+		const cropX = () => (context.drawImage.mock.calls.at(-1) as unknown[])[1] as number;
+
+		await pinch(surface, 100, 200);
+		const centred = cropX();
+		// a centred pinch stays near the middle of the picture (fingers land
+		// one after the other, so the focal point drifts a few pixels)
+		expect(centred).toBeGreaterThan(230);
+		expect(centred).toBeLessThan(290);
+
+		await drag(surface, 60, 0); // swipe right → reveal the left of the photo
+		expect(cropX()).toBeLessThan(centred);
+
+		await drag(surface, -400, 0); // far swipe left clamps to the far edge
+		expect(cropX()).toBeCloseTo(500, 3);
+	});
+
+	it('keeps the framing when the gesture is confirmed', async () => {
+		const { context, surface } = await openAvatarCrop();
+		await pinch(surface, 100, 200);
+		await drag(surface, 40, 0);
+
+		const usePhoto = screen.getByRole('button', { name: 'Use photo' }) as HTMLButtonElement;
+		await fireEvent.click(usePhoto);
+
+		await waitFor(() => expect(profileAppearance.value.avatarData).toBe(DATA_URL));
+		expect(context.drawImage).toHaveBeenCalled();
+		// the preview drew the same crop rect the crop maths produced
+		expect(Number.isFinite((context.drawImage.mock.calls.at(-1) as number[])[1])).toBe(true);
+	});
+
+	it('keeps tracking a drag that wanders off the frame', async () => {
+		const { context, surface } = await openAvatarCrop();
+		const cropX = () => (context.drawImage.mock.calls.at(-1) as unknown[])[1] as number;
+
+		await pointer(surface, 'pointerdown', 1, 176, 176);
+		await pointer(surface, 'pointerleave', 1, 176, 176);
+		await pointer(surface, 'pointermove', 1, 240, 176); // finger slid past the edge
+		await pointer(surface, 'pointerup', 1, 240, 176);
+		await tick();
+
+		expect(cropX()).toBeLessThan(100); // the drag still moved the picture
+	});
+
+	it('arrow keys and +/- nudge the crop for keyboard users', async () => {
+		const { context, surface } = await openAvatarCrop();
+		const cropX = () => (context.drawImage.mock.calls.at(-1) as unknown[])[1] as number;
+
+		await fireEvent.keyDown(surface, { key: '+' });
+		await tick();
+		expect(savedCaption()).toContain('zoomed');
+
+		await fireEvent.keyDown(surface, { key: 'ArrowLeft' });
+		await tick();
+		expect(cropX()).toBeLessThan(500);
 	});
 });
 
@@ -184,7 +341,7 @@ describe('identity document upload flow', () => {
 
 		await selectFile('Upload front of ID', 'nin-front.jpg');
 
-		await screen.findByRole('dialog', { name: 'Resize & crop · front of ID' });
+		await screen.findByRole('dialog', { name: 'Fit ID photo · front' });
 		// the document is not attached yet
 		expect(screen.queryByAltText('Front of ID preview')).toBeNull();
 

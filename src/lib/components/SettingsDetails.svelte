@@ -164,7 +164,7 @@
 		const attachment = { name: cropFile?.name ?? 'ID photo', preview };
 		if (side === 'front') identityFront = attachment;
 		else if (side === 'back') identityBack = attachment;
-		toast(`${side === 'back' ? 'Back' : 'Front'} of ID resized and attached.`, 'success');
+		toast(`${side === 'back' ? 'Back' : 'Front'} of ID fitted to the frame and attached.`, 'success');
 		closeCrop();
 	}
 	function nextIdentity() {
@@ -533,11 +533,11 @@
 	<ImageCropSheet
 		open={cropSide !== null}
 		file={cropFile}
-		title={cropSide === 'back' ? 'Resize & crop · back of ID' : 'Resize & crop · front of ID'}
+		title={cropSide === 'back' ? 'Fit ID photo · back' : 'Fit ID photo · front'}
 		maxDimension={1600}
 		maxZoom={2}
 		confirmLabel="Use this image"
-		hint="Resize and crop the document, then confirm. The image is only attached after you confirm."
+		hint="Pinch to zoom and drag to fit the document, then confirm. The image is only attached after you confirm."
 		confirm={applyCroppedDocument}
 		close={closeCrop}
 	/>
