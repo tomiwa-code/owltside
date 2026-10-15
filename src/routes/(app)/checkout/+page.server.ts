@@ -42,6 +42,9 @@ export const actions: Actions = {
 		const scenario = String(form.get('scenario') ?? 'approve');
 
 		const source = getSource(createSupabase(cookies));
+		if (source.mode === 'supabase' && !locals.session?.userId) {
+			redirect(303, '/auth/login');
+		}
 		const event = await source.getEvent(slug);
 		if (!event) return fail(404, { error: 'Event not found' });
 		const tier = event.tiers.find((t) => t.id === tierId);

@@ -551,6 +551,8 @@ export function computeOrganizer(
 
 type Row = Record<string, any>;
 
+const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
 const toProfile = (r: Row): Profile => ({
 	id: r.id,
 	handle: r.handle,
@@ -662,11 +664,17 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			return data ? toEvent(data, toProfile(data.organizer)) : undefined;
 		},
 		async getTickets(userId) {
-			const { data, error } = await db.from('tickets').select('*').eq('owner_id', userId);
+			if (!isUuid(userId)) return [];
+			const { data, error } = await db
+				.from('tickets')
+				.select('*')
+				.eq('owner_id', userId)
+				.order('purchased_at', { ascending: false });
 			if (error) throw error;
 			return (data ?? []).map(toTicket);
 		},
 		async getConversations(userId) {
+			if (!isUuid(userId)) return [];
 			const { data, error } = await db
 				.from('conversations')
 				.select('*, user:profiles!conversations_user_id_fkey(*), peer:profiles!conversations_peer_id_fkey(*)')
@@ -681,6 +689,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			}));
 		},
 		async getMessages(conversationId) {
+			if (!isUuid(conversationId)) return [];
 			const { data, error } = await db
 				.from('messages')
 				.select('*')
@@ -696,6 +705,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			}));
 		},
 		async getNotifications(userId) {
+			if (!isUuid(userId)) return [];
 			const { data, error } = await db
 				.from('notifications')
 				.select('*')
@@ -725,6 +735,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			return (data ?? []).map(toProfile);
 		},
 		async getProfileEvents(profileId) {
+			if (!isUuid(profileId)) return [];
 			const { data, error } = await db
 				.from('events')
 				.select('*, organizer:profiles(*)')
@@ -779,6 +790,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			return toMessageRequest(data);
 		},
 		async getIncomingMessageRequests(organizerId) {
+			if (!isUuid(organizerId)) return [];
 			const { data, error } = await db
 				.from('message_requests')
 				.select('*, requester:profiles!message_requests_requester_id_fkey(*), organizer:profiles!message_requests_organizer_id_fkey(*), event:events!message_requests_event_id_fkey(slug,title)')
@@ -789,6 +801,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			return (data ?? []).map(toMessageRequest);
 		},
 		async getEventMessageRequest(requesterId, eventId) {
+			if (!isUuid(requesterId) || !isUuid(eventId)) return undefined;
 			const { data, error } = await db
 				.from('message_requests')
 				.select('*, requester:profiles!message_requests_requester_id_fkey(*), organizer:profiles!message_requests_organizer_id_fkey(*), event:events!message_requests_event_id_fkey(slug,title)')
@@ -816,13 +829,19 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			return toMessageRequest(data);
 		},
 		async createOrder(userId, eventSlug, items) {
+			if (!isUuid(userId)) throw new Error('Sign in required to purchase tickets');
 			const { data, error } = await db.rpc('create_order', {
 				p_owner: userId,
 				p_event_slug: eventSlug,
 				p_items: items
 			});
 			if (error) throw error;
-			return data as OrderResult;
+			return {
+				orderId: data.orderId,
+				reference: data.reference,
+				total: Number(data.total ?? 0),
+				tickets: (data.tickets ?? []).map((t: Row) => (t.event_id ? toTicket(t) : (t as Ticket)))
+			};
 		},
 		async sendMessage(conversationId, senderId, body) {
 			const { data, error } = await db
@@ -840,14 +859,18 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			};
 		},
 		async markConversationRead(conversationId) {
+			if (!isUuid(conversationId)) return;
 			await db.from('conversations').update({ unread: 0 }).eq('id', conversationId);
 		},
 		async markAllNotificationsRead(userId) {
+			if (!isUuid(userId)) return;
 			await db.from('notifications').update({ read: true }).eq('user_id', userId);
 		},
 
 		/* ── organizer side ── */
 		async getOrganizer(userId) {
+			if (!isUuid(userId))
+				return { events: [], stats: computeOrganizer([], [], [], []).stats, checkins: [], orders: [] };
 			const { data, error } = await db
 				.from('events')
 				.select('*, organizer:profiles(*)')
@@ -870,6 +893,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			);
 		},
 		async getOrganizerEvent(eventId) {
+			if (!isUuid(eventId)) return undefined;
 			const { data } = await db
 				.from('events')
 				.select('*, organizer:profiles(*)')
@@ -878,16 +902,19 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			return data ? toEvent(data, toProfile(data.organizer)) : undefined;
 		},
 		async getEventTickets(eventId) {
+			if (!isUuid(eventId)) return [];
 			const { data, error } = await db.from('tickets').select('*').eq('event_id', eventId);
 			if (error) throw error;
 			return (data ?? []).map(toTicket);
 		},
 		async getEventOrders(eventId) {
+			if (!isUuid(eventId)) return [];
 			const { data, error } = await db.from('orders').select('*').eq('event_id', eventId);
 			if (error) throw error;
 			return (data ?? []).map(toOrder);
 		},
 		async getEventCheckins(eventId) {
+			if (!isUuid(eventId)) return [];
 			const { data, error } = await db
 				.from('checkins')
 				.select('*')
@@ -904,28 +931,27 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				.eq('code', code)
 				.maybeSingle();
 			const at = new Date().toISOString();
+			const holder = ticket?.holder_name ?? 'Unknown pass';
+			const tier = ticket?.tier_name ?? '—';
 			const base = {
 				eventId,
 				ticketCode: code,
 				gate,
 				at,
-				holder: ticket?.holder_name ?? 'Unknown pass',
-				tier: ticket?.tier_name ?? '—'
+				holder,
+				tier
 			};
 			if (!ticket) {
-				const ck = { ...base, result: 'invalid' as const };
-				await db.from('checkins').insert(ck);
-				return { id: `ck-${code}`, ...ck };
+				await db.from('checkins').insert({ event_id: eventId, ticket_code: code, gate, at, holder, tier, result: 'invalid' });
+				return { id: `ck-${code}`, ...base, result: 'invalid' as const };
 			}
 			if (ticket.status === 'used') {
-				const ck = { ...base, result: 'duplicate' as const };
-				await db.from('checkins').insert(ck);
-				return { id: `ck-${code}`, ...ck };
+				await db.from('checkins').insert({ event_id: eventId, ticket_code: code, gate, at, holder, tier, result: 'duplicate' });
+				return { id: `ck-${code}`, ...base, result: 'duplicate' as const };
 			}
 			await db.from('tickets').update({ status: 'used' }).eq('id', ticket.id);
-			const ck = { ...base, result: 'verified' as const };
-			await db.from('checkins').insert(ck);
-			return { id: `ck-${code}`, ...ck };
+			await db.from('checkins').insert({ event_id: eventId, ticket_code: code, gate, at, holder, tier, result: 'verified' });
+			return { id: `ck-${code}`, ...base, result: 'verified' as const };
 		},
 		async createEvent(userId, payload) {
 			const slug = payload.title
