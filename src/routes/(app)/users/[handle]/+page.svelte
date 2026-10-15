@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FollowButton from '$components/FollowButton.svelte';
 	import {
 	BadgeCheck,
 	Bell,
@@ -19,22 +20,18 @@
 	import Sheet from '$components/Sheet.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import { page } from '$app/state';
-	import { follows, toggleIn } from '$lib/state/prefs.svelte';
-	import { mockProfiles } from '$lib/data/mock-profiles';
+	import ConnectionsSheet from '$components/ConnectionsSheet.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 import type { EventItem } from '$lib/types';
 
 	let { data } = $props();
 	const profile = $derived(data.profile);
 	const isDemoMode = $derived(Boolean((data as { demoMode?: boolean }).demoMode ?? page.data.demoMode));
-	const following = $derived(follows.value.includes(profile.id));
 
 	type ProfileCategory = 'all' | 'organized' | 'roles';
 	let category = $state('all' as ProfileCategory);
 	let followersOpen = $state(false);
 	let followingOpen = $state(false);
-	let followersProfiles = $derived(isDemoMode && profile.followers > 0 ? mockProfiles.slice().reverse() : []);
-	let followingProfiles = $derived(isDemoMode && profile.following > 0 ? mockProfiles.slice(0, 4) : []);
 
 	const organizedEvents = $derived(data.events.filter((event) => event.organizer?.id === profile.id));
 	const roleEvents = $derived(
@@ -83,36 +80,7 @@ import type { EventItem } from '$lib/types';
 <!-- ── Desktop console (md+) — mirrors app header + community profile ── -->
 <!-- ── Desktop (md+) — Profile & Pass Portfolio layout (mirrors /profile) but bound to visited profile data ── -->
 <div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
-	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
-		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
-			<a href="/home" class="flex items-center gap-2.5 shrink-0">
-				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
-				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
-			</a>
-			<nav class="flex items-center gap-1" aria-label="Primary">
-				{#each [['/home','Home'],['/explore','Explore'],['/tickets','Tickets'],['/organizer','Organizer']] as [href,label]}
-					<a {href} class="px-3 h-9 rounded-lg flex items-center text-body-sm text-on-surface-variant hover:text-on-surface transition-colors">{label}</a>
-				{/each}
-			</nav>
-			<div class="flex-1"></div>
-			<span class="relative hidden lg:flex items-center w-72 h-10">
-				<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
-				<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, gates, artists…</span>
-				<kbd class="{MONO_DESKTOP} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
-			</span>
-			<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
-				<Bell class="w-4.5 h-4.5" />
-				<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
-			</a>
-			<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
-				<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
-				<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">GATE_PASS_ACTIVE</span>
-			</div>
-			<a href="/profile" aria-label="Your profile" class="shrink-0">
-				<Avatar name={sessionHandle} src={sessionAvatar} color={sessionAvatarColor} size="sm" />
-			</a>
-		</div>
-	</header>
+
 
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-10 pb-2 flex flex-wrap items-end justify-between gap-4">
 		<div class="min-w-0">
@@ -125,9 +93,7 @@ import type { EventItem } from '$lib/types';
 			<p class="text-body-md text-on-surface-variant mt-2">Public identity, vault readiness and the pass calendar for {profile.name}.</p>
 		</div>
 		<div class="flex items-center gap-3">
-			<button class="h-10 px-4 rounded-lg flex items-center gap-2 text-body-sm font-semibold active:scale-95 transition-all {following ? 'bg-surface-container-high text-on-surface border border-surface-glass-border' : 'bg-on-surface text-surface-base hover:opacity-90'}" onclick={() => { const added = toggleIn(follows, profile.id); toast(added ? `Following ${profile.name}` : 'Unfollowed', 'info'); }}>
-				{#if following}<UserCheck class="w-4 h-4" /> Following{:else}<UserPlus class="w-4 h-4" /> Follow{/if}
-			</button>
+			<FollowButton profileId={profile.id} />
 		</div>
 	</div>
 
@@ -275,7 +241,7 @@ import type { EventItem } from '$lib/types';
 <div class="md:hidden flex flex-col min-h-dvh bg-surface">
 <TopBar back title={`@${profile.handle}`} subtitle="Community profile" />
 
-<main class="flex flex-col relative w-full pt-mobile-header pb-28 bg-surface min-h-dvh">
+<main class="flex flex-col relative w-full  pb-28 bg-surface min-h-dvh">
 	<div class="flex flex-col w-full md:max-w-3xl md:mx-auto">
 		<div class="relative w-full h-36 overflow-hidden">
 			<div class="w-full h-full" style="background: linear-gradient(140deg, {profile.avatarColor}33 0%, #0b1326 80%), linear-gradient(#131b2e, #0b1120);"></div>
@@ -288,16 +254,7 @@ import type { EventItem } from '$lib/types';
 						<Avatar name={profile.name} color={profile.avatarColor} size="xl" />
 					</div>
 				</div>
-				<button
-					class="h-11 px-5 rounded-full flex items-center gap-2 text-body-sm font-semibold active:scale-95 transition-all shadow-md
-						{following ? 'bg-surface-container-high text-on-surface' : 'bg-primary text-on-primary glow-primary'}"
-					onclick={() => {
-						const added = toggleIn(follows, profile.id);
-						toast(added ? `Following ${profile.name}` : 'Unfollowed', 'info');
-					}}
-				>
-					{#if following}<UserCheck class="w-4 h-4" /> Following{:else}<UserPlus class="w-4 h-4" /> Follow{/if}
-				</button>
+				<FollowButton profileId={profile.id} />
 			</div>
 
 			<div>
@@ -404,41 +361,5 @@ import type { EventItem } from '$lib/types';
 </main>
 </div>
 
-<Sheet open={followersOpen} title="Followers • {profile.followers.toLocaleString()}" close={() => (followersOpen = false)}>
-	<div class="flex flex-col gap-3 pt-2">
-		<p class="text-body-sm text-on-surface-variant flex items-center gap-1.5"><Users class="w-4 h-4" /> People following {profile.name}</p>
-		{#each followersProfiles as prof (prof.id)}
-			<a href="/users/{prof.handle}" onclick={() => (followersOpen = false)} class="flex items-center gap-3 rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3 hover:bg-surface-container-high transition-colors">
-				<Avatar name={prof.name} color={prof.avatarColor} size="md" />
-				<span class="flex-1 min-w-0">
-					<span class="block text-body-md font-semibold text-on-surface truncate flex items-center gap-1">{prof.name} {#if prof.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}</span>
-					<span class="block text-body-sm text-on-surface-variant truncate">@{prof.handle} • {prof.city}</span>
-				</span>
-				<button type="button" class="text-label-badge px-3 py-1.5 rounded-full bg-primary text-on-primary font-semibold shrink-0" onclick={(e) => { e.preventDefault(); toggleIn(follows, prof.id); }}>{follows.value.includes(prof.id) ? 'Following' : 'Follow'}</button>
-			</a>
-		{/each}
-		{#if followersProfiles.length === 0}
-			<p class="text-body-sm text-on-surface-variant text-center py-6">No followers yet.</p>
-		{/if}
-	</div>
-</Sheet>
-
-<Sheet open={followingOpen} title="Following • {profile.following.toLocaleString()}" close={() => (followingOpen = false)}>
-	<div class="flex flex-col gap-3 pt-2">
-		<p class="text-body-sm text-on-surface-variant flex items-center gap-1.5"><Users class="w-4 h-4" /> People followed by {profile.name}</p>
-		{#each followingProfiles as prof (prof.id)}
-			<a href="/users/{prof.handle}" onclick={() => (followingOpen = false)} class="flex items-center gap-3 rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3 hover:bg-surface-container-high transition-colors">
-				<Avatar name={prof.name} color={prof.avatarColor} size="md" />
-				<span class="flex-1 min-w-0">
-					<span class="block text-body-md font-semibold text-on-surface truncate flex items-center gap-1">{prof.name} {#if prof.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}</span>
-					<span class="block text-body-sm text-on-surface-variant truncate">@{prof.handle} • {prof.city}</span>
-				</span>
-				<button type="button" class="text-label-badge px-3 py-1.5 rounded-full bg-primary text-on-primary font-semibold shrink-0" onclick={(e) => { e.preventDefault(); toggleIn(follows, prof.id); }}>{follows.value.includes(prof.id) ? 'Following' : 'Follow'}</button>
-			</a>
-		{/each}
-		{#if followingProfiles.length === 0}
-			<p class="text-body-sm text-on-surface-variant text-center py-6">Not following anyone yet.</p>
-		{/if}
-	</div>
-</Sheet>
-
+<ConnectionsSheet open={followersOpen} profileId={profile.id} kind="followers" close={() => (followersOpen = false)} />
+<ConnectionsSheet open={followingOpen} profileId={profile.id} kind="following" close={() => (followingOpen = false)} />

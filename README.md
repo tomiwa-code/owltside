@@ -41,6 +41,8 @@ code paths switch to the live backend — no component changes.
    - `008_message_requests.sql` — organizer first-contact requests, RLS, and the accept-to-chat RPC
    - `009_speaker_invite_notifications.sql` — delivers role-specific notifications to invited profiles
    - `010_speaker_invite_responses.sql` — lets invitees accept or decline event roles for their public profiles
+   - `011_profile_follows.sql` — persistent relationships, RLS, and atomic follower/following counts
+   - `012_event_posters.sql` — requires uploaded poster artwork for all new events
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
@@ -123,3 +125,33 @@ wizard (basics → tickets → agenda → gate ops → review & publish),
 entry, offline queue) and `/organizer/events/[id]` management (roster, CSV
 export, orders, check-in log). Paste `supabase/sql/006_organizer.sql` for the
 check-ins table, gate config and organizer RLS.
+
+
+## Profile, discovery, and publishing updates
+
+- The home-feed navigation is shared by every authenticated-app route through `AppHeader`.
+  It uses the current saved profile and updates immediately after a photo crop, including
+  on Notifications. Local photo/name drafts are scoped to the signed-in account.
+- Follow/unfollow uses `profile_follows`, not localStorage. Counts are maintained by database
+  triggers; a unique relationship key prevents duplicate follows. Apply migration **011**
+  before deploying the frontend. It reconciles old display-only counts to actual relationships.
+  Browser-only follows from earlier versions cannot be reliably attributed to an account and
+  are deliberately not silently imported. Connection drawers load real users with pending,
+  empty, error, and retry states. In zero-config demo mode these relationships are held in
+  server memory (survive browser refresh, **not a server restart**); use Supabase for durability.
+- Explore searches real event/venue records and profile names, handles, and cities. Venue
+  results are grouped from actual events, not a separate invented venue directory.
+- Event drafts start empty. Publishing requires an authenticated organizer, real event details,
+  valid dates/ticket tiers, and a JPEG/PNG/WebP flyer. Uploads open the resize/crop sheet before
+  use. The server decodes the bytes, rejects corrupt/oversized/tiny images, strips metadata,
+  and normalizes the poster to a JPEG up to 1600 × 900. The validated image is persisted in
+  `events.cover.src` and displayed consistently by `Cover`. Apply migration **012** for the
+  database insert guard. Existing seed/legacy artwork is readable, but new events cannot use it.
+  Unpublished drafts remain only on the current page; no fake autosave success is reported.
+- Enhanced form buttons share pending feedback and double-submit prevention, including
+  submit buttons rendered outside forms (sheet footers). Network-driven follow/request,
+  scanner, and cache actions also expose pending states.
+
+Regression checks: `npm run check`, `npm test`, `npm run build`, and
+`npm run test:e2e -- tests/e2e/app-regressions.spec.ts` (requires Playwright Chromium).
+For an existing Chromium binary, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to its path.

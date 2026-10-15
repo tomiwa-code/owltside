@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import FollowButton from '$components/FollowButton.svelte';
+	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import {
 		BadgeCheck,
 		Bell,
@@ -24,9 +25,9 @@
 	import ImageCropSheet from '$components/ImageCropSheet.svelte';
 	import SavedEventsList from '$components/SavedEventsList.svelte';
 	import Sheet from '$components/Sheet.svelte';
-	import { mockProfiles } from '$lib/data/mock-profiles';
+	import ConnectionsSheet from '$components/ConnectionsSheet.svelte';
 	import { page } from '$app/state';
-	import { bookmarks, follows, toggleIn } from '$lib/state/prefs.svelte';
+	import { bookmarks, toggleIn } from '$lib/state/prefs.svelte';
 	import { profileAppearance, profileDraft } from '$lib/state/profile.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { toast } from '$lib/state/toast.svelte';
@@ -34,24 +35,24 @@
 	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 
 	let { data } = $props();
-	const session = $derived((data as { session?: typeof page.data.session }).session ?? page.data.session);
+	const session = $derived(data.session !== undefined ? data.session : page.data.session);
 	const isDemoMode = $derived(Boolean((data as { demoMode?: boolean }).demoMode ?? page.data.demoMode));
 	const isGuest = $derived(!session || data.operatingIdentity === 'guest');
 	const isFullyVerified = $derived(!isGuest && Object.values(appSettings.value.verification).every(Boolean));
-	const hasProfileDraft = $derived(profileDraft.value.hasChanges);
+	const hasProfileDraft = $derived(profileDraft.value.hasChanges && profileDraft.value.ownerId === session?.userId);
 	const name = $derived(hasProfileDraft ? profileDraft.value.name : (data.profile?.name ?? session?.name ?? 'Guest Explorer'));
 	const handle = $derived(hasProfileDraft ? profileDraft.value.username : (data.profile?.handle ?? session?.handle ?? 'guest'));
 	const bio = $derived(hasProfileDraft ? profileDraft.value.bio : (data.profile?.bio ?? (session ? 'Chasing good sound and good software across Lagos.' : '')));
 	const city = $derived(hasProfileDraft ? profileDraft.value.city : (data.profile?.city ?? 'Lagos'));
 	const profileLink = $derived(hasProfileDraft ? profileDraft.value.link : (data.profile?.link ?? ''));
 	const interests = $derived(hasProfileDraft ? profileDraft.value.interests : (data.profile?.interests ?? []));
-	const avatarPhoto = $derived(profileAppearance.value.avatarData || data.profile?.avatarUrl || session?.avatarUrl || null);
-	const bannerPhoto = $derived(profileAppearance.value.bannerData || data.profile?.bannerUrl || null);
+	const avatarPhoto = $derived((profileAppearance.value.ownerId === session?.userId ? profileAppearance.value.avatarData : null) || data.profile?.avatarUrl || session?.avatarUrl || null);
+	const bannerPhoto = $derived((profileAppearance.value.ownerId === session?.userId ? profileAppearance.value.bannerData : null) || data.profile?.bannerUrl || null);
 	const lastUsernameChange = $derived(profileDraft.value.usernameChangedAt ?? data.profile?.usernameChangedAt ?? session?.usernameChangedAt ?? null);
 	const usernameCooldownDays = $derived(lastUsernameChange ? Math.max(0, Math.ceil((new Date(lastUsernameChange).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (24 * 60 * 60 * 1000))) : 0);
 
 	const followersCount = $derived(isGuest ? 0 : (data.profile?.followers ?? 0));
-	const followingCount = $derived(isGuest ? 0 : ((data.profile?.following ?? 0) + follows.value.length));
+	const followingCount = $derived(isGuest ? 0 : (data.profile?.following ?? 0));
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
@@ -71,17 +72,10 @@
 	let editLink = $state('');
 	let editInterests = $state<string[]>([]);
 	let editError = $state('');
+	let savingProfile = $state(false);
 	let followersOpen = $state(false);
 	let followingOpen = $state(false);
 
-	let followingProfiles = $derived.by(() => {
-		if (isGuest) return [];
-		const followed = new Set(follows.value);
-		const matched = mockProfiles.filter((p) => followed.has(p.id));
-		if (matched.length) return matched;
-		return isDemoMode ? mockProfiles.slice(0, 4) : [];
-	});
-	let followersProfiles = $derived(!isGuest && isDemoMode ? mockProfiles.slice().reverse() : []);
 	const interestChoices = ['Afrobeats', 'Amapiano', 'Live music', 'Nightlife', 'Tech', 'Art & design', 'Comedy', 'Food', 'Fashion', 'Film', 'Workshops', 'Fitness'];
 
 	// month grid for the current month
@@ -191,20 +185,22 @@
 	/** Called with the resized + cropped image once the user confirms the crop step. */
 	function applyCroppedImage(image: string) {
 		const kind = cropKind;
-		if (kind === 'avatar') profileAppearance.value = { ...profileAppearance.value, avatarData: image };
-		else if (kind === 'banner') profileAppearance.value = { ...profileAppearance.value, bannerData: image };
+		if (kind === 'avatar') profileAppearance.value = { ...profileAppearance.value, ownerId: session?.userId, avatarData: image };
+		else if (kind === 'banner') profileAppearance.value = { ...profileAppearance.value, ownerId: session?.userId, bannerData: image };
 		toast(`${kind === 'banner' ? 'Banner' : 'Profile photo'} updated — save changes to keep it.`, 'success');
 		closeCrop();
 	}
 
 	function handleProfileEnhance() {
+		savingProfile = true;
 		return async ({ result, update }: { result: any; update: () => Promise<void> }) => {
-			await update();
+			try { await update(); } finally { savingProfile = false; }
 			if (result.type === 'success') {
 				const saved = result.data as { success?: boolean; name?: string; username?: string; bio?: string; city?: string; link?: string; interests?: string[]; usernameChangedAt?: string | null };
 				if (saved.success) {
 					profileDraft.value = {
 						hasChanges: true,
+						ownerId: session?.userId,
 						name: saved.name ?? editName,
 						username: saved.username ?? editUsername,
 						bio: saved.bio ?? editBio,
@@ -213,12 +209,15 @@
 						interests: saved.interests ?? editInterests,
 						usernameChangedAt: saved.usernameChangedAt ?? profileDraft.value.usernameChangedAt
 					};
+					if (!isDemoMode) profileAppearance.value = { ownerId: session?.userId, avatarData: null, bannerData: null };
 					editError = '';
 					editOpen = false;
 					toast('Profile updated', 'success');
 				} else {
 					editError = 'Your profile could not be saved.';
 				}
+			} else if (result.type === 'error') {
+				editError = 'Profile could not be saved. Please try again.';
 			} else if (result.type === 'failure') {
 				editError = (result.data as { error?: string })?.error ?? 'Your profile could not be saved.';
 			}
@@ -232,47 +231,7 @@
      language (design source unavailable this turn — extrapolated); mobile
      profile below unchanged ── -->
 <div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
-	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
-		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
-			<a href="/home" class="flex items-center gap-2.5 shrink-0">
-				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
-				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
 
-			</a>
-			<nav class="flex items-center gap-1" aria-label="Primary">
-				{#each [
-					['/home', 'Home'],
-					['/explore', 'Explore'],
-					['/tickets', 'Tickets'],
-					['/organizer', 'Organizer']
-				] as [href, label]}
-					<a
-						{href}
-						class="px-3 h-9 rounded-lg flex items-center text-body-sm text-on-surface-variant hover:text-on-surface transition-colors"
-					>
-						{label}
-					</a>
-				{/each}
-			</nav>
-			<div class="flex-1"></div>
-			<span class="relative hidden lg:flex items-center w-72 h-10">
-				<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
-				<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, gates, artists…</span>
-				<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
-			</span>
-			<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
-				<Bell class="w-4.5 h-4.5" />
-				<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
-			</a>
-			<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
-				<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
-				<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">GATE_PASS_ACTIVE</span>
-			</div>
-			<a href="/profile" aria-label="Your profile" class="shrink-0">
-				<Avatar name={name} src={avatarPhoto} size="sm" />
-			</a>
-		</div>
-	</header>
 
 	{#if isGuest}
 		<div class="mx-auto w-full max-w-xl px-6 py-20 flex-1 flex flex-col items-center justify-center text-center">
@@ -562,16 +521,16 @@
 </div>
 
 <div class="md:hidden">
-	<header class="fixed top-0 inset-x-0 z-50 pt-safe md:left-20">
+	<section class="border-b border-surface-glass-border">
 		<div class="h-16 px-gutter md:max-w-3xl md:mx-auto flex items-center justify-between">
 			<span class="font-display text-headline-md text-on-surface">Profile</span>
 			<a href="/settings" aria-label="Settings" class="w-9 h-9 rounded-full bg-surface-container-high/80 backdrop-blur-md flex items-center justify-center text-on-surface hover:text-primary transition-all active:scale-95 shadow-lg">
 				<Settings2 class="w-4.5 h-4.5" />
 			</a>
 		</div>
-	</header>
+	</section>
 
-	<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
+	<main class="flex flex-col relative w-full  pb-28 md:pb-16 bg-surface min-h-dvh">
 		{#if isGuest}
 			<div class="flex-1 flex flex-col items-center justify-center px-gutter py-12 text-center">
 				<div class="w-full max-w-sm rounded-2xl border border-surface-glass-border bg-surface-container p-6 flex flex-col items-center gap-4">
@@ -723,8 +682,8 @@
 
 <Sheet open={editOpen} title="Edit profile" close={() => (editOpen = false)}>
 	{#snippet footer()}
-		<button type="submit" form="profile-edit-form" class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md">
-			Save changes
+		<button type="submit" form="profile-edit-form" disabled={savingProfile} aria-busy={savingProfile} class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md">
+			{savingProfile ? 'Saving…' : 'Save changes'}
 		</button>
 	{/snippet}
 	<form id="profile-edit-form" method="POST" action="?/updateProfile" enctype="multipart/form-data" use:enhance={handleProfileEnhance} class="flex flex-col gap-space-md">
@@ -814,40 +773,5 @@
 	close={closeCrop}
 />
 
-<Sheet open={followersOpen} title="Followers • {followersCount}" close={() => (followersOpen = false)}>
-	<div class="flex flex-col gap-3 pt-2">
-		<p class="text-body-sm text-on-surface-variant flex items-center gap-1.5"><Users class="w-4 h-4" /> People following you</p>
-		{#each followersProfiles as prof (prof.id)}
-			<a href="/users/{prof.handle}" onclick={() => (followersOpen = false)} class="flex items-center gap-3 rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3 hover:bg-surface-container-high transition-colors">
-				<Avatar name={prof.name} color={prof.avatarColor} size="md" />
-				<span class="flex-1 min-w-0 text-left">
-					<span class="block text-body-md font-semibold text-on-surface truncate flex items-center gap-1">{prof.name} {#if prof.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}</span>
-					<span class="block text-body-sm text-on-surface-variant truncate">@{prof.handle} • {prof.city}</span>
-				</span>
-				<button type="button" class="text-label-badge px-3 py-1.5 rounded-full bg-primary text-on-primary font-semibold shrink-0" onclick={(e) => { e.preventDefault(); toggleIn(follows, prof.id); }}>{follows.value.includes(prof.id) ? 'Following' : 'Follow'}</button>
-			</a>
-		{/each}
-		{#if followersProfiles.length === 0}
-			<p class="text-body-sm text-on-surface-variant text-center py-6">No followers yet.</p>
-		{/if}
-	</div>
-</Sheet>
-
-<Sheet open={followingOpen} title="Following • {followingCount}" close={() => (followingOpen = false)}>
-	<div class="flex flex-col gap-3 pt-2">
-		<p class="text-body-sm text-on-surface-variant flex items-center gap-1.5"><Users class="w-4 h-4" /> People you follow</p>
-		{#each followingProfiles as prof (prof.id)}
-			<a href="/users/{prof.handle}" onclick={() => (followingOpen = false)} class="flex items-center gap-3 rounded-xl border border-surface-glass-border bg-surface-container-high/40 p-3 hover:bg-surface-container-high transition-colors">
-				<Avatar name={prof.name} color={prof.avatarColor} size="md" />
-				<span class="flex-1 min-w-0 text-left">
-					<span class="block text-body-md font-semibold text-on-surface truncate flex items-center gap-1">{prof.name} {#if prof.verified}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" />{/if}</span>
-					<span class="block text-body-sm text-on-surface-variant truncate">@{prof.handle} • {prof.city}</span>
-				</span>
-				<button type="button" class="text-label-badge px-3 py-1.5 rounded-full bg-primary text-on-primary font-semibold shrink-0" onclick={(e) => { e.preventDefault(); toggleIn(follows, prof.id); }}>{follows.value.includes(prof.id) ? 'Following' : 'Follow'}</button>
-			</a>
-		{/each}
-		{#if followingProfiles.length === 0}
-			<p class="text-body-sm text-on-surface-variant text-center py-6">You are not following anyone yet.</p>
-		{/if}
-	</div>
-</Sheet>
+<ConnectionsSheet open={followersOpen} profileId={session?.userId ?? ''} kind="followers" close={() => (followersOpen = false)} />
+<ConnectionsSheet open={followingOpen} profileId={session?.userId ?? ''} kind="following" close={() => (followingOpen = false)} />

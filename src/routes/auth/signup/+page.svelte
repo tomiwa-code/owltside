@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import {
 		ArrowLeft,
 		AtSign,

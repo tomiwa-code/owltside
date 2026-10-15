@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FollowButton from '$components/FollowButton.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
@@ -29,7 +30,6 @@ import Avatar from '$components/Avatar.svelte';
 import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 	import { categories } from '$components/iconMap';
 	import { useQuery } from '$lib/state/query.svelte';
-	import { follows, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import type { CategoryId, EventItem } from '$lib/types';
 
@@ -74,7 +74,6 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 		}
 		return [...map.values()].sort((a, b) => b.events - a.events).slice(0, 3);
 	});
-	const following = (id: string) => follows.value.includes(id);
 	const compact = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
 
 	let category = $state<CategoryId>('all');
@@ -88,6 +87,7 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 	let search = $state('');
 	let showPwaBanner = $state(true);
 	let installPrompt = $state<any>(null);
+	let installing = $state(false);
 
 	$effect(() => {
 		const handler = (e: Event) => {
@@ -100,8 +100,11 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 
 	async function install() {
 		if (installPrompt) {
-			installPrompt.prompt();
-			installPrompt = null;
+			if (installing) return;
+			installing = true;
+			try { await installPrompt.prompt(); installPrompt = null; }
+			catch { toast('The install prompt could not be opened. Try your browser menu.', 'error'); }
+			finally { installing = false; }
 		} else {
 			toast('Use your browser menu → “Install app”', 'info');
 		}
@@ -111,33 +114,12 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 <svelte:head><title>Home • Owltside</title></svelte:head>
 
 <!-- desktop (md+) composition — see DesktopHomeFeed; mobile feed below is unchanged -->
-<DesktopHomeFeed events={list} unread={data.unread} initialTickets={data.tickets} />
+<DesktopHomeFeed events={list} />
 
 <div class="md:hidden">
-<header class="fixed top-0 inset-x-0 z-50 bg-surface/80 backdrop-blur-xl pt-safe md:left-20">
-	<div class="h-16 px-gutter md:max-w-5xl md:mx-auto flex items-center justify-between gap-space-sm">
-		<a href="/home" aria-label="Owltside home" class="flex items-center gap-space-sm">
-			<img src="/logo.png" alt="Owltside logo" class="h-5 w-auto object-contain" />
-			<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Home</span>
-		</a>
-		<div class="flex items-center gap-space-xs">
-			<a href="/notifications" aria-label="Notifications" class="relative w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface transition-colors">
-				<Bell class="w-5 h-5" />
-				{#if data.unread > 0}
-					<span class="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface"></span>
-				{/if}
-			</a>
-			<a href="/inbox" aria-label="Inbox" class="relative w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface transition-colors">
-				<MessageSquare class="w-5 h-5" />
-			</a>
-			<a href="/profile" aria-label="Your profile" class="w-11 h-11 flex items-center justify-center">
-				<Avatar name={page.data.session?.name ?? 'Guest'} size="sm" />
-			</a>
-		</div>
-	</div>
-</header>
 
-<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
+
+<main class="flex flex-col relative w-full  pb-28 md:pb-16 bg-surface min-h-dvh">
 	<div class="flex flex-col w-full px-margin md:max-w-5xl md:mx-auto pb-space-xl gap-space-lg">
 		<!-- location + currency + search -->
 		<div class="flex flex-col gap-space-sm pt-space-xs">
@@ -176,8 +158,8 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 					</div>
 				</div>
 				<div class="flex items-center gap-1.5 shrink-0">
-					<button class="px-3 h-8 rounded-full bg-primary text-on-primary text-label-badge font-semibold active:scale-95 transition-all shadow-sm flex items-center gap-1" onclick={install}>
-						<span>Install</span>
+					<button class="px-3 h-8 rounded-full bg-primary text-on-primary text-label-badge font-semibold active:scale-95 transition-all shadow-sm flex items-center gap-1" disabled={installing} aria-busy={installing} onclick={install}>
+						<span>{installing ? 'Installing…' : 'Install'}</span>
 						<Zap class="w-3.5 h-3.5" />
 					</button>
 					<button aria-label="Dismiss banner" class="w-7 h-7 flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface" onclick={() => (showPwaBanner = false)}>
@@ -276,14 +258,7 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 									<span class="block text-label-badge text-on-surface-variant">{org.events} Events · {compact(org.attended)} Attended</span>
 								</span>
 							</a>
-							<button
-								aria-pressed={following(org.id)}
-								onclick={() => {
-									const added = toggleIn(follows, org.id);
-									toast(added ? `Following ${org.name}` : `Unfollowed ${org.name}`, 'info');
-								}}
-								class="h-9 px-3 rounded-full border text-label-badge font-semibold shrink-0 {following(org.id) ? 'border-primary/30 bg-primary/10 text-primary' : 'border-surface-glass-border bg-surface-container-high text-on-surface'}"
-							>{following(org.id) ? 'Following' : 'Follow'}</button>
+							<FollowButton profileId={org.id} />
 						</div>
 					{/each}
 				</div>

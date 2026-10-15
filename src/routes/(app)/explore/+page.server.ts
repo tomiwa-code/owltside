@@ -12,6 +12,11 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
 		dateTo: url.searchParams.get('to') ?? undefined,
 		sort: (url.searchParams.get('sort') as EventFilters['sort']) ?? undefined
 	};
-	const events = await getSource(createSupabase(cookies)).listEvents(filters);
-	return { events, filters };
+	const source = getSource(createSupabase(cookies));
+	try {
+		const [events, allEvents, users] = await Promise.all([source.listEvents(filters), source.listEvents(), filters.query?.trim() ? source.searchProfiles(filters.query.trim()) : Promise.resolve([])]);
+		return { events, allEvents, users, filters, searchError: '' };
+	} catch {
+		return { events: [], allEvents: [], users: [], filters, searchError: 'Search is unavailable right now. Please try again.' };
+	}
 };

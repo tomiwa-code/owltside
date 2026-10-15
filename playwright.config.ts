@@ -10,6 +10,10 @@ export default defineConfig({
 	testDir: 'tests/e2e',
 	use: {
 		...devices['Pixel 7'],
-		baseURL: 'http://localhost:5173'
+		baseURL: 'http://localhost:5173',
+		launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? {
+			executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
+			args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote']
+		} : undefined
 	}
 });

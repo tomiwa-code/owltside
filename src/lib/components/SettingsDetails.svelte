@@ -270,7 +270,10 @@
 	function setPageSize(value: string) {
 		appSettings.value.accessibility.pageSize = Math.min(150, Math.max(25, Number(value) || 100));
 	}
+	let clearingCache = $state(false);
 	async function clearOfflineCache() {
+		if (clearingCache) return;
+		clearingCache = true;
 		try {
 			if ('caches' in globalThis) {
 				const keys = await caches.keys();
@@ -279,7 +282,7 @@
 			toast('Offline cache cleared. Saved account preferences were kept.', 'success');
 		} catch {
 			toast('The offline cache could not be cleared on this device.', 'error');
-		}
+		} finally { clearingCache = false; }
 	}
 </script>
 
@@ -742,7 +745,7 @@
 		<label class="flex items-center justify-between gap-3 py-3 border-b border-surface-glass-border cursor-pointer"><span><span class="block text-body-sm font-semibold text-on-surface">Offline mode</span><span class="block text-xs text-on-surface-variant">Keep essential ticket details ready offline.</span></span><input type="checkbox" checked={appSettings.value.storage.offlineMode} onchange={() => toggleStorage('offlineMode')} class="w-4 h-4 accent-primary" /></label>
 		<label class="flex items-center justify-between gap-3 py-3 cursor-pointer"><span><span class="block text-body-sm font-semibold text-on-surface">Download tickets automatically</span><span class="block text-xs text-on-surface-variant">Save passes when they are issued.</span></span><input type="checkbox" checked={appSettings.value.storage.autoDownloadTickets} onchange={() => toggleStorage('autoDownloadTickets')} class="w-4 h-4 accent-primary" /></label>
 		<div class="flex items-center justify-between gap-3 rounded-lg bg-surface-container-high/50 p-3 mt-1"><span class="flex items-center gap-2 text-body-sm text-on-surface"><Wallet class="w-4 h-4 text-primary" /> On-device ticket wallet</span><span class="text-xs text-on-surface-variant">{appSettings.value.storage.offlineMode ? 'Enabled' : 'Paused'}</span></div>
-		<button type="button" class="mt-3 inline-flex items-center gap-2 text-body-sm text-error hover:underline" onclick={clearOfflineCache}><Trash2 class="w-4 h-4" /> Clear offline cache</button>
+		<button type="button" class="mt-3 inline-flex items-center gap-2 text-body-sm text-error hover:underline" disabled={clearingCache} aria-busy={clearingCache} onclick={clearOfflineCache}><Trash2 class="w-4 h-4" /> {clearingCache ? 'Clearing…' : 'Clear offline cache'}</button>
 	</section>
 
 	{/if}

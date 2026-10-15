@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
@@ -48,6 +48,7 @@
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import Cover from '$components/Cover.svelte';
+	import ImageCropSheet from '$components/ImageCropSheet.svelte';
 	import { formatMoney } from '$lib/utils/money';
 	import { fmtDate } from '$lib/utils/dates';
 	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
@@ -58,24 +59,26 @@
 	let { form } = $props();
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
-	let dateEnd = $state('2026-11-22');
-	const demoCover = { from: '#4c1d95', to: '#0b1326', icon: 'audio-waveform' };
+	let dateEnd = $state('');
+	let poster = $state('');
+	let posterFile = $state<File | null>(null);
+	let posterError = $state('');
+	let publishing = $state(false);
+	let publishError = $state('');
+	const posterCover = $derived({ from: '#252436', to: '#0b1326', icon: 'image', src: poster || undefined });
 
 	/* ── draft state ─────────────────────────────────────────── */
 	let step = $state(1);
-	let title = $state('Pulse AI Summit 2026');
-	let date = $state('2026-11-20');
-	let venue = $state('The Civic Centre');
+	let title = $state('');
+	let date = $state('');
+	let venue = $state('');
 	let city = $state('Lagos');
 	let description = $state('');
-	let selectedCategory = $state('tech');
+	let selectedCategory = $state('');
 	let customCategory = $state('');
 	const categoryOptions = categories.filter((category) => category.id !== 'all');
 
-	let tiers = $state([
-		{ name: 'Early Bird Access', price: 25000, capacity: 300, benefits: 'Front-row seating', editing: false },
-		{ name: 'VIP Floor Pass', price: 75000, capacity: 100, benefits: 'Lounge + speaker meet', editing: false }
-	]);
+	let tiers = $state<Array<{ name: string; price: number; capacity: number; benefits: string; editing: boolean }>>([]);
 	let promos = $state<Array<{ code: string; percent: number; maxUses: number }>>([]);
 	let promoCode = $state('');
 	let promoPercent = $state('');
@@ -86,22 +89,11 @@
 	let broadcast = $state(true);
 	let launchMode = $state<'now' | 'staged'>('now');
 
-	let days = $state([
-		{
-			label: 'Nov 20',
-			sessions: [
-				{ time: '09:00', title: 'Doors & Registration', stage: 'Main Hall' },
-				{ time: '10:30', title: 'Keynote: The Agentic Era', stage: 'Mainstage Hall A' }
-			]
-		}
-	]);
+	let days = $state<Array<{ label: string; sessions: Array<{ time: string; title: string; stage: string }> }>>([]);
 	let dayIdx = $state(0);
 	let newSession = $state({ time: '12:00', title: '', stage: '' });
 
-	let gates = $state([
-		{ name: 'Fast-Pass Turnstiles', staff: 4 },
-		{ name: 'VIP & Press Entrance', staff: 2 }
-	]);
+	let gates = $state<Array<{ name: string; staff: number }>>([]);
 	let roster = $state<WizardSpeaker[]>([]);
 	let showInviteDialog = $state(false);
 	let inviteName = $state('');
@@ -131,11 +123,20 @@
 			? customCategory.trim()
 			: (categoryOptions.find((category) => category.id === selectedCategory)?.label ?? '')
 	);
-	const canContinue = $derived(
-		step === 1
-			? title.trim().length >= 3 && date !== '' && dateEnd !== '' && dateEnd >= date && venue.trim() !== '' && categoryLabel.length >= 2
-			: true
-	);
+	const validationMessages = $derived.by(() => {
+		const errors: string[] = [];
+		if (title.trim().length < 3) errors.push('Enter an event title (at least 3 characters).');
+		if (categoryLabel.length < 2) errors.push('Choose an event category.');
+		if (!date || !dateEnd || dateEnd < date) errors.push('Choose valid start and end dates.');
+		if (venue.trim().length < 2) errors.push('Enter the actual venue name.');
+		if (description.trim().length < 10) errors.push('Describe the event in at least 10 characters.');
+		if (!poster) errors.push('Upload and confirm a flyer or poster.');
+		if (!tiers.length || tiers.some((t) => !t.name.trim() || !Number.isInteger(t.price) || t.price < 0 || !Number.isInteger(t.capacity) || t.capacity < 1)) errors.push('Add a named ticket tier with a valid price and capacity.');
+		return errors;
+	});
+	const basicsValid = $derived(title.trim().length >= 3 && categoryLabel.length >= 2 && date !== '' && dateEnd !== '' && dateEnd >= date && venue.trim().length >= 2 && description.trim().length >= 10 && Boolean(poster));
+	const canContinue = $derived(step === 1 ? basicsValid : step === 2 ? validationMessages.length === 0 : true);
+
 	let allowOverride = $state(true);
 	let allowOffline = $state(true);
 	let restrictGates = $state(true);
@@ -145,6 +146,7 @@
 	let conflictPolicy = $state('strict');
 	const draftJson = $derived(
 		JSON.stringify({
+			poster,
 			title: title.trim(),
 			category: selectedCategory === 'custom' ? categoryLabel : selectedCategory,
 			tags: categoryLabel ? [categoryLabel] : [],
@@ -205,10 +207,23 @@
 	const staffTotal = $derived(gates.reduce((s, g) => s + g.staff, 0));
 
 	function publishHandler() {
-		return async ({ update }: { update: () => Promise<void> }) => {
-			await update();
+		publishing = true; publishError = '';
+		return async ({ result, update }: { result: { type: string }; update: () => Promise<void> }) => {
+			try {
+				if (result.type === 'error') { publishError = 'Publishing failed. Your draft is still here. Please try again.'; return; }
+				await update();
+			} finally { publishing = false; }
 		};
 	}
+	function choosePoster(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0]; input.value = ''; posterError = '';
+		if (!file) return;
+		if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { posterError = 'Choose a JPEG, PNG, or WebP image.'; return; }
+		if (file.size > 12_000_000) { posterError = 'Choose an image under 12 MB.'; return; }
+		posterFile = file;
+	}
+
 
 	/* ── helpers ─────────────────────────────────────────────── */
 	function openInviteDialog() {
@@ -270,7 +285,7 @@
 		}
 	}
 	function addTier() {
-		tiers = [...tiers, { name: 'New Tier', price: 10000, capacity: 100, benefits: '', editing: true }];
+		tiers = [...tiers, { name: '', price: 0, capacity: 1, benefits: '', editing: true }];
 	}
 	function addPromo() {
 		promoError = '';
@@ -289,6 +304,7 @@
 		promos = promos.filter((_, i) => i !== idx);
 	}
 	function addDay() {
+		if (!date) { toast('Choose your event date first.', 'info'); return; }
 		const d = new Date(`${date}T00:00:00`);
 		d.setDate(d.getDate() + days.length);
 		const label = d.toLocaleDateString('en-NG', { month: 'short', day: 'numeric' });
@@ -297,7 +313,9 @@
 	}
 	function addSession() {
 		if (!newSession.title.trim() || !newSession.stage.trim()) { toast('Add a session title and room or stage name', 'info'); return; }
+		if (!days[dayIdx]) addDay();
 		const d = days[dayIdx];
+		if (!d) return;
 		d.sessions = [...d.sessions, { ...newSession, title: newSession.title.trim(), stage: newSession.stage.trim() }];
 		newSession = { ...newSession, title: '', stage: '' };
 	}
@@ -311,64 +329,21 @@
 {#if step <= 2}
 	<div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
 		<!-- top bar -->
-		<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
-			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
-				<a href="/home" class="flex items-center gap-2.5 shrink-0">
-					<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
-					<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
-				</a>
-				<nav class="flex items-center gap-1" aria-label="Primary">
-					{#each [
-						['/home', 'Home'],
-						['/explore', 'Explore'],
-						['/tickets', 'Tickets'],
-						['/organizer', 'Organizer']
-					] as [href, label]}
-						<a
-							{href}
-							aria-current={href === '/organizer' ? 'page' : undefined}
-							class="px-3 h-9 rounded-lg flex items-center text-body-sm transition-colors
-								{href === '/organizer'
-									? 'text-on-surface font-semibold bg-surface-container border border-surface-glass-border'
-									: 'text-on-surface-variant hover:text-on-surface'}"
-						>
-							{label}
-						</a>
-					{/each}
-				</nav>
-				<div class="flex-1"></div>
-				<a href="/explore" class="relative hidden lg:flex items-center w-72 h-10">
-					<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
-					<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, venues…</span>
-					<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
-				</a>
-				<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
-					<Bell class="w-4.5 h-4.5" />
-					<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
-				</a>
-				<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
-					<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
-					<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">CONNECTED</span>
-				</div>
-				<a href="/profile" aria-label="Your profile" class="shrink-0">
-					<Avatar name={page.data.session?.name ?? 'Organizer'} size="sm" />
-				</a>
-			</div>
-		</header>
+
 
 		<!-- console header -->
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8">
 			<div class="flex items-center gap-2 {MONO} text-on-surface-variant min-w-0">
 				<span class="truncate">Protocol Console // 04-Create</span>
 				<span class="text-outline-variant">•</span>
-				<span class="truncate">Draft #EVT-8829-LOS</span>
+				<span class="truncate">New event draft</span>
 			</div>
 			<div class="flex flex-wrap items-end justify-between gap-4 pt-3">
 				<h1 class="font-display text-headline-lg md:text-[34px] leading-tight text-on-surface">Create Architecture Node</h1>
 				<div class="flex items-center gap-4 pb-1">
-					<span class="{MONO} text-on-surface-variant">Auto-saved 7m ago</span>
-					<button type="button" onclick={() => toast('Draft synced to organizer node', 'success')} class="h-10 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors">
-						<Save class="w-4 h-4" /> Save Draft
+					<span class="{MONO} text-on-surface-variant">Not yet published</span>
+					<button type="button" onclick={() => toast('This draft is only kept while this page stays open. Publish it when ready.', 'info')} class="h-10 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors">
+						<Save class="w-4 h-4" /> Draft info
 					</button>
 				</div>
 			</div>
@@ -443,7 +418,8 @@
 					<div class="flex flex-col gap-2">
 						<label for="event-category-desktop" class="{MONO} text-on-surface-variant">Category</label>
 						<select id="event-category-desktop" bind:value={selectedCategory} class="w-full h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50">
-							{#each categoryOptions as category (category.id)}<option value={category.id}>{category.label}</option>{/each}
+							<option value="" disabled>Choose a category</option>
+						{#each categoryOptions as category (category.id)}<option value={category.id}>{category.label}</option>{/each}
 							<option value="custom">Custom category…</option>
 						</select>
 						{#if selectedCategory === 'custom'}<input type="text" bind:value={customCategory} maxlength="48" placeholder="Enter a custom category" class="w-full h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50" />{/if}
@@ -486,7 +462,7 @@
 					</div>
 
 					<div class="flex flex-col gap-2">
-						<span class="{MONO} text-on-surface-variant">Physical Venue &amp; Geolocation Coordinates</span>
+						<span class="{MONO} text-on-surface-variant">Physical venue</span>
 						<div class="rounded-lg border border-surface-glass-border bg-surface-base p-4 flex items-center gap-3">
 							<span class="w-9 h-9 rounded-full bg-surface-container-high text-on-surface flex items-center justify-center shrink-0">
 								<MapPin class="w-4 h-4" />
@@ -502,26 +478,11 @@
 										{/each}
 									</select>
 								</label>
-								<span class="col-span-2 block font-code text-[11px] tracking-[0.08em] text-on-surface-variant pt-0.5 truncate">Water Corporation Dr, Annex 106104 • 6.4253° N, 3.4219° E • {city}</span>
+
 							</div>
-							<button type="button" onclick={() => toast('Coordinate calibration locked to venue node', 'info')} class="{MONO} text-on-surface underline underline-offset-4 hover:text-primary shrink-0">Calibrate</button>
+
 						</div>
-						<div class="relative h-44 rounded-lg overflow-hidden border border-surface-glass-border bg-surface-container-low">
-							<div
-								class="absolute inset-0 opacity-60"
-								style="background-image: linear-gradient(rgba(192,193,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(192,193,255,0.07) 1px, transparent 1px), radial-gradient(circle at 70% 30%, rgba(76,215,246,0.12) 0, transparent 45%); background-size: 28px 28px, 28px 28px, 100% 100%;"
-							></div>
-							<div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-								<span class="absolute -inset-4 rounded-full border border-primary/30 animate-ping"></span>
-								<span class="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center">
-									<MapPin class="w-4 h-4" />
-								</span>
-							</div>
-							<span class="{MONO} absolute top-3 left-3 bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-1 rounded">GPS: 6.4253° N, 3.4219° E</span>
-							<span class="{MONO} absolute top-3 right-3 bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-1 rounded flex items-center gap-1.5">
-								<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> Live Radar Locked
-							</span>
-						</div>
+						<p class="text-body-sm text-on-surface-variant">Enter the actual venue name and state. Location coordinates are not collected.</p>
 					</div>
 
 					<div class="flex flex-col gap-2">
@@ -529,21 +490,7 @@
 							<span>Keyframe Artwork / 16:9 Banner</span>
 							<span class="normal-case tracking-normal font-code text-[11px]">Required Aspect Ratio 1280x720</span>
 						</span>
-						<button
-							type="button"
-							onclick={() => toast('Cover studio ships with the media node', 'info')}
-							class="rounded-lg border border-dashed border-outline-variant/50 bg-surface-container-low p-10 flex flex-col items-center gap-3 hover:border-primary/40 transition-colors"
-						>
-							<span class="w-12 h-12 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface-variant flex items-center justify-center">
-								<CloudUpload class="w-5 h-5" />
-							</span>
-							<span class="text-body-md font-semibold text-on-surface">Drag and drop key visual asset here</span>
-							<span class="text-body-sm text-on-surface-variant">Supports PNG, WEBP, or AVIF up to 12MB. Raw color grading preserved.</span>
-							<span class="flex items-center gap-2 pt-1">
-								<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">16:9 Auto-Crop</span>
-								<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">Metadata Encrypted</span>
-							</span>
-						</button>
+						{@render posterPicker()}
 					</div>
 				</section>
 
@@ -704,7 +651,7 @@
 					</div>
 					<div class="p-5 flex flex-col gap-5">
 						<div class="relative rounded-lg overflow-hidden border border-surface-glass-border">
-							<Cover cover={demoCover} class="w-full h-44" iconClass="w-12 h-12 text-white/30" />
+							<Cover cover={posterCover} class="w-full h-44" iconClass="w-12 h-12 text-white/30" />
 							<div class="absolute top-3 left-3 flex items-center gap-2">
 								<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{categoryLabel || 'Tech & AI'}</span>
 								<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{city} WAT</span>
@@ -713,7 +660,7 @@
 								<span class="{MONO} text-on-surface-variant">Event Title</span>
 								<span class="text-[11px] text-on-surface truncate">{title || 'Untitled node'}</span>
 								<span class="{MONO} text-on-surface-variant pt-1">Date &amp; Time</span>
-								<span class="text-[11px] text-on-surface">{fmtDate(date)} → {fmtDate(dateEnd)}</span>
+								<span class="text-[11px] text-on-surface">{date ? fmtDate(date) : 'Start date required'} → {dateEnd ? fmtDate(dateEnd) : 'End date required'}</span>
 								<span class="{MONO} text-on-surface-variant pt-1">Capacity</span>
 								<span class="text-[11px] text-on-surface">{totalCapacity.toLocaleString()} slots</span>
 							</div>
@@ -722,7 +669,7 @@
 							<h3 class="font-display text-headline-md text-on-surface leading-tight">{title || 'Untitled node'}</h3>
 							<span class="flex items-center gap-1.5 text-body-sm text-on-surface-variant pt-1 min-w-0">
 								<MapPin class="w-3.5 h-3.5 shrink-0" />
-								<span class="truncate">{venue || 'Venue TBA'}, {city} • {fmtDate(date)}–{fmtDate(dateEnd)}</span>
+								<span class="truncate">{venue || 'Venue TBA'}, {city} • {date ? fmtDate(date) : 'Start date required'}–{dateEnd ? fmtDate(dateEnd) : 'End date required'}</span>
 							</span>
 						</div>
 						<div class="flex items-end justify-between gap-4 border-t border-surface-glass-border pt-4">
@@ -751,7 +698,7 @@
 							<div class="grid grid-cols-3 gap-2 pt-2">
 								{#each [0, 1, 2] as i (i)}
 									<span class="{MONO} text-on-surface-variant truncate {i === 1 ? 'text-center' : i === 2 ? 'text-right' : ''}">
-										{tiers[i] ? `${tiers[i].name.split(' ')[0]} (${millions(tiers[i].price * tiers[i].capacity)})` : 'Sponsor Expansion'}
+										{tiers[i] ? `${tiers[i].name.split(' ')[0]} (${millions(tiers[i].price * tiers[i].capacity)})` : 'No tier'}
 									</span>
 								{/each}
 							</div>
@@ -792,18 +739,18 @@
 			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-3 flex flex-wrap items-center justify-between gap-4">
 				<div class="flex items-center gap-4">
 					<button type="button" onclick={back} class="h-11 px-4 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 hover:border-primary/40 transition-colors">
-						<ArrowLeft class="w-4 h-4" /> Save &amp; Exit Draft
+						<ArrowLeft class="w-4 h-4" /> Exit wizard
 					</button>
-					<span class="{MONO} text-on-surface-variant hidden lg:block">Next auto-sync in 18s</span>
+					<span class="{MONO} text-on-surface-variant hidden lg:block">Draft is kept on this page only</span>
 				</div>
 				<div class="flex items-center gap-5">
 					<div class="hidden md:flex flex-col items-end leading-tight">
-						<span class="{MONO} text-on-surface">Step 02 of 05 completed</span>
+						<span class="{MONO} text-on-surface">Basics & tickets</span>
 						<span class="text-body-sm text-on-surface-variant pt-0.5">Tickets configured: {tiers.length} Tiers ({totalCapacity.toLocaleString()} Total Slots)</span>
 					</div>
 					<button
 						type="button"
-						disabled={!canContinue}
+						disabled={validationMessages.length > 0}
 						onclick={() => {
 							step = 3;
 							scrollTo({ top: 0 });
@@ -839,50 +786,7 @@
 {#if step === 3 || step === 4}
 	<div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
 		<!-- top bar -->
-		<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
-			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
-				<a href="/home" class="flex items-center gap-2.5 shrink-0">
-					<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
-					<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
-				</a>
-				<nav class="flex items-center gap-1" aria-label="Primary">
-					{#each [
-						['/home', 'Home'],
-						['/explore', 'Explore'],
-						['/tickets', 'Tickets'],
-						['/organizer', 'Organizer']
-					] as [href, label]}
-						<a
-							{href}
-							aria-current={href === '/organizer' ? 'page' : undefined}
-							class="px-3 h-9 rounded-lg flex items-center text-body-sm transition-colors
-								{href === '/organizer'
-									? 'text-on-surface font-semibold bg-surface-container border border-surface-glass-border'
-									: 'text-on-surface-variant hover:text-on-surface'}"
-						>
-							{label}
-						</a>
-					{/each}
-				</nav>
-				<div class="flex-1"></div>
-				<a href="/explore" class="relative hidden lg:flex items-center w-72 h-10">
-					<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
-					<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, venues…</span>
-					<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
-				</a>
-				<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
-					<Bell class="w-4.5 h-4.5" />
-					<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
-				</a>
-				<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
-					<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
-					<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">CONNECTED</span>
-				</div>
-				<a href="/profile" aria-label="Your profile" class="shrink-0">
-					<Avatar name={page.data.session?.name ?? 'Organizer'} size="sm" />
-				</a>
-			</div>
-		</header>
+
 
 		<!-- protocol configuration sub-header -->
 		<div class="border-b border-surface-glass-border bg-surface-container-low/60">
@@ -892,7 +796,7 @@
 						<SlidersHorizontal class="w-4 h-4" />
 					</span>
 					<span class="min-w-0">
-						<span class="{MONO} text-on-surface-variant block truncate">Protocol Configuration / Draft_EVT_8820</span>
+						<span class="{MONO} text-on-surface-variant block truncate">Event draft / Schedule & gates</span>
 						<span class="font-display text-headline-md text-on-surface block truncate">Execution Matrix &amp; Gate Hardware</span>
 					</span>
 				</span>
@@ -966,11 +870,11 @@
 
 				<div class="flex items-center justify-between gap-4">
 					<span class="{MONO} text-on-surface-variant">Runtime Schedule Flow</span>
-					<span class="{MONO} text-on-surface-variant hidden sm:block">Auto-syncs with Attendee PWA</span>
+					<span class="{MONO} text-on-surface-variant hidden sm:block">Published schedule appears in the attendee app</span>
 				</div>
 
 				<!-- sessions -->
-				{#each days[dayIdx].sessions as s, i (i)}
+				{#each (days[dayIdx]?.sessions ?? []) as s, i (i)}
 					<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-3">
 						<div class="flex items-center gap-2 flex-wrap">
 							<span class="font-code text-body-md font-bold text-on-surface">{timeRange(s.time)}</span>
@@ -987,7 +891,7 @@
 						</div>
 						<div>
 							<h3 class="font-display text-headline-md text-on-surface leading-tight">{s.title}</h3>
-							<p class="text-body-sm text-on-surface-variant pt-1">{sessionDesc[i % sessionDesc.length]}</p>
+							<p class="text-body-sm text-on-surface-variant pt-1">{s.stage}</p>
 						</div>
 						{#if roster.length}
 							{@const speaker = roster[i % roster.length]}
@@ -1249,50 +1153,7 @@
 {#if step === 5}
 	<div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
 		<!-- top bar -->
-		<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
-			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
-				<a href="/home" class="flex items-center gap-2.5 shrink-0">
-					<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
-					<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
-				</a>
-				<nav class="flex items-center gap-1" aria-label="Primary">
-					{#each [
-						['/home', 'Home'],
-						['/explore', 'Explore'],
-						['/tickets', 'Tickets'],
-						['/organizer', 'Organizer']
-					] as [href, label]}
-						<a
-							{href}
-							aria-current={href === '/organizer' ? 'page' : undefined}
-							class="px-3 h-9 rounded-lg flex items-center text-body-sm transition-colors
-								{href === '/organizer'
-									? 'text-on-surface font-semibold bg-surface-container border border-surface-glass-border'
-									: 'text-on-surface-variant hover:text-on-surface'}"
-						>
-							{label}
-						</a>
-					{/each}
-				</nav>
-				<div class="flex-1"></div>
-				<a href="/explore" class="relative hidden lg:flex items-center w-72 h-10">
-					<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
-					<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, venues…</span>
-					<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
-				</a>
-				<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
-					<Bell class="w-4.5 h-4.5" />
-					<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
-				</a>
-				<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
-					<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
-					<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">CONNECTED</span>
-				</div>
-				<a href="/profile" aria-label="Your profile" class="shrink-0">
-					<Avatar name={page.data.session?.name ?? 'Organizer'} size="sm" />
-				</a>
-			</div>
-		</header>
+
 
 		<!-- pre-flight sub-header -->
 		<div class="border-b border-surface-glass-border bg-surface-container-low/60">
@@ -1359,11 +1220,11 @@
 				<!-- hero -->
 				<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
 					<div class="relative">
-						<Cover cover={demoCover} class="w-full h-64" iconClass="w-16 h-16 text-white/25" />
+						<Cover cover={posterCover} class="w-full h-64" iconClass="w-16 h-16 text-white/25" />
 						<div class="absolute inset-0 bg-gradient-to-t from-surface-container via-surface-container/20 to-transparent"></div>
 						<div class="absolute top-4 left-4 flex items-center gap-2 flex-wrap">
 							<span class="{MONO} bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded flex items-center gap-1.5">
-								<BadgeCheck class="w-3.5 h-3.5 text-accent-emerald" /> Ready to Launch • ID: EVT-2026-LGS
+								<BadgeCheck class="w-3.5 h-3.5 text-accent-emerald" /> Event preview · not published
 							</span>
 							<span class="{MONO} bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded">Mainnet Protocol 1.4</span>
 						</div>
@@ -1371,7 +1232,7 @@
 							<span class="{MONO} text-tertiary">{(categoryLabel || 'Event').toUpperCase()} SUMMIT</span>
 							<h2 class="font-display text-headline-lg md:text-[32px] leading-tight text-on-surface pt-2">{title || 'Untitled node'}</h2>
 							<span class="flex flex-wrap items-center gap-4 pt-2 text-body-sm text-on-surface-variant">
-								<span class="flex items-center gap-1.5"><CalendarDays class="w-4 h-4 text-primary" /> {fmtDate(date)} – {fmtDate(dateEnd)}</span>
+								<span class="flex items-center gap-1.5"><CalendarDays class="w-4 h-4 text-primary" /> {date ? fmtDate(date) : 'Start date required'} – {dateEnd ? fmtDate(dateEnd) : 'End date required'}</span>
 								<span class="flex items-center gap-1.5 min-w-0"><MapPin class="w-4 h-4 text-primary shrink-0" /> <span class="truncate">{venue}, {city}</span></span>
 							</span>
 						</div>
@@ -1636,6 +1497,8 @@
 				<!-- final approval -->
 				<form method="POST" action="?/create" use:enhance={publishHandler} class="rounded-xl border border-surface-glass-border bg-surface-container-low p-5 flex flex-col gap-4">
 					<input type="hidden" name="draft" value={draftJson} />
+					{#if validationMessages.length}<div class="rounded-xl border border-error/30 p-3 text-body-sm" role="status"><p class="font-semibold">Before publishing:</p><ul class="list-disc pl-5">{#each validationMessages as message}<li>{message}</li>{/each}</ul></div>{/if}
+					{#if publishError}<p role="alert" class="text-error">{publishError}</p>{/if}
 					{#if form?.error}
 						<p role="alert" class="rounded-lg bg-error/10 border border-error/30 px-4 py-3 text-body-sm text-error">{form.error}</p>
 					{/if}
@@ -1650,16 +1513,16 @@
 						account will become liable for venue capacity limits under OWLTSIDE Protocol terms.
 					</p>
 					<div class="flex items-center gap-3 pt-1">
-						<button type="button" onclick={() => toast('Draft synced to organizer node', 'success')} class="h-12 px-5 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface hover:border-primary/40 transition-colors shrink-0">
-							Save Draft
+						<button type="button" onclick={() => toast('This draft is only kept while this page stays open. Publish it when ready.', 'info')} class="h-12 px-5 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface hover:border-primary/40 transition-colors shrink-0">
+							Draft info
 						</button>
-						<button type="submit" disabled={tiers.length === 0} class="flex-1 h-12 rounded-lg bg-primary text-on-primary text-body-md font-semibold flex items-center justify-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40">
-							<span>Launch &amp; Publish Event</span>
+						<button type="submit" disabled={publishing || validationMessages.length > 0} class="flex-1 h-12 rounded-lg bg-primary text-on-primary text-body-md font-semibold flex items-center justify-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40">
+							<span>{publishing ? 'Publishing…' : 'Launch & Publish Event'}</span>
 							<Rocket class="w-4 h-4" />
 						</button>
 					</div>
 					<span class="flex items-center justify-center gap-1.5 font-code text-[11px] tracking-[0.08em] text-on-surface-variant">
-						<Clock class="w-3.5 h-3.5" /> Autosaved 1 minute ago • Build revision #824
+						<Clock class="w-3.5 h-3.5" /> Draft not yet published
 					</span>
 				</form>
 			</aside>
@@ -1684,9 +1547,9 @@
 
 <div class="md:hidden">
 
-<main class="flex flex-col relative w-full pt-mobile-header pb-28 bg-surface min-h-dvh">
+<main class="flex flex-col relative w-full  pb-28 bg-surface min-h-dvh">
 	<!-- top bar -->
-	<header class="fixed top-0 left-0 w-full z-30 bg-surface/85 backdrop-blur-xl border-b border-surface-glass-border pt-safe">
+	<section class="border-b border-surface-glass-border">
 		<div class="flex items-center px-gutter h-16 md:max-w-3xl md:mx-auto w-full gap-2">
 			<button onclick={back} aria-label="Back" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface transition-colors">
 				<ArrowLeft class="w-5.5 h-5.5" />
@@ -1694,13 +1557,13 @@
 			<div class="flex flex-col flex-1 min-w-0">
 				<h1 class="font-display text-headline-md text-on-surface truncate leading-tight">New Event Wizard</h1>
 			</div>
-			<button type="button" onclick={() => toast('Draft synced to organizer node', 'success')} aria-label="Save draft" class="flex items-center gap-1.5 rounded-full bg-surface-container-high border border-outline-variant/30 px-2.5 py-2 text-label-badge text-on-surface-variant">
-				<Save class="w-3.5 h-3.5 text-accent-emerald" /><span>Save draft</span>
+			<button type="button" onclick={() => toast('This draft is only kept while this page stays open. Publish it when ready.', 'info')} aria-label="Draft info" class="flex items-center gap-1.5 rounded-full bg-surface-container-high border border-outline-variant/30 px-2.5 py-2 text-label-badge text-on-surface-variant">
+				<Save class="w-3.5 h-3.5 text-accent-emerald" /><span>Draft info</span>
 			</button>
 		</div>
-	</header>
+	</section>
 
-	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md pt-20">
+	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md pt-space-md">
 		<!-- progress -->
 		<div class="flex flex-col gap-space-sm">
 			<div class="flex items-center justify-between">
@@ -1746,7 +1609,8 @@
 					<div class="flex flex-col gap-2 pt-1">
 						<label for="event-category-mobile" class="text-body-sm text-on-surface-variant">Category</label>
 						<select id="event-category-mobile" bind:value={selectedCategory} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline">
-							{#each categoryOptions as category (category.id)}<option value={category.id}>{category.label}</option>{/each}
+							<option value="" disabled>Choose a category</option>
+						{#each categoryOptions as category (category.id)}<option value={category.id}>{category.label}</option>{/each}
 							<option value="custom">Custom category…</option>
 						</select>
 						{#if selectedCategory === 'custom'}<input type="text" bind:value={customCategory} maxlength="48" placeholder="Enter a custom category" class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />{/if}
@@ -1778,17 +1642,12 @@
 					</div>
 				</div>
 				<div class="rounded-xl bg-surface-container border border-surface-glass-border overflow-hidden">
-					<div class="relative h-32 bg-surface-container-low">
-						<div class="absolute inset-0 opacity-50" style="background-image: linear-gradient(rgba(192,193,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(192,193,255,0.07) 1px, transparent 1px); background-size: 28px 28px;"></div>
-						<span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center"><MapPin class="w-4 h-4" /></span>
-						<span class="absolute top-2 left-2 px-2 py-1 rounded bg-surface-base/85 text-label-badge text-on-surface">GPS: 6.4253° N, 3.4219° E</span>
-						<span class="absolute top-2 right-2 px-2 py-1 rounded bg-surface-base/85 text-label-badge text-accent-emerald">Live radar locked</span>
-					</div>
-					<div class="p-3 flex items-center justify-between gap-2"><span class="min-w-0"><span class="block text-label-badge text-on-surface-variant">Physical venue &amp; coordinates</span><span class="block text-body-sm text-on-surface truncate pt-1">{venue || 'Venue TBA'}, Water Corporation Dr · {city}</span></span><button type="button" class="text-label-badge text-primary font-semibold shrink-0" onclick={() => toast('Coordinate calibration locked to venue node', 'info')}>Calibrate</button></div>
+
+					<div class="p-3 flex items-center justify-between gap-2"><span class="min-w-0"><span class="block text-label-badge text-on-surface-variant">Physical venue</span><span class="block text-body-sm text-on-surface truncate pt-1">{venue || 'Venue TBA'} · {city}</span></span></div>
 				</div>
-				<div class="rounded-xl bg-surface-container border border-surface-glass-border overflow-hidden">
-					<Cover cover={demoCover} class="w-full h-36" iconClass="w-10 h-10 text-white/30" />
-					<div class="p-3 flex items-center justify-between gap-3"><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Keyframe artwork · 16:9 banner</span><span class="block text-label-badge text-on-surface-variant pt-1">Recommended 1280 × 720 · up to 12 MB</span></span><button type="button" class="h-9 px-3 rounded-full bg-surface-container-high text-label-badge text-on-surface shrink-0 flex items-center gap-1" onclick={() => toast('Cover studio ships with the media node', 'info')}><CloudUpload class="w-3.5 h-3.5" />Upload</button></div>
+				<div class="rounded-xl bg-surface-container border border-surface-glass-border p-space-md">
+					<h3 class="text-body-sm font-semibold mb-3">Required event flyer / poster</h3>
+					{@render posterPicker()}
 				</div>
 
 				<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md flex flex-col gap-2">
@@ -1920,7 +1779,7 @@
 				</div>
 				<p class="text-label-badge text-on-surface-variant">Type a room or stage name for each session.</p>
 				<div class="flex flex-col gap-2">
-					{#each days[dayIdx].sessions as s, i (i)}
+					{#each (days[dayIdx]?.sessions ?? []) as s, i (i)}
 						<div class="flex items-start gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md">
 							<span class="font-code text-body-md text-primary pt-0.5 w-14 flex-shrink-0">{s.time}</span>
 							<div class="flex flex-col flex-1 min-w-0">
@@ -2023,7 +1882,9 @@
 				class="flex flex-col gap-space-sm"
 			>
 				<input type="hidden" name="draft" value={draftJson} />
-				{#if form?.error}
+					{#if validationMessages.length}<div class="rounded-xl border border-error/30 p-3 text-body-sm" role="status"><p class="font-semibold">Before publishing:</p><ul class="list-disc pl-5">{#each validationMessages as message}<li>{message}</li>{/each}</ul></div>{/if}
+				{#if publishError}<p role="alert" class="text-error">{publishError}</p>{/if}
+					{#if form?.error}
 					<p role="alert" class="rounded-lg bg-error/10 border border-error/30 px-4 py-3 text-body-sm text-error">{form.error}</p>
 				{/if}
 				<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md flex flex-col gap-space-sm">
@@ -2035,10 +1896,10 @@
 							</span>
 							Ready to Launch
 						</span>
-						<span class="font-code text-label-badge text-on-surface-variant">ID: EVT-2026-LGS</span>
+						<span class="font-code text-label-badge text-on-surface-variant">Not published</span>
 					</div>
 					<div class="flex items-center gap-space-md">
-						<Cover cover={demoCover} class="w-16 h-16 rounded-xl overflow-hidden shrink-0" iconClass="w-7 h-7 text-white/30" />
+						<Cover cover={posterCover} class="w-16 h-16 rounded-xl overflow-hidden shrink-0" iconClass="w-7 h-7 text-white/30" />
 						<div class="flex flex-col min-w-0">
 							<span class="font-display text-headline-md text-on-surface truncate">{title}</span>
 							<span class="text-body-sm text-on-surface-variant truncate">{date} – {dateEnd} • {venue}, {city}</span>
@@ -2096,8 +1957,8 @@
 					</div>
 				</section>
 
-				<button type="submit" class="h-12 rounded-full bg-primary text-on-primary text-body-md font-semibold flex items-center justify-center gap-2 glow-primary" disabled={!canContinue || tiers.length === 0}>
-					<TrendingUp class="w-4 h-4" /> Publish event
+				<button type="submit" class="h-12 rounded-full bg-primary text-on-primary text-body-md font-semibold flex items-center justify-center gap-2 glow-primary" disabled={publishing || validationMessages.length > 0}>
+					<TrendingUp class="w-4 h-4" /> {publishing ? 'Publishing…' : 'Publish event'}
 				</button>
 			</form>
 		{/if}
@@ -2144,3 +2005,16 @@
 		</div>
 	</div>
 {/if}
+
+{#snippet posterPicker()}
+	<div class="flex flex-col gap-3 p-3 border border-dashed border-outline-variant/50 rounded-xl">
+		{#if poster}<img src={poster} alt="Your event poster preview" class="w-full aspect-video object-cover rounded-lg" />{/if}
+		<label class="cursor-pointer text-primary text-body-sm font-semibold">
+			{poster ? 'Replace poster' : 'Upload required flyer / poster'}
+			<input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Upload event poster" onchange={choosePoster} class="block mt-2 w-full text-on-surface-variant" />
+		</label>
+		<p class="text-body-sm text-on-surface-variant">JPEG, PNG, or WebP · up to 12 MB. Resize and crop before confirming. Minimum 320 × 180 pixels.</p>
+		{#if posterError}<p role="alert" class="text-error">{posterError}</p>{/if}
+	</div>
+{/snippet}
+<ImageCropSheet open={posterFile !== null} file={posterFile} title="Resize & crop event poster" aspect={16 / 9} maxDimension={1600} confirmLabel="Use poster" confirm={(image) => { poster = image; posterFile = null; }} close={() => (posterFile = null)} />

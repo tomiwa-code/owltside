@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { enhance } from '$app/forms';
+	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import {
 		AtSign,
 		ArrowLeft,

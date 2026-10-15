@@ -8,3 +8,5 @@ export const page = {
 	form: null,
 	error: null
 };
+
+export const navigating = { to: null, from: null };

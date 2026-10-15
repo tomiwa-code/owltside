@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import { ArrowLeft, ArrowRight, Loader2, ShieldCheck, Timer } from '@lucide/svelte';
 	import { toast } from '$lib/state/toast.svelte';
 

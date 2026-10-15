@@ -31,7 +31,7 @@
 	import TopBar from '$components/TopBar.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
 	import { categories } from '$components/iconMap';
-	import { mockProfiles } from '$lib/data/mock-profiles';
+	import { navigating } from '$app/state';
 	import { useQuery } from '$lib/state/query.svelte';
 	import { fmtDate, fmtTime } from '$lib/utils/dates';
 	import { formatMoney } from '$lib/utils/money';
@@ -69,7 +69,7 @@
 			return res.json();
 		},
 		{ staleTime: 60_000 },
-		data.events
+		data.allEvents
 	);
 	const countFor = (id: string) =>
 		(allEvents.data ?? []).filter((e) => (id === 'all' ? true : e.category === id)).length;
@@ -188,6 +188,7 @@
 	const cardLabels = ['Access Pass', 'Tier 1 Entry', 'Early Bird', 'Admission', 'Executive Pass', 'Day Access'];
 
 	let query = $state(params.get('q') ?? '');
+	$effect(() => { query = params.get('q') ?? ''; });
 	let showFilters = $state(false);
 
 	// Mobile sheet draft; synced from the live desktop/shared filters each time it opens.
@@ -232,17 +233,7 @@
 		activeRange = r;
 	}
 
-	const key = $derived(`events:explore:${params.toString()}`);
-	const results = useQuery<EventItem[]>(
-		key,
-		async () => {
-			const res = await fetch(`/api/events?${params.toString()}`);
-			return res.json();
-		},
-		{ staleTime: 20_000 },
-		data.events
-	);
-	const events = $derived(results.data ?? []);
+	const events = $derived(data.events);
 
 	const activeCount = $derived(
 		(params.get('category') ? 1 : 0) +
@@ -331,16 +322,11 @@
 		return [...map.entries()];
 	});
 
-	const usersFiltered = $derived(
-		mockProfiles.filter((p) => {
-			if (!query) return true;
-			const q = query.toLowerCase();
-			return `${p.name} ${p.handle} ${p.bio ?? ''} ${p.city ?? ''}`.toLowerCase().includes(q);
-		})
-	);
+	const usersFiltered = $derived(data.users ?? []);
+
 	const venues = $derived.by(() => {
 		const map = new Map<string, { venue: string; city: string; count: number; cover: any; events: EventItem[] }>();
-		for (const e of (allEvents.data ?? [])) {
+		for (const e of (data.allEvents ?? [])) {
 			const key = `${e.venue}||${e.city}`;
 			const existing = map.get(key);
 			if (existing) {
@@ -362,56 +348,14 @@
 </script>
 
 <svelte:head><title>Explore • Owltside</title></svelte:head>
+{#if navigating.to}<p role="status" class="px-gutter py-2 text-primary">Searching…</p>{/if}
+{#if data.searchError}<p role="alert" class="px-gutter py-3 text-error">{data.searchError}</p>{/if}
 
 <!-- ── desktop (md+) discovery console per the desktop design source,
      themed with Evently Pulse tokens; mobile explore below unchanged ── -->
 <div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
 	<!-- top bar -->
-	<header class="sticky top-0 z-50 border-b border-surface-glass-border bg-surface-base/85 backdrop-blur-xl">
-		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 h-16 flex items-center gap-5">
-			<a href="/home" class="flex items-center gap-2.5 shrink-0">
-				<span class="w-2 h-2 rounded-full bg-primary glow-primary"></span>
-				<span class="font-display font-bold tracking-tight text-on-surface text-[17px]">OWLTSIDE</span>
 
-			</a>
-			<nav class="flex items-center gap-1" aria-label="Primary">
-				{#each [
-					['/home', 'Home'],
-					['/explore', 'Explore'],
-					['/tickets', 'Tickets'],
-					['/organizer', 'Organizer']
-				] as [href, label]}
-					<a
-						{href}
-						aria-current={href === '/explore' ? 'page' : undefined}
-						class="px-3 h-9 rounded-lg flex items-center text-body-sm transition-colors
-							{href === '/explore'
-								? 'text-on-surface font-semibold bg-surface-container border border-surface-glass-border'
-								: 'text-on-surface-variant hover:text-on-surface'}"
-					>
-						{label}
-					</a>
-				{/each}
-			</nav>
-			<div class="flex-1"></div>
-			<span class="relative hidden lg:flex items-center w-72 h-10">
-				<Search class="absolute left-3.5 w-4 h-4 text-outline-variant pointer-events-none" />
-				<span class="w-full h-full rounded-full bg-surface-container-low border border-surface-glass-border pl-10 pr-12 flex items-center text-body-md text-outline-variant">Search events, gates, artists…</span>
-				<kbd class="{MONO} absolute right-3 text-on-surface-variant border border-surface-glass-border rounded px-1.5 py-0.5">⌘K</kbd>
-			</span>
-			<a href="/notifications" aria-label="Notifications" class="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors shrink-0">
-				<Bell class="w-4.5 h-4.5" />
-				<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-surface-base"></span>
-			</a>
-			<div class="hidden xl:flex flex-col items-end leading-tight shrink-0">
-				<span class="font-code text-label-badge text-on-surface">0x7E3…A14</span>
-				<span class="font-code text-[10px] tracking-[0.14em] text-accent-emerald">GATE_PASS_ACTIVE</span>
-			</div>
-			<a href="/profile" aria-label="Your profile" class="shrink-0">
-				<Avatar name={page.data.session?.name ?? 'Guest'} size="sm" />
-			</a>
-		</div>
-	</header>
 
 	<!-- search band with tabs -->
 	<div class="border-b border-surface-glass-border bg-surface-container-low/60">
@@ -866,7 +810,7 @@
 	{/snippet}
 </TopBar>
 
-<main class="flex flex-col relative w-full pt-mobile-header pb-28 md:pb-16 bg-surface min-h-dvh">
+<main class="flex flex-col relative w-full  pb-28 md:pb-16 bg-surface min-h-dvh">
 	<div class="flex flex-col w-full md:max-w-5xl md:mx-auto">
 		<div class="px-space-md py-space-sm bg-surface sticky top-16 z-30">
 			<!-- tabs above search bar -->

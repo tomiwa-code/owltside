@@ -68,6 +68,7 @@ async function drag(element: HTMLElement, dx: number, dy: number, fromX = 176, f
 
 const savedCaption = () => document.body.textContent?.match(/Saved as (\d+) × (\d+)px JPEG[^\n]*/)?.[0] ?? '';
 const profileData = {
+	unread: 0, currentProfile: null, followingIds: [], followLoadError: false,
 	session: {
 		userId: 'u-ada',
 		email: 'ada@owltside.app',
