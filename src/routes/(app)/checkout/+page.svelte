@@ -391,11 +391,9 @@
 					<ShieldCheck class="w-5 h-5 text-primary" />
 				</span>
 				<div class="min-w-0">
-					<h3 class="text-body-lg font-semibold text-on-surface">Zero Scalping &amp; Cryptographic Turnstile Assurance</h3>
+					<h3 class="text-body-lg font-semibold text-on-surface">Zero Scalping &amp; Verified Entry Assurance</h3>
 					<p class="text-body-sm text-on-surface-variant leading-relaxed pt-2">
-						Tickets issued through OWLTSIDE utilize dynamic 256-bit HMAC payloads rotating every 15
-						seconds. Counterfeiting, unauthorized screenshots, and secondary scalping are
-						mathematically prevented at {event.venue} turnstiles.
+						Tickets issued through OWLTSIDE use dynamic QR codes that refresh every 30 seconds so screenshots and counterfeit passes are blocked at {event.venue} gates.
 					</p>
 					<div class="flex flex-wrap items-center gap-6 pt-4">
 						<span class="flex items-center gap-2 font-code text-label-badge text-on-surface">
@@ -444,7 +442,7 @@
 								<span class="text-body-md text-on-surface font-semibold">{qty}x {tier.name}</span>
 								<span class="font-code text-body-md font-bold text-on-surface">{formatMoney(base)}</span>
 							</div>
-							<p class="text-body-sm text-on-surface-variant pt-0.5">{tier.benefits ?? 'Rotating HMAC gate pass'}</p>
+							<p class="text-body-sm text-on-surface-variant pt-0.5">{tier.benefits ?? 'Verified Digital Gate Pass'}</p>
 						</div>
 						<div class="flex items-center justify-between gap-3">
 							<span class="flex items-center gap-1.5 text-body-sm text-on-surface-variant">
