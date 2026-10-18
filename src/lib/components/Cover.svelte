@@ -11,10 +11,16 @@
 	let imageFailed = $state(false);
 	$effect(() => { imageFailed = false; });
 	const Icon = $derived(coverIcons[cover.icon] ?? coverIcons.music);
+	// If the caller already positions the cover (e.g. `absolute inset-0` for
+	// a full-bleed card hero), don't also force `relative` — Tailwind's
+	// generated `relative` utility sorts after `absolute`, so `relative`
+	// would win and the cover would collapse instead of filling its
+	// positioned parent. See ExploreCard (mobile) and DesktopHomeFeed.
+	const isPositioned = $derived(cls.includes('absolute') || cls.includes('fixed'));
 </script>
 
 <div
-	class="relative overflow-hidden {cls}"
+	class="{isPositioned ? '' : 'relative'} overflow-hidden {cls}"
 	style="background: linear-gradient(135deg, {cover.from} 0%, {cover.to} 100%);"
 	aria-hidden="true"
 >
