@@ -26,6 +26,60 @@ export function supabaseConfigured(): boolean {
 	return Boolean(resolveSupabaseUrl() && resolveSupabaseAnonKey());
 }
 
+const UNDICI_GLOBAL_DISPATCHER = Symbol.for('undici.globalDispatcher.1');
+let configuredHttp1Dispatcher = false;
+
+function ensureHttp1Dispatcher(forceReset = false): void {
+	try {
+		const globalAny = globalThis as Record<symbol, unknown>;
+		const current = globalAny[UNDICI_GLOBAL_DISPATCHER] as
+			| { constructor?: new (opts: Record<string, unknown>) => unknown }
+			| undefined;
+		if (!current || typeof current.constructor !== 'function') return;
+		if (configuredHttp1Dispatcher && !forceReset) return;
+		globalAny[UNDICI_GLOBAL_DISPATCHER] = new current.constructor({
+			allowH2: false,
+			keepAliveTimeout: 10_000,
+			keepAliveMaxTimeout: 30_000
+		});
+		configuredHttp1Dispatcher = true;
+	} catch {
+		// Ignore if running in a non-undici runtime
+	}
+}
+
+function isTransientNetworkError(error: unknown): boolean {
+	if (!error || typeof error !== 'object') return false;
+	const err = error as { message?: string; code?: string; cause?: { code?: string; message?: string } };
+	const code = `${err.code ?? ''} ${err.cause?.code ?? ''}`;
+	const msg = `${err.message ?? ''} ${err.cause?.message ?? ''}`;
+	return /ERR_HTTP2_|UND_ERR_|ECONNRESET|ETIMEDOUT|EPIPE|EAI_AGAIN|ENOTFOUND/i.test(code) ||
+		/fetch failed|session has been destroyed|GOAWAY|other side closed|socket hang up/i.test(msg);
+}
+
+export async function supabaseFetch(
+	input: RequestInfo | URL,
+	init?: RequestInit
+): Promise<Response> {
+	ensureHttp1Dispatcher(false);
+	let lastError: unknown;
+	for (let attempt = 0; attempt < 3; attempt++) {
+		try {
+			const response = await globalThis.fetch(input, init);
+			ensureHttp1Dispatcher(false);
+			return response;
+		} catch (error) {
+			lastError = error;
+			if (!isTransientNetworkError(error) || attempt === 2) {
+				throw error;
+			}
+			ensureHttp1Dispatcher(true);
+			await new Promise((resolve) => setTimeout(resolve, 40 * (attempt + 1)));
+		}
+	}
+	throw lastError;
+}
+
 /** Server-side Supabase client bound to the request's cookies (auth session). */
 export function createSupabase(cookies: Cookies, options: { freshAuth?: boolean } = {}): SupabaseClient | null {
 	const url = resolveSupabaseUrl();
@@ -38,6 +92,9 @@ export function createSupabase(cookies: Cookies, options: { freshAuth?: boolean 
 	const isSessionCookie = (name: string) => name === sessionKey || name.startsWith(`${sessionKey}.`);
 	let freshAuth = options.freshAuth ?? false;
 	return createServerClient(url, key, {
+		global: {
+			fetch: supabaseFetch
+		},
 		cookies: {
 			getAll() {
 				return cookies.getAll().map((cookie) => freshAuth && isSessionCookie(cookie.name) ? { ...cookie, value: '' } : cookie);

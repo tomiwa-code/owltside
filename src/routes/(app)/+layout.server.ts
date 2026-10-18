@@ -12,7 +12,7 @@ export const load: LayoutServerLoad = async ({ cookies, url, locals }) => {
 	}
 
 	const source = getSource(createSupabase(cookies));
-	const currentProfile = locals.session ? await source.getProfile(locals.session.handle) ?? null : null;
+	const currentProfile = locals.session ? (await source.getProfile(locals.session.handle).catch(() => null)) ?? null : null;
 	let followingIds: string[] = [];
 	let unread = 0;
 	let followLoadError = false;

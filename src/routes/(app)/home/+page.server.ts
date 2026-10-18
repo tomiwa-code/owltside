@@ -4,6 +4,6 @@ import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ cookies }) => {
 	const source = getSource(createSupabase(cookies));
-	const events = await source.listEvents();
+	const events = await source.listEvents().catch(() => []);
 	return { events };
 };
