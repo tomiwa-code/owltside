@@ -381,6 +381,10 @@ export const rooftopEvent: EventItem = {
 	],
 	faqs: [],
 	policies: ['18+ only', 'No re-entry after 10pm'],
+	gates: [
+		{ id: 'gate-1', name: 'Gate 1', modes: ['QR', 'Manual'], staff: [] },
+		{ id: 'gate-2', name: 'Gate 2', modes: ['QR'], staff: [] }
+	],
 	live: true,
 	viewsToday: 860,
 	attendees: 404

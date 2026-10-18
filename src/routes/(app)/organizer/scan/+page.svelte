@@ -6,6 +6,7 @@
 		Bell,
 		CheckCircle2,
 		Camera,
+		ExternalLink,
 		KeyRound,
 		Lock,
 		OctagonAlert,
@@ -20,6 +21,17 @@
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import { page } from '$app/state';
+	import {
+		CameraError,
+		cameraAvailability,
+		createQrDetector,
+		openCameraStream,
+		startPreview,
+		stopStream,
+		type CameraAvailability,
+		type CameraIssue,
+		type QrDetector
+	} from '$lib/utils/qr-scanner';
 	import type { Checkin, OrganizerPayload } from '$lib/types';
 	import { fmtRelative } from '$lib/utils/dates';
 	import { toast } from '$lib/state/toast.svelte';
@@ -40,12 +52,16 @@
 	const hasEvent = $derived(Boolean(event));
 	const hasGate = $derived((event?.gates?.length ?? 0) > 0);
 	const setupHref = $derived(event ? `/organizer/create?edit=${event.id}` : '/organizer/create');
+	/** Link that reopens this scanner in its own tab (cameras need a top-level page). */
+	const scannerHref = $derived(
+		event ? `/organizer/scan?eventId=${encodeURIComponent(event.id)}` : '/organizer/scan'
+	);
 
 	/* ── phase A: staff PIN ─────────────────────────────────── */
 	let phase = $state<'pin' | 'scan'>('pin');
 	let digits = $state(['', '', '', '', '', '']);
-	let cellRefs: HTMLInputElement[] = [];
-	let cellRefsDesk: HTMLInputElement[] = [];
+	let cellRefs = $state<HTMLInputElement[]>([]);
+	let cellRefsDesk = $state<HTMLInputElement[]>([]);
 	let pinBusy = $state(false);
 	let pinError = $state('');
 	let gateToken = $state('');
@@ -141,8 +157,27 @@
 	let online = $state(true);
 	let queue = $state<{ code: string; at: string; eventId?: string; gate?: string; staffToken?: string }[]>([]);
 	let stream: MediaStream | null = null;
+	let detector: QrDetector | null = null;
 	let detectTimer: ReturnType<typeof setInterval> | null = null;
 	let lastScanned: { code: string; at: number } | null = null;
+	let detecting = false;
+	let cameraLive = $state(false);
+	let previewPaused = $state(false);
+	let detectorNative = $state(true);
+	let cameraIssue = $state<CameraIssue | null>(null);
+	let cameraMessage = $state('');
+	let availability = $state<CameraAvailability>({
+		hasApi: false,
+		secure: true,
+		embedded: false,
+		ready: false,
+		message: ''
+	});
+
+	$effect(() => {
+		// Camera support can only be checked in the browser.
+		availability = cameraAvailability();
+	});
 
 	$effect(() => {
 		// Read the stored queue into a local first: touching `queue` inside the
@@ -256,45 +291,82 @@
 	}
 
 	/* camera */
+	function visibleVideo(): HTMLVideoElement | undefined {
+		const candidates = [videoEl, videoElDesk].filter(Boolean) as HTMLVideoElement[];
+		return candidates.find((el) => el.getClientRects().length > 0) ?? candidates[0];
+	}
+
 	async function startCam() {
 		if (startingCamera) return;
 		startingCamera = true;
 		camError = false;
+		cameraIssue = null;
+		cameraMessage = '';
+		const support = cameraAvailability();
 		camOn = true;
 		await tick();
 		try {
-			if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera access is not available in this browser.');
-			stream = await navigator.mediaDevices.getUserMedia({
-				video: { facingMode: 'environment' }
-			});
-			camEl = window.matchMedia('(min-width: 768px)').matches ? videoElDesk : videoEl;
-			if (camEl) {
-				camEl.srcObject = stream;
-				await camEl.play();
-			}
-			if ('BarcodeDetector' in window) {
-				// @ts-expect-error BarcodeDetector not yet in lib.dom
-				const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
-				detectTimer = setInterval(async () => {
-					if (!camEl || camEl.readyState < 2) return;
-					const codes = await detector.detect(camEl).catch(() => []);
-					const value = codes[0]?.rawValue;
-					if (value && (lastScanned?.code !== value || Date.now() - (lastScanned?.at ?? 0) > 4000)) {
-						lastScanned = { code: value, at: Date.now() };
-						await verify(value);
-					}
-				}, 400);
-			}
-		} catch {
+			// The desktop and mobile consoles are both in the DOM; the preview
+			// has to be attached to the one that is actually on screen.
+			camEl = visibleVideo();
+			if (!camEl) throw new CameraError('failed', 'The camera preview could not be mounted.');
+			stream = await openCameraStream(camEl);
+			previewPaused = camEl.paused;
+			detector = createQrDetector();
+			detectorNative = detector.native;
+			cameraLive = true;
+			detectTimer = setInterval(() => {
+				void pollFrame();
+			}, detector.native ? 300 : 400);
+		} catch (error) {
+			// A preview frame is the most common reason for a blocked camera:
+			// point the organizer at their own tab.
+			const issue = support.embedded
+				? 'embedded'
+				: error instanceof CameraError
+					? error.issue
+					: 'failed';
+			cameraIssue = issue;
+			cameraMessage =
+				issue === 'embedded'
+					? support.message
+					: error instanceof CameraError
+						? error.message
+						: 'The camera could not be started.';
 			stopCam();
 			camError = true;
-			toast('Camera unavailable — use manual codes', 'info');
+			toast(cameraMessage, 'info');
 		} finally { startingCamera = false; }
 	}
+
+	/** iOS sometimes needs a tap before the preview renders. */
+	async function resumePreview() {
+		if (!camEl) return;
+		previewPaused = !(await startPreview(camEl));
+	}
+
+	async function pollFrame() {
+		if (!camEl || !detector || detecting) return;
+		detecting = true;
+		try {
+			const value = await detector.detect(camEl);
+			if (value && (lastScanned?.code !== value || Date.now() - (lastScanned?.at ?? 0) > 4000)) {
+				lastScanned = { code: value, at: Date.now() };
+				await verify(value);
+			}
+		} catch {
+			// A dropped frame is not fatal — the next tick tries again.
+		} finally { detecting = false; }
+	}
+
 	function stopCam() {
 		if (detectTimer) clearInterval(detectTimer);
 		detectTimer = null;
-		stream?.getTracks().forEach((t) => t.stop());
+		detector?.close();
+		detector = null;
+		cameraLive = false;
+		previewPaused = false;
+		stopStream(stream);
 		stream = null;
 		if (camEl) camEl.srcObject = null;
 		camEl = undefined;
@@ -303,6 +375,43 @@
 </script>
 
 <svelte:head><title>Ticket Scanner • Owltside</title></svelte:head>
+
+<!-- Shared camera state: what the terminal is doing and what to do next. -->
+{#snippet cameraStatus()}
+	{#if camError}
+		<div class="flex flex-col items-center gap-2">
+			<p class="text-label-badge text-accent-amber text-center">{cameraMessage || 'Camera blocked — manual entry still works.'}</p>
+			{#if cameraIssue === 'embedded'}
+				<a
+					href={scannerHref}
+					target="_blank"
+					rel="noreferrer"
+					class="h-9 px-4 rounded-full bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm flex items-center gap-1.5"
+				>
+					<ExternalLink class="w-3.5 h-3.5" /> Open scanner in a new tab
+				</a>
+			{/if}
+		</div>
+	{:else if cameraLive}
+		<p class="text-label-badge text-accent-emerald text-center">
+			Camera live — hold the ticket QR inside the frame{detectorNative ? '' : ' · software reader'}
+		</p>
+	{:else if availability.message}
+		<div class="flex flex-col items-center gap-2">
+			<p class="text-label-badge text-accent-amber text-center">{availability.message}</p>
+			{#if availability.embedded}
+				<a
+					href={scannerHref}
+					target="_blank"
+					rel="noreferrer"
+					class="h-9 px-4 rounded-full bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm flex items-center gap-1.5"
+				>
+					<ExternalLink class="w-3.5 h-3.5" /> Open scanner in a new tab
+				</a>
+			{/if}
+		</div>
+	{/if}
+{/snippet}
 
 <!-- Shared "set the scanner up" panel: the terminal is always open, it just
      tells the organizer what to finish before it can arm. -->
@@ -449,15 +558,27 @@
 							<button class="absolute top-3 right-3 rounded-full bg-surface-container/80 backdrop-blur px-3 py-1.5 {MONO} text-on-surface" onclick={stopCam}>
 								Stop camera
 							</button>
+							{#if previewPaused}
+								<button
+									class="absolute inset-0 flex items-center justify-center bg-black/55 text-on-surface text-body-sm font-semibold"
+									onclick={resumePreview}
+								>
+									Tap to start the camera preview
+								</button>
+							{:else}
+								<p class="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-surface-container/85 backdrop-blur px-3 py-1 {MONO} text-accent-emerald">
+									Camera live
+								</p>
+							{/if}
 						{:else}
 							<div class="flex flex-col items-center gap-3 p-6 text-center">
 								<ScanLine class="w-10 h-10 text-on-surface-variant" />
 								<p class="text-body-sm text-on-surface-variant max-w-xs">Point the camera at a ticket QR, or verify a code manually on the right.</p>
-								<button class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary" disabled={startingCamera} aria-busy={startingCamera} onclick={startCam}>
-									<Camera class="w-4 h-4" /> {startingCamera ? 'Starting…' : 'Start camera'}
-								</button>
-								{#if camError}<p class="{MONO} text-accent-amber">Camera blocked — manual entry still works.</p>{/if}
-							</div>
+							<button class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary" disabled={startingCamera} aria-busy={startingCamera} onclick={startCam}>
+								<Camera class="w-4 h-4" /> {startingCamera ? 'Starting…' : 'Start camera'}
+							</button>
+							{@render cameraStatus()}
+						</div>
 						{/if}
 					</section>
 					<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-3">
@@ -717,6 +838,18 @@
 					<button class="absolute top-3 right-3 rounded-full bg-surface-container/80 backdrop-blur px-3 py-1.5 text-label-badge text-on-surface" onclick={stopCam}>
 						Stop camera
 					</button>
+					{#if previewPaused}
+						<button
+							class="absolute inset-0 flex items-center justify-center bg-black/55 text-on-surface text-label-badge font-semibold"
+							onclick={resumePreview}
+						>
+							Tap to start the camera preview
+						</button>
+						{:else}
+							<p class="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-surface-container/85 backdrop-blur px-3 py-1 text-label-badge text-accent-emerald">
+								Camera live
+							</p>
+						{/if}
 				{:else}
 					<div class="flex flex-col items-center gap-3 p-6 text-center">
 						<ScanLine class="w-10 h-10 text-on-surface-variant" />
@@ -724,7 +857,7 @@
 						<button class="h-11 px-5 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary" disabled={startingCamera} aria-busy={startingCamera} onclick={startCam}>
 							<Camera class="w-4 h-4" /> {startingCamera ? 'Starting…' : 'Start camera'}
 						</button>
-						{#if camError}<p class="text-label-badge text-accent-amber">Camera blocked — manual entry below still works.</p>{/if}
+						{@render cameraStatus()}
 					</div>
 				{/if}
 			</div>
