@@ -17,6 +17,7 @@ import type {
 	WizardPayload
 } from '$lib/types';
 import * as demo from './demo/seed';
+import { createHash, randomInt } from 'node:crypto';
 import { newTicketCode } from '$lib/utils/qr';
 
 const demoMeId = 'u-ada';
@@ -37,6 +38,8 @@ type DemoPrivateConversation = {
 const demoPrivateConversations: DemoPrivateConversation[] = [];
 const demoPrivateNotifications = new Map<string, NotificationItem[]>();
 const demoUserTickets = new Map<string, Ticket[]>();
+const demoGateTokens = new Map<string, { code: string; expiresAt: string }>();
+const gateTokenHash = (code: string) => createHash('sha256').update(code).digest('hex');
 
 const CANNED: Record<string, string[]> = {
 	'u-amina': [
@@ -101,11 +104,13 @@ export interface DataSource {
 	getEventCheckins(eventId: string): Promise<Checkin[]>;
 	checkInTicket(eventId: string, code: string, gate: string): Promise<Checkin>;
 	createEvent(userId: string, payload: WizardPayload): Promise<EventItem>;
+	issueGateToken(userId: string, eventId: string, gateName: string): Promise<{ code: string; expiresAt: string }>;
+	verifyGateToken(userId: string, eventId: string, gateName: string, code: string): Promise<boolean>;
 	recordEventView(slug: string): Promise<void>;
 	updateEvent(
 		userId: string,
 		eventId: string,
-		updates: { title?: string; venue?: string; city?: string; startsAt?: string; description?: string }
+		updates: Partial<WizardPayload>
 	): Promise<EventItem>;
 	deleteEvent(userId: string, eventId: string): Promise<void>;
 	broadcastEvent(userId: string, eventId: string, message: string): Promise<number>;
@@ -545,7 +550,8 @@ export const demoSource: DataSource = {
 			policies: [],
 			gates: payload.gates,
 			viewsToday: 0,
-			attendees: 0
+			attendees: 0,
+			live: payload.live ?? true
 		};
 		demo.events.push(event);
 		for (const speaker of event.speakers) {
@@ -564,7 +570,22 @@ export const demoSource: DataSource = {
 		}
 		return event;
 	},
-	async recordEventView(slug) {
+	async issueGateToken(userId, eventId, gateName) {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		const event = demo.events.find((item) => item.id === eventId && item.organizer.id === uid);
+		if (!event || !event.gates?.some((gate) => gate.name === gateName)) throw new Error('Gate not found for this event');
+		const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+		const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+		demoGateTokens.set(`${eventId}:${gateName}`, { code: gateTokenHash(code), expiresAt });
+		return { code, expiresAt };
+	},
+	async verifyGateToken(userId, eventId, gateName, code) {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		const event = demo.events.find((item) => item.id === eventId && item.organizer.id === uid);
+		const stored = demoGateTokens.get(`${eventId}:${gateName}`);
+		return Boolean(event?.gates?.some((gate) => gate.name === gateName) && stored && Date.parse(stored.expiresAt) > Date.now() && stored.code === gateTokenHash(code));
+	},
+		async recordEventView(slug) {
 		const event = demo.events.find((e) => e.slug === slug);
 		if (event) event.viewsToday += 1;
 	},
@@ -575,8 +596,17 @@ export const demoSource: DataSource = {
 		if (updates.title) event.title = updates.title;
 		if (updates.venue) event.venue = updates.venue;
 		if (updates.city) event.city = updates.city;
-		if (updates.startsAt) event.startsAt = updates.startsAt;
 		if (updates.description !== undefined) event.description = updates.description;
+		if (updates.category !== undefined) event.category = updates.category;
+		if (updates.tags !== undefined) event.tags = updates.tags;
+		if (updates.startsAt !== undefined) event.startsAt = updates.startsAt;
+		if (updates.endsAt !== undefined) event.endsAt = updates.endsAt;
+		if (updates.cover !== undefined) event.cover = updates.cover;
+		if (updates.speakers !== undefined) event.speakers = updates.speakers.map((speaker, index) => ({ id: speaker.id ?? `speaker-${index}`, handle: speaker.handle ?? '', name: speaker.name, avatarColor: speaker.avatarColor ?? '#8083ff', followers: speaker.followers ?? 0, following: speaker.following ?? 0, role: speaker.role, bio: speaker.bio, invited: speaker.invited, inviteStatus: speaker.invited ? (speaker.inviteStatus ?? 'pending') : undefined, displayOnly: speaker.displayOnly }));
+		if (updates.agenda !== undefined) event.agenda = updates.agenda.map((item, index) => ({ id: event.agenda[index]?.id ?? `ag-${index}`, ...item }));
+		if (updates.tiers !== undefined) event.tiers = updates.tiers.map((tier, index) => ({ id: event.tiers[index]?.id ?? `tier-${index}`, sold: event.tiers[index]?.sold ?? 0, ...tier, capacity: Math.max(tier.capacity, event.tiers[index]?.sold ?? 0) }));
+		if (updates.gates !== undefined) event.gates = updates.gates;
+		if (updates.live !== undefined) event.live = updates.live;
 		return event;
 	},
 	async deleteEvent(userId, eventId) {
@@ -1203,12 +1233,33 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 					})),
 					agenda: payload.agenda.map((a, i) => ({ id: `ag-${i}`, ...a })),
 					tiers: payload.tiers.map((t, i) => ({ id: `tier-${i}`, sold: 0, ...t })),
-					gates: payload.gates
+					gates: payload.gates,
+					live: payload.live ?? true
 				})
 				.select('*, organizer:profiles(*)')
 				.single();
 			if (error) throw error;
 			return toEvent(data, toProfile(data.organizer));
+		},
+		async issueGateToken(userId, eventId, gateName) {
+			if (!isUuid(userId) || !isUuid(eventId)) throw new Error('Invalid event or organizer ID');
+			const { data: event, error: eventError } = await db.from('events').select('gates').eq('id', eventId).eq('organizer_id', userId).maybeSingle();
+			if (eventError) throw eventError;
+			if (!event || !(event.gates ?? []).some((gate: Row) => gate.name === gateName)) throw new Error('Gate not found for this event');
+			const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+			const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+			const { error } = await db.from('gate_staff_tokens').upsert({ event_id: eventId, gate_name: gateName, token_hash: gateTokenHash(code), expires_at: expiresAt, created_by: userId }, { onConflict: 'event_id,gate_name' });
+			if (error) throw error;
+			return { code, expiresAt };
+		},
+		async verifyGateToken(userId, eventId, gateName, code) {
+			if (!isUuid(userId) || !isUuid(eventId)) return false;
+			const { data: event, error: eventError } = await db.from('events').select('gates').eq('id', eventId).eq('organizer_id', userId).maybeSingle();
+			if (eventError) throw eventError;
+			if (!event || !(event.gates ?? []).some((gate: Row) => gate.name === gateName)) return false;
+			const { data, error } = await db.from('gate_staff_tokens').select('token_hash,expires_at').eq('event_id', eventId).eq('gate_name', gateName).eq('token_hash', gateTokenHash(code)).gt('expires_at', new Date().toISOString()).maybeSingle();
+			if (error) throw error;
+			return Boolean(data);
 		},
 		async recordEventView(slug) {
 			try {
@@ -1225,6 +1276,18 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (updates.city) patch.city = updates.city;
 			if (updates.startsAt) patch.starts_at = updates.startsAt;
 			if (updates.description !== undefined) patch.description = updates.description;
+			if (updates.category !== undefined) patch.category = updates.category;
+			if (updates.tags !== undefined) patch.tags = updates.tags;
+			if (updates.endsAt !== undefined) patch.ends_at = updates.endsAt;
+			if (updates.cover !== undefined) patch.cover = updates.cover;
+			if (updates.speakers !== undefined) patch.speakers = updates.speakers.map((speaker) => ({ ...speaker, inviteStatus: speaker.invited ? (speaker.inviteStatus ?? 'pending') : undefined }));
+			if (updates.agenda !== undefined) patch.agenda = updates.agenda.map((item, index) => ({ id: `ag-${index}`, ...item }));
+			if (updates.tiers !== undefined) {
+				const { data: current } = await db.from('events').select('tiers').eq('id', eventId).eq('organizer_id', userId).maybeSingle();
+				patch.tiers = updates.tiers.map((tier, index) => ({ id: current?.tiers?.[index]?.id ?? `tier-${index}`, sold: current?.tiers?.[index]?.sold ?? 0, ...tier, capacity: Math.max(tier.capacity, current?.tiers?.[index]?.sold ?? 0) }));
+			}
+			if (updates.gates !== undefined) patch.gates = updates.gates;
+			if (updates.live !== undefined) patch.live = updates.live;
 			const { data, error } = await db
 				.from('events')
 				.update(patch)

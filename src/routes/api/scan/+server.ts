@@ -8,7 +8,8 @@ import type { RequestHandler } from './$types';
 const body = z.object({
 	eventId: z.string().min(1),
 	code: z.string().min(4).optional(),
-	gate: z.string().min(1).default('Gate 1'),
+	staffToken: z.string().regex(/^\d{6}$/),
+	gate: z.string().min(1),
 	simulate: z.boolean().default(false)
 });
 
@@ -22,7 +23,10 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 	if (!parsed.success) error(400, 'Invalid scan request');
 	const { eventId, gate, simulate } = parsed.data;
 
-	if (!organizer.events.some((e) => e.id === eventId)) error(403, 'Not your event');
+	const event = organizer.events.find((candidate) => candidate.id === eventId);
+	if (!event) error(403, 'Not your event');
+	if (!event.gates?.some((configured) => configured.name === gate)) error(400, 'Choose a gate configured for this event');
+	if (!(await source.verifyGateToken(userId, eventId, gate, parsed.data.staffToken))) error(403, 'Gate PIN is invalid or expired');
 
 	let code = parsed.data.code;
 	if (simulate) {

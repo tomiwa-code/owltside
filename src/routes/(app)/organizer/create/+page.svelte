@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -57,8 +58,11 @@
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { categories } from '$components/iconMap';
 	import type { Profile, WizardSpeaker } from '$lib/types';
+	import type { PageData } from './$types';
 
-	let { form } = $props();
+	let { form, data = {} as PageData } = $props();
+	let draftHydrated = $state(false);
+	const editingEvent = $derived(data.event ?? null);
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 	let dateEnd = $state('');
@@ -174,7 +178,7 @@
 			venue.trim().length >= 2 &&
 			(city.trim() || 'Lagos') !== '' &&
 			description.trim().length >= 10 &&
-			Boolean(coverUrl)
+			(Boolean(coverUrl) || Boolean(editingEvent))
 	);
 	const tiersValid = $derived(
 		tiers.length > 0 &&
@@ -267,11 +271,86 @@
 	const stepValidated = $derived(step === 1 ? basicsValid : tiersValid);
 
 	function saveDraft() {
-		toast('Draft kept on this page until you publish', 'info');
+		if (!browser) return;
+		try {
+			localStorage.setItem('owltside.wizard.draft.v1', JSON.stringify({ draft: JSON.parse(draftJson), step }));
+			toast('Draft saved — it will be here when you return', 'success');
+		} catch {
+			toast('Draft could not be saved. Try removing the poster or using a smaller image.', 'error');
+		}
 	}
 
+	function hydrateDraft(draft: Record<string, any>) {
+		coverUrl = typeof draft.poster === 'string' ? draft.poster : '';
+		title = draft.title ?? '';
+		const category = String(draft.category ?? '');
+		selectedCategory = categoryOptions.some((item) => item.id === category) ? category : category ? 'custom' : '';
+		customCategory = selectedCategory === 'custom' ? category : '';
+		date = draft.date ?? '';
+		dateEnd = draft.dateEnd ?? '';
+		venue = draft.venue ?? '';
+		city = draft.city ?? 'Lagos';
+		description = draft.description ?? '';
+		tiers = (draft.tiers ?? []).map((tier: any) => ({ name: tier.name ?? '', price: Number(tier.price ?? 0), capacity: Number(tier.capacity ?? 0), benefits: tier.benefits ?? '', editing: false }));
+		days = (draft.days ?? []).map((day: any) => ({ label: day.label ?? 'Day 1', sessions: (day.sessions ?? []).map((session: any) => ({ time: session.time ?? '12:00', title: session.title ?? '', stage: session.stage ?? '' })) }));
+		roster = (draft.speakers ?? []).map((speaker: any) => ({ ...speaker }));
+		gates = (draft.gates ?? []).map((gate: any) => ({ name: gate.name ?? 'Gate', staff: Number(gate.staff ?? gate.staff?.length ?? 1) }));
+		promos = draft.promos ?? [];
+		const security = draft.security ?? {};
+		allowOverride = security.allowOverride ?? true;
+		allowOffline = security.allowOffline ?? true;
+		restrictGates = security.restrictGates ?? true;
+		hmacRotation = security.hmacRotation ?? true;
+		offlineKeyring = security.offlineKeyring ?? true;
+		biometricFast = security.biometricFast ?? true;
+		conflictPolicy = security.conflictPolicy ?? 'strict';
+		const distribution = draft.distribution ?? {};
+		publishExplore = distribution.publishExplore ?? true;
+		broadcast = distribution.broadcast ?? true;
+		launchMode = distribution.launchMode ?? 'now';
+	}
+
+	onMount(() => {
+		if (editingEvent) {
+			const startsAt = new Date(editingEvent.startsAt);
+			const endsAt = new Date(editingEvent.endsAt ?? editingEvent.startsAt);
+			const sessionsByDay = new Map<string, Array<{ time: string; title: string; stage: string }>>();
+			for (const item of editingEvent.agenda ?? []) {
+				const match = item.start.match(/^(.*?)(?:\s+)(\d{2}:\d{2})$/);
+				const day = match?.[1] || 'Day 1';
+				const time = match?.[2] || '12:00';
+				const sessions = sessionsByDay.get(day) ?? [];
+				sessions.push({ time, title: item.title, stage: item.location ?? 'Main stage' });
+				sessionsByDay.set(day, sessions);
+			}
+			hydrateDraft({
+				title: editingEvent.title, category: editingEvent.category, poster: editingEvent.cover.src ?? '',
+				date: startsAt.toISOString().slice(0, 10), dateEnd: endsAt.toISOString().slice(0, 10),
+				venue: editingEvent.venue, city: editingEvent.city, description: editingEvent.description,
+				tiers: editingEvent.tiers, days: [...sessionsByDay].map(([label, sessions]) => ({ label, sessions })),
+				speakers: editingEvent.speakers, gates: (editingEvent.gates ?? []).map((gate) => ({ name: gate.name, staff: gate.staff.length })),
+				distribution: { launchMode: editingEvent.live ? 'now' : 'staged' }
+			});
+			step = 1;
+		} else {
+			try {
+				const saved = JSON.parse(localStorage.getItem('owltside.wizard.draft.v1') ?? 'null');
+				if (saved?.draft) { hydrateDraft(saved.draft); step = Math.max(1, Math.min(5, Number(saved.step ?? 1))); }
+				else if (saved && typeof saved === 'object') hydrateDraft(saved);
+			} catch { /* start with a fresh wizard if draft storage is corrupt */ }
+		}
+		draftHydrated = true;
+	});
+
+	$effect(() => {
+		if (!browser || !draftHydrated || editingEvent) return;
+		try { localStorage.setItem('owltside.wizard.draft.v1', JSON.stringify({ draft: JSON.parse(draftJson), step })); }
+		catch { /* Explicit Save Draft displays the actionable storage error. */ }
+	});
+
 	function publishHandler() {
-		return async ({ update }: { update: () => Promise<void> }) => {
+		return async ({ result, update }: { result: any; update: () => Promise<void> }) => {
+			if (result.type === 'redirect' && browser && !editingEvent) localStorage.removeItem('owltside.wizard.draft.v1');
 			await update();
 		};
 	}
@@ -1742,6 +1821,7 @@
 				<!-- final approval -->
 				<form method="POST" action="?/create" use:enhance={publishHandler} class="rounded-xl border border-surface-glass-border bg-surface-container-low p-5 flex flex-col gap-4">
 					<input type="hidden" name="draft" value={draftJson} />
+				<input type="hidden" name="eventId" value={editingEvent?.id ?? ''} />
 					{#if form?.error}
 						<p role="alert" class="rounded-lg bg-error/10 border border-error/30 px-4 py-3 text-body-sm text-error">{form.error}</p>
 					{/if}
@@ -1760,7 +1840,7 @@
 							Save Draft
 						</button>
 						<button type="submit" disabled={!canContinue} class="flex-1 h-12 rounded-lg bg-primary text-on-primary text-body-md font-semibold flex items-center justify-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40">
-							<span>Launch &amp; Publish Event</span>
+							<span>{editingEvent ? 'Save Event Changes' : 'Launch &amp; Publish Event'}</span>
 							<Rocket class="w-4 h-4" />
 						</button>
 					</div>
@@ -2136,6 +2216,7 @@
 				class="flex flex-col gap-space-sm"
 			>
 				<input type="hidden" name="draft" value={draftJson} />
+				<input type="hidden" name="eventId" value={editingEvent?.id ?? ''} />
 				{#if form?.error}
 					<p role="alert" class="rounded-lg bg-error/10 border border-error/30 px-4 py-3 text-body-sm text-error">{form.error}</p>
 				{/if}
@@ -2214,7 +2295,7 @@
 				</section>
 
 				<button type="submit" class="h-12 rounded-full bg-primary text-on-primary text-body-md font-semibold flex items-center justify-center gap-2 glow-primary" disabled={!canContinue || tiers.length === 0}>
-					<TrendingUp class="w-4 h-4" /> Publish event
+					<TrendingUp class="w-4 h-4" /> {editingEvent ? 'Save event changes' : 'Publish event'}
 				</button>
 			</form>
 		{/if}

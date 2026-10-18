@@ -388,7 +388,7 @@ describe('event creation poster crop and draft payload flow', () => {
 	it('requires a cropped poster on step 1 and includes poster in the submitted draft JSON', async () => {
 		stubImagePipeline();
 		vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
-		render(CreateEventPage, { props: { form: null } });
+		render(CreateEventPage, { props: { form: null, data: { event: null } as any } });
 
 		// No duplicate <header> inside the wizard page
 		expect(document.querySelectorAll('header')).toHaveLength(0);
