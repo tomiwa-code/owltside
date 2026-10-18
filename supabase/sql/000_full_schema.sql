@@ -779,7 +779,10 @@ as $$
 declare
   v_event public.events%rowtype;
   v_count int := 0;
+  v_body text := btrim(coalesce(p_body, ''));
 begin
+  if v_body = '' then raise exception 'Enter a message to broadcast'; end if;
+
   select * into v_event from public.events where id = p_event_id;
   if not found then raise exception 'Event not found'; end if;
   if auth.uid() is null or auth.uid() <> v_event.organizer_id then
@@ -789,13 +792,13 @@ begin
   with recipients as (
     select distinct owner_id
     from public.tickets
-    where event_id = p_event_id and status = 'valid'
+    where event_id = p_event_id and status in ('valid', 'used')
   ), inserted as (
     insert into public.notifications (user_id, kind, title, body, href)
     select r.owner_id,
            'event',
            'Announcement · ' || v_event.title,
-           p_body,
+           v_body,
            '/events/' || v_event.slug
     from recipients r
     returning id

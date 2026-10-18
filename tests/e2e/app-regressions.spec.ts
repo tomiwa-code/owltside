@@ -166,3 +166,45 @@ test('ticket transfer searches users with or without "@", excludes active user, 
 	await expect(page.getByText(/Pass Transferred · Underground Warehouse 04/i).first()).toBeVisible();
 });
 
+
+test('the ticket scanner opens from the organizer dashboard and arms a gate', async ({ page }) => {
+	await page.goto('/organizer'); await page.waitForLoadState('networkidle');
+	const scanner = page.getByRole('link', { name: /Open Ticket Scanner/i }).first();
+	await expect(scanner).toBeVisible();
+	await scanner.click();
+	await expect(page).toHaveURL(/\/organizer\/scan/);
+	await expect(page.getByText(/Verify Security Token/i).first()).toBeVisible();
+});
+
+test('a broadcast announcement lands in the ticket owner notifications', async ({ page }) => {
+	await page.goto('/organizer'); await page.waitForLoadState('networkidle');
+	await page.locator('button:visible').filter({ hasText: 'Broadcast Announcement' }).first().click();
+	await expect(page.getByRole('dialog')).toBeVisible();
+	await page.getByPlaceholder(/Gate 1 is now open/).fill('Regression announcement for pass owners');
+	await page.getByRole('button', { name: 'Send broadcast' }).click();
+	await expect(page.getByText(/Announcement sent to \d+ ticket holder/i).first()).toBeVisible();
+
+	await page.goto('/notifications'); await page.waitForLoadState('networkidle');
+	await expect(page.getByText(/Announcement · Yaba Rooftop Sessions/).first()).toBeVisible();
+	await expect(page.getByText(/Regression announcement for pass owners/).first()).toBeVisible();
+});
+
+test('the armed scanner opens the phone camera', async ({ page }) => {
+	// Generate a staff PIN for the gate from the organizer console.
+	await page.goto('/organizer'); await page.waitForLoadState('networkidle');
+	await page.locator('button:visible').filter({ hasText: 'Generate PIN' }).first().click();
+	const pin = (await page.locator('span.font-code:visible').filter({ hasText: /^\d{6}$/ }).first().textContent())?.trim() ?? '';
+	expect(pin).toMatch(/^\d{6}$/);
+
+	// Arm the scanner with that PIN.
+	await page.goto('/organizer/scan'); await page.waitForLoadState('networkidle');
+	for (const [index, digit] of [...pin].entries()) {
+		await page.locator(`input[aria-label="Digit ${index + 1}"]:visible`).first().fill(digit);
+	}
+	await page.locator('button:visible').filter({ hasText: 'Arm scanner' }).first().click();
+
+	// The camera opens and the preview runs.
+	await expect(page.locator('button:visible').filter({ hasText: 'Start camera' }).first()).toBeVisible();
+	await page.locator('button:visible').filter({ hasText: 'Start camera' }).first().click();
+	await expect(page.locator('p:visible').filter({ hasText: 'Camera live' }).first()).toBeVisible();
+});

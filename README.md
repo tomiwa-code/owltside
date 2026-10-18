@@ -45,6 +45,9 @@ code paths switch to the live backend — no component changes.
    - `012_event_posters.sql` — requires uploaded poster artwork for all new events
    - `013_ticket_transfer.sql` — ticket transfers and ownership history
    - `014_gate_staff_tokens.sql` — hash-only, expiring PINs for organizer-configured scanner gates
+   - `015_conversation_events.sql` — links chats to the event they started from
+   - `016_event_broadcast_notifications.sql` — broadcast RPC that delivers organizer
+     announcements to every ticket owner
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
@@ -113,11 +116,13 @@ home banner, safe-area insets and a standalone dark theme.
 
 ## Testing
 
-`npm run test:unit` — 34 tests: money/fee maths, date + HMAC-window maths,
+`npm run test:unit` — money/fee maths, date + HMAC-window maths,
 QR signing/rotation, query cache semantics (staleness, invalidation, dedupe),
 demo datasource behaviours (filters, capacity, orders), organizer logic
 (event creation, gate check-in verified/duplicate/invalid, console stats, CSV
-export) and component renders (EventCard, Chip, Avatar, useQuery probe).
+export), gate-scanner readiness, phone-camera plumbing (availability,
+constraint fallbacks, software QR decoding), broadcast announcements and
+component renders (EventCard, Chip, Avatar, useQuery probe).
 
 ## Organizer side
 
@@ -127,6 +132,50 @@ wizard (basics → tickets → agenda → gate ops → review & publish),
 entry, offline queue) and `/organizer/events/[id]` management (roster, CSV
 export, orders, check-in log). Paste `supabase/sql/006_organizer.sql` for the
 check-ins table, gate config and organizer RLS.
+
+### Gate scanner readiness
+
+The dashboard's **Open Ticket Scanner** entry point is always live. It links to
+the first event that has a gate configured, otherwise to the first event, and
+`/organizer/scan` never redirects away: with no event (or an event without a
+gate) the terminal explains the three steps — create the event, add a gate,
+generate the staff PIN — and links straight into the wizard. Only the PIN and
+the gate itself wait for setup.
+
+### Broadcast announcements
+
+**Broadcast Announcement** in the console and on `/organizer/events/[id]` posts
+a real announcement. The message is written to the notification hub of every
+ticket owner of that event (valid and already checked-in passes), and the
+organizer sees how many holders were reached. In live mode this uses
+`broadcast_to_event_holders` — apply `supabase/sql/016_event_broadcast_notifications.sql`
+so the RPC exists; without it the server falls back to inserting the
+notifications directly.
+
+### Phone camera scanning
+
+Arming the gate scanner and tapping **Start camera** opens the phone's rear
+camera and reads the ticket QR (`owltside://t/<code>?s=<signature>`). The
+plumbing lives in `src/lib/utils/qr-scanner.ts`:
+
+- `cameraAvailability()` reports whether the browser can open a camera at all
+  (secure context, camera API, preview frame) before the organizer taps.
+- `openCameraStream(video)` asks for the rear camera (`facingMode:
+  environment`) and falls back to looser constraints when a device rejects
+  them, so an `OverconstrainedError` no longer kills the camera. Failures are
+  mapped to a readable reason: blocked permission, no camera, insecure
+  connection, preview frame.
+- `createQrDetector()` uses the browser's native `BarcodeDetector` when it
+  exists and otherwise falls back to a software decoder (`jsqr`) that reads a
+  downscaled frame from an offscreen canvas — iOS Safari and Firefox have no
+  native detector and would otherwise open the camera without ever reading a
+  code.
+- A preview that refuses to autoplay (iOS asks for a tap) shows **Tap to start
+  the camera preview** instead of a black box, and a dropped frame never stops
+  the camera. Manual ticket-code entry stays available as the fallback.
+
+`getUserMedia` only exists in a secure context: over plain `http://<lan-ip>`
+the scanner says so and points at `https` or `localhost`.
 
 
 ## Profile, discovery, and publishing updates

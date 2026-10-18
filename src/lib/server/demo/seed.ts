@@ -381,6 +381,10 @@ export const rooftopEvent: EventItem = {
 	],
 	faqs: [],
 	policies: ['18+ only', 'No re-entry after 10pm'],
+	gates: [
+		{ id: 'gate-1', name: 'Gate 1', modes: ['QR', 'Manual'], staff: [] },
+		{ id: 'gate-2', name: 'Gate 2', modes: ['QR'], staff: [] }
+	],
 	live: true,
 	viewsToday: 860,
 	attendees: 404
@@ -439,6 +443,23 @@ export const orders: Order[] = [
 ];
 
 export const tickets: Ticket[] = [
+	{
+		// The organizer keeps a comp pass to her own event, so announcements
+		// reach her notification hub like every other ticket owner.
+		id: 't-rooftop-ada',
+		code: 'EV-RT41-ADA0-0001',
+		eventId: 'e-rooftop',
+		eventSlug: 'yaba-rooftop-sessions',
+		eventTitle: 'Yaba Rooftop Sessions',
+		eventStartsAt: rooftopEvent.startsAt,
+		venue: 'Rooftop @44',
+		tierName: 'General',
+		holder: 'Ada Obi',
+		status: 'valid',
+		purchasedAt: at(-1, 9),
+		price: 12_000,
+		cover: rooftopEvent.cover
+	},
 	{
 		id: 't-afrobeats-ada',
 		code: 'EV-7QK2-4M8P-9XRT',

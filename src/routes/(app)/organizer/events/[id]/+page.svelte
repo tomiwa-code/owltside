@@ -180,14 +180,21 @@
 			return async ({ result, update }) => {
 				await update();
 				if (result.type === 'success') {
+					const sent = Number(result.data?.sent ?? 0);
 					broadcastOpen = false;
 					msg = '';
-					toast('Broadcast sent to ticket holders', 'success');
+					toast(
+						sent > 0
+							? `Announcement sent to ${sent} ticket holder${sent === 1 ? '' : 's'}`
+							: 'No ticket holders to notify yet',
+						sent > 0 ? 'success' : 'info'
+					);
 				}
 			};
 		}}
 	>
 		<textarea name="message" bind:value={msg} rows="4" placeholder="Write an announcement…" class="w-full px-4 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline"></textarea>
+		<p class="text-label-badge text-on-surface-variant">Delivered to the notification hub of every pass owner of {data.event.title}.</p>
 	</form>
 </Sheet>
 

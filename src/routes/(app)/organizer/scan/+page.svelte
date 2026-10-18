@@ -6,9 +6,11 @@
 		Bell,
 		CheckCircle2,
 		Camera,
+		ExternalLink,
 		KeyRound,
 		Lock,
 		OctagonAlert,
+		Plus,
 		RadioTower,
 		ScanLine,
 		Search,
@@ -19,6 +21,17 @@
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import { page } from '$app/state';
+	import {
+		CameraError,
+		cameraAvailability,
+		createQrDetector,
+		openCameraStream,
+		startPreview,
+		stopStream,
+		type CameraAvailability,
+		type CameraIssue,
+		type QrDetector
+	} from '$lib/utils/qr-scanner';
 	import type { Checkin, OrganizerPayload } from '$lib/types';
 	import { fmtRelative } from '$lib/utils/dates';
 	import { toast } from '$lib/state/toast.svelte';
@@ -35,12 +48,20 @@
 	$effect(() => {
 		if (event && !event.gates?.some((configured) => configured.name === gateName)) gateName = event.gates?.[0]?.name ?? '';
 	});
+	/** The scanner opens even with nothing set up yet — it then guides the setup. */
+	const hasEvent = $derived(Boolean(event));
+	const hasGate = $derived((event?.gates?.length ?? 0) > 0);
+	const setupHref = $derived(event ? `/organizer/create?edit=${event.id}` : '/organizer/create');
+	/** Link that reopens this scanner in its own tab (cameras need a top-level page). */
+	const scannerHref = $derived(
+		event ? `/organizer/scan?eventId=${encodeURIComponent(event.id)}` : '/organizer/scan'
+	);
 
 	/* ── phase A: staff PIN ─────────────────────────────────── */
 	let phase = $state<'pin' | 'scan'>('pin');
 	let digits = $state(['', '', '', '', '', '']);
-	let cellRefs: HTMLInputElement[] = [];
-	let cellRefsDesk: HTMLInputElement[] = [];
+	let cellRefs = $state<HTMLInputElement[]>([]);
+	let cellRefsDesk = $state<HTMLInputElement[]>([]);
 	let pinBusy = $state(false);
 	let pinError = $state('');
 	let gateToken = $state('');
@@ -136,12 +157,34 @@
 	let online = $state(true);
 	let queue = $state<{ code: string; at: string; eventId?: string; gate?: string; staffToken?: string }[]>([]);
 	let stream: MediaStream | null = null;
+	let detector: QrDetector | null = null;
 	let detectTimer: ReturnType<typeof setInterval> | null = null;
 	let lastScanned: { code: string; at: number } | null = null;
+	let detecting = false;
+	let cameraLive = $state(false);
+	let previewPaused = $state(false);
+	let detectorNative = $state(true);
+	let cameraIssue = $state<CameraIssue | null>(null);
+	let cameraMessage = $state('');
+	let availability = $state<CameraAvailability>({
+		hasApi: false,
+		secure: true,
+		embedded: false,
+		ready: false,
+		message: ''
+	});
 
 	$effect(() => {
-		queue = loadQueue();
-		saveQueue(queue); // Strip any staff PINs left by an older scanner build.
+		// Camera support can only be checked in the browser.
+		availability = cameraAvailability();
+	});
+
+	$effect(() => {
+		// Read the stored queue into a local first: touching `queue` inside the
+		// effect would make it depend on the state it writes.
+		const stored = loadQueue();
+		queue = stored;
+		saveQueue(stored); // Strip any staff PINs left by an older scanner build.
 		online = navigator.onLine;
 		const on = () => {
 			online = true;
@@ -248,45 +291,82 @@
 	}
 
 	/* camera */
+	function visibleVideo(): HTMLVideoElement | undefined {
+		const candidates = [videoEl, videoElDesk].filter(Boolean) as HTMLVideoElement[];
+		return candidates.find((el) => el.getClientRects().length > 0) ?? candidates[0];
+	}
+
 	async function startCam() {
 		if (startingCamera) return;
 		startingCamera = true;
 		camError = false;
+		cameraIssue = null;
+		cameraMessage = '';
+		const support = cameraAvailability();
 		camOn = true;
 		await tick();
 		try {
-			if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera access is not available in this browser.');
-			stream = await navigator.mediaDevices.getUserMedia({
-				video: { facingMode: 'environment' }
-			});
-			camEl = window.matchMedia('(min-width: 768px)').matches ? videoElDesk : videoEl;
-			if (camEl) {
-				camEl.srcObject = stream;
-				await camEl.play();
-			}
-			if ('BarcodeDetector' in window) {
-				// @ts-expect-error BarcodeDetector not yet in lib.dom
-				const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
-				detectTimer = setInterval(async () => {
-					if (!camEl || camEl.readyState < 2) return;
-					const codes = await detector.detect(camEl).catch(() => []);
-					const value = codes[0]?.rawValue;
-					if (value && (lastScanned?.code !== value || Date.now() - (lastScanned?.at ?? 0) > 4000)) {
-						lastScanned = { code: value, at: Date.now() };
-						await verify(value);
-					}
-				}, 400);
-			}
-		} catch {
+			// The desktop and mobile consoles are both in the DOM; the preview
+			// has to be attached to the one that is actually on screen.
+			camEl = visibleVideo();
+			if (!camEl) throw new CameraError('failed', 'The camera preview could not be mounted.');
+			stream = await openCameraStream(camEl);
+			previewPaused = camEl.paused;
+			detector = createQrDetector();
+			detectorNative = detector.native;
+			cameraLive = true;
+			detectTimer = setInterval(() => {
+				void pollFrame();
+			}, detector.native ? 300 : 400);
+		} catch (error) {
+			// A preview frame is the most common reason for a blocked camera:
+			// point the organizer at their own tab.
+			const issue = support.embedded
+				? 'embedded'
+				: error instanceof CameraError
+					? error.issue
+					: 'failed';
+			cameraIssue = issue;
+			cameraMessage =
+				issue === 'embedded'
+					? support.message
+					: error instanceof CameraError
+						? error.message
+						: 'The camera could not be started.';
 			stopCam();
 			camError = true;
-			toast('Camera unavailable — use manual codes', 'info');
+			toast(cameraMessage, 'info');
 		} finally { startingCamera = false; }
 	}
+
+	/** iOS sometimes needs a tap before the preview renders. */
+	async function resumePreview() {
+		if (!camEl) return;
+		previewPaused = !(await startPreview(camEl));
+	}
+
+	async function pollFrame() {
+		if (!camEl || !detector || detecting) return;
+		detecting = true;
+		try {
+			const value = await detector.detect(camEl);
+			if (value && (lastScanned?.code !== value || Date.now() - (lastScanned?.at ?? 0) > 4000)) {
+				lastScanned = { code: value, at: Date.now() };
+				await verify(value);
+			}
+		} catch {
+			// A dropped frame is not fatal — the next tick tries again.
+		} finally { detecting = false; }
+	}
+
 	function stopCam() {
 		if (detectTimer) clearInterval(detectTimer);
 		detectTimer = null;
-		stream?.getTracks().forEach((t) => t.stop());
+		detector?.close();
+		detector = null;
+		cameraLive = false;
+		previewPaused = false;
+		stopStream(stream);
 		stream = null;
 		if (camEl) camEl.srcObject = null;
 		camEl = undefined;
@@ -295,6 +375,75 @@
 </script>
 
 <svelte:head><title>Ticket Scanner • Owltside</title></svelte:head>
+
+<!-- Shared camera state: what the terminal is doing and what to do next. -->
+{#snippet cameraStatus()}
+	{#if camError}
+		<div class="flex flex-col items-center gap-2">
+			<p class="text-label-badge text-accent-amber text-center">{cameraMessage || 'Camera blocked — manual entry still works.'}</p>
+			{#if cameraIssue === 'embedded'}
+				<a
+					href={scannerHref}
+					target="_blank"
+					rel="noreferrer"
+					class="h-9 px-4 rounded-full bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm flex items-center gap-1.5"
+				>
+					<ExternalLink class="w-3.5 h-3.5" /> Open scanner in a new tab
+				</a>
+			{/if}
+		</div>
+	{:else if cameraLive}
+		<p class="text-label-badge text-accent-emerald text-center">
+			Camera live — hold the ticket QR inside the frame{detectorNative ? '' : ' · software reader'}
+		</p>
+	{:else if availability.message}
+		<div class="flex flex-col items-center gap-2">
+			<p class="text-label-badge text-accent-amber text-center">{availability.message}</p>
+			{#if availability.embedded}
+				<a
+					href={scannerHref}
+					target="_blank"
+					rel="noreferrer"
+					class="h-9 px-4 rounded-full bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm flex items-center gap-1.5"
+				>
+					<ExternalLink class="w-3.5 h-3.5" /> Open scanner in a new tab
+				</a>
+			{/if}
+		</div>
+	{/if}
+{/snippet}
+
+<!-- Shared "set the scanner up" panel: the terminal is always open, it just
+     tells the organizer what to finish before it can arm. -->
+{#snippet setupPanel()}
+	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-8 flex flex-col items-center text-center">
+		<span class="relative w-24 h-24 flex items-center justify-center">
+			<span class="absolute inset-0 rounded-full bg-primary/20 blur-2xl"></span>
+			<span class="relative w-16 h-16 rounded-full bg-primary/10 border border-outline-variant/40 flex items-center justify-center text-primary">
+				<ScanLine class="w-7 h-7" />
+			</span>
+		</span>
+		<h2 class="font-display text-headline-lg text-on-surface mt-4">{hasEvent ? 'This event has no gate yet' : 'No event to scan yet'}</h2>
+		<p class="text-body-sm text-on-surface-variant mt-1 max-w-md">
+			{hasEvent
+				? 'The scanner is ready — add a gate to this event and generate its staff PIN to arm this terminal.'
+				: 'The scanner is ready — publish your first event, add a gate, and arm this terminal with its staff PIN.'}
+		</p>
+		<ol class="text-left text-body-sm text-on-surface-variant flex flex-col gap-1.5 mt-4">
+			<li>1. {hasEvent ? 'Add a gate to this event' : 'Create your first event'}</li>
+			<li>2. Generate the six-digit staff PIN in Organizer Console → Hardware &amp; Gates</li>
+			<li>3. Enter the PIN here to arm the scanner</li>
+		</ol>
+		<div class="flex items-center gap-2.5 mt-6 flex-wrap justify-center">
+			<a href={setupHref} class="h-11 px-5 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary">
+				<Plus class="w-4 h-4" /> {hasEvent ? 'Configure gates' : 'Create event'}
+			</a>
+			<a href="/organizer" class="h-11 px-5 rounded-full bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm font-medium flex items-center gap-2 hover:bg-surface-bright transition-colors">
+				<RadioTower class="w-4 h-4" /> Back to console
+			</a>
+		</div>
+	</section>
+{/snippet}
 
 <!-- ── desktop (md+) gate scanner terminal in the shipped console design
      language (design source unavailable this turn — extrapolated); mobile
@@ -310,7 +459,7 @@
 				<span>Scanner_Terminal</span>
 			</span>
 			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-3">Ticket Scanner & Gate Control</h1>
-			<p class="text-body-md text-on-surface-variant mt-2">Arm this terminal with a staff token, then verify tickets issued for this event and gate while connected or offline at {gate}.</p>
+			<p class="text-body-md text-on-surface-variant mt-2">Arm this terminal with a staff token, then verify tickets issued for this event and gate while connected or offline{hasGate ? ` at ${gate}` : ''}.</p>
 		</div>
 		<div class="flex items-center gap-3 flex-wrap">
 			{#if events.length > 1}<select bind:value={eventId} aria-label="Choose event" class="max-w-48 px-3 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm text-on-surface">{#each events as e (e.id)}<option value={e.id}>{e.title}</option>{/each}</select>{/if}
@@ -327,7 +476,9 @@
 
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 grid lg:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
 		<div class="min-w-0">
-			{#if phase === 'pin'}
+			{#if !hasEvent || !hasGate}
+				{@render setupPanel()}
+			{:else if phase === 'pin'}
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-8 flex flex-col items-center text-center">
 					<div class="flex items-center justify-center gap-2 flex-wrap">
 						<span class="flex items-center gap-1.5 rounded-full bg-surface-container-high border border-surface-glass-border px-3 py-1.5 {MONO} text-on-surface-variant">
@@ -407,15 +558,27 @@
 							<button class="absolute top-3 right-3 rounded-full bg-surface-container/80 backdrop-blur px-3 py-1.5 {MONO} text-on-surface" onclick={stopCam}>
 								Stop camera
 							</button>
+							{#if previewPaused}
+								<button
+									class="absolute inset-0 flex items-center justify-center bg-black/55 text-on-surface text-body-sm font-semibold"
+									onclick={resumePreview}
+								>
+									Tap to start the camera preview
+								</button>
+							{:else}
+								<p class="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-surface-container/85 backdrop-blur px-3 py-1 {MONO} text-accent-emerald">
+									Camera live
+								</p>
+							{/if}
 						{:else}
 							<div class="flex flex-col items-center gap-3 p-6 text-center">
 								<ScanLine class="w-10 h-10 text-on-surface-variant" />
 								<p class="text-body-sm text-on-surface-variant max-w-xs">Point the camera at a ticket QR, or verify a code manually on the right.</p>
-								<button class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary" disabled={startingCamera} aria-busy={startingCamera} onclick={startCam}>
-									<Camera class="w-4 h-4" /> {startingCamera ? 'Starting…' : 'Start camera'}
-								</button>
-								{#if camError}<p class="{MONO} text-accent-amber">Camera blocked — manual entry still works.</p>{/if}
-							</div>
+							<button class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary" disabled={startingCamera} aria-busy={startingCamera} onclick={startCam}>
+								<Camera class="w-4 h-4" /> {startingCamera ? 'Starting…' : 'Start camera'}
+							</button>
+							{@render cameraStatus()}
+						</div>
 						{/if}
 					</section>
 					<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-3">
@@ -578,7 +741,9 @@
 	</section>
 
 	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md pt-space-sm">
-		{#if phase === 'pin'}
+		{#if !hasEvent || !hasGate}
+			{@render setupPanel()}
+		{:else if phase === 'pin'}
 			<!-- security pills -->
 			<div class="flex items-center justify-center gap-2 flex-wrap">
 				<span class="flex items-center gap-1.5 rounded-full bg-surface-container-high border border-outline-variant/30 px-3 py-1.5 text-label-badge text-on-surface-variant">
@@ -673,6 +838,18 @@
 					<button class="absolute top-3 right-3 rounded-full bg-surface-container/80 backdrop-blur px-3 py-1.5 text-label-badge text-on-surface" onclick={stopCam}>
 						Stop camera
 					</button>
+					{#if previewPaused}
+						<button
+							class="absolute inset-0 flex items-center justify-center bg-black/55 text-on-surface text-label-badge font-semibold"
+							onclick={resumePreview}
+						>
+							Tap to start the camera preview
+						</button>
+						{:else}
+							<p class="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-surface-container/85 backdrop-blur px-3 py-1 text-label-badge text-accent-emerald">
+								Camera live
+							</p>
+						{/if}
 				{:else}
 					<div class="flex flex-col items-center gap-3 p-6 text-center">
 						<ScanLine class="w-10 h-10 text-on-surface-variant" />
@@ -680,7 +857,7 @@
 						<button class="h-11 px-5 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary" disabled={startingCamera} aria-busy={startingCamera} onclick={startCam}>
 							<Camera class="w-4 h-4" /> {startingCamera ? 'Starting…' : 'Start camera'}
 						</button>
-						{#if camError}<p class="text-label-badge text-accent-amber">Camera blocked — manual entry below still works.</p>{/if}
+						{@render cameraStatus()}
 					</div>
 				{/if}
 			</div>
