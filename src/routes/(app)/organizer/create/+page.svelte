@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
@@ -48,6 +48,7 @@
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import Cover from '$components/Cover.svelte';
+	import ImageCropSheet from '$components/ImageCropSheet.svelte';
 	import { formatMoney } from '$lib/utils/money';
 	import { fmtDate } from '$lib/utils/dates';
 	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
@@ -65,14 +66,16 @@
 	let coverUrl = $state<string | null>(null);
 	let coverName = $state<string | null>(null);
 	let coverError = $state('');
+	let posterCropFile = $state<File | null>(null);
+	let pendingPosterName = $state<string | null>(null);
 
 	function handleCoverSelect(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
 		const file = input.files?.[0] ?? null;
 		input.value = '';
 		if (!file) return;
-		if (!file.type.startsWith('image/')) {
-			coverError = 'Please select an image file (PNG, WEBP, AVIF).';
+		if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') {
+			coverError = 'Please select a JPEG, PNG, or WebP image.';
 			toast(coverError, 'error');
 			return;
 		}
@@ -81,19 +84,28 @@
 			toast(coverError, 'error');
 			return;
 		}
-		const reader = new FileReader();
-		reader.onload = () => {
-			coverUrl = String(reader.result);
-			coverName = file.name;
-			coverError = '';
-			toast('Cover image loaded — will be saved with your event', 'success');
-		};
-		reader.readAsDataURL(file);
+		coverError = '';
+		pendingPosterName = file.name;
+		posterCropFile = file;
+	}
+	function applyCroppedPoster(dataUrl: string) {
+		coverUrl = dataUrl;
+		coverName = pendingPosterName ?? 'poster.jpg';
+		coverError = '';
+		posterCropFile = null;
+		pendingPosterName = null;
+		toast('Cover image cropped — will be saved with your event', 'success');
+	}
+	function closePosterCrop() {
+		posterCropFile = null;
+		pendingPosterName = null;
 	}
 	function clearCover() {
 		coverUrl = null;
 		coverName = null;
 		coverError = '';
+		posterCropFile = null;
+		pendingPosterName = null;
 	}
 
 
@@ -102,7 +114,7 @@
 	let title = $state('');
 	let date = $state('');
 	let venue = $state('');
-	let city = $state('');
+	let city = $state('Lagos');
 	let description = $state('');
 	let selectedCategory = $state('');
 	let customCategory = $state('');
@@ -153,10 +165,29 @@
 			? customCategory.trim()
 			: (categoryOptions.find((category) => category.id === selectedCategory)?.label ?? '')
 	);
+	const basicsValid = $derived(
+		title.trim().length >= 3 &&
+			categoryLabel.length >= 2 &&
+			date !== '' &&
+			dateEnd !== '' &&
+			dateEnd >= date &&
+			venue.trim().length >= 2 &&
+			(city.trim() || 'Lagos') !== '' &&
+			description.trim().length >= 10 &&
+			Boolean(coverUrl)
+	);
+	const tiersValid = $derived(
+		tiers.length > 0 &&
+			tiers.every((t) => t.name.trim().length > 0 && Number(t.capacity) >= 1 && Number(t.price) >= 0)
+	);
 	const canContinue = $derived(
 		step === 1
-			? title.trim().length >= 3 && date !== '' && dateEnd !== '' && dateEnd >= date && venue.trim() !== '' && categoryLabel.length >= 2
-			: true
+			? basicsValid
+			: step === 2
+				? tiersValid
+				: step === 5
+					? basicsValid && tiersValid
+					: true
 	);
 	let allowOverride = $state(true);
 	let allowOffline = $state(true);
@@ -167,6 +198,7 @@
 	let conflictPolicy = $state('strict');
 	const draftJson = $derived(
 		JSON.stringify({
+			poster: coverUrl ?? '',
 			title: title.trim(),
 			category: selectedCategory === 'custom' ? categoryLabel : selectedCategory,
 			tags: categoryLabel ? [categoryLabel] : [],
@@ -174,11 +206,15 @@
 			date,
 			dateEnd,
 			venue: venue.trim(),
-			city,
+			city: city.trim() || 'Lagos',
 			description: description.trim(),
 			security: { allowOverride, allowOffline, restrictGates, hmacRotation, offlineKeyring, biometricFast, conflictPolicy },
 			distribution: { publishExplore, broadcast, launchMode },
-			tiers: tiers.map(({ editing: _e, ...t }) => t),
+			tiers: tiers.map(({ editing: _e, ...t }) => ({
+				...t,
+				price: Number(t.price ?? 0),
+				capacity: Number(t.capacity ?? 0)
+			})),
 			promos,
 			days: days.map((d) => ({ label: d.label, sessions: d.sessions })),
 			gates
@@ -226,43 +262,13 @@
 	const sessionCount = $derived(days.reduce((s, d) => s + d.sessions.length, 0));
 	const staffTotal = $derived(gates.reduce((s, g) => s + g.staff, 0));
 	const totalChecks = 5;
-	const validatedCount = $derived([title.trim().length > 2, tiers.length > 0, days.reduce((s, d) => s + d.sessions.length, 0) > 0, gates.length > 0, true].filter(Boolean).length);
+	const validatedCount = $derived([basicsValid, tiersValid, days.reduce((s, d) => s + d.sessions.length, 0) > 0, gates.length > 0, Boolean(coverUrl)].filter(Boolean).length);
 	const validated = $derived(validatedCount === totalChecks && canContinue);
-	const stepValidated = $derived(step === 1 ? title.trim().length > 2 && venue.trim().length > 1 : tiers.length > 0);
+	const stepValidated = $derived(step === 1 ? basicsValid : tiersValid);
 
 	function saveDraft() {
-		if (browser) {
-			try { localStorage.setItem('owltside.wizard.draft.v1', draftJson); } catch {}
-		}
-		toast('Draft synced to organizer node', 'success');
+		toast('Draft kept on this page until you publish', 'info');
 	}
-
-	$effect(() => {
-		if (!browser) return;
-		try {
-			const raw = localStorage.getItem('owltside.wizard.draft.v1');
-			if (!raw) return;
-			const d = JSON.parse(raw);
-			let restored = false;
-			if (d.title && !title) { title = d.title; restored = true; }
-			if (d.venue && !venue) { venue = d.venue; restored = true; }
-			if (d.city && !city) { city = d.city; restored = true; }
-			if (d.date && !date) { date = d.date; restored = true; }
-			if (d.dateEnd && !dateEnd) { dateEnd = d.dateEnd; restored = true; }
-			if (d.description && !description) { description = d.description; restored = true; }
-			if (d.category && !selectedCategory) {
-				if (categoryOptions.some(c => c.id === d.category)) selectedCategory = d.category;
-				else { selectedCategory = 'custom'; customCategory = d.category; }
-				restored = true;
-			}
-			if (Array.isArray(d.tiers) && d.tiers.length && !tiers.length) { tiers = d.tiers.map((x: any) => ({ ...x, editing: false })); restored = true; }
-			if (Array.isArray(d.days) && d.days.length && !days.length) { days = d.days; restored = true; }
-			if (Array.isArray(d.gates) && d.gates.length && !gates.length) { gates = d.gates; restored = true; }
-			if (Array.isArray(d.speakers) && d.speakers.length && !roster.length) { roster = d.speakers; restored = true; }
-			if (Array.isArray(d.promos) && d.promos.length && !promos.length) { promos = d.promos; restored = true; }
-			if (restored) toast('Draft restored from organizer node', 'info');
-		} catch {}
-	});
 
 	function publishHandler() {
 		return async ({ update }: { update: () => Promise<void> }) => {
@@ -281,7 +287,7 @@
 		const handle = typedName.startsWith('@') ? typedName.slice(1).toLowerCase() : '';
 		const sequence = ++profileSearchSequence;
 		inviteMatches = []; inviteError = '';
-		if (handle.length < 2) { searchingProfiles = false; return; }
+		if (handle.length < 1) { searchingProfiles = false; return; }
 		searchingProfiles = true;
 		try {
 			const response = await fetch(`/api/profiles/search?q=${encodeURIComponent(handle)}`);
@@ -305,7 +311,7 @@
 			if (!selectedInvitee || selectedInvitee.handle.toLowerCase() !== handle) { inviteError = 'Choose a matching Owltside profile before sending an invite.'; return; }
 			if (roster.some((speaker) => speaker.handle?.toLowerCase() === handle && speaker.invited)) { inviteError = `An invite for @${handle} is already in this roster.`; return; }
 			const profile = selectedInvitee;
-			roster = [...roster, { id: profile.id, handle: profile.handle, name: profile.name, avatarColor: profile.avatarColor, bio: profile.bio ?? '', role, org: `@${profile.handle}`, tag: role.slice(0, 24), displayOnly: false, invited: true, followers: profile.followers, following: profile.following, city: profile.city }];
+			roster = [...roster, { id: profile.id, handle: profile.handle, name: profile.name, avatarColor: profile.avatarColor, bio: profile.bio ?? '', role, org: `@${profile.handle}`, tag: role.slice(0, 24), displayOnly: false, invited: true, followers: profile.followers, following: profile.following, city: profile.city ?? undefined }];
 			toast(`Invite for @${profile.handle} queued for event publication`, 'success');
 		} else {
 			if (roster.some((speaker) => speaker.name.toLowerCase() === name.toLowerCase())) { inviteError = 'A speaker with that name is already in this roster.'; return; }
@@ -556,7 +562,7 @@
 								<span class="flex items-center gap-2">
 									<label class="h-9 px-3 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm font-semibold text-on-surface flex items-center gap-2 cursor-pointer hover:border-primary/40">
 										<CloudUpload class="w-4 h-4" /> Replace
-										<input type="file" accept="image/*" class="sr-only" onchange={handleCoverSelect} />
+										<input type="file" aria-label="Upload event poster" accept="image/jpeg,image/png,image/webp" class="sr-only" onchange={handleCoverSelect} />
 									</label>
 									<button type="button" onclick={clearCover} class="h-9 px-3 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm text-on-surface-variant hover:text-error">Remove</button>
 								</span>
@@ -568,12 +574,12 @@
 								<CloudUpload class="w-5 h-5" />
 							</span>
 							<span class="text-body-md font-semibold text-on-surface">Drag and drop key visual asset here</span>
-							<span class="text-body-sm text-on-surface-variant">Supports PNG, WEBP, or AVIF up to 12MB. Raw color grading preserved.</span>
+							<span class="text-body-sm text-on-surface-variant">Supports JPEG, PNG, or WEBP up to 12MB. Cropped to 16:9 before publishing.</span>
 							<span class="flex items-center gap-2 pt-1">
 								<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">16:9 Auto-Crop</span>
 								<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">Metadata Encrypted</span>
 							</span>
-							<input type="file" accept="image/*" class="sr-only" onchange={handleCoverSelect} />
+							<input type="file" aria-label="Upload event poster" accept="image/jpeg,image/png,image/webp" class="sr-only" onchange={handleCoverSelect} />
 						</label>
 						{/if}
 						{#if coverError}<p class="text-body-sm text-error" role="alert">{coverError}</p>{/if}
@@ -853,7 +859,7 @@
 					{#if step === 1}
 						<button
 							type="button"
-							disabled={!title.trim() || !venue.trim()}
+							disabled={!canContinue}
 							onclick={() => { step = 2; scrollTo({ top: 0 }); }}
 							class="h-11 px-5 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40"
 						>
@@ -1753,13 +1759,13 @@
 						<button type="button" onclick={saveDraft} class="h-12 px-5 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface hover:border-primary/40 transition-colors shrink-0">
 							Save Draft
 						</button>
-						<button type="submit" disabled={tiers.length === 0} class="flex-1 h-12 rounded-lg bg-primary text-on-primary text-body-md font-semibold flex items-center justify-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40">
+						<button type="submit" disabled={!canContinue} class="flex-1 h-12 rounded-lg bg-primary text-on-primary text-body-md font-semibold flex items-center justify-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40">
 							<span>Launch &amp; Publish Event</span>
 							<Rocket class="w-4 h-4" />
 						</button>
 					</div>
 					<span class="flex items-center justify-center gap-1.5 font-code text-[11px] tracking-[0.08em] text-on-surface-variant">
-						<Clock class="w-3.5 h-3.5" /> Autosaved 1 minute ago • Build revision • New
+						<Clock class="w-3.5 h-3.5" /> Draft stays on this page until published
 					</span>
 				</form>
 			</aside>
@@ -1784,10 +1790,10 @@
 
 <div class="md:hidden">
 
-<main class="flex flex-col relative w-full pt-6 pb-28 bg-surface min-h-dvh">
+<main class="flex flex-col relative w-full pt-2 pb-28 bg-surface min-h-dvh">
 	<!-- top bar -->
-	<header class="fixed top-0 left-0 w-full z-30 bg-surface/85 backdrop-blur-xl border-b border-surface-glass-border pt-safe">
-		<div class="flex items-center px-gutter h-16 md:max-w-3xl md:mx-auto w-full gap-2">
+	<div class="w-full bg-surface/85 backdrop-blur-xl border-b border-surface-glass-border mb-4">
+		<div class="flex items-center px-gutter h-14 md:max-w-3xl md:mx-auto w-full gap-2">
 			<button onclick={back} aria-label="Back" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface transition-colors">
 				<ArrowLeft class="w-5.5 h-5.5" />
 			</button>
@@ -1798,7 +1804,7 @@
 				<Save class="w-3.5 h-3.5 text-accent-emerald" /><span>Save draft</span>
 			</button>
 		</div>
-	</header>
+	</div>
 
 	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md">
 		<!-- progress -->
@@ -1894,7 +1900,8 @@
 					{:else}
 					<Cover cover={demoCover} class="w-full h-36" iconClass="w-10 h-10 text-white/30" />
 					{/if}
-					<div class="p-3 flex items-center justify-between gap-3"><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Keyframe artwork · 16:9 banner</span><span class="block text-label-badge text-on-surface-variant pt-1">Recommended 1280 × 720 · up to 12 MB</span>{#if coverUrl}<span class="block text-label-badge text-accent-emerald truncate pt-1">{coverName}</span>{/if}</span>{#if coverUrl}<span class="flex items-center gap-2 shrink-0"><label class="h-9 px-3 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface flex items-center gap-1 cursor-pointer"><CloudUpload class="w-3.5 h-3.5" />Replace<input type="file" accept="image/*" class="sr-only" onchange={handleCoverSelect} /></label><button type="button" onclick={clearCover} class="h-9 px-3 rounded-full border border-surface-glass-border text-label-badge text-on-surface-variant">Remove</button></span>{:else}<span class="flex items-center gap-2 shrink-0"><label class="h-9 px-3 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface flex items-center gap-1 cursor-pointer"><CloudUpload class="w-3.5 h-3.5" />Upload<input type="file" accept="image/*" class="sr-only" onchange={handleCoverSelect} /></label></span>{/if}</div>
+					<div class="p-3 flex items-center justify-between gap-3"><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Keyframe artwork · 16:9 banner</span><span class="block text-label-badge text-on-surface-variant pt-1">Recommended 1280 × 720 · up to 12 MB</span>{#if coverUrl}<span class="block text-label-badge text-accent-emerald truncate pt-1">{coverName}</span>{/if}</span>{#if coverUrl}<span class="flex items-center gap-2 shrink-0"><label class="h-9 px-3 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface flex items-center gap-1 cursor-pointer"><CloudUpload class="w-3.5 h-3.5" />Replace<input type="file" aria-label="Upload event poster" accept="image/jpeg,image/png,image/webp" class="sr-only" onchange={handleCoverSelect} /></label><button type="button" onclick={clearCover} class="h-9 px-3 rounded-full border border-surface-glass-border text-label-badge text-on-surface-variant">Remove</button></span>{:else}<span class="flex items-center gap-2 shrink-0"><label class="h-9 px-3 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface flex items-center gap-1 cursor-pointer"><CloudUpload class="w-3.5 h-3.5" />Upload<input type="file" aria-label="Upload event poster" accept="image/jpeg,image/png,image/webp" class="sr-only" onchange={handleCoverSelect} /></label></span>{/if}</div>
+					{#if coverError}<p class="px-3 pb-3 text-body-sm text-error" role="alert">{coverError}</p>{/if}
 				</div>
 
 				<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md flex flex-col gap-2">
@@ -2144,7 +2151,11 @@
 						<span class="font-code text-label-badge text-on-surface-variant">ID: EVT-NEW</span>
 					</div>
 					<div class="flex items-center gap-space-md">
-						<Cover cover={demoCover} class="w-16 h-16 rounded-xl overflow-hidden shrink-0" iconClass="w-7 h-7 text-white/30" />
+						{#if coverUrl}
+							<img src={coverUrl} alt="Event cover" class="w-16 h-16 rounded-xl object-cover shrink-0" />
+						{:else}
+							<Cover cover={demoCover} class="w-16 h-16 rounded-xl overflow-hidden shrink-0" iconClass="w-7 h-7 text-white/30" />
+						{/if}
 						<div class="flex flex-col min-w-0">
 							<span class="font-display text-headline-md text-on-surface truncate">{title}</span>
 							<span class="text-body-sm text-on-surface-variant truncate">{date} – {dateEnd} • {venue}, {city}</span>
@@ -2234,7 +2245,7 @@
 		<div role="dialog" aria-modal="true" aria-labelledby="speaker-invite-title" class="w-full max-w-lg rounded-2xl border border-surface-glass-border bg-surface-container shadow-2xl p-5 sm:p-6 flex flex-col gap-4">
 			<div class="flex items-start justify-between gap-4"><div><h2 id="speaker-invite-title" class="font-display text-headline-md text-on-surface">Add Speaker/Performer</h2><p class="text-body-sm text-on-surface-variant pt-1">Enter an @username to invite a profile, or a plain name for display only.</p></div><button type="button" aria-label="Close invite dialog" onclick={() => (showInviteDialog = false)} class="w-9 h-9 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high"><X class="w-4 h-4" /></button></div>
 			<label class="flex flex-col gap-2 text-label-badge text-on-surface-variant">Name or username<input type="text" bind:value={inviteName} oninput={() => { selectedInvitee = null; void searchInviteProfiles(); }} autocomplete="off" placeholder="@username or speaker name" class="w-full h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-body-md text-on-surface focus:outline-none focus:border-primary/50" /></label>
-			{#if inviteName.trim().startsWith('@') && inviteName.trim().length > 2}
+			{#if inviteName.trim().startsWith('@') && inviteName.trim().length > 1}
 				<div class="rounded-xl border border-surface-glass-border bg-surface-container-low p-2 max-h-52 overflow-y-auto">
 					{#if searchingProfiles}<p class="px-3 py-4 text-body-sm text-on-surface-variant">Searching profiles…</p>
 					{:else if inviteMatches.length}
@@ -2244,9 +2255,21 @@
 				</div>
 			{/if}
 			<label class="flex flex-col gap-2 text-label-badge text-on-surface-variant">Role for this event<input type="text" bind:value={inviteRole} maxlength="80" placeholder="e.g. Keynote speaker, DJ, performer" class="w-full h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-body-md text-on-surface focus:outline-none focus:border-primary/50" /></label>
-			{#if inviteError && !(inviteName.trim().startsWith('@') && inviteName.trim().length > 2 && !inviteMatches.length)}<p class="text-body-sm text-error">{inviteError}</p>{/if}
+			{#if inviteError && !(inviteName.trim().startsWith('@') && inviteName.trim().length > 1 && !inviteMatches.length)}<p class="text-body-sm text-error">{inviteError}</p>{/if}
 			<p class="text-label-badge text-on-surface-variant">Profile invites are notified when the event is published. Plain names are not linked to an account.</p>
 			<div class="flex justify-end gap-2 pt-1"><button type="button" onclick={() => (showInviteDialog = false)} class="h-10 px-4 rounded-lg border border-surface-glass-border text-body-sm text-on-surface-variant hover:bg-surface-container-high">Cancel</button><button type="button" disabled={!inviteCanSubmit} onclick={addSpeaker} class="h-10 px-4 rounded-lg bg-primary text-on-primary text-body-sm font-semibold disabled:opacity-40">{inviteName.trim().startsWith('@') ? 'Queue invite' : 'Add display name'}</button></div>
 		</div>
 	</div>
 {/if}
+
+<ImageCropSheet
+	open={posterCropFile !== null}
+	file={posterCropFile}
+	title="Resize & crop poster"
+	aspect={16 / 9}
+	maxDimension={1600}
+	confirmLabel="Use poster"
+	hint="Pinch to zoom and drag to fit your 16:9 event poster, then confirm. Nothing changes until you tap &quot;Use poster&quot;."
+	confirm={applyCroppedPoster}
+	close={closePosterCrop}
+/>
