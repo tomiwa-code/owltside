@@ -227,10 +227,6 @@
 </script>
 
 <svelte:head><title>Profile • Owltside</title></svelte:head>
-<div class="mx-auto w-full max-w-[1400px] px-gutter md:px-6 xl:px-10 py-3 border-b border-surface-glass-border">
-	<RoleSwitcher currentRole={data.operatingIdentity ?? 'guest'} signedIn={!!session} />
-	{#if data.operatingIdentity === 'organizer'}<a href="/organizer" class="inline-block mt-2 text-body-sm text-primary">Open organizer console →</a>{/if}
-</div>
 
 <!-- ── desktop (md+) profile & pass portfolio in the shipped console design
      language (design source unavailable this turn — extrapolated); mobile
