@@ -4,6 +4,8 @@
 	import { Bell, MessageSquare, Search, Settings2 } from '@lucide/svelte';
 	import Avatar from './Avatar.svelte';
 	import { profileAppearance } from '$lib/state/profile.svelte';
+	import { useQuery } from '$lib/state/query.svelte';
+	import type { Conversation, MessageRequest, NotificationItem } from '$lib/types';
 	let search = $state('');
 	const profile = $derived(page.data.currentProfile);
 	const session = $derived(page.data.session);
@@ -13,6 +15,45 @@
 		event.preventDefault();
 		await goto(search.trim() ? `/explore?q=${encodeURIComponent(search.trim())}` : '/explore');
 	}
+
+	// Live badge counts — poll the same keys used by the dedicated pages so the
+	// header stays in sync without extra backend calls. Fall back to the
+	// SSR-provided page.data values until the first fetch resolves.
+	const notificationsQuery = useQuery<NotificationItem[]>(
+		'notifications:mine',
+		async () => (await fetch('/api/notifications')).json(),
+		{ staleTime: 15_000, refetchInterval: 30_000, enabled: !!page.data.session },
+		undefined
+	);
+	const conversationsQuery = useQuery<Conversation[]>(
+		'conversations:mine',
+		async () => (await fetch('/api/conversations')).json(),
+		{ staleTime: 15_000, refetchInterval: 20_000, enabled: !!page.data.session },
+		undefined
+	);
+	const requestsQuery = useQuery<MessageRequest[]>(
+		'message-requests:mine',
+		async () => {
+			const r = await fetch('/api/message-requests');
+			return r.ok ? await r.json() : [];
+		},
+		{ staleTime: 10_000, refetchInterval: 20_000, enabled: !!page.data.session },
+		undefined
+	);
+
+	const unreadCount = $derived(
+		notificationsQuery.data ? notificationsQuery.data.filter((n) => !n.read).length : (page.data.unread ?? 0)
+	);
+	const inboxUnreadCount = $derived.by(() => {
+		if (conversationsQuery.data !== undefined || requestsQuery.data !== undefined) {
+			const convoUnread = (conversationsQuery.data ?? []).reduce((sum, c) => sum + (c.unread ?? 0), 0);
+			const reqCount = requestsQuery.data?.length ?? 0;
+			return convoUnread + reqCount;
+		}
+		return page.data.inboxUnread ?? 0;
+	});
+
+	const formatBadge = (n: number) => (n > 99 ? '99+' : String(n));
 </script>
 <header class="fixed top-0 inset-x-0 z-50 border-b border-surface-glass-border bg-surface/90 backdrop-blur-xl pt-safe">
 	<div class="mx-auto max-w-[1400px] h-16 px-gutter md:px-6 xl:px-10 flex items-center gap-3 md:gap-5">
@@ -31,11 +72,28 @@
 			<input type="search" aria-label="Search events, venues and users" placeholder="Search events, venues, users…" bind:value={search} class="w-full h-10 rounded-full border border-surface-glass-border bg-surface-container-low pl-10 pr-3 text-body-sm" />
 		</form>
 		<a href="/explore" aria-label="Search" class="lg:hidden text-on-surface-variant"><Search class="w-5 h-5" /></a>
-		<a href="/notifications" aria-label="Notifications" class="relative w-9 h-10 flex items-center justify-center text-on-surface-variant">
+		<a href="/notifications" aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'} class="relative w-9 h-10 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors">
 			<Bell class="w-5 h-5" />
-			{#if page.data.unread > 0}<span class="absolute top-2 right-1 w-2 h-2 rounded-full bg-secondary"></span>{/if}
+			{#if unreadCount > 0}
+				<span
+					class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center leading-none border-2 border-surface pointer-events-none shadow-sm"
+					aria-hidden="true"
+				>
+					{formatBadge(unreadCount)}
+				</span>
+			{/if}
 		</a>
-		<a href="/inbox" aria-label="Inbox" class="text-on-surface-variant"><MessageSquare class="w-5 h-5" /></a>
+		<a href="/inbox" aria-label={inboxUnreadCount > 0 ? `Inbox, ${inboxUnreadCount} unread` : 'Inbox'} class="relative w-9 h-10 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors">
+			<MessageSquare class="w-5 h-5" />
+			{#if inboxUnreadCount > 0}
+				<span
+					class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center leading-none border-2 border-surface pointer-events-none shadow-sm"
+					aria-hidden="true"
+				>
+					{formatBadge(inboxUnreadCount)}
+				</span>
+			{/if}
+		</a>
 		<a href="/settings" aria-label="Settings" class="hidden sm:block text-on-surface-variant"><Settings2 class="w-5 h-5" /></a>
 		<a href="/profile" aria-label="Your profile"><Avatar name={profile?.name ?? session?.name ?? 'Guest'} src={photo} size="sm" /></a>
 	</div>
