@@ -8,15 +8,24 @@ import { hasOrganizerIdentity } from '$lib/server/organizer-access';
 import type { WizardSpeaker } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ locals }) => {
-	return { owner: locals.session?.userId ?? 'demo' };
+export const load: PageServerLoad = async ({ locals, cookies, url }) => {
+	const editId = url.searchParams.get('edit');
+	let event;
+	if (editId) {
+		const organizer = await getSource(createSupabase(cookies)).getOrganizer(locals.session?.userId ?? 'demo');
+		event = organizer.events.find((item) => item.id === editId);
+		if (!event) redirect(302, '/organizer');
+	}
+	return { owner: locals.session?.userId ?? 'demo', event: event ?? null };
 };
 
 const draftSchema = z.object({
-	poster: z.string().min(1, 'Upload and crop an event poster').max(7_000_000),
+	poster: z.string().max(7_000_000).default(''),
 	title: z.string().trim().min(3, 'Give the event a title').max(80),
 	category: z.string().trim().min(2, 'Choose a category').max(48),
 	tags: z.array(z.string().min(1).max(48)).max(1).default([]),
+	security: z.object({ allowOverride: z.boolean().default(true), allowOffline: z.boolean().default(true), restrictGates: z.boolean().default(true), hmacRotation: z.boolean().default(true), offlineKeyring: z.boolean().default(true), biometricFast: z.boolean().default(true), conflictPolicy: z.enum(['strict', 'flexible']).default('strict') }).default({ allowOverride: true, allowOffline: true, restrictGates: true, hmacRotation: true, offlineKeyring: true, biometricFast: true, conflictPolicy: 'strict' }),
+	distribution: z.object({ publishExplore: z.boolean().default(true), broadcast: z.boolean().default(true), launchMode: z.enum(['now', 'staged']).default('now') }).default({ publishExplore: true, broadcast: true, launchMode: 'now' }),
 	speakers: z.array(z.object({
 		id: z.string().optional(),
 		handle: z.string().regex(/^[a-z0-9_]{2,24}$/).optional(),
@@ -28,6 +37,7 @@ const draftSchema = z.object({
 		tag: z.string().max(48).nullish().transform((v) => v ?? undefined),
 		displayOnly: z.boolean().default(false),
 		invited: z.boolean().default(false),
+		inviteStatus: z.enum(['pending', 'accepted', 'declined']).optional(),
 		followers: z.number().int().min(0).nullish().transform((v) => v ?? undefined),
 		following: z.number().int().min(0).nullish().transform((v) => v ?? undefined),
 		city: z.string().max(80).nullish().transform((v) => v ?? undefined)
@@ -80,13 +90,21 @@ export const actions: Actions = {
 		}
 		const d = parsed.data;
 		const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
-		if (d.date < today) return fail(400, { error: 'Start date cannot be in the past.' });
-		let poster: string;
-		try { poster = await validateEventPoster(d.poster); }
-		catch (error) { return fail(400, { error: error instanceof Error ? error.message : 'Upload a valid event poster.' }); }
+		const editId = String(form.get('eventId') ?? '').trim();
+		if (d.date < today && !editId) return fail(400, { error: 'Start date cannot be in the past.' });
+		let poster: string | undefined;
 		let eventId: string;
 		try {
 			const source = getSource(createSupabase(cookies));
+			const organizerId = locals.session?.userId ?? 'demo';
+			const existing = editId ? (await source.getOrganizer(organizerId)).events.find((item) => item.id === editId) : undefined;
+			if (editId && !existing) return fail(404, { error: 'Event not found' });
+			// Keep the existing remote poster when the wizard merely hydrated its URL;
+			// only newly uploaded data URLs need to pass through the image validator.
+			if (d.poster && d.poster !== existing?.cover.src) {
+				try { poster = await validateEventPoster(d.poster); }
+				catch (error) { return fail(400, { error: error instanceof Error ? error.message : 'Upload a valid event poster.' }); }
+			} else if (!editId) return fail(400, { error: 'Upload and crop an event poster' });
 			const speakers: WizardSpeaker[] = [];
 			for (const speaker of d.speakers) {
 				if (!speaker.invited) {
@@ -105,6 +123,7 @@ export const actions: Actions = {
 				if (!speaker.handle || speaker.displayOnly) {
 					return fail(400, { error: 'Choose a verified Owltside profile for each invitation' });
 				}
+				const previousSpeaker = existing?.speakers.find((current) => current.id === speaker.id || current.handle?.toLowerCase() === speaker.handle?.toLowerCase());
 				const profile = (await source.searchProfiles(speaker.handle)).find(
 					(candidate) => candidate.handle.toLowerCase() === speaker.handle?.toLowerCase()
 				);
@@ -120,38 +139,33 @@ export const actions: Actions = {
 					following: profile.following,
 					city: profile.city,
 					displayOnly: false,
-					invited: true
+					invited: true,
+					inviteStatus: previousSpeaker?.inviteStatus ?? 'pending'
 				});
 			}
-			const event = await source.createEvent(
-				locals.session?.userId ?? 'demo',
-				{
-					title: d.title,
-					category: d.category,
-					tags: d.tags,
-					startsAt: `${d.date}T09:00:00+01:00`,
-					endsAt: `${d.dateEnd}T23:59:00+01:00`,
-					venue: d.venue,
-					city: d.city,
-					description: d.description,
-					cover: { from: '#2b2a3f', to: '#14131f', icon: 'image', src: poster },
-					tiers: d.tiers,
-					agenda: d.days.flatMap((day) =>
-						day.sessions.map((s) => ({
-							start: `${day.label} ${s.time}`,
-							title: s.title,
-							location: s.stage
-						}))
-					),
-					speakers,
-					gates: d.gates.map((g, i) => ({
-						id: `gate-${i}`,
-						name: g.name,
-						modes: ['QR', 'Manual'],
-						staff: Array.from({ length: g.staff }, (_, s) => `Staff ${s + 1}`)
-					}))
-				}
-			);
+			const gatePayload = d.gates.map((g, i) => ({
+				id: `gate-${i}`,
+				name: g.name,
+				modes: ['QR', 'Manual'],
+				staff: Array.from({ length: g.staff }, (_, s) => `Staff ${s + 1}`)
+			}));
+			const payload = {
+				title: d.title,
+				category: d.category,
+				tags: d.tags,
+				startsAt: `${d.date}T09:00:00+01:00`,
+				endsAt: `${d.dateEnd}T23:59:00+01:00`,
+				venue: d.venue,
+				city: d.city,
+				description: d.description,
+				cover: poster ? { from: '#2b2a3f', to: '#14131f', icon: 'image', src: poster } : existing!.cover,
+				tiers: d.tiers,
+				agenda: d.days.flatMap((day) => day.sessions.map((session) => ({ start: `${day.label} ${session.time}`, title: session.title, location: session.stage }))),
+				speakers,
+				gates: gatePayload,
+				live: d.distribution.launchMode === 'now'
+			};
+			const event = editId ? await source.updateEvent(organizerId, editId, payload) : await source.createEvent(organizerId, payload);
 			eventId = event.id;
 		} catch {
 			return fail(503, { error: 'Your event could not be published. Your draft is still here. Please try again.' });

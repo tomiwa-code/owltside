@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		ArrowLeft,
@@ -9,7 +10,6 @@
 		Lock,
 		OctagonAlert,
 		RadioTower,
-		RotateCw,
 		ScanLine,
 		Search,
 		ShieldCheck,
@@ -28,36 +28,43 @@
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
 	const events = $derived(data.organizer.events);
-	let eventId = $state(events[0]?.id ?? '');
+	let eventId = $state(data.initialEventId ?? events[0]?.id ?? '');
 	const event = $derived(events.find((e) => e.id === eventId) ?? events[0]);
-	const gate = $derived(event?.gates?.[0]?.name ?? 'Gate 1');
+	let gateName = $state(event?.gates?.[0]?.name ?? '');
+	const gate = $derived(event?.gates?.find((configured) => configured.name === gateName)?.name ?? event?.gates?.[0]?.name ?? '');
+	$effect(() => {
+		if (event && !event.gates?.some((configured) => configured.name === gateName)) gateName = event.gates?.[0]?.name ?? '';
+	});
 
 	/* ── phase A: staff PIN ─────────────────────────────────── */
 	let phase = $state<'pin' | 'scan'>('pin');
-	let digits = $state(['8', '4', '2', '', '', '']);
+	let digits = $state(['', '', '', '', '', '']);
 	let cellRefs: HTMLInputElement[] = [];
 	let cellRefsDesk: HTMLInputElement[] = [];
-	let countdown = $state(299); // 04:59
-	let resendIn = $state(17);
 	let pinBusy = $state(false);
+	let pinError = $state('');
+	let gateToken = $state('');
 
-	$effect(() => {
-		if (phase !== 'pin') return;
-		const iv = setInterval(() => {
-			countdown = Math.max(0, countdown - 1);
-			resendIn = Math.max(0, resendIn - 1);
-		}, 1000);
-		return () => clearInterval(iv);
-	});
-
-	const mm = $derived(String(Math.floor(countdown / 60)).padStart(2, '0'));
-	const ss = $derived(String(countdown % 60).padStart(2, '0'));
 	const pinComplete = $derived(digits.every((d) => d !== ''));
+	$effect(() => {
+		eventId; gate;
+		gateToken = '';
+		phase = 'pin';
+		digits = ['', '', '', '', '', ''];
+		pinError = '';
+	});
 
 	function onDigit(i: number, e: Event) {
 		const v = (e.target as HTMLInputElement).value.replace(/\D/g, '').slice(-1);
 		digits[i] = v;
 		if (v && i < 5) cellRefs[i + 1]?.focus();
+	}
+	function pasteDigits(e: ClipboardEvent, refs: HTMLInputElement[]) {
+		const value = e.clipboardData?.getData('text')?.replace(/\D/g, '').slice(0, 6) ?? '';
+		if (!value) return;
+		e.preventDefault();
+		digits = Array.from({ length: 6 }, (_, index) => value[index] ?? '');
+		refs[Math.min(value.length, 5)]?.focus();
 	}
 	function onBack(i: number, e: KeyboardEvent) {
 		if (e.key === 'Backspace' && !digits[i] && i > 0) cellRefs[i - 1]?.focus();
@@ -70,14 +77,28 @@
 	function onBackDesk(i: number, e: KeyboardEvent) {
 		if (e.key === 'Backspace' && !digits[i] && i > 0) cellRefsDesk[i - 1]?.focus();
 	}
-	function activate() {
-		if (!pinComplete) return;
+	async function activate() {
+		if (!pinComplete || pinBusy || !event || !gate) return;
 		pinBusy = true;
-		setTimeout(() => {
+		pinError = '';
+		try {
+			const code = digits.join('');
+			const response = await fetch('/api/scan/authorize', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ eventId: event.id, gate, code })
+			});
+			if (!response.ok) {
+				const result = await response.json().catch(() => null);
+				throw new Error(result?.message ?? result?.error ?? 'The gate PIN is invalid or expired.');
+			}
+			gateToken = code;
 			phase = 'scan';
-			pinBusy = false;
-			toast('Scanner armed for 6 hours', 'success');
-		}, 700);
+			toast(`Scanner armed for ${gate}`, 'success');
+			void flushQueue();
+		} catch (error) {
+			pinError = error instanceof Error ? error.message : 'The gate PIN could not be verified.';
+		} finally { pinBusy = false; }
 	}
 
 	/* ── phase B: scanning ──────────────────────────────────── */
@@ -93,13 +114,14 @@
 	let last = $state<Checkin | null>(null);
 	let counts = $state({ verified: 0, duplicate: 0, invalid: 0 });
 	let online = $state(true);
-	let queue = $state<{ code: string; at: string }[]>([]);
+	let queue = $state<{ code: string; at: string; eventId?: string; gate?: string; staffToken?: string }[]>([]);
 	let stream: MediaStream | null = null;
 	let detectTimer: ReturnType<typeof setInterval> | null = null;
 	let lastScanned: { code: string; at: number } | null = null;
 
 	$effect(() => {
 		queue = loadQueue();
+		saveQueue(queue); // Strip any staff PINs left by an older scanner build.
 		online = navigator.onLine;
 		const on = () => {
 			online = true;
@@ -115,33 +137,38 @@
 		};
 	});
 
-	function loadQueue(): { code: string; at: string }[] {
+	function loadQueue(): { code: string; at: string; eventId?: string; gate?: string }[] {
 		try {
-			return JSON.parse(localStorage.getItem('owltside.scan-queue') ?? '[]');
+			const stored = JSON.parse(localStorage.getItem('owltside.scan-queue') ?? '[]');
+			return Array.isArray(stored) ? stored.map(({ code, at, eventId, gate }) => ({ code, at, eventId, gate })) : [];
 		} catch {
 			return [];
 		}
 	}
-	function saveQueue(q: { code: string; at: string }[]) {
-		localStorage.setItem('owltside.scan-queue', JSON.stringify(q));
+	function saveQueue(q: { code: string; at: string; eventId?: string; gate?: string; staffToken?: string }[]) {
+		// A staff PIN is a credential. Keep it in memory, never in persistent offline storage.
+		localStorage.setItem('owltside.scan-queue', JSON.stringify(q.map(({ code, at, eventId, gate }) => ({ code, at, eventId, gate }))));
 	}
 	async function flushQueue() {
 		if (flushingQueue) return;
 		flushingQueue = true;
 		try {
-			while (queue.length > 0 && online) {
-				if (!await postScan(queue[0].code, false)) break;
-				queue = queue.slice(1); saveQueue(queue);
+			while (queue.length > 0 && online && gateToken) {
+				const index = queue.findIndex((item) => (item.eventId ?? event.id) === event.id && (item.gate ?? gate) === gate);
+				if (index < 0) break;
+				const item = queue[index];
+				if (!await postScan(item.code, false, item)) break;
+				queue = queue.filter((_, itemIndex) => itemIndex !== index); saveQueue(queue);
 			}
 		} finally { flushingQueue = false; }
 	}
 
-	async function postScan(code: string, queueOnFailure = true): Promise<boolean> {
+	async function postScan(code: string, queueOnFailure = true, context?: { eventId?: string; gate?: string; staffToken?: string }): Promise<boolean> {
 		try {
 			const res = await fetch('/api/scan', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ eventId: event.id, code, gate })
+				body: JSON.stringify({ eventId: context?.eventId ?? event.id, code, gate: context?.gate ?? gate, staffToken: context?.staffToken ?? gateToken })
 			});
 			if (!res.ok) { toast('Scan could not be verified. Please try again.', 'error'); return false; }
 			const ck: Checkin = await res.json();
@@ -150,18 +177,25 @@
 			counts = counts;
 			return true;
 		} catch {
-			if (queueOnFailure) queue = [...queue, { code, at: new Date().toISOString() }];
+			if (queueOnFailure) queue = [...queue, { code, at: new Date().toISOString(), eventId: event.id, gate, staffToken: gateToken }];
 			saveQueue(queue);
 			toast('Offline — scan queued, will sync', 'info');
 			return false;
 		}
 	}
 
+	function ticketCodeFromScan(value: string): string {
+		const raw = value.trim();
+		const match = /^owltside:\/\/t\/([^/?#]+)(?:[?#].*)?$/i.exec(raw);
+		if (!match) return raw;
+		try { return decodeURIComponent(match[1]); } catch { return match[1]; }
+	}
+
 	async function verify(codeRaw: string) {
-		const code = codeRaw.trim();
+		const code = ticketCodeFromScan(codeRaw);
 		if (!code || verifying) return;
 		if (!online) {
-			queue = [...queue, { code, at: new Date().toISOString() }];
+			queue = [...queue, { code, at: new Date().toISOString(), eventId: event.id, gate, staffToken: gateToken }];
 			saveQueue(queue);
 			toast('Offline — scan queued, will sync', 'info');
 			return;
@@ -181,7 +215,7 @@
 			const res = await fetch('/api/scan', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ eventId: event.id, gate, simulate: true })
+				body: JSON.stringify({ eventId: event.id, gate, staffToken: gateToken, simulate: true })
 			});
 			if (!res.ok) throw new Error();
 			const ck: Checkin = await res.json();
@@ -197,7 +231,11 @@
 	async function startCam() {
 		if (startingCamera) return;
 		startingCamera = true;
+		camError = false;
+		camOn = true;
+		await tick();
 		try {
+			if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera access is not available in this browser.');
 			stream = await navigator.mediaDevices.getUserMedia({
 				video: { facingMode: 'environment' }
 			});
@@ -206,8 +244,6 @@
 				camEl.srcObject = stream;
 				await camEl.play();
 			}
-			camOn = true;
-			camError = false;
 			if ('BarcodeDetector' in window) {
 				// @ts-expect-error BarcodeDetector not yet in lib.dom
 				const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
@@ -222,6 +258,7 @@
 				}, 400);
 			}
 		} catch {
+			stopCam();
 			camError = true;
 			toast('Camera unavailable — use manual codes', 'info');
 		} finally { startingCamera = false; }
@@ -231,6 +268,8 @@
 		detectTimer = null;
 		stream?.getTracks().forEach((t) => t.stop());
 		stream = null;
+		if (camEl) camEl.srcObject = null;
+		camEl = undefined;
 		camOn = false;
 	}
 </script>
@@ -251,9 +290,11 @@
 				<span>Scanner_Terminal</span>
 			</span>
 			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-3">Ticket Scanner & Gate Control</h1>
-			<p class="text-body-md text-on-surface-variant mt-2">Arm this terminal with a staff token, then verify HMAC passes while connected or offline at {gate}.</p>
+			<p class="text-body-md text-on-surface-variant mt-2">Arm this terminal with a staff token, then verify tickets issued for this event and gate while connected or offline at {gate}.</p>
 		</div>
 		<div class="flex items-center gap-3 flex-wrap">
+			{#if events.length > 1}<select bind:value={eventId} aria-label="Choose event" class="max-w-48 px-3 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm text-on-surface">{#each events as e (e.id)}<option value={e.id}>{e.title}</option>{/each}</select>{/if}
+			{#if (event?.gates?.length ?? 0) > 1}<select bind:value={gateName} aria-label="Choose gate" class="max-w-40 px-3 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm text-on-surface">{#each event?.gates ?? [] as configured (configured.id)}<option value={configured.name}>{configured.name}</option>{/each}</select>{/if}
 			<span class="h-10 px-3.5 rounded-lg flex items-center gap-2 border {online ? 'border-accent-emerald/25 bg-accent-emerald/5 text-accent-emerald' : 'border-accent-amber/30 bg-accent-amber/5 text-accent-amber'} {MONO}">
 				{#if online}<Wifi class="w-3.5 h-3.5" /> Connected{:else}<WifiOff class="w-3.5 h-3.5" /> Offline{/if}
 				{#if queue.length > 0}<span class="text-accent-amber">• {queue.length} queued</span>{/if}
@@ -270,7 +311,7 @@
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-8 flex flex-col items-center text-center">
 					<div class="flex items-center justify-center gap-2 flex-wrap">
 						<span class="flex items-center gap-1.5 rounded-full bg-surface-container-high border border-surface-glass-border px-3 py-1.5 {MONO} text-on-surface-variant">
-							<KeyRound class="w-3.5 h-3.5 text-primary" /> HMAC Token Vault • Step 2 of 2
+							<KeyRound class="w-3.5 h-3.5 text-primary" /> Event Ticket Validation • Step 2 of 2
 						</span>
 						<span class="flex items-center gap-1.5 rounded-full bg-accent-emerald/10 border border-accent-emerald/30 px-3 py-1.5 {MONO} text-accent-emerald">
 							<ShieldCheck class="w-3.5 h-3.5" /> TLS 1.3
@@ -285,9 +326,9 @@
 					</div>
 					<h2 class="font-display text-headline-lg text-on-surface mt-4">Verify Security Token</h2>
 					<p class="text-body-sm text-on-surface-variant mt-1 max-w-md">
-						Enter the 6-digit code sent to <span class="text-on-surface">gate-staff@owltside.ng</span> to arm this device as {gate}.
+						Enter the six-digit staff PIN generated in Organizer Console → Hardware &amp; Gates for {gate}.
 					</p>
-					<span class="font-code text-label-code text-primary mt-2">{mm}:{ss}</span>
+					<span class="font-code text-label-code text-primary mt-2">Staff PIN expires 6 hours after generation</span>
 					<div class="flex gap-2.5 justify-center mt-6">
 						{#each digits as d, i (i)}
 							<input
@@ -297,12 +338,14 @@
 								maxlength="1"
 								value={d}
 								oninput={(e) => onDigitDesk(i, e)}
+								onpaste={(e) => pasteDigits(e, cellRefsDesk)}
 								onkeydown={(e) => onBackDesk(i, e)}
 								aria-label="Digit {i + 1}"
 								class="w-14 h-16 text-center font-display text-headline-md rounded-xl border text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all {d ? 'bg-surface-container-high border-surface-glass-border' : 'bg-surface-container-low border-surface-glass-border'}"
 							/>
 						{/each}
 					</div>
+					{#if pinError}<p role="alert" class="text-body-sm text-error mt-4">{pinError}</p>{/if}
 					<button
 						type="button"
 						class="w-full max-w-sm h-12 mt-6 rounded-lg bg-primary text-on-primary text-body-md font-semibold disabled:opacity-40 flex items-center justify-center gap-2 glow-primary"
@@ -311,21 +354,7 @@
 					>
 						{#if pinBusy}<span class="w-4 h-4 rounded-full border-2 border-on-primary/30 border-t-on-primary animate-spin"></span>{:else}<ShieldCheck class="w-4 h-4" /> Arm scanner{/if}
 					</button>
-					<div class="w-full max-w-sm rounded-lg bg-surface-container-low border border-surface-glass-border p-4 flex items-center justify-between mt-6">
-						<p class="text-body-sm text-on-surface-variant">
-							Didn't receive code? <span class="text-on-surface">{resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend now'}</span>
-						</p>
-						<button
-							class="flex items-center gap-1.5 text-body-sm font-medium text-primary disabled:opacity-40"
-							disabled={resendIn > 0}
-							onclick={() => { resendIn = 17; toast('New code sent', 'success'); }}
-						>
-							<RotateCw class="w-3.5 h-3.5" /> Resend
-						</button>
-					</div>
-					<button class="flex items-center justify-center gap-2 text-body-sm text-on-surface-variant hover:text-on-surface mt-4" onclick={() => toast('Sent via instant message', 'success')}>
-						<Zap class="w-3.5 h-3.5 text-accent-amber" /> Prefer instant message?
-					</button>
+					<p class="text-label-badge text-on-surface-variant mt-4">Generate or rotate the PIN in Organizer Console → Hardware &amp; Gates.</p>
 				</section>
 			{:else}
 				<div class="grid grid-cols-3 gap-5">
@@ -386,7 +415,7 @@
 						<button class="h-11 rounded-lg border border-dashed border-surface-glass-border text-on-surface-variant text-body-sm font-medium flex items-center justify-center gap-2 hover:border-primary hover:text-primary transition-colors" disabled={verifying} aria-busy={verifying} onclick={simulate}>
 							<Zap class="w-4 h-4" /> {verifying ? 'Verifying…' : 'Simulate a scan (demo)'}
 						</button>
-						<p class="text-xs text-on-surface-variant mt-auto">Scans verify against the rotating HMAC window; offline scans settle from the local queue when the link returns.</p>
+						<p class="text-xs text-on-surface-variant mt-auto">Ticket codes are checked against the selected event; offline scans settle from the local queue when the link returns.</p>
 					</section>
 				</div>
 
@@ -424,8 +453,8 @@
 					{#each [
 						['Gate', gate],
 						['Event', event?.title ?? 'No event'],
-						['Token Window', phase === 'pin' ? `${mm}:${ss}` : '6h armed'],
-						['HMAC Rotation', '45s'],
+						['Staff PIN', phase === 'pin' ? 'Generate in console' : '6h authorization'],
+						['QR refresh', '30s'],
 						['Cipher', 'TLS 1.3']
 					] as [label, value]}
 						<div class="flex items-center justify-between gap-3">
@@ -520,6 +549,11 @@
 					{#each events as e (e.id)}<option value={e.id}>{e.title}</option>{/each}
 				</select>
 			{/if}
+			{#if (event?.gates?.length ?? 0) > 1}
+				<select bind:value={gateName} aria-label="Choose gate" class="max-w-[125px] px-2 py-1.5 rounded-lg bg-surface-container-high border border-outline-variant/30 text-body-sm text-on-surface">
+					{#each event?.gates ?? [] as configured (configured.id)}<option value={configured.name}>{configured.name}</option>{/each}
+				</select>
+			{/if}
 		</div>
 	</section>
 
@@ -528,7 +562,7 @@
 			<!-- security pills -->
 			<div class="flex items-center justify-center gap-2 flex-wrap">
 				<span class="flex items-center gap-1.5 rounded-full bg-surface-container-high border border-outline-variant/30 px-3 py-1.5 text-label-badge text-on-surface-variant">
-					<KeyRound class="w-3.5 h-3.5 text-primary" /> HMAC Token Vault • Step 2 of 2
+					<KeyRound class="w-3.5 h-3.5 text-primary" /> Event Ticket Validation • Step 2 of 2
 				</span>
 				<span class="flex items-center gap-1.5 rounded-full bg-accent-emerald/10 border border-accent-emerald/30 px-3 py-1.5 text-label-badge text-accent-emerald">
 					<ShieldCheck class="w-3.5 h-3.5" /> TLS 1.3
@@ -549,9 +583,9 @@
 			<div class="flex flex-col items-center text-center gap-1">
 				<h2 class="font-display text-headline-lg-mobile text-on-surface">Verify Security Token</h2>
 				<p class="text-body-sm text-on-surface-variant">
-					Enter the 6-digit code sent to <span class="text-on-surface">gate-staff@owltside.ng</span> to arm this device as {gate}.
+					Enter the six-digit staff PIN generated in Organizer Console → Hardware &amp; Gates for {gate}.
 				</p>
-				<span class="font-code text-label-code text-primary mt-1">{mm}:{ss}</span>
+				<span class="font-code text-label-code text-primary mt-1">Staff PIN expires 6 hours after generation</span>
 			</div>
 
 			<!-- OTP cells -->
@@ -565,6 +599,7 @@
 							maxlength="1"
 							value={d}
 							oninput={(e) => onDigit(i, e)}
+							onpaste={(e) => pasteDigits(e, cellRefs)}
 							onkeydown={(e) => onBack(i, e)}
 							aria-label="Digit {i + 1}"
 							class="w-12 h-14 text-center font-display text-headline-md rounded-xl border text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all {d ? 'bg-surface-container-high border-outline-variant/50' : 'bg-surface-container-low border-surface-glass-border'}"
@@ -581,21 +616,7 @@
 				</button>
 			</div>
 
-			<div class="rounded-xl bg-surface-container-low border border-surface-glass-border p-space-md flex items-center justify-between">
-				<p class="text-body-sm text-on-surface-variant">
-					Didn't receive code? <span class="text-on-surface">{resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend now'}</span>
-				</p>
-				<button
-					class="flex items-center gap-1.5 text-body-sm font-medium text-primary disabled:opacity-40"
-					disabled={resendIn > 0}
-					onclick={() => { resendIn = 17; toast('New code sent', 'success'); }}
-				>
-					<RotateCw class="w-3.5 h-3.5" /> Resend
-				</button>
-			</div>
-			<button class="flex items-center justify-center gap-2 text-body-sm text-on-surface-variant hover:text-on-surface" onclick={() => toast('Sent via instant message', 'success')}>
-				<Zap class="w-3.5 h-3.5 text-accent-amber" /> Prefer instant message?
-			</button>
+			<p class="text-label-badge text-on-surface-variant text-center">Generate or rotate the PIN in Organizer Console → Hardware &amp; Gates.</p>
 
 		{:else}
 			<!-- scan counters -->

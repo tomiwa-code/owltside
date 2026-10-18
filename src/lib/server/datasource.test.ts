@@ -106,4 +106,31 @@ describe('demo datasource', () => {
 		});
 		await expect(demoSource.respondToSpeakerInvite('u-segun', event.slug, false)).rejects.toThrow('already been answered');
 	});
+	it('issues gate PINs only for configured organizer-owned event gates', async () => {
+		const event = await demoSource.createEvent('u-ada', {
+			title: 'Gate PIN Authorization Test', category: 'music', tags: [],
+			startsAt: new Date().toISOString(), venue: 'Test Hall', city: 'Lagos', description: 'A test event with a gate.',
+			cover: { from: '#111827', to: '#312e81', icon: 'image' }, tiers: [{ name: 'General', price: 0, capacity: 5, benefits: '' }], agenda: [], speakers: [],
+			gates: [{ id: 'gate-main', name: 'Main Gate', modes: ['QR'], staff: ['Door lead'] }]
+		});
+		const token = await demoSource.issueGateToken('u-ada', event.id, 'Main Gate');
+		expect(token.code).toMatch(/^\d{6}$/);
+		expect(await demoSource.verifyGateToken('u-ada', event.id, 'Main Gate', token.code)).toBe(true);
+		expect(await demoSource.verifyGateToken('u-ada', event.id, 'Main Gate', '000000')).toBe(false);
+		expect(await demoSource.verifyGateToken('u-tunde', event.id, 'Main Gate', token.code)).toBe(false);
+		const order = await demoSource.createOrder('u-ada', event.slug, [{ tierId: event.tiers[0].id, qty: 1 }]);
+		const validCheckin = await demoSource.checkInTicket(event.id, order.tickets[0].code, 'Main Gate');
+		expect(validCheckin.result).toBe('verified');
+		const arbitraryCheckin = await demoSource.checkInTicket(event.id, 'not-a-generated-ticket', 'Main Gate');
+		expect(arbitraryCheckin.result).toBe('invalid');
+		const otherEvent = await demoSource.createEvent('u-ada', {
+			title: 'Different Event Ticket Scope Test', category: 'music', tags: [], startsAt: new Date().toISOString(),
+			venue: 'Other Hall', city: 'Lagos', description: 'Another event for scope validation.',
+			cover: { from: '#111827', to: '#312e81', icon: 'image' }, tiers: [], agenda: [], speakers: [], gates: []
+		});
+		const crossEventCheckin = await demoSource.checkInTicket(otherEvent.id, order.tickets[0].code, 'Main Gate');
+		expect(crossEventCheckin.result).toBe('invalid');
+		await expect(demoSource.issueGateToken('u-ada', event.id, 'Unconfigured Gate')).rejects.toThrow('Gate not found');
+	});
+
 });

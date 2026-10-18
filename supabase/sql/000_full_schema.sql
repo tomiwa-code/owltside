@@ -956,7 +956,7 @@ values
   )
 on conflict (slug) do nothing;
 
--- ── 6. FOLLOW COUNTS & EVENT POSTER GUARDS (011 & 012) ──────────────────────
+-- ── 6. FOLLOW COUNTS, EVENT POSTERS & GATE STAFF TOKENS (011–014) ──────────────────────
 
 create or replace function public.sync_follow_counts() returns trigger
 language plpgsql security definer set search_path = public as $$
@@ -1005,3 +1005,18 @@ end $$;
 drop trigger if exists require_event_poster on public.events;
 create trigger require_event_poster before insert on public.events
 for each row execute function public.require_event_poster();
+
+
+-- Generated, hashed staff PINs are scoped to an event gate.
+create table if not exists public.gate_staff_tokens (
+  event_id uuid not null references public.events(id) on delete cascade,
+  gate_name text not null,
+  token_hash text not null,
+  expires_at timestamptz not null,
+  created_by uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (event_id, gate_name)
+);
+alter table public.gate_staff_tokens enable row level security;
+drop policy if exists "Organizer manages own gate staff tokens" on public.gate_staff_tokens;
+create policy "Organizer manages own gate staff tokens" on public.gate_staff_tokens for all using (exists (select 1 from public.events e where e.id = event_id and e.organizer_id = auth.uid())) with check (created_by = auth.uid() and exists (select 1 from public.events e where e.id = event_id and e.organizer_id = auth.uid()));

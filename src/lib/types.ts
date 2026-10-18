@@ -48,6 +48,7 @@ export interface WizardSpeaker {
 	tag?: string;
 	displayOnly?: boolean;
 	invited?: boolean;
+	inviteStatus?: SpeakerInviteStatus;
 	followers?: number;
 	following?: number;
 	city?: string | null;
@@ -247,4 +248,5 @@ export interface WizardPayload {
 	agenda: Array<{ start: string; title: string; location?: string }>;
 	speakers: WizardSpeaker[];
 	gates: GateConfig[];
+	live?: boolean;
 }

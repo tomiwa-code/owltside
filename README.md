@@ -43,6 +43,8 @@ code paths switch to the live backend — no component changes.
    - `010_speaker_invite_responses.sql` — lets invitees accept or decline event roles for their public profiles
    - `011_profile_follows.sql` — persistent relationships, RLS, and atomic follower/following counts
    - `012_event_posters.sql` — requires uploaded poster artwork for all new events
+   - `013_ticket_transfer.sql` — ticket transfers and ownership history
+   - `014_gate_staff_tokens.sql` — hash-only, expiring PINs for organizer-configured scanner gates
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
