@@ -248,12 +248,12 @@
 								class="w-8 h-8 rounded-md flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
 								onclick={(e) => {
 									e.stopPropagation();
-									goto(`/tickets/${t.id}`);
+									goto(`/tickets/${t.id}?transfer=1`);
 								}}
 								onkeydown={(e) => {
 									if (e.key === 'Enter' || e.key === ' ') {
 										e.stopPropagation();
-										goto(`/tickets/${t.id}`);
+										goto(`/tickets/${t.id}?transfer=1`);
 									}
 								}}
 							>
@@ -359,7 +359,7 @@
 						</div>
 
 						<div class="grid sm:grid-cols-2 gap-3 mt-5">
-							<button class="h-11 rounded-md flex items-center justify-center gap-2 bg-primary-container text-on-primary-container text-body-sm font-semibold hover:bg-primary/30 transition-colors" onclick={() => goto(`/tickets/${selected.id}`)}>
+							<button disabled={selected.status !== 'valid'} class="h-11 rounded-md flex items-center justify-center gap-2 bg-primary-container text-on-primary-container text-body-sm font-semibold hover:bg-primary/30 transition-colors disabled:opacity-40" onclick={() => goto(`/tickets/${selected.id}?transfer=1`)}>
 								<Send class="w-4 h-4" /><span>Transfer Ticket</span>
 							</button>
 							<button class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => toast('Wallet export queued to device', 'info')}>

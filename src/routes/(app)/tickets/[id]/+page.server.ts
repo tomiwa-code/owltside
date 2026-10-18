@@ -17,11 +17,24 @@ export const actions: Actions = {
 			return fail(401, { error: 'Please sign in to transfer a ticket.' });
 		}
 		const form = await request.formData();
-		const handle = String(form.get('handle') ?? '').trim().replace(/^@/, '');
+		const rawHandle = String(form.get('recipientHandle') || form.get('handle') || '').trim();
+		if (/[,;]/.test(rawHandle) || (rawHandle.match(/@/g)?.length ?? 0) > 1) {
+			return fail(400, { error: 'Ticket transfer is 1-to-1. Select a single recipient.' });
+		}
+		const handle = rawHandle.replace(/^@+/, '').trim();
 		if (!handle) return fail(400, { error: 'Enter a recipient @handle.' });
 
+		const activeHandle = (locals.session?.handle ?? (source.mode === 'demo' ? 'adaobi' : ''))
+			.trim()
+			.replace(/^@+/, '')
+			.toLowerCase();
+		if (activeHandle && handle.toLowerCase() === activeHandle) {
+			return fail(400, { error: 'You cannot transfer a ticket to yourself.' });
+		}
+
+		let ticket;
 		try {
-			await source.transferTicket(locals.session?.userId ?? 'demo', params.id, handle);
+			ticket = await source.transferTicket(locals.session?.userId ?? 'demo', params.id, handle);
 		} catch (err) {
 			return fail(400, { error: err instanceof Error ? err.message : 'Could not transfer ticket.' });
 		}
@@ -29,7 +42,7 @@ export const actions: Actions = {
 		if (source.mode === 'supabase') {
 			redirect(303, '/tickets');
 		}
-		return { transferredTo: handle };
+		return { transferredTo: handle, ticket };
 	},
 	refund: async ({ request, params, locals, cookies }) => {
 		const source = getSource(createSupabase(cookies));
