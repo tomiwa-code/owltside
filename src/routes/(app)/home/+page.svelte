@@ -57,7 +57,7 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 		[...list].sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt)).slice(0, 4)
 	);
 	const verifiedOrganizers = $derived.by(() => {
-		const map = new Map<string, { id: string; handle: string; name: string; avatarColor: string; events: number; attended: number }>();
+		const map = new Map<string, { id: string; handle: string; name: string; avatarColor: string; avatarUrl?: string | null; events: number; attended: number }>();
 		for (const event of list) {
 			if (!event.organizer.verified) continue;
 			const current = map.get(event.organizer.id) ?? {
@@ -65,6 +65,7 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 				handle: event.organizer.handle,
 				name: event.organizer.name,
 				avatarColor: event.organizer.avatarColor,
+				avatarUrl: event.organizer.avatarUrl,
 				events: 0,
 				attended: 0
 			};
@@ -252,7 +253,7 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 					{#each verifiedOrganizers as org (org.id)}
 						<div class="flex items-center gap-3">
 							<a href="/users/{org.handle}" aria-label="View {org.name}'s profile" class="flex flex-1 min-w-0 items-center gap-3 rounded-lg hover:bg-surface-container-high/60 transition-colors">
-								<Avatar name={org.name} color={org.avatarColor} size="sm" />
+								<Avatar name={org.name} color={org.avatarColor} src={org.avatarUrl} size="sm" />
 								<span class="flex-1 min-w-0">
 									<span class="flex items-center gap-1 text-body-sm font-semibold text-on-surface truncate">{org.name}<BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" /></span>
 									<span class="block text-label-badge text-on-surface-variant">{org.events} Events · {compact(org.attended)} Attended</span>

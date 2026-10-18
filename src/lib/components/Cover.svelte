@@ -8,6 +8,8 @@
 		iconClass?: string;
 	} = $props();
 
+	let imageFailed = $state(false);
+	$effect(() => { imageFailed = false; });
 	const Icon = $derived(coverIcons[cover.icon] ?? coverIcons.music);
 </script>
 
@@ -16,8 +18,8 @@
 	style="background: linear-gradient(135deg, {cover.from} 0%, {cover.to} 100%);"
 	aria-hidden="true"
 >
-	{#if cover.src}
-		<img src={cover.src} alt="" class="absolute inset-0 w-full h-full object-cover" />
+	{#if cover.src && !imageFailed}
+		<img src={cover.src} alt="" onerror={() => (imageFailed = true)} class="absolute inset-0 w-full h-full object-cover" />
 	{:else}
 	<div
 		class="absolute inset-0 opacity-40"

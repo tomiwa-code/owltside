@@ -99,7 +99,7 @@
 					class="shrink-0 hover:opacity-90 transition-opacity"
 					onclick={(e) => e.stopPropagation()}
 				>
-					<Avatar name={c.peer.name} color={c.peer.avatarColor} size="md" />
+					<Avatar name={c.peer.name} color={c.peer.avatarColor} src={c.peer.avatarUrl} size="md" />
 				</a>
 				<div class="flex-1 min-w-0">
 					<span class="flex items-center justify-between gap-2">

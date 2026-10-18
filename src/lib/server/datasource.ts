@@ -554,7 +554,7 @@ export const demoSource: DataSource = {
 			inviteeNotifications.unshift({
 				id: `n-${Math.random().toString(36).slice(2, 10)}`,
 				kind: 'event',
-				title: `Speaker invitation · ${event.title}`,
+				title: `Invitation · ${event.title}`,
 				body: `${organizer.name} invited you as ${speaker.role ?? 'a speaker'} for this event.`,
 				href: `/events/${event.slug}`,
 				at: new Date().toISOString(),
@@ -778,6 +778,23 @@ const toMessageRequest = (r: Row): MessageRequest => ({
 	conversationId: r.conversation_id ?? undefined
 });
 
+const toCoverArt = (value: unknown): EventItem['cover'] => {
+	let raw: Record<string, unknown> = {};
+	if (typeof value === 'string') {
+		try { raw = JSON.parse(value) as Record<string, unknown>; }
+		catch { raw = { src: value }; }
+	} else if (value && typeof value === 'object' && !Array.isArray(value)) {
+		raw = value as Record<string, unknown>;
+	}
+	const src = [raw.src, raw.url, raw.imageUrl, raw.image_url, raw.poster].find((candidate) => typeof candidate === 'string' && candidate.trim());
+	return {
+		...(typeof src === 'string' ? { src } : {}),
+		from: typeof raw.from === 'string' ? raw.from : '#312e81',
+		to: typeof raw.to === 'string' ? raw.to : '#0b1326',
+		icon: typeof raw.icon === 'string' ? raw.icon : 'music'
+	};
+};
+
 const toEvent = (r: Row, organizer: Profile): EventItem => ({
 	id: r.id,
 	slug: r.slug,
@@ -788,7 +805,7 @@ const toEvent = (r: Row, organizer: Profile): EventItem => ({
 	endsAt: r.ends_at,
 	venue: r.venue,
 	city: r.city,
-	cover: r.cover,
+	cover: toCoverArt(r.cover),
 	description: r.description ?? '',
 	organizer,
 	speakers: (r.speakers ?? []).map((speaker: Row, index: number) => toEventSpeaker(speaker, index)),

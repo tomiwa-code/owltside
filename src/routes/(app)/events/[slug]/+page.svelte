@@ -243,7 +243,7 @@
 				<div class="flex flex-wrap items-center justify-between gap-4 pt-1">
 					<span class="flex items-center gap-3 min-w-0">
 						<a href="/users/{event.organizer.handle}" class="flex items-center gap-3 min-w-0 rounded-lg hover:bg-surface-container-high/40 transition-colors">
-							<Avatar name={event.organizer.name} color={event.organizer.avatarColor} size="md" />
+							<Avatar name={event.organizer.name} color={event.organizer.avatarColor} src={event.organizer.avatarUrl} size="md" />
 							<span class="min-w-0">
 								<span class="flex items-center gap-1.5 min-w-0">
 									<span class="text-body-md font-semibold text-on-surface truncate">{event.organizer.name}</span>
@@ -691,7 +691,7 @@
 			<div class="flex items-center justify-between p-space-md bg-surface-container rounded-xl shadow-sm">
 				<a href="/users/{event.organizer.handle}" class="flex items-center gap-space-sm min-w-0">
 					<div class="relative flex-shrink-0">
-						<Avatar name={event.organizer.name} color={event.organizer.avatarColor} size="lg" />
+						<Avatar name={event.organizer.name} color={event.organizer.avatarColor} src={event.organizer.avatarUrl} size="lg" />
 					</div>
 					<div class="flex flex-col min-w-0">
 						<span class="text-label-badge text-primary-fixed-dim uppercase tracking-wider">Host & Curator</span>
@@ -784,7 +784,7 @@
 									{#if sp}
 										{#if sp.handle}
 										<a href="/users/{sp.handle}" aria-label="View {sp.name}'s profile" class="flex items-center gap-space-sm pt-space-xs mt-space-xs bg-surface-container-low p-2 rounded-lg hover:bg-surface-container-high transition-colors">
-											<Avatar name={sp.name} color={sp.avatarColor} size="md" />
+											<Avatar name={sp.name} color={sp.avatarColor} src={sp.avatarUrl} size="md" />
 											<div class="flex flex-col min-w-0">
 												<span class="text-body-md text-on-surface font-semibold truncate hover:underline">{sp.name}</span>
 												<span class="text-body-sm text-primary-fixed-dim truncate">{sp.bio}</span>
@@ -792,7 +792,7 @@
 										</a>
 										{:else}
 										<div class="flex items-center gap-space-sm pt-space-xs mt-space-xs bg-surface-container-low p-2 rounded-lg">
-											<Avatar name={sp.name} color={sp.avatarColor} size="md" />
+											<Avatar name={sp.name} color={sp.avatarColor} src={sp.avatarUrl} size="md" />
 											<div class="flex flex-col min-w-0">
 												<span class="text-body-md text-on-surface font-semibold truncate">{sp.name}</span>
 												<span class="text-body-sm text-primary-fixed-dim truncate">{sp.bio}</span>
@@ -828,12 +828,12 @@
 								{#if person.handle}
 								<a href="/users/{person.handle}" aria-label="View {person.name}'s profile" class="w-56 shrink-0 rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden hover:border-primary/40 transition-colors block">
 									<div class="relative"><Cover cover={{ from: '#1e293b', to: '#0b1326', icon: 'pen-tool' }} class="w-full h-28 grayscale" iconClass="w-8 h-8 text-white/25" /><span class="absolute top-2 right-2 px-2 py-0.5 rounded bg-surface-base/85 text-label-badge text-on-surface">{['Keynote', 'Architect', 'Panelist'][i % 3]}</span></div>
-									<div class="p-3 flex items-center gap-2.5"><Avatar name={person.name} color={person.avatarColor} size="sm" /><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface truncate hover:underline">{person.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{person.role ?? person.bio ?? person.city ?? 'Performer'}</span><span class="block text-label-badge text-on-surface-variant pt-1">@{person.handle}</span></span></div>
+									<div class="p-3 flex items-center gap-2.5"><Avatar name={person.name} color={person.avatarColor} src={person.avatarUrl} size="sm" /><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface truncate hover:underline">{person.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{person.role ?? person.bio ?? person.city ?? 'Performer'}</span><span class="block text-label-badge text-on-surface-variant pt-1">@{person.handle}</span></span></div>
 								</a>
 								{:else}
 								<div class="w-56 shrink-0 rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
 									<div class="relative"><Cover cover={{ from: '#1e293b', to: '#0b1326', icon: 'pen-tool' }} class="w-full h-28 grayscale" iconClass="w-8 h-8 text-white/25" /><span class="absolute top-2 right-2 px-2 py-0.5 rounded bg-surface-base/85 text-label-badge text-on-surface">{['Keynote', 'Architect', 'Panelist'][i % 3]}</span></div>
-									<div class="p-3 flex items-center gap-2.5"><Avatar name={person.name} color={person.avatarColor} size="sm" /><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface truncate">{person.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{person.role ?? person.bio ?? person.city ?? 'Performer'}</span><span class="block text-label-badge text-on-surface-variant pt-1">Display only</span></span></div>
+									<div class="p-3 flex items-center gap-2.5"><Avatar name={person.name} color={person.avatarColor} src={person.avatarUrl} size="sm" /><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface truncate">{person.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{person.role ?? person.bio ?? person.city ?? 'Performer'}</span><span class="block text-label-badge text-on-surface-variant pt-1">Display only</span></span></div>
 								</div>
 								{/if}
 							{/each}
