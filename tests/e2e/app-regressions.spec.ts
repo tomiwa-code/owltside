@@ -131,3 +131,38 @@ test('settings switches roles through the same control without nested dialogs', 
 	await page.getByRole('button', { name: /Operating Identity/ }).last().click();
 	await expect(page.getByRole('dialog').getByRole('button', { name: /^Attendee/ })).toHaveAttribute('aria-pressed', 'true');
 });
+
+test('ticket transfer searches users with or without "@", excludes active user, transfers 1-to-1, and adds notification', async ({ page }) => {
+	await page.goto('/tickets/t-warehouse-ada');
+	await page.waitForLoadState('networkidle');
+	await page.locator('button:visible').filter({ hasText: 'Transfer' }).first().click();
+
+	const input = page.getByLabel(/Recipient @handle/i);
+	await expect(input).toBeVisible();
+
+	// Active user (@adaobi) is excluded
+	await input.fill('adaobi');
+	await expect(page.getByRole('listbox', { name: 'Matching users' })).toBeVisible();
+	await expect(page.getByRole('option', { name: /Ada Obi/i })).toHaveCount(0);
+
+	// Typing username without "@" shows matching users
+	await input.fill('tundeb');
+	await expect(page.getByRole('option', { name: /Tunde Bakare/i })).toBeVisible();
+
+	// Typing username with "@" also shows matching users
+	await input.fill('@tundeb');
+	const option = page.getByRole('option', { name: /Tunde Bakare/i });
+	await expect(option).toBeVisible();
+
+	// Select 1-to-1 recipient and confirm transfer
+	await option.click();
+	await expect(page.getByTestId('selected-transfer-recipient')).toContainText('Tunde Bakare');
+	await page.getByRole('button', { name: 'Confirm transfer', exact: true }).click();
+
+	await expect(page.getByText(/This pass is transferred/i).first()).toBeVisible();
+
+	await page.goto('/notifications');
+	await page.waitForLoadState('networkidle');
+	await expect(page.getByText(/Pass Transferred · Underground Warehouse 04/i).first()).toBeVisible();
+});
+

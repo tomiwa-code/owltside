@@ -165,9 +165,20 @@ create table if not exists public.notifications (
 );
 create index if not exists notifications_user_idx on public.notifications (user_id, at desc);
 
+-- Profile Follows (Persistent relationship graph)
+create table if not exists public.profile_follows (
+  follower_id uuid not null references public.profiles(id) on delete cascade,
+  following_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (follower_id, following_id),
+  check (follower_id <> following_id)
+);
+create index if not exists profile_follows_following_idx on public.profile_follows(following_id);
+
 -- ── 2. ROW-LEVEL SECURITY (RLS) ──────────────────────────────────────────────
 
 alter table public.profiles enable row level security;
+alter table public.profile_follows enable row level security;
 alter table public.events enable row level security;
 alter table public.tickets enable row level security;
 alter table public.orders enable row level security;
@@ -188,12 +199,25 @@ create policy profiles_insert on public.profiles for insert with check (auth.uid
 drop policy if exists profiles_update on public.profiles;
 create policy profiles_update on public.profiles for update using (auth.uid() = id);
 
+-- Profile follows: public read, authenticated user manages own follows
+drop policy if exists follows_read on public.profile_follows;
+create policy follows_read on public.profile_follows for select using (true);
+
+drop policy if exists follows_insert on public.profile_follows;
+create policy follows_insert on public.profile_follows for insert to authenticated with check (auth.uid() = follower_id);
+
+drop policy if exists follows_delete on public.profile_follows;
+create policy follows_delete on public.profile_follows for delete to authenticated using (auth.uid() = follower_id);
+
+grant select on public.profile_follows to anon, authenticated;
+grant insert, delete on public.profile_follows to authenticated;
+
 -- Events: public read, organizers manage their own
 drop policy if exists events_select on public.events;
 create policy events_select on public.events for select using (true);
 
 drop policy if exists events_write on public.events;
-create policy events_write on public.events for all using (auth.uid() = organizer_id);
+create policy events_write on public.events for all using (auth.uid() = organizer_id) with check (auth.uid() = organizer_id);
 
 -- Tickets: owner reads, event organizer reads and updates (check-in)
 drop policy if exists tickets_select on public.tickets;
@@ -779,6 +803,94 @@ $$;
 
 grant execute on function public.broadcast_to_event_holders(uuid, text) to authenticated;
 
+-- Atomic 1-to-1 ticket transfer RPC
+create or replace function public.transfer_ticket(p_ticket_id uuid, p_recipient_handle text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_sender_id uuid := auth.uid();
+  v_sender public.profiles%rowtype;
+  v_recipient public.profiles%rowtype;
+  v_ticket public.tickets%rowtype;
+  v_cleaned text;
+  v_code text;
+begin
+  if v_sender_id is null then
+    raise exception 'Please sign in to transfer a ticket';
+  end if;
+
+  v_cleaned := lower(btrim(regexp_replace(coalesce(p_recipient_handle, ''), '^@+', '')));
+  if v_cleaned = '' then
+    raise exception 'Enter a valid recipient @handle';
+  end if;
+
+  select * into v_sender from public.profiles where id = v_sender_id;
+
+  select * into v_recipient
+  from public.profiles
+  where lower(handle) = v_cleaned or lower(name) = v_cleaned
+  limit 1;
+
+  if not found then
+    raise exception 'No member found with handle @%', v_cleaned;
+  end if;
+
+  if v_recipient.id = v_sender_id then
+    raise exception 'You cannot transfer a ticket to yourself';
+  end if;
+
+  select * into v_ticket
+  from public.tickets
+  where id = p_ticket_id and owner_id = v_sender_id
+  for update;
+
+  if not found then
+    raise exception 'Ticket not found';
+  end if;
+
+  if v_ticket.status <> 'valid' then
+    raise exception 'Only active tickets can be transferred';
+  end if;
+
+  v_code := 'EV-' || upper(substr(md5(random()::text), 1, 4)) || '-'
+                  || upper(substr(md5(random()::text), 1, 4)) || '-'
+                  || upper(substr(md5(random()::text), 1, 4));
+
+  update public.tickets
+  set owner_id = v_recipient.id,
+      holder_name = v_recipient.name,
+      code = v_code,
+      status = 'valid'
+  where id = p_ticket_id and owner_id = v_sender_id and status = 'valid'
+  returning * into v_ticket;
+
+  insert into public.notifications (user_id, kind, title, body, href)
+  values
+    (
+      v_recipient.id,
+      'ticket',
+      'Pass Transferred · ' || v_ticket.event_title,
+      'A ' || v_ticket.tier_name || ' pass for ' || v_ticket.event_title || ' has been transferred to your wallet'
+        || case when v_sender.handle is not null then ' by @' || v_sender.handle else '' end || '.',
+      '/tickets/' || v_ticket.id
+    ),
+    (
+      v_sender_id,
+      'ticket',
+      'Pass Transferred · ' || v_ticket.event_title,
+      'Your ' || v_ticket.tier_name || ' pass for ' || v_ticket.event_title || ' was transferred to @' || v_recipient.handle || '.',
+      '/tickets'
+    );
+
+  return to_jsonb(v_ticket);
+end;
+$$;
+
+grant execute on function public.transfer_ticket(uuid, text) to authenticated;
+
 -- ── 4. REALTIME CONFIGURATION ────────────────────────────────────────────────
 
 alter publication supabase_realtime add table public.messages;
@@ -786,6 +898,9 @@ alter publication supabase_realtime add table public.notifications;
 alter publication supabase_realtime add table public.checkins;
 
 -- ── 5. SEED DATA (OPTIONAL STARTER DATA) ─────────────────────────────────────
+
+drop trigger if exists protect_follow_counts on public.profiles;
+drop trigger if exists require_event_poster on public.events;
 
 insert into auth.users (
   id,
@@ -808,16 +923,14 @@ on conflict (id) do nothing;
 
 insert into public.profiles (id, handle, name, avatar_color, verified, followers, following, bio, city)
 values
-  ('11111111-1111-4111-8111-111111111111', 'seguna', 'Segun Alakija', '#494bd6', true, 5310, 190, 'Building the Pulse summit series.', 'Lagos'),
-  ('22222222-2222-4222-8222-222222222222', 'femiade', 'Femi Adeyemi', '#10b981', true, 22100, 87, 'Promoter & selector.', 'Lagos'),
-  ('33333333-3333-4333-8333-333333333333', 'drbello', 'Dr. Amina Bello', '#009eb9', true, 12400, 310, 'Public-health technologist.', 'Abuja')
+  ('11111111-1111-4111-8111-111111111111', 'seguna', 'Segun Alakija', '#494bd6', true, 0, 0, 'Building the Pulse summit series.', 'Lagos'),
+  ('22222222-2222-4222-8222-222222222222', 'femiade', 'Femi Adeyemi', '#10b981', true, 0, 0, 'Promoter & selector.', 'Lagos'),
+  ('33333333-3333-4333-8333-333333333333', 'drbello', 'Dr. Amina Bello', '#009eb9', true, 0, 0, 'Public-health technologist.', 'Abuja')
 on conflict (id) do update set
   handle = excluded.handle,
   name = excluded.name,
   avatar_color = excluded.avatar_color,
   verified = excluded.verified,
-  followers = excluded.followers,
-  following = excluded.following,
   bio = excluded.bio,
   city = excluded.city;
 
@@ -842,3 +955,53 @@ values
     false, 4, 1870, 1330
   )
 on conflict (slug) do nothing;
+
+-- ── 6. FOLLOW COUNTS & EVENT POSTER GUARDS (011 & 012) ──────────────────────
+
+create or replace function public.sync_follow_counts() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  delta integer := case when tg_op = 'INSERT' then 1 else -1 end;
+  follower uuid := case when tg_op = 'INSERT' then new.follower_id else old.follower_id end;
+  followed uuid := case when tg_op = 'INSERT' then new.following_id else old.following_id end;
+begin
+  perform id from public.profiles where id in (follower, followed) order by id for update;
+  update public.profiles set following = greatest(0, following + delta) where id = follower;
+  update public.profiles set followers = greatest(0, followers + delta) where id = followed;
+  return null;
+end $$;
+
+drop trigger if exists sync_follow_counts on public.profile_follows;
+create trigger sync_follow_counts after insert or delete on public.profile_follows
+for each row execute function public.sync_follow_counts();
+
+update public.profiles p set
+  followers = (select count(*) from public.profile_follows where following_id = p.id),
+  following = (select count(*) from public.profile_follows where follower_id = p.id);
+
+create or replace function public.protect_follow_counts() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if pg_trigger_depth() = 1 and (new.followers <> old.followers or new.following <> old.following) then
+    raise exception 'Follow counts are managed by relationships';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists protect_follow_counts on public.profiles;
+create trigger protect_follow_counts before update on public.profiles
+for each row execute function public.protect_follow_counts();
+
+create or replace function public.require_event_poster() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if coalesce(new.cover->>'src', '') !~ '^data:image/jpeg;base64,[A-Za-z0-9+/]+={0,2}$'
+     or length(coalesce(new.cover->>'src', '')) < 100 then
+    raise exception 'Upload a valid event flyer or poster before publishing';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists require_event_poster on public.events;
+create trigger require_event_poster before insert on public.events
+for each row execute function public.require_event_poster();

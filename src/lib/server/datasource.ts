@@ -36,6 +36,7 @@ type DemoPrivateConversation = {
 
 const demoPrivateConversations: DemoPrivateConversation[] = [];
 const demoPrivateNotifications = new Map<string, NotificationItem[]>();
+const demoUserTickets = new Map<string, Ticket[]>();
 
 const CANNED: Record<string, string[]> = {
 	'u-amina': [
@@ -154,8 +155,12 @@ export const demoSource: DataSource = {
 	async getEvent(slug) {
 		return demo.events.find((e) => e.slug === slug);
 	},
-	async getTickets() {
-		return [...demo.tickets];
+	async getTickets(userId = 'demo') {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		if (uid === demoMeId) {
+			return [...demo.tickets, ...(demoUserTickets.get(uid) ?? [])];
+		}
+		return [...(demoUserTickets.get(uid) ?? [])];
 	},
 	async getConversations(userId = 'demo') {
 		const uid = userId === 'demo' ? demoMeId : userId;
@@ -184,11 +189,28 @@ export const demoSource: DataSource = {
 		return profile ? { ...profile, following: (demoFollows.get(profile.id) ?? new Set()).size, followers: [...demoFollows.values()].filter((ids) => ids.has(profile.id)).length } : undefined;
 	},
 	async searchProfiles(handlePrefix) {
-		const prefix = handlePrefix.replace(/^@/, '').toLowerCase();
-		if (!prefix) return [];
-		return Object.values(demo.people)
-			.filter((profile) => `${profile.handle} ${profile.name} ${profile.city}`.toLowerCase().includes(prefix))
-			.slice(0, 8);
+		const raw = handlePrefix.trim();
+		const prefix = raw.replace(/^@+/, '').trim().toLowerCase();
+		if (!prefix && raw !== '@') return [];
+		const list = Object.values(demo.people).filter((profile) =>
+			!prefix
+				? true
+				: `${profile.handle} ${profile.name} ${profile.city ?? ''}`.toLowerCase().includes(prefix)
+		);
+		if (prefix) {
+			list.sort((a, b) => {
+				const aStarts =
+					a.handle.toLowerCase().startsWith(prefix) || a.name.toLowerCase().startsWith(prefix)
+						? 0
+						: 1;
+				const bStarts =
+					b.handle.toLowerCase().startsWith(prefix) || b.name.toLowerCase().startsWith(prefix)
+						? 0
+						: 1;
+				return aStarts - bStarts || a.handle.localeCompare(b.handle);
+			});
+		}
+		return list.slice(0, 8);
 	},
 	async getFollowingIds(userId) {
 		return [...(demoFollows.get(userId) ?? [])];
@@ -578,16 +600,74 @@ export const demoSource: DataSource = {
 		});
 		return 1;
 	},
-	async transferTicket(_userId, ticketId, recipientHandle) {
-		const cleaned = recipientHandle.trim().replace(/^@/, '').toLowerCase();
+	async transferTicket(userId, ticketId, recipientHandle) {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		const raw = recipientHandle.trim();
+		if (/[,;]/.test(raw) || (raw.match(/@/g)?.length ?? 0) > 1) {
+			throw new Error('Ticket transfer is 1-to-1. Select a single recipient.');
+		}
+		const cleaned = raw.replace(/^@+/, '').trim().toLowerCase();
 		if (!cleaned) throw new Error('Enter a valid recipient @handle');
-		const ticket = demo.tickets.find((t) => t.id === ticketId);
+		const sender = Object.values(demo.people).find((p) => p.id === uid);
+		const recipient = Object.values(demo.people).find(
+			(p) => p.handle.toLowerCase() === cleaned || p.name.toLowerCase() === cleaned
+		);
+		if (!recipient) throw new Error(`No member found with handle @${cleaned}`);
+		if (
+			recipient.id === uid ||
+			(sender && recipient.handle.toLowerCase() === sender.handle.toLowerCase())
+		) {
+			throw new Error('You cannot transfer a ticket to yourself');
+		}
+		const pool = uid === demoMeId ? demo.tickets : (demoUserTickets.get(uid) ?? []);
+		const ticket = pool.find((t) => t.id === ticketId) ?? demo.tickets.find((t) => t.id === ticketId);
 		if (!ticket) throw new Error('Ticket not found');
 		if (ticket.status !== 'valid') throw new Error('Only active tickets can be transferred');
-		const recipient = Object.values(demo.people).find((p) => p.handle.toLowerCase() === cleaned);
-		ticket.holder = recipient?.name ?? `@${cleaned}`;
-		ticket.code = newTicketCode();
+		const rotatedCode = newTicketCode();
+		ticket.holder = recipient.name;
+		ticket.code = rotatedCode;
 		ticket.status = 'transferred';
+
+		const recipientTickets = demoUserTickets.get(recipient.id) ?? [];
+		const existingIdx = recipientTickets.findIndex((t) => t.id === ticket.id);
+		const activeCopy: Ticket = {
+			...ticket,
+			holder: recipient.name,
+			code: rotatedCode,
+			status: 'valid'
+		};
+		if (existingIdx >= 0) {
+			recipientTickets[existingIdx] = activeCopy;
+		} else {
+			recipientTickets.unshift(activeCopy);
+		}
+		demoUserTickets.set(recipient.id, recipientTickets);
+
+		const nowIso = new Date().toISOString();
+		const recipientNotifications = demoPrivateNotifications.get(recipient.id) ?? [];
+		recipientNotifications.unshift({
+			id: `n-${Math.random().toString(36).slice(2, 10)}`,
+			kind: 'ticket',
+			title: `Pass Transferred · ${ticket.eventTitle}`,
+			body: `A ${ticket.tierName} pass for ${ticket.eventTitle} has been transferred to your wallet${sender ? ` by @${sender.handle}` : ''}.`,
+			href: `/tickets/${ticket.id}`,
+			at: nowIso,
+			read: false
+		});
+		demoPrivateNotifications.set(recipient.id, recipientNotifications);
+
+		const senderNotifications = demoPrivateNotifications.get(uid) ?? [];
+		senderNotifications.unshift({
+			id: `n-${Math.random().toString(36).slice(2, 10)}`,
+			kind: 'ticket',
+			title: `Pass Transferred · ${ticket.eventTitle}`,
+			body: `Your ${ticket.tierName} pass for ${ticket.eventTitle} was transferred to @${recipient.handle}.`,
+			href: `/tickets/${ticket.id}`,
+			at: nowIso,
+			read: false
+		});
+		demoPrivateNotifications.set(uid, senderNotifications);
+
 		return ticket;
 	},
 	async refundTicket(userId, ticketId, request) {
@@ -826,8 +906,14 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			return data ? toProfile(data) : undefined;
 		},
 		async searchProfiles(handlePrefix) {
-			const prefix = handlePrefix.replace(/^@/, '').toLowerCase();
-			if (!prefix) return [];
+			const raw = handlePrefix.trim();
+			const prefix = raw.replace(/^@+/, '').trim().toLowerCase();
+			if (!prefix && raw !== '@') return [];
+			if (!prefix && raw === '@') {
+				const { data, error } = await db.from('profiles').select('*').order('handle').limit(30);
+				if (error) throw error;
+				return (data ?? []).map(toProfile);
+			}
 			const safe = prefix.replace(/[^\p{L}\p{N}_ -]/gu, '').slice(0, 80);
 			if (!safe) return [];
 			const { data, error } = await db.from('profiles').select('*').or(`handle.ilike.%${safe}%,name.ilike.%${safe}%,city.ilike.%${safe}%`).order('handle').limit(30);
@@ -1148,36 +1234,104 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 		},
 		async transferTicket(userId, ticketId, recipientHandle) {
 			if (!isUuid(userId) || !isUuid(ticketId)) throw new Error('Invalid ticket or user ID');
-			const cleaned = recipientHandle.trim().replace(/^@/, '').toLowerCase();
+			const raw = recipientHandle.trim();
+			if (/[,;]/.test(raw) || (raw.match(/@/g)?.length ?? 0) > 1) {
+				throw new Error('Ticket transfer is 1-to-1. Select a single recipient.');
+			}
+			const cleaned = raw.replace(/^@+/, '').trim().toLowerCase();
 			if (!cleaned) throw new Error('Enter a valid recipient @handle');
-			const { data: recipient } = await db
+
+			if (typeof db.rpc === 'function') {
+				const rpcResult = await db.rpc('transfer_ticket', {
+					p_ticket_id: ticketId,
+					p_recipient_handle: cleaned
+				});
+				if (!rpcResult.error && rpcResult.data) {
+					return toTicket({ ...rpcResult.data, status: 'transferred' });
+				}
+				// If the RPC raised a domain validation error (not "function does not exist"), surface it
+				if (
+					rpcResult.error &&
+					!/function .*transfer_ticket.* does not exist|Could not find the function/i.test(
+						rpcResult.error.message ?? ''
+					)
+				) {
+					throw new Error(rpcResult.error.message);
+				}
+			}
+
+			let { data: recipient, error: recipientError } = await db
 				.from('profiles')
 				.select('*')
 				.ilike('handle', cleaned)
 				.maybeSingle();
+			if (recipientError) throw recipientError;
+			if (!recipient) {
+				const byName = await db
+					.from('profiles')
+					.select('*')
+					.ilike('name', cleaned)
+					.maybeSingle();
+				if (byName.error) throw byName.error;
+				recipient = byName.data;
+			}
 			if (!recipient) throw new Error(`No member found with handle @${cleaned}`);
-			if (recipient.id === userId) throw new Error('You already own this ticket');
+			if (recipient.id === userId) throw new Error('You cannot transfer a ticket to yourself');
+
+			const { data: existing, error: fetchError } = await db
+				.from('tickets')
+				.select('*')
+				.eq('id', ticketId)
+				.eq('owner_id', userId)
+				.maybeSingle();
+			if (fetchError) throw fetchError;
+			if (!existing) throw new Error('Ticket not found');
+			if (existing.status !== 'valid') throw new Error('Only active tickets can be transferred');
+
 			const rotatedCode = newTicketCode();
-			const { data, error } = await db
+			const { error: updateError } = await db
 				.from('tickets')
 				.update({
 					owner_id: recipient.id,
 					holder_name: recipient.name,
-					code: rotatedCode
+					code: rotatedCode,
+					status: 'valid'
 				})
 				.eq('id', ticketId)
 				.eq('owner_id', userId)
-				.select('*')
-				.single();
-			if (error) throw error;
-			await db.from('notifications').insert({
-				user_id: recipient.id,
-				kind: 'ticket',
-				title: `Pass Transferred · ${data.event_title}`,
-				body: `A ${data.tier_name} pass for ${data.event_title} has been transferred to your wallet.`,
-				action_url: `/tickets/${data.id}`
+				.eq('status', 'valid');
+			if (updateError) throw updateError;
+
+			const notificationRows = [
+				{
+					user_id: recipient.id,
+					kind: 'ticket',
+					title: `Pass Transferred · ${existing.event_title}`,
+					body: `A ${existing.tier_name} pass for ${existing.event_title} has been transferred to your wallet.`,
+					href: `/tickets/${existing.id}`
+				},
+				{
+					user_id: userId,
+					kind: 'ticket',
+					title: `Pass Transferred · ${existing.event_title}`,
+					body: `Your ${existing.tier_name} pass for ${existing.event_title} was transferred to @${recipient.handle}.`,
+					href: '/tickets'
+				}
+			];
+			const { error: notifError } = await db.from('notifications').insert(notificationRows);
+			if (notifError) {
+				await db.from('notifications').insert(
+					notificationRows.map(({ href: _href, ...rest }) => rest)
+				);
+			}
+
+			return toTicket({
+				...existing,
+				owner_id: recipient.id,
+				holder_name: recipient.name,
+				code: rotatedCode,
+				status: 'transferred'
 			});
-			return toTicket(data);
 		},
 		async refundTicket(userId, ticketId, request) {
 			if (!isUuid(userId) || !isUuid(ticketId)) throw new Error('Invalid ticket or user ID');
@@ -1194,7 +1348,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				kind: 'ticket',
 				title: `Refund Requested · ${data.event_title}`,
 				body: `Your ${data.tier_name} pass refund was submitted. Reason: ${request?.reason ?? 'Not specified'}.${request?.details ? ` Details: ${request.details}` : ''}`,
-				action_url: `/tickets/${data.id}`
+				href: `/tickets/${data.id}`
 			});
 			return toTicket(data);
 		}

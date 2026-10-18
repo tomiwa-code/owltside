@@ -5,6 +5,7 @@ import type { Cookies } from '@sveltejs/kit';
 vi.mock('$env/dynamic/public', () => ({ env: { PUBLIC_SUPABASE_URL: 'https://test-project.supabase.co', PUBLIC_SUPABASE_ANON_KEY: 'test-public-key' } }));
 vi.mock('$env/dynamic/private', () => ({ env: {} }));
 import { startGoogleSignIn, safeAuthNext, isAuthReturn, readOAuthContext } from '$lib/server/oauth';
+import { supabaseFetch } from '$lib/server/supabase';
 import { GET } from '../../src/routes/auth/callback/+server';
 import { handle } from '../../src/hooks.server';
 import { load as splash } from '../../src/routes/+page.server';
@@ -117,5 +118,19 @@ describe('Google server-side PKCE flow using the actual Supabase SSR client', ()
 		expect(safeAuthNext('/tickets?tab=upcoming')).toBe('/tickets?tab=upcoming');
 		expect(isAuthReturn(new URL('https://owltside.example/?code=fake-code'))).toBe(true);
 		expect(isAuthReturn(new URL('https://owltside.example/home'))).toBe(false);
+	});
+	it('retries transient ERR_HTTP2_INVALID_SESSION fetch failures and succeeds', async () => {
+		let attempts = 0;
+		vi.stubGlobal('fetch', vi.fn(async () => {
+			attempts++;
+			if (attempts === 1) {
+				const cause = Object.assign(new Error('The session has been destroyed'), { code: 'ERR_HTTP2_INVALID_SESSION' });
+				throw new TypeError('fetch failed', { cause });
+			}
+			return Response.json([{ id: 'e-1', title: 'Pulse Summit' }]);
+		}));
+		const res = await supabaseFetch('https://test-project.supabase.co/rest/v1/events');
+		expect(res.ok).toBe(true);
+		expect(attempts).toBe(2);
 	});
 });

@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
+	import { invalidateAll } from '$app/navigation';
 	import {
 		Bell,
 		CalendarPlus,
+		Check,
 		CloudCheck,
 		Copy,
 		CreditCard,
@@ -15,18 +17,21 @@
 		ShieldCheck,
 		Undo2,
 		User,
-		Wallet
+		Wallet,
+		X
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
-import Cover from '$components/Cover.svelte';
+	import Cover from '$components/Cover.svelte';
 	import QrPass from '$components/QrPass.svelte';
 	import Sheet from '$components/Sheet.svelte';
 	import TopBar from '$components/TopBar.svelte';
+	import { queryClient } from '$lib/state/query.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { downloadIcs } from '$lib/utils/ics';
 	import { fmtDateFull, fmtTime } from '$lib/utils/dates';
 	import { addFee, formatMoney } from '$lib/utils/money';
 	import { page } from '$app/state';
+	import type { Profile } from '$lib/types';
 
 	let { data } = $props();
 	const ticket = $derived(data.ticket);
@@ -39,9 +44,13 @@ import Cover from '$components/Cover.svelte';
 	const refundAmount = $derived(Math.max(0, ticket.price - refundFee));
 	const refundEligible = $derived(ticket.status === 'valid' && Date.now() < refundDeadline.getTime());
 
-	let transferOpen = $state(false);
+	let transferOpen = $state(page.url.searchParams.get('transfer') === '1');
 	let refundOpen = $state(page.url.searchParams.get('refund') === '1');
 	let transferHandle = $state('');
+	let transferMatches = $state<Profile[]>([]);
+	let selectedRecipient = $state<Profile | null>(null);
+	let searchingRecipients = $state(false);
+	let transferSearchSequence = 0;
 	let refundReason = $state('');
 	let refundDetails = $state('');
 	let refundConfirmed = $state(false);
@@ -50,9 +59,86 @@ import Cover from '$components/Cover.svelte';
 	let transferring = $state(false);
 	let transferError = $state('');
 
+	const activeUserId = $derived(
+		page.data.session?.userId ?? (page.data.demoMode !== false ? 'u-ada' : '')
+	);
+	const activeHandle = $derived(
+		(page.data.session?.handle ?? (page.data.demoMode !== false ? 'adaobi' : ''))
+			.trim()
+			.replace(/^@+/, '')
+			.toLowerCase()
+	);
+
+	function openTransferSheet() {
+		transferError = '';
+		transferOpen = true;
+	}
+
+	function closeTransferSheet() {
+		transferOpen = false;
+		transferError = '';
+	}
+
+	async function searchTransferProfiles() {
+		const raw = transferHandle.trim();
+		const query = raw.replace(/^@+/, '').trim().toLowerCase();
+		const sequence = ++transferSearchSequence;
+		if (!query && raw !== '@') {
+			transferMatches = [];
+			searchingRecipients = false;
+			return;
+		}
+		searchingRecipients = true;
+		try {
+			const response = await fetch(`/api/profiles/search?q=${encodeURIComponent(query || '@')}`);
+			if (!response.ok) throw new Error('Could not search users right now.');
+			const profiles = (await response.json()) as Profile[];
+			if (sequence === transferSearchSequence) {
+				transferMatches = (Array.isArray(profiles) ? profiles : []).filter(
+					(profile) =>
+						profile.id !== activeUserId &&
+						(!activeHandle || profile.handle.toLowerCase() !== activeHandle)
+				);
+			}
+		} catch (err) {
+			if (sequence === transferSearchSequence) {
+				transferMatches = [];
+				transferError = err instanceof Error ? err.message : 'Could not search users right now.';
+			}
+		} finally {
+			if (sequence === transferSearchSequence) {
+				searchingRecipients = false;
+			}
+		}
+	}
+
+	function handleTransferInput() {
+		transferError = '';
+		const cleaned = transferHandle.trim().replace(/^@+/, '').trim().toLowerCase();
+		if (selectedRecipient && selectedRecipient.handle.toLowerCase() !== cleaned) {
+			selectedRecipient = null;
+		}
+		void searchTransferProfiles();
+	}
+
+	function selectRecipient(profile: Profile) {
+		selectedRecipient = profile;
+		transferHandle = `@${profile.handle}`;
+		transferMatches = [];
+		transferError = '';
+	}
+
+	function clearRecipient() {
+		selectedRecipient = null;
+		transferHandle = '';
+		transferMatches = [];
+		transferError = '';
+	}
+
 	function handleTransferEnhance() {
 		transferring = true;
 		transferError = '';
+		const targetHandle = (selectedRecipient?.handle ?? transferHandle).trim().replace(/^@+/, '');
 		return async ({
 			result,
 			update
@@ -64,7 +150,17 @@ import Cover from '$components/Cover.svelte';
 				await update();
 				if (result.type === 'success' || result.type === 'redirect') {
 					transferOpen = false;
-					toast(`Pass transferred to @${transferHandle.trim().replace(/^@/, '')}`, 'success');
+					selectedRecipient = null;
+					transferHandle = '';
+					transferMatches = [];
+					queryClient.invalidate('tickets');
+					queryClient.invalidate('notifications');
+					await invalidateAll();
+					const finalHandle =
+						typeof result.data?.transferredTo === 'string' && result.data.transferredTo
+							? result.data.transferredTo
+							: targetHandle;
+					toast(`Pass transferred to @${finalHandle}`, 'success');
 				} else if (result.type === 'failure') {
 					transferError = typeof result.data?.error === 'string' ? result.data.error : 'Could not transfer ticket.';
 				}
@@ -88,6 +184,9 @@ import Cover from '$components/Cover.svelte';
 				await update();
 				if (result.type === 'success' || result.type === 'redirect') {
 					refundOpen = false;
+					queryClient.invalidate('tickets');
+					queryClient.invalidate('notifications');
+					await invalidateAll();
 					toast('Refund request submitted — allow 3–5 working days', 'success');
 				} else if (result.type === 'failure') {
 					refundError = typeof result.data?.error === 'string' ? result.data.error : 'Could not submit your refund request.';
@@ -192,7 +291,7 @@ import Cover from '$components/Cover.svelte';
 				</div>
 				<div class="grid grid-cols-3 gap-2">
 					<button class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => downloadIcs({ title: ticket.eventTitle, venue: ticket.venue, startsAt: ticket.eventStartsAt })}><CalendarPlus class="w-4 h-4" /> Calendar</button>
-					<button class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => (transferOpen = true)}><Send class="w-4 h-4" /> Transfer</button>
+					<button disabled={ticket.status !== 'valid'} class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:opacity-40" onclick={openTransferSheet}><Send class="w-4 h-4" /> Transfer</button>
 					<button class="h-11 rounded-full bg-surface-container-high hover:bg-error-container text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => (refundOpen = true)}><Undo2 class="w-4 h-4" /> Refund</button>
 				</div>
 				<div class="grid grid-cols-2 gap-2">
@@ -325,7 +424,7 @@ import Cover from '$components/Cover.svelte';
 			<button class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => downloadIcs({ title: ticket.eventTitle, venue: ticket.venue, startsAt: ticket.eventStartsAt })}>
 				<CalendarPlus class="w-4 h-4" /> Calendar
 			</button>
-			<button class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => (transferOpen = true)}>
+			<button disabled={ticket.status !== 'valid'} class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:opacity-40" onclick={openTransferSheet}>
 				<Send class="w-4 h-4" /> Transfer
 			</button>
 			<button class="h-11 rounded-full bg-surface-container-high hover:bg-error-container text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => (refundOpen = true)}>
@@ -379,13 +478,13 @@ import Cover from '$components/Cover.svelte';
 </main>
 </div>
 
-<Sheet open={transferOpen} title="Transfer pass" close={() => (transferOpen = false)}>
+<Sheet open={transferOpen} title="Transfer pass" close={closeTransferSheet}>
 	{#snippet footer()}
 		<button
 			type="submit"
 			form="ticket-transfer-form"
 			class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center gap-2 disabled:opacity-40"
-			disabled={!transferHandle.trim() || transferring}
+			disabled={!transferHandle.trim().replace(/^@+/, '').trim() || transferring || ticket.status !== 'valid'}
 		>
 			{#if transferring}
 				<span>Transferring…</span>
@@ -398,13 +497,83 @@ import Cover from '$components/Cover.svelte';
 		{#if transferError}
 			<p class="rounded-lg bg-error/10 border border-error/30 px-3 py-2 text-body-sm text-error" role="alert">{transferError}</p>
 		{/if}
+		<div class="rounded-xl border border-surface-glass-border bg-surface-container-high p-3.5 flex items-center justify-between gap-3">
+			<div class="min-w-0">
+				<span class="block font-code text-label-badge tracking-wider text-on-surface-variant">1-TO-1 PASS TRANSFER</span>
+				<p class="font-display text-body-md font-semibold text-on-surface truncate mt-0.5">{ticket.eventTitle}</p>
+				<p class="text-body-sm text-on-surface-variant">1× {ticket.tierName} · {ticket.code}</p>
+			</div>
+			<span class="px-2.5 py-1 rounded-full bg-primary/15 text-primary text-label-badge font-semibold shrink-0">1-to-1</span>
+		</div>
 		<p class="text-body-sm text-on-surface-variant">
-			Transfer re-mints the QR under the new holder. Your copy becomes invalid immediately.
+			Transfer re-mints the QR under the new holder (1 ticket to 1 recipient). Your copy becomes invalid immediately.
 		</p>
+		{#if selectedRecipient}
+			<input type="hidden" name="recipientHandle" value={selectedRecipient.handle} />
+		{/if}
 		<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
 			Recipient @handle
-			<input name="handle" bind:value={transferHandle} placeholder="@tundeb" class="h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />
+			<input
+				name="handle"
+				type="text"
+				autocomplete="off"
+				bind:value={transferHandle}
+				oninput={handleTransferInput}
+				placeholder="@tundeb"
+				class="h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline"
+			/>
 		</label>
+
+		{#if selectedRecipient}
+			<div class="rounded-xl border border-primary/40 bg-primary/10 px-3.5 py-2.5 flex items-center justify-between gap-3" data-testid="selected-transfer-recipient">
+				<div class="flex items-center gap-3 min-w-0">
+					<Avatar name={selectedRecipient.name} color={selectedRecipient.avatarColor} src={selectedRecipient.avatarUrl} size="sm" />
+					<div class="min-w-0">
+						<span class="block text-body-sm font-semibold text-on-surface truncate">{selectedRecipient.name}</span>
+						<span class="block text-label-badge text-on-surface-variant truncate">@{selectedRecipient.handle}{selectedRecipient.city ? ` · ${selectedRecipient.city}` : ''}</span>
+					</div>
+				</div>
+				<div class="flex items-center gap-2 shrink-0">
+					<span class="text-label-badge text-accent-emerald flex items-center gap-1"><Check class="w-3.5 h-3.5" /> Selected</span>
+					<button
+						type="button"
+						aria-label="Clear selected recipient"
+						onclick={clearRecipient}
+						class="w-7 h-7 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high"
+					>
+						<X class="w-4 h-4" />
+					</button>
+				</div>
+			</div>
+		{:else if transferHandle.trim().length > 0}
+			<div
+				role="listbox"
+				aria-label="Matching users"
+				class="rounded-xl border border-surface-glass-border bg-surface-container-low p-2 max-h-52 overflow-y-auto flex flex-col gap-1"
+			>
+				{#if searchingRecipients}
+					<p class="px-3 py-3 text-body-sm text-on-surface-variant">Searching users…</p>
+				{:else if transferMatches.length > 0}
+					{#each transferMatches as profile (profile.id)}
+						<button
+							type="button"
+							role="option"
+							aria-selected={false}
+							onclick={() => selectRecipient(profile)}
+							class="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-surface-container-high transition-colors"
+						>
+							<Avatar name={profile.name} color={profile.avatarColor} src={profile.avatarUrl} size="sm" />
+							<span class="min-w-0 flex-1">
+								<span class="block text-body-sm font-semibold text-on-surface truncate">{profile.name}</span>
+								<span class="block text-label-badge text-on-surface-variant truncate">@{profile.handle}{profile.city ? ` · ${profile.city}` : ''}</span>
+							</span>
+						</button>
+					{/each}
+				{:else}
+					<p class="px-3 py-3 text-body-sm text-on-surface-variant">No matching users found.</p>
+				{/if}
+			</div>
+		{/if}
 	</form>
 </Sheet>
 

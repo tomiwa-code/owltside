@@ -1,4 +1,5 @@
 import ProfilePage from '../../src/routes/(app)/profile/+page.svelte';
+import CreateEventPage from '../../src/routes/(app)/organizer/create/+page.svelte';
 import SettingsDetails from '$components/SettingsDetails.svelte';
 import ImageCropSheet from '$components/ImageCropSheet.svelte';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
@@ -376,3 +377,80 @@ describe('identity document upload flow', () => {
 		expect(screen.getByText(/nin-front\.pdf/)).toBeTruthy();
 	});
 });
+
+describe('event creation poster crop and draft payload flow', () => {
+	afterEach(() => {
+		cleanup();
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	it('requires a cropped poster on step 1 and includes poster in the submitted draft JSON', async () => {
+		stubImagePipeline();
+		vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+		render(CreateEventPage, { props: { form: null } });
+
+		// No duplicate <header> inside the wizard page
+		expect(document.querySelectorAll('header')).toHaveLength(0);
+
+		const continueBtn = screen.getByRole('button', { name: /Continue/ }) as HTMLButtonElement;
+		expect(continueBtn.disabled).toBe(true);
+
+		await fireEvent.input(screen.getByPlaceholderText('e.g. Pulse AI Summit 2026'), {
+			target: { value: 'Community Night Regression' }
+		});
+		const categorySelect = document.querySelector('#event-category-mobile') as HTMLSelectElement;
+		await fireEvent.change(categorySelect, { target: { value: 'music' } });
+		const dateInputs = document.querySelectorAll('.md\\:hidden input[type="date"]');
+		await fireEvent.input(dateInputs[0], { target: { value: '2099-12-20' } });
+		await fireEvent.input(dateInputs[1], { target: { value: '2099-12-21' } });
+		await fireEvent.input(screen.getAllByPlaceholderText('The Civic Centre').at(-1)!, {
+			target: { value: 'Actual community hall' }
+		});
+		await fireEvent.input(screen.getAllByPlaceholderText('What will attendees experience?').at(-1)!, {
+			target: { value: 'A community gathering with live music and food.' }
+		});
+
+		// Still disabled until poster is uploaded and cropped
+		expect(continueBtn.disabled).toBe(true);
+
+		const posterInput = screen.getAllByLabelText('Upload event poster').at(-1) as HTMLInputElement;
+		const posterFile = new File([new Uint8Array([1, 2, 3])], 'poster.png', { type: 'image/png' });
+		Object.defineProperty(posterInput, 'files', { value: [posterFile], configurable: true });
+		await fireEvent.change(posterInput);
+
+		await screen.findByRole('dialog', { name: 'Resize & crop poster' });
+		const usePoster = (await screen.findByRole('button', { name: 'Use poster' })) as HTMLButtonElement;
+		await waitFor(() => expect(usePoster.disabled).toBe(false));
+		await fireEvent.click(usePoster);
+
+		await waitFor(() => expect(continueBtn.disabled).toBe(false));
+
+		// Step 1 -> Step 2 (Tickets)
+		await fireEvent.click(continueBtn);
+		await fireEvent.click(screen.getByRole('button', { name: 'Add ticket tier' }));
+		await fireEvent.input(screen.getAllByLabelText('Tier name').at(-1)!, {
+			target: { value: 'Community admission' }
+		});
+		await fireEvent.input(screen.getAllByLabelText('Capacity').at(-1)!, {
+			target: { value: '100' }
+		});
+		await fireEvent.click(screen.getAllByRole('button', { name: 'Done' }).at(-1)!);
+
+		// Step 2 -> Step 3 -> Step 4 -> Step 5
+		await fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+		await fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+		await fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+
+		const draftInputs = document.querySelectorAll('input[name="draft"]') as NodeListOf<HTMLInputElement>;
+		expect(draftInputs.length).toBeGreaterThan(0);
+		const parsedDraft = JSON.parse(draftInputs[0].value);
+		expect(parsedDraft.poster).toBe(DATA_URL);
+		expect(parsedDraft.title).toBe('Community Night Regression');
+		expect(parsedDraft.city).toBe('Lagos');
+		expect(parsedDraft.tiers).toEqual([
+			expect.objectContaining({ name: 'Community admission', capacity: 100 })
+		]);
+	});
+});
+

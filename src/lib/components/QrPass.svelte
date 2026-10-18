@@ -12,15 +12,19 @@
 
 	let dataUrl = $state('');
 	let seconds = $state(30);
-	let lastWindow = $state(0);
+	let lastWindow = 0;
 
 	async function render() {
-		const payload = await signToken(code);
-		dataUrl = await QRCode.toDataURL(payload, {
-			margin: 1,
-			width: 520,
-			color: { dark: '#0b1120', light: '#ffffff' }
-		});
+		try {
+			const payload = await signToken(code);
+			dataUrl = await QRCode.toDataURL(payload, {
+				margin: 1,
+				width: 520,
+				color: { dark: '#0b1120', light: '#ffffff' }
+			});
+		} catch {
+			// Ignore canvas errors in headless/test environments without canvas support
+		}
 	}
 
 	$effect(() => {
