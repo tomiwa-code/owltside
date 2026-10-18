@@ -18,7 +18,7 @@
 <article class="relative group bg-surface-container hover:bg-surface-container-high transition-colors rounded-xl overflow-hidden shadow-lg flex flex-col">
 	<button class="relative w-full aspect-video overflow-hidden text-left" onclick={() => goto(`/events/${event.slug}`)}>
 		<Cover cover={event.cover} class="absolute inset-0 group-hover:scale-105 transition-transform duration-500" iconClass="w-12 h-12 text-white/30" />
-		<div class="absolute inset-0 bg-gradient-to-t from-surface-container via-surface-container/30 to-transparent"></div>
+		<div class="absolute inset-0 bg-gradient-to-t from-black/35 via-black/10 to-transparent"></div>
 		<div class="absolute top-3 left-3 bg-surface-container-lowest/90 backdrop-blur-md rounded-lg p-2 flex flex-col items-center justify-center min-w-[50px] shadow-md">
 			<span class="text-label-badge text-primary uppercase">{month}</span>
 			<span class="font-display text-headline-lg-mobile text-on-surface leading-none">{day}</span>

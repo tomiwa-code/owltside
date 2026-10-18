@@ -38,6 +38,21 @@ describe('publishing validation and failure UI', () => {
 		await expect(publish(draft())).rejects.toMatchObject({ status: 303, location: '/organizer/events/created-event' });
 		expect(source.createEvent).toHaveBeenCalledWith('signed-in-user', expect.objectContaining({ title: 'My real event', description: draft().description, cover: expect.objectContaining({ src: expect.stringMatching(/^data:image\/jpeg;base64,/) }), startsAt: '2099-11-20T09:00:00+01:00' }));
 	});
+	it('uses the invited profile avatar resolved on the server', async () => {
+		source.searchProfiles.mockResolvedValue([{
+			id: 'speaker-profile', handle: 'guesthost', name: 'Guest Host', avatarColor: '#123456',
+			avatarUrl: 'https://cdn.example.test/guest.jpg', followers: 12, following: 4, city: 'Lagos'
+		}]);
+		const payload = {
+			...draft(),
+			speakers: [{ id: 'speaker-profile', handle: 'guesthost', name: 'Guest Host', avatarUrl: 'https://untrusted.example.test/avatar.jpg', role: 'Panelist', invited: true }]
+		};
+
+		await expect(publish(payload)).rejects.toMatchObject({ status: 303, location: '/organizer/events/created-event' });
+		expect(source.createEvent).toHaveBeenCalledWith('signed-in-user', expect.objectContaining({
+			speakers: [expect.objectContaining({ avatarUrl: 'https://cdn.example.test/guest.jpg' })]
+		}));
+	});
 	it('returns a recoverable error on DB failure without reporting success', async () => {
 		source.createEvent.mockRejectedValue(new Error('private database details'));
 		const result = await publish(draft());

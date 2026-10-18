@@ -390,7 +390,7 @@
 			if (!selectedInvitee || selectedInvitee.handle.toLowerCase() !== handle) { inviteError = 'Choose a matching Owltside profile before sending an invite.'; return; }
 			if (roster.some((speaker) => speaker.handle?.toLowerCase() === handle && speaker.invited)) { inviteError = `An invite for @${handle} is already in this roster.`; return; }
 			const profile = selectedInvitee;
-			roster = [...roster, { id: profile.id, handle: profile.handle, name: profile.name, avatarColor: profile.avatarColor, bio: profile.bio ?? '', role, org: `@${profile.handle}`, tag: role.slice(0, 24), displayOnly: false, invited: true, followers: profile.followers, following: profile.following, city: profile.city ?? undefined }];
+			roster = [...roster, { id: profile.id, handle: profile.handle, name: profile.name, avatarColor: profile.avatarColor, avatarUrl: profile.avatarUrl, bio: profile.bio ?? '', role, org: `@${profile.handle}`, tag: role.slice(0, 24), displayOnly: false, invited: true, followers: profile.followers, following: profile.following, city: profile.city ?? undefined }];
 			toast(`Invite for @${profile.handle} queued for event publication`, 'success');
 		} else {
 			if (roster.some((speaker) => speaker.name.toLowerCase() === name.toLowerCase())) { inviteError = 'A speaker with that name is already in this roster.'; return; }
@@ -1097,7 +1097,7 @@
 						</div>
 						{#if roster.length}
 							{@const speaker = roster[i % roster.length]}
-							<div class="rounded-lg bg-surface-base border border-surface-glass-border px-4 py-3 flex items-center gap-3"><Avatar name={speaker.name} size="xs" /><span class="text-body-md font-semibold text-on-surface">{speaker.name}</span><span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant">• {speaker.role}</span></div>
+							<div class="rounded-lg bg-surface-base border border-surface-glass-border px-4 py-3 flex items-center gap-3"><Avatar name={speaker.name} src={speaker.avatarUrl} color={speaker.avatarColor} size="xs" /><span class="text-body-md font-semibold text-on-surface">{speaker.name}</span><span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant">• {speaker.role}</span></div>
 						{:else}<p class="text-body-sm text-on-surface-variant">Speakers can be added below.</p>{/if}
 					</div>
 				{:else}
@@ -1135,7 +1135,7 @@
 					<div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
 						{#each roster as person (person.id ?? person.name)}
 							<div class="rounded-xl border border-surface-glass-border bg-surface-container p-4 flex flex-col gap-3">
-								<div class="flex items-center gap-3 min-w-0"><Avatar name={person.name} color={person.avatarColor} size="md" /><div class="min-w-0 flex-1"><span class="text-body-md font-semibold text-on-surface block truncate">{person.name}</span><span class="text-body-sm text-on-surface-variant block truncate">{person.role}</span></div><button type="button" aria-label="Remove {person.name}" onclick={() => removeSpeaker(person)} class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-surface-container-high"><X class="w-4 h-4" /></button></div>
+								<div class="flex items-center gap-3 min-w-0"><Avatar name={person.name} color={person.avatarColor} src={person.avatarUrl} size="md" /><div class="min-w-0 flex-1"><span class="text-body-md font-semibold text-on-surface block truncate">{person.name}</span><span class="text-body-sm text-on-surface-variant block truncate">{person.role}</span></div><button type="button" aria-label="Remove {person.name}" onclick={() => removeSpeaker(person)} class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error hover:bg-surface-container-high"><X class="w-4 h-4" /></button></div>
 								{#if person.bio}<p class="text-body-sm text-on-surface-variant line-clamp-2">{person.bio}</p>{/if}
 								<span class="self-start {MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded">{person.invited ? `Invite pending · @${person.handle}` : 'Display only'}</span>
 							</div>
@@ -1680,7 +1680,7 @@
 						</div>
 						<div class="grid sm:grid-cols-3 gap-3 border-t border-surface-glass-border pt-4">
 							{#each roster.slice(0, 2) as person (person.id ?? person.name)}
-								<div class="rounded-lg bg-surface-container-low border border-surface-glass-border px-4 py-3 flex items-center gap-3 min-w-0"><Avatar name={person.name} size="xs" /><span class="min-w-0"><span class="text-body-md font-semibold text-on-surface block truncate">{person.name}</span><span class="text-body-sm text-on-surface-variant block truncate">{person.role}</span></span></div>
+								<div class="rounded-lg bg-surface-container-low border border-surface-glass-border px-4 py-3 flex items-center gap-3 min-w-0"><Avatar name={person.name} src={person.avatarUrl} color={person.avatarColor} size="xs" /><span class="min-w-0"><span class="text-body-md font-semibold text-on-surface block truncate">{person.name}</span><span class="text-body-sm text-on-surface-variant block truncate">{person.role}</span></span></div>
 							{/each}
 							{#if roster.length > 2}<div class="rounded-lg bg-surface-container-low border border-surface-glass-border px-4 py-3 flex items-center gap-3 min-w-0"><span class="w-7 h-7 rounded-full bg-surface-container-high border border-surface-glass-border font-code text-label-badge text-on-surface-variant flex items-center justify-center shrink-0">+{roster.length - 2}</span><span class="text-body-sm text-on-surface-variant">More speakers/performers</span></div>{/if}
 							{#if roster.length === 0}<p class="text-body-sm text-on-surface-variant col-span-full">No speakers or performers added yet.</p>{/if}
@@ -2143,7 +2143,7 @@
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-space-sm">
 					<div class="flex items-center justify-between gap-2"><span><span class="block font-display text-headline-md text-on-surface">Speaker/Performer</span><span class="block text-label-badge text-on-surface-variant pt-1">Role and invitation status appear in the event lineup</span></span><button type="button" aria-label="Invite speaker or performer" onclick={openInviteDialog} class="h-9 px-3 rounded-full bg-surface-container-high border border-surface-glass-border text-label-badge text-on-surface flex items-center gap-1"><UserPlus class="w-3.5 h-3.5" />Invite</button></div>
 					{#each roster as person (person.id ?? person.name)}
-						<div class="rounded-xl bg-surface-container-low border border-surface-glass-border p-3 flex items-start gap-3"><Avatar name={person.name} color={person.avatarColor} size="sm" /><span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface truncate">{person.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{person.role}</span><span class="block text-label-badge text-on-surface-variant pt-1">{person.invited ? `Invite pending · @${person.handle}` : 'Display only'}</span>{#if person.bio}<span class="block text-label-badge text-on-surface-variant pt-1">{person.bio}</span>{/if}</span><button type="button" aria-label="Remove {person.name}" onclick={() => removeSpeaker(person)} class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error shrink-0"><X class="w-4 h-4" /></button></div>
+						<div class="rounded-xl bg-surface-container-low border border-surface-glass-border p-3 flex items-start gap-3"><Avatar name={person.name} color={person.avatarColor} src={person.avatarUrl} size="sm" /><span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface truncate">{person.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{person.role}</span><span class="block text-label-badge text-on-surface-variant pt-1">{person.invited ? `Invite pending · @${person.handle}` : 'Display only'}</span>{#if person.bio}<span class="block text-label-badge text-on-surface-variant pt-1">{person.bio}</span>{/if}</span><button type="button" aria-label="Remove {person.name}" onclick={() => removeSpeaker(person)} class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-error shrink-0"><X class="w-4 h-4" /></button></div>
 					{:else}
 						<p class="rounded-xl border border-dashed border-outline-variant/50 p-6 text-body-sm text-on-surface-variant">No speakers or performers added yet.</p>
 					{/each}
@@ -2330,7 +2330,7 @@
 				<div class="rounded-xl border border-surface-glass-border bg-surface-container-low p-2 max-h-52 overflow-y-auto">
 					{#if searchingProfiles}<p class="px-3 py-4 text-body-sm text-on-surface-variant">Searching profiles…</p>
 					{:else if inviteMatches.length}
-						{#each inviteMatches as profile (profile.id)}<button type="button" onclick={() => selectInvitee(profile)} class="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-surface-container-high"><Avatar name={profile.name} color={profile.avatarColor} size="sm" /><span class="min-w-0 flex-1"><span class="block text-body-sm font-semibold text-on-surface truncate">{profile.name}</span><span class="block text-label-badge text-on-surface-variant truncate">@{profile.handle}{profile.city ? ` · ${profile.city}` : ''}</span></span>{#if selectedInvitee?.id === profile.id}<Check class="w-4 h-4 text-accent-emerald" />{/if}</button>{/each}
+						{#each inviteMatches as profile (profile.id)}<button type="button" onclick={() => selectInvitee(profile)} class="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-surface-container-high"><Avatar name={profile.name} color={profile.avatarColor} src={profile.avatarUrl} size="sm" /><span class="min-w-0 flex-1"><span class="block text-body-sm font-semibold text-on-surface truncate">{profile.name}</span><span class="block text-label-badge text-on-surface-variant truncate">@{profile.handle}{profile.city ? ` · ${profile.city}` : ''}</span></span>{#if selectedInvitee?.id === profile.id}<Check class="w-4 h-4 text-accent-emerald" />{/if}</button>{/each}
 					{:else if inviteError}<p class="px-3 py-4 text-body-sm text-error">{inviteError}</p>
 					{:else}<p class="px-3 py-4 text-body-sm text-on-surface-variant">No matching profiles. Choose a profile to queue an invite.</p>{/if}
 				</div>

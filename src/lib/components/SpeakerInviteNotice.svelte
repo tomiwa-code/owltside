@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { CircleCheck } from '@lucide/svelte';
+	import Avatar from './Avatar.svelte';
 	import type { EventSpeaker, SpeakerInviteStatus } from '$lib/types';
 
 	let {
@@ -17,9 +18,12 @@
 
 {#if status === 'pending'}
 	<section class="rounded-xl border border-primary/25 bg-primary/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3" aria-label="Speaker invitation">
-		<div class="min-w-0">
-			<p class="text-body-sm font-semibold text-on-surface">You’ve been invited as {speaker.role ?? 'Speaker/Performer'}.</p>
-			<p class="text-label-badge text-on-surface-variant pt-1">Accept to add this event role to your public profile.</p>
+		<div class="flex items-center gap-3 min-w-0">
+			<Avatar name={speaker.name} src={speaker.avatarUrl} color={speaker.avatarColor} size="md" />
+			<div class="min-w-0">
+				<p class="text-body-sm font-semibold text-on-surface">You’ve been invited as {speaker.role ?? 'Speaker/Performer'}.</p>
+				<p class="text-label-badge text-on-surface-variant pt-1">Accept to add this event role to your public profile.</p>
+			</div>
 		</div>
 		<div class="flex items-center gap-2 shrink-0">
 			<button
