@@ -16,12 +16,23 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 	const parsed = bodySchema.safeParse(await request.json().catch(() => null));
 	if (!parsed.success) error(400, parsed.error.issues[0]?.message ?? 'Invalid gate PIN');
 	const source = getSource(createSupabase(cookies));
-	const valid = await source.verifyGateToken(
-		locals.session?.userId ?? 'demo',
-		parsed.data.eventId,
-		parsed.data.gate,
-		parsed.data.code
-	);
+	let valid: boolean;
+	try {
+		valid = await source.verifyGateToken(
+			locals.session?.userId ?? 'demo',
+			parsed.data.eventId,
+			parsed.data.gate,
+			parsed.data.code
+		);
+	} catch (cause) {
+		const detail = cause && typeof cause === 'object' ? cause as { message?: string; code?: string } : {};
+		const message = detail.message ?? (cause instanceof Error ? cause.message : '');
+		if (detail.code === '42P01' || detail.code === 'PGRST205' || /gate_staff_tokens/i.test(message)) {
+			error(503, 'Gate PIN storage is not installed. Apply supabase/sql/014_gate_staff_tokens.sql, then try again.');
+		}
+		console.error('Gate PIN verification failed', { code: detail.code, message });
+		error(503, 'Gate PIN verification is temporarily unavailable.');
+	}
 	if (!valid) error(403, 'The gate PIN is invalid or expired');
 	return json({ authorized: true });
 };

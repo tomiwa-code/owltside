@@ -395,13 +395,13 @@
 								{@const previewSpeaker = visibleSpeakers[i % visibleSpeakers.length]}
 								{#if previewSpeaker.handle}
 									<a href="/users/{previewSpeaker.handle}" aria-label="View {previewSpeaker.name}'s profile" class="rounded-lg bg-surface-base border border-surface-glass-border px-4 py-2.5 flex items-center gap-3 hover:bg-surface-container-low transition-colors">
-										<Avatar name={previewSpeaker.name} size="xs" />
+										<Avatar name={previewSpeaker.name} src={previewSpeaker.avatarUrl} color={previewSpeaker.avatarColor} size="xs" />
 										<span class="text-body-sm font-semibold text-on-surface hover:underline">{previewSpeaker.name}</span>
 										<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant truncate">• {previewSpeaker.role ?? previewSpeaker.bio ?? `@${previewSpeaker.handle}`}</span>
 									</a>
 								{:else}
 								<div class="rounded-lg bg-surface-base border border-surface-glass-border px-4 py-2.5 flex items-center gap-3">
-									<Avatar name={previewSpeaker.name} size="xs" />
+									<Avatar name={previewSpeaker.name} src={previewSpeaker.avatarUrl} color={previewSpeaker.avatarColor} size="xs" />
 									<span class="text-body-sm font-semibold text-on-surface">{previewSpeaker.name}</span>
 									<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant truncate">• {previewSpeaker.role ?? previewSpeaker.bio ?? 'Guest performer'}</span>
 								</div>

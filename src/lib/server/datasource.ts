@@ -533,6 +533,7 @@ export const demoSource: DataSource = {
 						id: speaker.id ?? `speaker-${index}`,
 						handle: speaker.handle ?? '',
 						avatarColor: speaker.avatarColor ?? '#8083ff',
+						avatarUrl: speaker.avatarUrl ?? null,
 						followers: speaker.followers ?? 0,
 						following: speaker.following ?? 0
 					}),
@@ -602,7 +603,7 @@ export const demoSource: DataSource = {
 		if (updates.startsAt !== undefined) event.startsAt = updates.startsAt;
 		if (updates.endsAt !== undefined) event.endsAt = updates.endsAt;
 		if (updates.cover !== undefined) event.cover = updates.cover;
-		if (updates.speakers !== undefined) event.speakers = updates.speakers.map((speaker, index) => ({ id: speaker.id ?? `speaker-${index}`, handle: speaker.handle ?? '', name: speaker.name, avatarColor: speaker.avatarColor ?? '#8083ff', followers: speaker.followers ?? 0, following: speaker.following ?? 0, role: speaker.role, bio: speaker.bio, invited: speaker.invited, inviteStatus: speaker.invited ? (speaker.inviteStatus ?? 'pending') : undefined, displayOnly: speaker.displayOnly }));
+		if (updates.speakers !== undefined) event.speakers = updates.speakers.map((speaker, index) => ({ id: speaker.id ?? `speaker-${index}`, handle: speaker.handle ?? '', name: speaker.name, avatarColor: speaker.avatarColor ?? '#8083ff', avatarUrl: speaker.avatarUrl ?? null, followers: speaker.followers ?? 0, following: speaker.following ?? 0, role: speaker.role, bio: speaker.bio, invited: speaker.invited, inviteStatus: speaker.invited ? (speaker.inviteStatus ?? 'pending') : undefined, displayOnly: speaker.displayOnly }));
 		if (updates.agenda !== undefined) event.agenda = updates.agenda.map((item, index) => ({ id: event.agenda[index]?.id ?? `ag-${index}`, ...item }));
 		if (updates.tiers !== undefined) event.tiers = updates.tiers.map((tier, index) => ({ id: event.tiers[index]?.id ?? `tier-${index}`, sold: event.tiers[index]?.sold ?? 0, ...tier, capacity: Math.max(tier.capacity, event.tiers[index]?.sold ?? 0) }));
 		if (updates.gates !== undefined) event.gates = updates.gates;

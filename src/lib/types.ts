@@ -42,6 +42,7 @@ export interface WizardSpeaker {
 	handle?: string;
 	name: string;
 	avatarColor?: string;
+	avatarUrl?: string | null;
 	bio?: string;
 	role: string;
 	org?: string;

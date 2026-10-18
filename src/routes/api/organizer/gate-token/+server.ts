@@ -19,7 +19,15 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 		);
 		return json({ gate: parsed.data.gate, ...token });
 	} catch (cause) {
-		const message = cause instanceof Error ? cause.message : 'Could not generate a gate PIN';
-		error(400, message);
+		const detail = cause && typeof cause === 'object' ? cause as { message?: string; code?: string } : {};
+		const message = detail.message ?? (cause instanceof Error ? cause.message : '');
+		if (detail.code === '42P01' || detail.code === 'PGRST205' || /gate_staff_tokens/i.test(message)) {
+			error(503, 'Gate PIN storage is not installed. Apply supabase/sql/014_gate_staff_tokens.sql, then try again.');
+		}
+		if (detail.code === '42501' || /row-level security|permission denied/i.test(message)) {
+			error(403, 'The database denied gate PIN storage. Check the organizer policy in migration 014_gate_staff_tokens.sql.');
+		}
+		console.error('Gate PIN generation failed', { code: detail.code, message });
+		error(503, message || 'Gate PIN generation is temporarily unavailable.');
 	}
 };

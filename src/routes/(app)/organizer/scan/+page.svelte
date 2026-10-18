@@ -54,25 +54,44 @@
 		pinError = '';
 	});
 
-	function onDigit(i: number, e: Event) {
-		const v = (e.target as HTMLInputElement).value.replace(/\D/g, '').slice(-1);
-		digits[i] = v;
-		if (v && i < 5) cellRefs[i + 1]?.focus();
+	function distributePin(value: string, refs: HTMLInputElement[]) {
+		const numeric = value.replace(/\D/g, '').slice(-6);
+		if (!numeric) return false;
+		digits = Array.from({ length: 6 }, (_, index) => numeric[index] ?? '');
+		pinError = '';
+		refs[Math.min(numeric.length, 5)]?.focus();
+		return true;
 	}
-	function pasteDigits(e: ClipboardEvent, refs: HTMLInputElement[]) {
-		const value = e.clipboardData?.getData('text')?.replace(/\D/g, '').slice(0, 6) ?? '';
-		if (!value) return;
+	function onDigit(i: number, e: Event) {
+		const input = e.target as HTMLInputElement;
+		const numeric = input.value.replace(/\D/g, '');
+		if (numeric.length > 1) {
+			distributePin(numeric, cellRefs);
+			return;
+		}
+		digits[i] = numeric.slice(-1);
+		if (digits[i] && i < 5) cellRefs[i + 1]?.focus();
+	}
+	async function pasteDigits(e: ClipboardEvent, refs: HTMLInputElement[]) {
 		e.preventDefault();
-		digits = Array.from({ length: 6 }, (_, index) => value[index] ?? '');
-		refs[Math.min(value.length, 5)]?.focus();
+		let raw = e.clipboardData?.getData('text') ?? '';
+		if (!raw && navigator.clipboard?.readText) {
+			try { raw = await navigator.clipboard.readText(); } catch { /* fallback handled below */ }
+		}
+		if (!distributePin(raw, refs)) pinError = 'Clipboard did not contain a six-digit PIN.';
 	}
 	function onBack(i: number, e: KeyboardEvent) {
 		if (e.key === 'Backspace' && !digits[i] && i > 0) cellRefs[i - 1]?.focus();
 	}
 	function onDigitDesk(i: number, e: Event) {
-		const v = (e.target as HTMLInputElement).value.replace(/\D/g, '').slice(-1);
-		digits[i] = v;
-		if (v && i < 5) cellRefsDesk[i + 1]?.focus();
+		const input = e.target as HTMLInputElement;
+		const numeric = input.value.replace(/\D/g, '');
+		if (numeric.length > 1) {
+			distributePin(numeric, cellRefsDesk);
+			return;
+		}
+		digits[i] = numeric.slice(-1);
+		if (digits[i] && i < 5) cellRefsDesk[i + 1]?.focus();
 	}
 	function onBackDesk(i: number, e: KeyboardEvent) {
 		if (e.key === 'Backspace' && !digits[i] && i > 0) cellRefsDesk[i - 1]?.focus();
@@ -98,6 +117,7 @@
 			void flushQueue();
 		} catch (error) {
 			pinError = error instanceof Error ? error.message : 'The gate PIN could not be verified.';
+			toast(pinError, 'error');
 		} finally { pinBusy = false; }
 	}
 
@@ -585,7 +605,7 @@
 				<p class="text-body-sm text-on-surface-variant">
 					Enter the six-digit staff PIN generated in Organizer Console → Hardware &amp; Gates for {gate}.
 				</p>
-				<span class="font-code text-label-code text-primary mt-1">Staff PIN expires 6 hours after generation</span>
+				<span class="font-code text-label-code text-primary mt-1">Staff PIN expires 6 hours after generation · {digits.filter(Boolean).length}/6 entered</span>
 			</div>
 
 			<!-- OTP cells -->
