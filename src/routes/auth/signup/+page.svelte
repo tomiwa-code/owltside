@@ -66,7 +66,7 @@
 					<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
 					<span class="{MONO} text-on-surface-variant">Auth_Protocol // Onboard // NGA-LOS-01</span>
 				</div>
-				<img src="/logo-stacked.png" alt="Owltside" class="w-52 max-h-48 object-contain self-start" />
+				<img src="/logo-stacked.png" alt="Owltside" class="w-40 max-h-36 object-contain self-start" />
 				<p class="text-body-lg text-on-surface-variant max-w-md">
 					One account for discovery, instant passes and offline gate entry. Passwordless
 					from day one — your mailbox is the only key the door needs.
@@ -260,7 +260,7 @@
 	<div class="flex flex-col w-full px-gutter md:max-w-lg md:mx-auto pb-space-xl">
 		<div class="relative w-full rounded-xl bg-surface-container border border-surface-glass-border p-space-lg mt-space-sm mb-space-md">
 			<div class="flex flex-col items-center text-center">
-				<img src="/logo-stacked.png" alt="Owltside" class="w-36 max-h-28 object-contain mb-space-sm" />
+				<img src="/logo-stacked.png" alt="Owltside" class="w-28 max-h-20 object-contain mb-space-sm" />
 				<p class="text-body-sm text-outline max-w-[280px] mt-0.5">
 					One account for discovery, instant passes and offline gate entry.
 				</p>

@@ -196,15 +196,6 @@
 			<h1 class="font-display text-[34px] leading-10 font-bold tracking-tight text-on-surface mt-3">Ticket Wallet & Dynamic Passes</h1>
 			<p class="text-body-md text-on-surface-variant mt-2 max-w-xl">All offline-synced cryptographic credentials, NFC fast-lanes, and active biometric turnstile passes.</p>
 		</div>
-		<div class="flex items-center gap-3 flex-wrap">
-			<span class="h-9 px-3.5 rounded-lg flex items-center gap-2 {MONO} text-on-surface-variant border border-surface-glass-border bg-surface-container">
-				<CloudCheck class="w-3.5 h-3.5 text-accent-emerald" /> Vault_Synced
-			</span>
-			<span class="h-9 px-3.5 rounded-lg flex items-center gap-2 {MONO} text-on-surface-variant border border-surface-glass-border bg-surface-container">
-				<Database class="w-3.5 h-3.5" /> Indexed_DB: Ready
-			</span>
-			<span class="h-9 px-3.5 rounded-lg flex items-center {MONO} text-on-surface border border-surface-glass-border bg-surface-container">HMAC Window: 30s</span>
-		</div>
 	</div>
 
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pb-10 grid lg:grid-cols-[380px_minmax(0,1fr)] xl:grid-cols-[420px_minmax(0,1fr)] gap-6 items-start">
@@ -368,8 +359,7 @@
 
 						<div class="rounded-lg border border-surface-glass-border bg-surface-container-high/40 p-6 mt-5 flex flex-col items-center">
 							<span class="flex items-center gap-2 {MONO} text-on-surface">
-								<Lock class="w-3.5 h-3.5 text-primary" /> HMAC 30s Window:
-								<span class="text-on-surface-variant">Expiring in {qrSeconds}s</span>
+								<Lock class="w-3.5 h-3.5 text-primary" /> Pass refreshes in {qrSeconds}s
 							</span>
 							<div class="relative bg-white rounded-md p-4 mt-5" style="box-shadow: 0 0 24px -6px rgba(99,102,241,0.45);">
 								{#if qrUrl}
@@ -492,11 +482,6 @@
 					<CloudCheck class="w-4 h-4 text-accent-emerald" />
 					<span class="text-label-badge text-accent-emerald">SECURE</span>
 				</span>
-			</div>
-			<div class="grid grid-cols-3 gap-2">
-				<div class="rounded-xl border border-surface-glass-border bg-surface-container p-3 flex flex-col gap-1"><CloudCheck class="w-4 h-4 text-accent-emerald" /><span class="text-label-badge text-on-surface">Vault synced</span></div>
-				<div class="rounded-xl border border-surface-glass-border bg-surface-container p-3 flex flex-col gap-1"><Database class="w-4 h-4 text-primary" /><span class="text-label-badge text-on-surface">Local cache ready</span></div>
-				<div class="rounded-xl border border-surface-glass-border bg-surface-container p-3 flex flex-col gap-1"><Lock class="w-4 h-4 text-primary" /><span class="text-label-badge text-on-surface">HMAC · 30s</span></div>
 			</div>
 
 			<!-- shared three-bucket vault tabs -->

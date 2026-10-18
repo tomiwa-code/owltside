@@ -1013,7 +1013,7 @@
 						<span class="text-body-sm text-on-surface-variant font-medium">({qty} {tier.name})</span>
 					</div>
 				</div>
-				<button class="h-12 px-6 rounded-full bg-primary-fixed text-surface-base font-display text-headline-md font-semibold flex items-center justify-center gap-2 active:scale-95 transition-all shadow-md hover:bg-white" onclick={checkout}>
+				<button class="h-12 px-6 rounded-full bg-primary-fixed text-surface-base font-display text-body-md font-semibold flex items-center justify-center gap-2 active:scale-95 transition-all shadow-md hover:bg-white" onclick={checkout}>
 					<span>Select & Checkout</span>
 					<ArrowRight class="w-4.5 h-4.5" />
 				</button>
