@@ -239,7 +239,7 @@
 	<div class="flex flex-col w-full px-gutter md:max-w-lg md:mx-auto pb-space-xl">
 		<div class="relative w-full rounded-xl bg-surface-container border border-surface-glass-border p-space-lg mt-space-sm mb-space-md">
 			<div class="flex flex-col items-center text-center">
-				<img src="/logo-stacked.png" alt="Owltside" class="w-32 max-h-24 object-contain mb-space-sm" />
+				<img src="/logo-stacked.png" alt="Owltside" class="w-24 max-h-18 object-contain mb-space-sm" />
 				<p class="font-display text-headline-lg-mobile text-on-surface font-semibold">Welcome back</p>
 				<p class="text-body-sm text-outline max-w-[280px] mt-0.5">
 					Your instant radar for tonight's music arenas, secret sets, and gate tickets.
