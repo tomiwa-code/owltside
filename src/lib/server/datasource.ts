@@ -109,7 +109,7 @@ export interface DataSource {
 	deleteEvent(userId: string, eventId: string): Promise<void>;
 	broadcastEvent(userId: string, eventId: string, message: string): Promise<number>;
 	transferTicket(userId: string, ticketId: string, recipientHandle: string): Promise<Ticket>;
-	refundTicket(userId: string, ticketId: string): Promise<Ticket>;
+	refundTicket(userId: string, ticketId: string, request?: { reason: string; details?: string }): Promise<Ticket>;
 }
 
 /* ────────────────────────────── demo mode ────────────────────────────── */
@@ -590,11 +590,23 @@ export const demoSource: DataSource = {
 		ticket.status = 'transferred';
 		return ticket;
 	},
-	async refundTicket(_userId, ticketId) {
+	async refundTicket(userId, ticketId, request) {
 		const ticket = demo.tickets.find((t) => t.id === ticketId);
 		if (!ticket) throw new Error('Ticket not found');
 		if (ticket.status !== 'valid') throw new Error('Only active tickets can be refunded');
 		ticket.status = 'refunded';
+		const uid = userId === 'demo' ? demoMeId : userId;
+		const notifications = demoPrivateNotifications.get(uid) ?? [];
+		notifications.unshift({
+			id: `n-${Math.random().toString(36).slice(2, 10)}`,
+			kind: 'ticket',
+			title: `Refund Requested · ${ticket.eventTitle}`,
+			body: `Your ${ticket.tierName} pass refund was submitted. Reason: ${request?.reason ?? 'Not specified'}.${request?.details ? ` Details: ${request.details}` : ''}`,
+			href: `/tickets/${ticket.id}`,
+			at: new Date().toISOString(),
+			read: false
+		});
+		demoPrivateNotifications.set(uid, notifications);
 		return ticket;
 	}
 };
@@ -1167,7 +1179,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			});
 			return toTicket(data);
 		},
-		async refundTicket(userId, ticketId) {
+		async refundTicket(userId, ticketId, request) {
 			if (!isUuid(userId) || !isUuid(ticketId)) throw new Error('Invalid ticket or user ID');
 			const { data, error } = await db
 				.from('tickets')
@@ -1181,7 +1193,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				user_id: userId,
 				kind: 'ticket',
 				title: `Refund Requested · ${data.event_title}`,
-				body: `Your ${data.tier_name} pass has been marked as refunded.`,
+				body: `Your ${data.tier_name} pass refund was submitted. Reason: ${request?.reason ?? 'Not specified'}.${request?.details ? ` Details: ${request.details}` : ''}`,
 				action_url: `/tickets/${data.id}`
 			});
 			return toTicket(data);
