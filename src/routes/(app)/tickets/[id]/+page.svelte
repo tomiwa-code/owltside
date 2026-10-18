@@ -5,8 +5,10 @@
 		CalendarPlus,
 		CloudCheck,
 		Copy,
+		CreditCard,
 		Download,
 		Loader2,
+		LockKeyhole,
 		MapPin,
 		ScanLine,
 		Search,
@@ -24,17 +26,29 @@ import Cover from '$components/Cover.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { downloadIcs } from '$lib/utils/ics';
 	import { fmtDateFull, fmtTime } from '$lib/utils/dates';
+	import { addFee, formatMoney } from '$lib/utils/money';
 	import { page } from '$app/state';
 
 	let { data } = $props();
 	const ticket = $derived(data.ticket);
 	const active = $derived(ticket.status === 'valid' && new Date(ticket.eventStartsAt) > new Date());
+	const refundDeadline = $derived(new Date(new Date(ticket.eventStartsAt).getTime() - 72 * 60 * 60 * 1000));
+	const refundDeadlineLabel = $derived(new Intl.DateTimeFormat('en-NG', {
+		month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Africa/Lagos'
+	}).format(refundDeadline));
+	const refundFee = $derived(addFee(ticket.price));
+	const refundAmount = $derived(Math.max(0, ticket.price - refundFee));
+	const refundEligible = $derived(ticket.status === 'valid' && Date.now() < refundDeadline.getTime());
 
 	let transferOpen = $state(false);
-	let refundOpen = $state(false);
+	let refundOpen = $state(page.url.searchParams.get('refund') === '1');
 	let transferHandle = $state('');
-	let transferring = $state(false);
+	let refundReason = $state('');
+	let refundDetails = $state('');
+	let refundConfirmed = $state(false);
 	let refunding = $state(false);
+	let refundError = $state('');
+	let transferring = $state(false);
 	let transferError = $state('');
 
 	function handleTransferEnhance() {
@@ -63,6 +77,7 @@ import Cover from '$components/Cover.svelte';
 
 	function handleRefundEnhance() {
 		refunding = true;
+		refundError = '';
 		return async ({
 			result,
 			update
@@ -74,10 +89,9 @@ import Cover from '$components/Cover.svelte';
 				await update();
 				if (result.type === 'success' || result.type === 'redirect') {
 					refundOpen = false;
-					toast('Refund processed — 3–5 working days', 'info');
+					toast('Refund request submitted — allow 3–5 working days', 'success');
 				} else if (result.type === 'failure') {
-					const errMsg = typeof result.data?.error === 'string' ? result.data.error : 'Could not process refund.';
-					toast(errMsg, 'error');
+					refundError = typeof result.data?.error === 'string' ? result.data.error : 'Could not submit your refund request.';
 				}
 			} finally {
 				refunding = false;
@@ -419,24 +433,103 @@ import Cover from '$components/Cover.svelte';
 	</form>
 </Sheet>
 
-<Sheet open={refundOpen} title="Request refund" close={() => (refundOpen = false)}>
+<Sheet open={refundOpen} title="Refund Request" close={() => (refundOpen = false)}>
 	{#snippet footer()}
-		<form method="POST" action="?/refund" use:enhance={handleRefundEnhance} class="w-full">
+		<div class="flex flex-col gap-2">
 			<button
 				type="submit"
-				disabled={refunding}
-				class="w-full h-12 rounded-full bg-error-container text-on-error-container font-semibold text-body-md flex items-center justify-center gap-2 disabled:opacity-40"
+				form="ticket-refund-form"
+				disabled={!refundReason || !refundConfirmed || refunding}
+				class="w-full h-12 rounded-xl bg-error-container text-on-error-container font-semibold text-body-md flex items-center justify-center gap-2 disabled:opacity-40"
 			>
 				{#if refunding}
 					<Loader2 class="w-4.5 h-4.5 animate-spin" />
-					<span>Processing refund…</span>
+					<span>Submitting refund…</span>
 				{:else}
-					<span>Request full refund</span>
+					<span>Confirm & Submit Refund ({formatMoney(refundAmount)})</span>
 				{/if}
 			</button>
-		</form>
+			<button type="button" onclick={() => (refundOpen = false)} class="h-10 text-body-sm font-medium text-on-surface-variant hover:text-on-surface">Keep My Ticket</button>
+		</div>
 	{/snippet}
-	<p class="text-body-sm text-on-surface-variant">
-		Full refunds are automatic up to 72 hours before doors. After that, refunds go through the organiser's policy.
-	</p>
+
+	<form id="ticket-refund-form" method="POST" action="?/refund" use:enhance={handleRefundEnhance} class="flex flex-col gap-3">
+		{#if refundError}
+			<p class="rounded-lg bg-error/10 border border-error/30 px-3 py-2 text-body-sm text-error" role="alert">{refundError}</p>
+		{/if}
+
+		<div class="rounded-xl border border-surface-glass-border bg-surface-container-high p-4">
+			<div class="flex items-start justify-between gap-3">
+				<div class="min-w-0">
+					<span class="block font-code text-label-badge tracking-wider text-on-surface-variant">PASS REF #{ticket.id.toUpperCase()}</span>
+					<h3 class="font-display text-headline-md text-on-surface font-semibold mt-1 truncate">{ticket.eventTitle}</h3>
+					<p class="text-body-sm text-on-surface-variant mt-1">1× {ticket.tierName} · Pass {ticket.code}</p>
+				</div>
+				<span class="w-10 h-10 rounded-lg bg-surface-container-highest text-primary flex items-center justify-center shrink-0"><Undo2 class="w-5 h-5" /></span>
+			</div>
+			<div class="mt-4 rounded-lg bg-surface-container px-3 py-2.5 flex items-start gap-2.5">
+				<span class="w-2 h-2 rounded-full bg-primary mt-1.5 shrink-0"></span>
+				<div class="min-w-0">
+					<p class="font-code text-label-badge tracking-wide text-on-surface">{refundEligible ? 'Eligible for Full Refund' : 'Organizer Policy Review'}</p>
+					<p class="text-body-sm text-on-surface-variant mt-0.5">{refundEligible ? `Valid policy window until ${refundDeadlineLabel} WAT` : 'Your request will be reviewed under the organizer’s refund policy.'}</p>
+				</div>
+			</div>
+		</div>
+
+		<section class="rounded-xl border border-surface-glass-border bg-surface-container-high p-4" aria-labelledby="settlement-breakdown-title">
+			<div class="flex items-center justify-between gap-2 mb-3">
+				<h3 id="settlement-breakdown-title" class="font-code text-label-badge tracking-wider text-on-surface">Settlement Breakdown</h3>
+				<span class="font-code text-label-badge text-on-surface-variant">NGN Ledger</span>
+			</div>
+			<div class="flex flex-col gap-2.5 text-body-sm">
+				<div class="flex items-center justify-between gap-3 text-on-surface-variant"><span>Ticket Original (1× {ticket.tierName})</span><span class="font-code text-on-surface">{formatMoney(ticket.price)}</span></div>
+				<div class="flex items-center justify-between gap-3 text-on-surface-variant"><span>Network Gateway Fee</span><span class="font-code text-error">−{formatMoney(refundFee)}</span></div>
+			</div>
+			<div class="mt-3 pt-3 border-t border-surface-glass-border rounded-lg bg-surface-container px-3 py-2 flex items-center justify-between gap-3">
+				<div><span class="block font-code text-label-badge tracking-wider text-on-surface-variant">Net Refund Amount</span><span class="block text-body-sm text-on-surface-variant">Returned to original payment method</span></div>
+				<span class="font-display text-headline-lg-mobile font-bold text-on-surface shrink-0">{formatMoney(refundAmount)}</span>
+			</div>
+		</section>
+
+		<section class="rounded-xl border border-surface-glass-border bg-surface-container-high p-4" aria-labelledby="refund-reason-title">
+			<h3 id="refund-reason-title" class="font-display text-headline-md text-on-surface font-semibold">Reason for Cancellation</h3>
+			<p class="text-body-sm text-on-surface-variant mt-1">Select the primary reason for recordkeeping.</p>
+			<fieldset class="grid grid-cols-2 gap-2 mt-3">
+				<legend class="sr-only">Select a refund reason</legend>
+				{#each ['Schedule Conflict', 'Emergency', 'Duplicate Order', 'Other Reason'] as reason}
+					<label class="min-h-11 px-3 py-2 rounded-lg border flex items-center justify-between gap-2 text-body-sm cursor-pointer transition-colors {refundReason === reason ? 'border-primary bg-primary/10 text-on-surface' : 'border-surface-glass-border bg-surface-container text-on-surface hover:bg-surface-container-highest'}">
+						<span>{reason}</span>
+						<input class="accent-primary h-4 w-4 shrink-0" type="radio" name="reason" value={reason} bind:group={refundReason} required />
+					</label>
+				{/each}
+			</fieldset>
+			<label class="block font-code text-label-badge tracking-wide text-on-surface-variant mt-3" for="refund-details">Additional Context (Optional)</label>
+			<textarea id="refund-details" name="details" bind:value={refundDetails} maxlength="500" rows="3" placeholder="Optional details for the organizer team…" class="mt-1.5 w-full resize-y min-h-20 px-3 py-2.5 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-sm placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary"></textarea>
+		</section>
+
+		<section class="rounded-xl border border-surface-glass-border bg-surface-container-high p-4">
+			<div class="flex items-center justify-between gap-2 mb-3">
+				<h3 class="font-code text-label-badge tracking-wider text-on-surface">Settlement Target</h3>
+				<span class="flex items-center gap-1 font-code text-label-badge text-on-surface-variant"><LockKeyhole class="w-3.5 h-3.5" /> Encrypted</span>
+			</div>
+			<div class="rounded-lg bg-surface-container p-3 flex items-center gap-3">
+				<span class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center text-primary shrink-0"><CreditCard class="w-5 h-5" /></span>
+				<div class="min-w-0"><p class="text-body-sm font-semibold text-on-surface">Original payment method</p><p class="text-body-sm text-on-surface-variant mt-0.5">Estimated 3–5 business days after approval</p></div>
+			</div>
+		</section>
+
+		<section class="rounded-xl border border-error/30 bg-error/10 p-4">
+			<div class="flex items-start gap-3">
+				<ShieldCheck class="w-5 h-5 text-error shrink-0 mt-0.5" />
+				<div class="min-w-0">
+					<h3 class="font-code text-label-badge tracking-wider font-bold text-error">Critical Ticket Notice</h3>
+					<p class="text-body-sm text-on-surface leading-relaxed mt-1">Your 30s HMAC dynamic QR Gate Pass and NFC turnstile access will be voided immediately upon submission. This operation cannot be reversed.</p>
+				</div>
+			</div>
+			<label class="flex items-start gap-2.5 mt-3 text-body-sm text-on-surface cursor-pointer">
+				<input class="accent-error w-4 h-4 mt-0.5 shrink-0" type="checkbox" name="confirmed" value="yes" bind:checked={refundConfirmed} required />
+				<span>I confirm cancellation of this gate pass.</span>
+			</label>
+		</section>
+	</form>
 </Sheet>
