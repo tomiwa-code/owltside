@@ -42,6 +42,7 @@
 	import EmptyState from '$components/EmptyState.svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
+	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { useQuery } from '$lib/state/query.svelte';
 	import { toast } from '$lib/state/toast.svelte';
@@ -64,6 +65,12 @@
 	let broadcastOpen = $state(false);
 	let staffOpen = $state(false);
 	let broadcastMsg = $state('');
+	let broadcastEventId = $state('');
+	const broadcastEvent = $derived(payload?.events.find((event) => event.id === broadcastEventId) ?? mainEvent);
+	function openBroadcast(eventId?: string) {
+		broadcastEventId = eventId ?? mainEvent?.id ?? '';
+		broadcastOpen = true;
+	}
 	let wizardDraftCount = $state(0);
 	$effect(() => {
 		if (!browser) return;
@@ -109,6 +116,13 @@
 			: ''
 	);
 
+	// The scanner is always one tap away: it targets the first event that has a
+	// gate configured, otherwise the first event, otherwise the bare route.
+	const scannerTarget = $derived(scannerEvent ?? payload?.events[0]);
+	const scannerHref = $derived(
+		scannerTarget ? `/organizer/scan?eventId=${encodeURIComponent(scannerTarget.id)}` : '/organizer/scan'
+	);
+
 	async function regenPin() {
 		if (!scannerEvent || !pinGateName) { toast('Add a gate to the event before generating a PIN', 'error'); return; }
 		try {
@@ -127,7 +141,7 @@
 	}
 	async function copyScannerLink() {
 		try {
-			await navigator.clipboard.writeText(`${location.origin}/organizer/scan?eventId=${encodeURIComponent(scannerEvent?.id ?? '')}`);
+			await navigator.clipboard.writeText(`${location.origin}${scannerHref}`);
 			toast('Scanner link copied to clipboard', 'success');
 		} catch {
 			toast('Scanner link ready on the gate device', 'info');
@@ -185,15 +199,9 @@
 				<button class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={exportCsv}>
 					<Download class="w-4 h-4 text-on-surface-variant" /><span>Export Attendee CSV</span>
 				</button>
-				{#if scannerEvent}
-				<a href="/organizer/scan?eventId={scannerEvent.id}" class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors">
+				<a href={scannerHref} class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" title={scannerEvent ? 'Open the gate scanner' : 'Open the gate scanner — set up an event to arm a gate'}>
 					<ScanBarcode class="w-4 h-4 text-on-surface-variant" /><span>Open Camera QR Scanner</span>
 				</a>
-				{:else}
-				<span class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high/50 border border-surface-glass-border text-on-surface-variant text-body-sm opacity-60 cursor-not-allowed" title="Add a gate to an event to enable scanning">
-					<ScanBarcode class="w-4 h-4 text-on-surface-variant" /><span>Open Camera QR Scanner</span>
-				</span>
-				{/if}
 				<a href="/organizer/create" class="h-10 px-4 rounded-lg flex items-center gap-2 bg-on-surface text-surface-base text-body-sm font-semibold hover:opacity-90 transition-opacity">
 					<Plus class="w-4 h-4" /><span>Create New Event</span>
 				</a>
@@ -438,10 +446,14 @@
 					{:else}
 					<div class="flex flex-col gap-2 mt-3">
 						<span class="font-code text-[30px] leading-9 tracking-[0.18em] text-outline-variant">••••••</span>
-						<p class="text-body-sm text-on-surface-variant">Create an event and configure a gate to generate its private staff PIN.</p>
-						<div class="grid grid-cols-2 gap-2.5 opacity-50 pointer-events-none">
-							<button class="h-9 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm"> <Copy class="w-3.5 h-3.5" /><span>Copy Scanner Link</span></button>
-							<button class="h-9 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm"> <RefreshCw class="w-3.5 h-3.5" /><span>{currentDeskPin ? 'Rotate PIN' : 'Generate PIN'}</span></button>
+						<p class="text-body-sm text-on-surface-variant">The scanner opens straight away — create an event and configure a gate to generate its private staff PIN.</p>
+						<div class="grid grid-cols-2 gap-2.5">
+							<button class="h-9 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={copyScannerLink}>
+								<Copy class="w-3.5 h-3.5" /><span>Copy Scanner Link</span>
+							</button>
+							<button class="h-9 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm opacity-50 cursor-not-allowed" disabled title="Add a gate to an event to generate a staff PIN">
+								<RefreshCw class="w-3.5 h-3.5" /><span>{currentDeskPin ? 'Rotate PIN' : 'Generate PIN'}</span>
+							</button>
 						</div>
 					</div>
 					{/if}
@@ -507,11 +519,11 @@
 					</div>
 					{/if}
 					{#if mainEvent}
-					<button class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3 text-left hover:bg-surface-container-high transition-colors" onclick={() => (broadcastOpen = true)}>
+					<button class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3 text-left hover:bg-surface-container-high transition-colors" onclick={() => openBroadcast()}>
 						<Megaphone class="w-4 h-4 text-on-surface-variant shrink-0" />
 						<span class="flex-1 min-w-0">
 							<span class="block text-body-sm font-medium text-on-surface">Broadcast Announcement</span>
-							<span class="block text-xs text-on-surface-variant mt-0.5">Instant SMS & Push to {stats?.orders.toLocaleString() ?? 0} holders</span>
+							<span class="block text-xs text-on-surface-variant mt-0.5">Announce to every pass holder of {mainEvent.title}</span>
 						</span>
 						<ChevronRight class="w-4 h-4 text-outline-variant shrink-0" />
 					</button>
@@ -638,55 +650,40 @@
 			</EmptyState>
 		{/if}
 
-		<!-- scanner launch - always visible, only enabled when an event is live -->
-		{#if scannerEvent}
-			<a href="/organizer/scan?eventId={scannerEvent.id}" class="relative overflow-hidden rounded-xl border border-outline-variant/40 bg-surface-container p-0.5 shadow-sm block">
-				<div class="w-full flex flex-col gap-space-sm rounded-[10px] bg-surface-container-low p-space-md text-left group">
-					<div class="flex items-center justify-between w-full">
-						<span class="inline-flex items-center gap-2 rounded-full bg-surface-container-highest px-2.5 py-1 border border-outline-variant/30">
-							<span class="relative flex h-2 w-2">
+		<!-- scanner launch - always one tap away, even before an event exists -->
+		<a href={scannerHref} class="relative overflow-hidden rounded-xl border border-outline-variant/40 bg-surface-container p-0.5 shadow-sm block">
+			<div class="w-full flex flex-col gap-space-sm rounded-[10px] bg-surface-container-low p-space-md text-left group">
+				<div class="flex items-center justify-between w-full">
+					<span class="inline-flex items-center gap-2 rounded-full bg-surface-container-highest px-2.5 py-1 border border-outline-variant/30">
+						<span class="relative flex h-2 w-2">
+							{#if scannerEvent}
 								<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75"></span>
 								<span class="relative inline-flex rounded-full h-2 w-2 bg-accent-emerald"></span>
-							</span>
-							<span class="text-label-badge text-accent-emerald uppercase tracking-wider">Ready to scan • Gate 1</span>
+							{:else}
+								<span class="relative inline-flex rounded-full h-2 w-2 bg-accent-amber"></span>
+							{/if}
 						</span>
-						<span class="rounded-full bg-surface-container-highest border border-outline-variant/40 p-1.5 text-on-surface group-hover:bg-primary-fixed group-hover:text-surface transition-colors">
-							<ScanBarcode class="w-4.5 h-4.5" />
+						<span class="text-label-badge uppercase tracking-wider {scannerEvent ? 'text-accent-emerald' : 'text-accent-amber'}">
+							{scannerEvent
+								? `Ready to scan • ${scannerGates[0]?.name ?? 'Gate 1'}`
+								: scannerTarget
+									? 'Ready — add a gate to arm'
+									: 'Ready — create an event'}
 						</span>
-					</div>
-					<div class="flex items-end justify-between w-full pt-1">
-						<div class="flex flex-col">
-							<span class="font-display text-headline-lg-mobile text-on-surface">Open Ticket Scanner</span>
-							<span class="text-body-sm text-on-surface-variant">Instant Camera & Manual HMAC Code Verification</span>
-						</div>
-						<span class="h-9 px-4 rounded-full bg-primary-fixed text-surface text-[13px] font-semibold flex items-center justify-center shadow-sm">Launch</span>
-					</div>
+					</span>
+					<span class="rounded-full bg-surface-container-highest border border-outline-variant/40 p-1.5 text-on-surface group-hover:bg-primary-fixed group-hover:text-surface transition-colors">
+						<ScanBarcode class="w-4.5 h-4.5" />
+					</span>
 				</div>
-			</a>
-		{:else}
-			<div class="relative overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container p-0.5 shadow-sm opacity-60">
-				<div class="w-full flex flex-col gap-space-sm rounded-[10px] bg-surface-container-low p-space-md text-left">
-					<div class="flex items-center justify-between w-full">
-						<span class="inline-flex items-center gap-2 rounded-full bg-surface-container-highest px-2.5 py-1 border border-outline-variant/30">
-							<span class="relative flex h-2 w-2">
-								<span class="relative inline-flex rounded-full h-2 w-2 bg-outline-variant"></span>
-							</span>
-							<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">No live gate</span>
-						</span>
-						<span class="rounded-full bg-surface-container-highest border border-outline-variant/40 p-1.5 text-on-surface-variant">
-							<ScanBarcode class="w-4.5 h-4.5" />
-						</span>
+				<div class="flex items-end justify-between w-full pt-1">
+					<div class="flex flex-col">
+						<span class="font-display text-headline-lg-mobile text-on-surface">Open Ticket Scanner</span>
+						<span class="text-body-sm text-on-surface-variant">Instant Camera & Manual HMAC Code Verification</span>
 					</div>
-					<div class="flex items-end justify-between w-full pt-1">
-						<div class="flex flex-col">
-							<span class="font-display text-headline-lg-mobile text-on-surface">Open Ticket Scanner</span>
-							<span class="text-body-sm text-on-surface-variant">Disabled — add at least one configured gate</span>
-						</div>
-						<span class="h-9 px-4 rounded-full bg-surface-container-high border border-outline-variant/30 text-on-surface-variant text-[13px] font-semibold flex items-center justify-center">Disabled</span>
-					</div>
+					<span class="h-9 px-4 rounded-full bg-primary-fixed text-surface text-[13px] font-semibold flex items-center justify-center shadow-sm">Launch</span>
 				</div>
 			</div>
-		{/if}
+		</a>
 
 		{#if mainEvent}
 			<section class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm flex flex-col gap-space-sm">
@@ -832,13 +829,16 @@
 					<div class="flex items-center justify-between gap-2 pt-1"><span class="font-code text-headline-lg-mobile tracking-[0.16em] text-primary">{currentDeskPin || '••••••'}</span><span class="text-label-badge text-on-surface-variant">{currentDeskPin ? 'Expires in 6h' : 'PIN not generated'}</span></div>
 					<p class="text-body-sm text-on-surface-variant pt-2">{currentDeskPin ? `One-time PIN for ${pinGateName}. Generate another to revoke it.` : `Generate a staff PIN for ${pinGateName} before arming this gate scanner.`}</p>
 					<div class="grid grid-cols-2 gap-2 pt-3"><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={copyScannerLink}><Copy class="w-3.5 h-3.5" />Copy scanner link</button><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={regenPin}><RefreshCw class="w-3.5 h-3.5" />{currentDeskPin ? 'Rotate PIN' : 'Generate PIN'}</button></div>
-				{:else}
+					{:else}
 					<div class="flex flex-col gap-2 pt-2">
 						<span class="font-code text-headline-lg-mobile tracking-[0.16em] text-outline-variant">••••••</span>
-						<p class="text-body-sm text-on-surface-variant">Create an event with a gate to generate its private staff PIN.</p>
-						<div class="grid grid-cols-2 gap-2 opacity-50 pointer-events-none"><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5"><Copy class="w-3.5 h-3.5" />Copy scanner link</button><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5"><RefreshCw class="w-3.5 h-3.5" />{currentDeskPin ? 'Rotate PIN' : 'Generate PIN'}</button></div>
+						<p class="text-body-sm text-on-surface-variant">The scanner opens straight away — create an event with a gate to generate its private staff PIN.</p>
+						<div class="grid grid-cols-2 gap-2">
+							<button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={copyScannerLink}><Copy class="w-3.5 h-3.5" />Copy scanner link</button>
+							<button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5 opacity-50 cursor-not-allowed" disabled title="Add a gate to an event to generate a staff PIN"><RefreshCw class="w-3.5 h-3.5" />{currentDeskPin ? 'Rotate PIN' : 'Generate PIN'}</button>
+						</div>
 					</div>
-				{/if}
+					{/if}
 			</div>
 			<div><span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Configured event gates</span><div class="flex flex-col gap-2 pt-2">{#each terminals as term}<div class="flex items-center justify-between gap-2 rounded-lg bg-surface-container-high/60 border border-outline-variant/20 px-3 py-2"><span class="flex items-center gap-2 min-w-0"><span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span><span class="min-w-0"><span class="block text-body-sm text-on-surface truncate">{term.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{term.sub}</span></span></span><span class="text-label-badge text-on-surface-variant shrink-0">{term.ms}</span></div>{:else}<p class="text-body-sm text-on-surface-variant pt-2">No active terminals reported.</p>{/each}</div></div>
 		</section>
@@ -906,14 +906,14 @@
 						</div>
 						<ChevronRight class="w-5 h-5 text-outline-variant group-hover:text-on-surface" />
 					</a>
-					<button onclick={() => (broadcastOpen = true)} class="flex items-center justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm hover:bg-surface-container-high transition-colors group text-left">
+					<button onclick={() => openBroadcast()} class="flex items-center justify-between rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm hover:bg-surface-container-high transition-colors group text-left">
 						<div class="flex items-center gap-space-md min-w-0">
 							<div class="w-10 h-10 rounded-full bg-surface-container-highest border border-outline-variant/30 text-accent-amber flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
 								<Megaphone class="w-5 h-5" />
 							</div>
 							<div class="flex flex-col min-w-0">
 								<span class="text-body-lg text-on-surface font-semibold truncate">Broadcast Announcement</span>
-								<span class="text-body-sm text-on-surface-variant truncate">Push alerts & direct SMS to {stats?.orders.toLocaleString() ?? 0} ticket holders</span>
+								<span class="text-body-sm text-on-surface-variant truncate">Announce to every pass holder of {mainEvent.title}</span>
 							</div>
 						</div>
 						<ChevronRight class="w-5 h-5 text-outline-variant group-hover:text-accent-amber" />
@@ -965,21 +965,53 @@
 <Sheet open={broadcastOpen} title="Broadcast" close={() => (broadcastOpen = false)}>
 	{#snippet footer()}
 		<button
+			type="submit"
+			form="broadcast-form"
 			class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md disabled:opacity-40"
-			disabled={!broadcastMsg.trim()}
-			onclick={() => {
-				broadcastOpen = false;
-				toast('Broadcast queued to all ticket holders', 'success');
-				broadcastMsg = '';
-			}}
+			disabled={!broadcastMsg.trim() || !broadcastEvent}
 		>
 			Send broadcast
 		</button>
 	{/snippet}
-	<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
-		Message to every ticket holder
-		<textarea bind:value={broadcastMsg} rows="4" placeholder="Gate 1 is now open — fast-pass holders use the left lane." class="px-4 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline"></textarea>
-	</label>
+	<form
+		id="broadcast-form"
+		method="POST"
+		action="?/broadcast"
+		use:enhance={() => async ({ result }) => {
+			if (result.type !== 'success') return;
+			const sent = Number(result.data?.sent ?? 0);
+			broadcastOpen = false;
+			broadcastMsg = '';
+			toast(
+				sent > 0
+					? `Announcement sent to ${sent} ticket holder${sent === 1 ? '' : 's'}`
+					: 'No ticket holders to notify yet',
+				sent > 0 ? 'success' : 'info'
+			);
+		}}
+	>
+		{#if (payload?.events.length ?? 0) > 1}
+			<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
+				Event
+				<select
+					name="eventId"
+					bind:value={broadcastEventId}
+					class="px-3 py-2.5 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline"
+				>
+					{#each payload?.events ?? [] as e (e.id)}<option value={e.id}>{e.title}</option>{/each}
+				</select>
+			</label>
+		{:else}
+			<input type="hidden" name="eventId" value={broadcastEvent?.id ?? ''} />
+		{/if}
+		<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
+			Message to every ticket holder
+			<textarea name="message" bind:value={broadcastMsg} rows="4" placeholder="Gate 1 is now open — fast-pass holders use the left lane." class="px-4 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline"></textarea>
+		</label>
+		<p class="text-label-badge text-on-surface-variant">
+			Delivered to the notification hub of every pass owner of {broadcastEvent?.title ?? 'your event'}.
+		</p>
+	</form>
 </Sheet>
 
 <Sheet open={staffOpen} title="Gate staff access" close={() => (staffOpen = false)}>

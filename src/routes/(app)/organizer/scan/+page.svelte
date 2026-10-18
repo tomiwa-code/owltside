@@ -9,6 +9,7 @@
 		KeyRound,
 		Lock,
 		OctagonAlert,
+		Plus,
 		RadioTower,
 		ScanLine,
 		Search,
@@ -35,6 +36,10 @@
 	$effect(() => {
 		if (event && !event.gates?.some((configured) => configured.name === gateName)) gateName = event.gates?.[0]?.name ?? '';
 	});
+	/** The scanner opens even with nothing set up yet — it then guides the setup. */
+	const hasEvent = $derived(Boolean(event));
+	const hasGate = $derived((event?.gates?.length ?? 0) > 0);
+	const setupHref = $derived(event ? `/organizer/create?edit=${event.id}` : '/organizer/create');
 
 	/* ── phase A: staff PIN ─────────────────────────────────── */
 	let phase = $state<'pin' | 'scan'>('pin');
@@ -140,8 +145,11 @@
 	let lastScanned: { code: string; at: number } | null = null;
 
 	$effect(() => {
-		queue = loadQueue();
-		saveQueue(queue); // Strip any staff PINs left by an older scanner build.
+		// Read the stored queue into a local first: touching `queue` inside the
+		// effect would make it depend on the state it writes.
+		const stored = loadQueue();
+		queue = stored;
+		saveQueue(stored); // Strip any staff PINs left by an older scanner build.
 		online = navigator.onLine;
 		const on = () => {
 			online = true;
@@ -296,6 +304,38 @@
 
 <svelte:head><title>Ticket Scanner • Owltside</title></svelte:head>
 
+<!-- Shared "set the scanner up" panel: the terminal is always open, it just
+     tells the organizer what to finish before it can arm. -->
+{#snippet setupPanel()}
+	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-8 flex flex-col items-center text-center">
+		<span class="relative w-24 h-24 flex items-center justify-center">
+			<span class="absolute inset-0 rounded-full bg-primary/20 blur-2xl"></span>
+			<span class="relative w-16 h-16 rounded-full bg-primary/10 border border-outline-variant/40 flex items-center justify-center text-primary">
+				<ScanLine class="w-7 h-7" />
+			</span>
+		</span>
+		<h2 class="font-display text-headline-lg text-on-surface mt-4">{hasEvent ? 'This event has no gate yet' : 'No event to scan yet'}</h2>
+		<p class="text-body-sm text-on-surface-variant mt-1 max-w-md">
+			{hasEvent
+				? 'The scanner is ready — add a gate to this event and generate its staff PIN to arm this terminal.'
+				: 'The scanner is ready — publish your first event, add a gate, and arm this terminal with its staff PIN.'}
+		</p>
+		<ol class="text-left text-body-sm text-on-surface-variant flex flex-col gap-1.5 mt-4">
+			<li>1. {hasEvent ? 'Add a gate to this event' : 'Create your first event'}</li>
+			<li>2. Generate the six-digit staff PIN in Organizer Console → Hardware &amp; Gates</li>
+			<li>3. Enter the PIN here to arm the scanner</li>
+		</ol>
+		<div class="flex items-center gap-2.5 mt-6 flex-wrap justify-center">
+			<a href={setupHref} class="h-11 px-5 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary">
+				<Plus class="w-4 h-4" /> {hasEvent ? 'Configure gates' : 'Create event'}
+			</a>
+			<a href="/organizer" class="h-11 px-5 rounded-full bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm font-medium flex items-center gap-2 hover:bg-surface-bright transition-colors">
+				<RadioTower class="w-4 h-4" /> Back to console
+			</a>
+		</div>
+	</section>
+{/snippet}
+
 <!-- ── desktop (md+) gate scanner terminal in the shipped console design
      language (design source unavailable this turn — extrapolated); mobile
      scanner below unchanged ── -->
@@ -310,7 +350,7 @@
 				<span>Scanner_Terminal</span>
 			</span>
 			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-3">Ticket Scanner & Gate Control</h1>
-			<p class="text-body-md text-on-surface-variant mt-2">Arm this terminal with a staff token, then verify tickets issued for this event and gate while connected or offline at {gate}.</p>
+			<p class="text-body-md text-on-surface-variant mt-2">Arm this terminal with a staff token, then verify tickets issued for this event and gate while connected or offline{hasGate ? ` at ${gate}` : ''}.</p>
 		</div>
 		<div class="flex items-center gap-3 flex-wrap">
 			{#if events.length > 1}<select bind:value={eventId} aria-label="Choose event" class="max-w-48 px-3 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm text-on-surface">{#each events as e (e.id)}<option value={e.id}>{e.title}</option>{/each}</select>{/if}
@@ -327,7 +367,9 @@
 
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 grid lg:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
 		<div class="min-w-0">
-			{#if phase === 'pin'}
+			{#if !hasEvent || !hasGate}
+				{@render setupPanel()}
+			{:else if phase === 'pin'}
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-8 flex flex-col items-center text-center">
 					<div class="flex items-center justify-center gap-2 flex-wrap">
 						<span class="flex items-center gap-1.5 rounded-full bg-surface-container-high border border-surface-glass-border px-3 py-1.5 {MONO} text-on-surface-variant">
@@ -578,7 +620,9 @@
 	</section>
 
 	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md pt-space-sm">
-		{#if phase === 'pin'}
+		{#if !hasEvent || !hasGate}
+			{@render setupPanel()}
+		{:else if phase === 'pin'}
 			<!-- security pills -->
 			<div class="flex items-center justify-center gap-2 flex-wrap">
 				<span class="flex items-center gap-1.5 rounded-full bg-surface-container-high border border-outline-variant/30 px-3 py-1.5 text-label-badge text-on-surface-variant">

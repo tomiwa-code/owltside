@@ -450,8 +450,10 @@ export const demoSource: DataSource = {
 			dynamic.organizerUnread = 0;
 		}
 	},
-	async markAllNotificationsRead() {
+	async markAllNotificationsRead(userId = 'demo') {
+		const uid = userId === 'demo' ? demoMeId : userId;
 		demo.notifications.forEach((n) => (n.read = true));
+		(demoPrivateNotifications.get(uid) ?? []).forEach((n) => (n.read = true));
 	},
 
 	/* ── organizer side (demo) ── */
@@ -638,16 +640,25 @@ export const demoSource: DataSource = {
 		const uid = userId === 'demo' ? demoMeId : userId;
 		const event = demo.events.find((e) => e.id === eventId && e.organizer.id === uid);
 		if (!event) throw new Error('Event not found');
-		demo.notifications.unshift({
-			id: `n-${Math.random().toString(36).slice(2, 10)}`,
-			kind: 'event',
-			title: `Announcement · ${event.title}`,
-			body: message.trim(),
-			href: `/events/${event.slug}`,
-			at: new Date().toISOString(),
-			read: false
-		});
-		return 1;
+		const body = message.trim();
+		if (!body) throw new Error('Enter a message to broadcast');
+		// The announcement lands in the notification hub of every pass owner.
+		const owners = demoTicketOwners(eventId);
+		const at = new Date().toISOString();
+		for (const ownerId of owners) {
+			const ownerNotifications = demoPrivateNotifications.get(ownerId) ?? [];
+			ownerNotifications.unshift({
+				id: `n-${Math.random().toString(36).slice(2, 10)}`,
+				kind: 'event',
+				title: `Announcement · ${event.title}`,
+				body,
+				href: `/events/${event.slug}`,
+				at,
+				read: false
+			});
+			demoPrivateNotifications.set(ownerId, ownerNotifications);
+		}
+		return owners.size;
 	},
 	async transferTicket(userId, ticketId, recipientHandle) {
 		const uid = userId === 'demo' ? demoMeId : userId;
@@ -744,6 +755,29 @@ function allDemoTickets(): Ticket[] {
 	return [...demo.tickets, ...demo.rooftopTickets];
 }
 
+/**
+ * Demo passes only carry a holder name, so resolve the account that owns each
+ * pass of an event. Used to deliver broadcast announcements to ticket owners.
+ */
+function demoTicketOwners(eventId: string): Set<string> {
+	const owners = new Set<string>();
+	const idByHolder = new Map<string, string>();
+	for (const person of Object.values(demo.people)) {
+		idByHolder.set(person.name.trim().toLowerCase(), person.id);
+	}
+	const isAnnounceable = (ticket: Ticket) =>
+		ticket.eventId === eventId && ticket.status !== 'refunded' && ticket.status !== 'transferred';
+	for (const [userId, tickets] of demoUserTickets) {
+		if (tickets.some(isAnnounceable)) owners.add(userId);
+	}
+	for (const ticket of allDemoTickets()) {
+		if (!isAnnounceable(ticket)) continue;
+		const ownerId = idByHolder.get(ticket.holder.trim().toLowerCase());
+		if (ownerId) owners.add(ownerId);
+	}
+	return owners;
+}
+
 export function computeOrganizer(
 	events: EventItem[],
 	tickets: Ticket[],
@@ -779,6 +813,13 @@ export function computeOrganizer(
 type Row = Record<string, any>;
 
 const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+/** True when Postgres/PostgREST reports that a function was never installed. */
+const isMissingFunctionError = (error: { code?: string; message?: string } | null): boolean => {
+	if (!error) return false;
+	if (error.code === '42883' || error.code === 'PGRST202') return true;
+	return /function .* does not exist|could not find the function/i.test(error.message ?? '');
+};
 
 const toProfile = (r: Row): Profile => ({
 	id: r.id,
@@ -1337,14 +1378,48 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			const { error } = await db.from('events').delete().eq('id', eventId).eq('organizer_id', userId);
 			if (error) throw error;
 		},
-		async broadcastEvent(_userId, eventId, message) {
-			if (!isUuid(eventId)) throw new Error('Invalid event ID');
-			const { data, error } = await db.rpc('broadcast_to_event_holders', {
+		async broadcastEvent(userId, eventId, message) {
+			if (!isUuid(userId) || !isUuid(eventId)) throw new Error('Invalid event ID');
+			const body = message.trim();
+			if (!body) throw new Error('Enter a message to broadcast');
+
+			const { data: event, error: eventError } = await db
+				.from('events')
+				.select('id, title, slug')
+				.eq('id', eventId)
+				.eq('organizer_id', userId)
+				.maybeSingle();
+			if (eventError) throw eventError;
+			if (!event) throw new Error('Event not found');
+
+			const rpcResult = await db.rpc('broadcast_to_event_holders', {
 				p_event_id: eventId,
-				p_body: message.trim()
+				p_body: body
 			});
-			if (error) throw error;
-			return Number(data?.sent ?? 0);
+			if (!rpcResult.error) return Number(rpcResult.data?.sent ?? 0);
+			// Deployments without the broadcast RPC still get the announcement.
+			if (!isMissingFunctionError(rpcResult.error)) throw rpcResult.error;
+
+			const { data: tickets, error: ticketsError } = await db
+				.from('tickets')
+				.select('owner_id')
+				.eq('event_id', eventId)
+				.in('status', ['valid', 'used']);
+			if (ticketsError) throw ticketsError;
+			const owners = [...new Set((tickets ?? []).map((row: Row) => row.owner_id).filter(Boolean))];
+			if (owners.length === 0) return 0;
+
+			const { error: insertError } = await db.from('notifications').insert(
+				owners.map((ownerId) => ({
+					user_id: ownerId,
+					kind: 'event',
+					title: `Announcement · ${event.title}`,
+					body,
+					href: `/events/${event.slug}`
+				}))
+			);
+			if (insertError) throw insertError;
+			return owners.length;
 		},
 		async transferTicket(userId, ticketId, recipientHandle) {
 			if (!isUuid(userId) || !isUuid(ticketId)) throw new Error('Invalid ticket or user ID');
