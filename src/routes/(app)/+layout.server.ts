@@ -15,11 +15,26 @@ export const load: LayoutServerLoad = async ({ cookies, url, locals }) => {
 	const currentProfile = locals.session ? (await source.getProfile(locals.session.handle).catch(() => null)) ?? null : null;
 	let followingIds: string[] = [];
 	let unread = 0;
+	let inboxUnread = 0;
 	let followLoadError = false;
 	if (locals.session) {
-		try { followingIds = await source.getFollowingIds(locals.session.userId); }
-		catch { followLoadError = true; }
-		unread = (await source.getNotifications(locals.session.userId).catch(() => [])).filter((n) => !n.read).length;
+		try {
+			followingIds = await source.getFollowingIds(locals.session.userId);
+		} catch {
+			followLoadError = true;
+		}
+		try {
+			const [notifications, conversations, requests] = await Promise.all([
+				source.getNotifications(locals.session.userId).catch(() => []),
+				source.getConversations(locals.session.userId).catch(() => []),
+				source.getIncomingMessageRequests(locals.session.userId).catch(() => [])
+			]);
+			unread = notifications.filter((n) => !n.read).length;
+			const convoUnread = conversations.reduce((sum, c) => sum + (c.unread ?? 0), 0);
+			inboxUnread = convoUnread + requests.length;
+		} catch {
+			// keep defaults on partial failure
+		}
 	}
-	return { operatingIdentity, currentProfile, followingIds, unread, followLoadError };
+	return { operatingIdentity, currentProfile, followingIds, unread, inboxUnread, followLoadError };
 };
