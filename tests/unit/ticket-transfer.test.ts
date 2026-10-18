@@ -71,7 +71,8 @@ describe('ticket transfer user search & 1-to-1 transfer', () => {
 			session,
 			demoMode: true,
 			operatingIdentity: 'attendee',
-			unread: 0
+			unread: 0,
+			inboxUnread: 0
 		});
 	});
 
@@ -119,6 +120,7 @@ describe('ticket transfer user search & 1-to-1 transfer', () => {
 					currentProfile: null,
 					followingIds: [],
 					unread: 0,
+					inboxUnread: 0,
 					followLoadError: false,
 					ticket: { ...sampleTicket }
 				}

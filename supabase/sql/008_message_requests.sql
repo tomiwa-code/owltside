@@ -84,9 +84,14 @@ begin
     for update;
 
     if v_conversation_id is null then
-      insert into public.conversations (user_id, peer_id, last_message, last_at, unread)
-      values (v_request.requester_id, v_request.organizer_id, v_request.body, now(), 0)
+      insert into public.conversations (user_id, peer_id, last_message, last_at, unread, event_id)
+      values (v_request.requester_id, v_request.organizer_id, v_request.body, now(), 0, v_request.event_id)
       returning id into v_conversation_id;
+    else
+      -- Keep the thread's event brief pointing at the event this request came from.
+      update public.conversations
+      set event_id = v_request.event_id
+      where id = v_conversation_id;
     end if;
 
     insert into public.messages (conversation_id, sender_id, body)

@@ -88,6 +88,7 @@ create table if not exists public.conversations (
   last_message text not null default '',
   last_at timestamptz not null default now(),
   unread integer not null default 0,
+  event_id uuid references public.events (id) on delete set null,
   unique (user_id, peer_id)
 );
 

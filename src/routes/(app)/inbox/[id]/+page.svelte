@@ -127,15 +127,17 @@
 				</div>
 			</div>
 
-			<div class="px-4 py-2.5 flex items-center justify-between gap-3 border-b border-surface-glass-border bg-surface-container-low/60">
-				<span class="flex items-center gap-2 text-body-sm text-on-surface-variant min-w-0">
-					<span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
-					<span class="truncate">Pulse AI &amp; Web Summit 2025 • Keynote: Foundational Large Action Models in 2026</span>
-				</span>
-				<a href="/events/pulse-ai-summit-lagos" class="{MONO} text-primary flex items-center gap-1 hover:underline shrink-0">
-					Event Brief <ArrowUpRight class="w-3.5 h-3.5" />
-				</a>
-			</div>
+			{#if conv.event}
+				<div class="px-4 py-2.5 flex items-center justify-between gap-3 border-b border-surface-glass-border bg-surface-container-low/60">
+					<span class="flex items-center gap-2 text-body-sm text-on-surface-variant min-w-0">
+						<span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
+						<span class="truncate">{conv.event.title}</span>
+					</span>
+					<a href="/events/{conv.event.slug}" class="{MONO} text-primary flex items-center gap-1 hover:underline shrink-0">
+						Event Brief <ArrowUpRight class="w-3.5 h-3.5" />
+					</a>
+				</div>
+			{/if}
 			<div class="px-4 py-2 flex items-center justify-center gap-2 border-b border-surface-glass-border">
 				<Lock class="w-3.5 h-3.5 text-primary" />
 				<span class="{MONO} text-on-surface-variant">End-to-end encrypted session • OWLTSIDE Mesh Gateway 0x7E3</span>
@@ -282,13 +284,15 @@
 				<Lock class="w-3.5 h-3.5 text-primary shrink-0" /> End-to-end encrypted session • OWLTSIDE Mesh Gateway
 			</span>
 		</div>
-		<div class="mx-gutter mt-2 rounded-xl bg-surface-container-low border border-surface-glass-border p-3 flex items-center justify-between gap-2">
-			<span class="min-w-0">
-				<span class="block text-label-badge text-on-surface-variant">EVENT BRIEF</span>
-				<span class="block text-body-sm text-on-surface font-medium truncate">Pulse AI &amp; Web Summit 2025 · Keynote session</span>
-			</span>
-			<a href="/events/pulse-ai-summit-lagos" aria-label="Open event brief" class="h-9 px-3 rounded-full bg-primary/10 text-primary text-label-badge font-semibold flex items-center gap-1 shrink-0">Open <ArrowUpRight class="w-3.5 h-3.5" /></a>
-		</div>
+		{#if conv.event}
+			<div class="mx-gutter mt-2 rounded-xl bg-surface-container-low border border-surface-glass-border p-3 flex items-center justify-between gap-2">
+				<span class="min-w-0">
+					<span class="block text-label-badge text-on-surface-variant">EVENT BRIEF</span>
+					<span class="block text-body-sm text-on-surface font-medium truncate">{conv.event.title}</span>
+				</span>
+				<a href="/events/{conv.event.slug}" aria-label="Open event brief" class="h-9 px-3 rounded-full bg-primary/10 text-primary text-label-badge font-semibold flex items-center gap-1 shrink-0">Open <ArrowUpRight class="w-3.5 h-3.5" /></a>
+			</div>
+		{/if}
 		<div class="mx-gutter mt-2 flex gap-2">
 				{#each [{ icon: CalendarDays, label: 'Schedule' }] as action (action.label)}
 					{@const Icon = action.icon}

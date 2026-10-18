@@ -72,6 +72,30 @@ describe('demo datasource', () => {
 		expect((await demoSource.getMessages(accepted.conversationId!)).map((message) => message.body)).toContain('Hello about the event');
 	});
 
+	it('ties the chat event brief to the event the message request came from', async () => {
+		const event = (await demoSource.getEvent('fusion-gastro-beer-fair'))!;
+		const request = await demoSource.createMessageRequest('u-ada', event.slug, 'Question about the beer fair');
+		const accepted = request.status === 'accepted' && request.conversationId
+			? request
+			: await demoSource.respondToMessageRequest(event.organizer.id, request.id, true);
+
+		const expected = { id: event.id, slug: event.slug, title: event.title };
+		const requesterView = (await demoSource.getConversations('u-ada')).find((c) => c.id === accepted.conversationId);
+		const organizerView = (await demoSource.getConversations(event.organizer.id)).find((c) => c.id === accepted.conversationId);
+		expect(requesterView?.event).toEqual(expected);
+		expect(organizerView?.event).toEqual(expected);
+	});
+
+	it('keeps seeded threads on their own event brief', async () => {
+		const convs = await demoSource.getConversations('demo');
+		expect(convs.find((c) => c.id === 'c-amina')?.event).toEqual({
+			id: 'e-pulse-ai',
+			slug: 'pulse-ai-summit-lagos',
+			title: 'Pulse AI Summit Lagos'
+		});
+		expect(convs.find((c) => c.id === 'c-support')?.event ?? null).toBe(null);
+	});
+
 	it('lets an invitee accept a role and shows it on their public profile', async () => {
 		const event = await demoSource.createEvent('u-ada', {
 			title: 'Speaker Invite Notification Test',

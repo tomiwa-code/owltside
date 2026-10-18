@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from '$app/state';
 import type { Profile } from '$lib/types';
 
-const layoutData = { session: null, demoMode: true, operatingIdentity: 'attendee' as const, unread: 0, currentProfile: null, followingIds: [], followLoadError: false };
+const layoutData = { session: null, demoMode: true, operatingIdentity: 'attendee' as const, unread: 0, inboxUnread: 0, currentProfile: null, followingIds: [], followLoadError: false };
 const communityProfile: Profile = {
 	id: 'p1', handle: 'drbello', name: 'Dr. Amina Bello', avatarColor: '#009eb9',
 	followers: 0, following: 0, verified: true, city: 'Abuja', bio: 'Public-health technologist', link: null
