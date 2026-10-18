@@ -493,14 +493,16 @@ export const conversations: Conversation[] = [
 		lastMessage: 'See you at the gate — bring a valid ID for badge pickup 🙂',
 		lastAt: at(0, 9, 42),
 		unread: 2,
-		online: true
+		online: true,
+		event: { id: 'e-pulse-ai', slug: 'pulse-ai-summit-lagos', title: 'Pulse AI Summit Lagos' }
 	},
 	{
 		id: 'c-tunde',
 		peer: people.tunde,
 		lastMessage: 'Omo the warehouse set last night was mental 🔥',
 		lastAt: at(-1, 22, 15),
-		unread: 0
+		unread: 0,
+		event: { id: 'e-warehouse', slug: 'underground-warehouse-04', title: 'Underground Warehouse 04' }
 	},
 	{
 		id: 'c-support',

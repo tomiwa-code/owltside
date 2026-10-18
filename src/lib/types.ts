@@ -133,6 +133,12 @@ export interface Ticket {
 	cover: CoverArt;
 }
 
+export interface ConversationEventRef {
+	id: string;
+	slug: string;
+	title: string;
+}
+
 export interface Conversation {
 	id: string;
 	peer: Profile;
@@ -140,6 +146,8 @@ export interface Conversation {
 	lastAt: string;
 	unread: number;
 	online?: boolean;
+	/** Event this chat is about (the one the message request came from). */
+	event?: ConversationEventRef | null;
 }
 
 export interface MessageRequest {

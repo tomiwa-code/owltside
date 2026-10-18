@@ -33,6 +33,9 @@ type DemoPrivateConversation = {
 	lastAt: string;
 	requesterUnread: number;
 	organizerUnread: number;
+	eventId: string;
+	eventSlug: string;
+	eventTitle: string;
 };
 
 const demoPrivateConversations: DemoPrivateConversation[] = [];
@@ -177,7 +180,8 @@ export const demoSource: DataSource = {
 				peer: c.requesterId === uid ? c.organizer : c.requester,
 				lastMessage: c.lastMessage,
 				lastAt: c.lastAt,
-				unread: c.requesterId === uid ? c.requesterUnread : c.organizerUnread
+				unread: c.requesterId === uid ? c.requesterUnread : c.organizerUnread,
+				event: { id: c.eventId, slug: c.eventSlug, title: c.eventTitle }
 			}));
 		return [...seeded, ...dynamic].sort((a, b) => +new Date(b.lastAt) - +new Date(a.lastAt));
 	},
@@ -312,12 +316,26 @@ export const demoSource: DataSource = {
 					lastMessage: '',
 					lastAt: new Date().toISOString(),
 					requesterUnread: 0,
-					organizerUnread: 0
+					organizerUnread: 0,
+					eventId: request.eventId,
+					eventSlug: request.eventSlug,
+					eventTitle: request.eventTitle
 				};
 				demoPrivateConversations.push(dynamic);
 				demo.messages[dynamic.id] = [];
 			}
 			conversationId = dynamic.id;
+		}
+		// The chat is about the event the request was sent from — keep the
+		// conversation's event brief in sync even when reusing an older thread.
+		const seededConv = demo.conversations.find((conversation) => conversation.id === conversationId);
+		if (seededConv) {
+			seededConv.event = { id: request.eventId, slug: request.eventSlug, title: request.eventTitle };
+		}
+		if (dynamic && dynamic.id === conversationId) {
+			dynamic.eventId = request.eventId;
+			dynamic.eventSlug = request.eventSlug;
+			dynamic.eventTitle = request.eventTitle;
 		}
 		const message: Message = {
 			id: `m-${Math.random().toString(36).slice(2, 10)}`,
@@ -906,12 +924,27 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				.select('*, user:profiles!conversations_user_id_fkey(*), peer:profiles!conversations_peer_id_fkey(*)')
 				.or(`user_id.eq.${userId},peer_id.eq.${userId}`);
 			if (error) throw error;
-			return (data ?? []).map((r: Row) => ({
+			const rows = data ?? [];
+			// Resolve the event each chat is about (added in 015_conversation_events).
+			// event_id is read defensively so an un-migrated database still lists threads.
+			const eventIds = [...new Set(rows.map((r: Row) => r.event_id).filter(Boolean))] as string[];
+			const eventRefs = new Map<string, { id: string; slug: string; title: string }>();
+			if (eventIds.length) {
+				const { data: events, error: eventError } = await db
+					.from('events')
+					.select('id,slug,title')
+					.in('id', eventIds);
+				if (!eventError) {
+					for (const ev of events ?? []) eventRefs.set(ev.id, { id: ev.id, slug: ev.slug, title: ev.title });
+				}
+			}
+			return rows.map((r: Row) => ({
 				id: r.id,
 				peer: toProfile(r.user_id === userId ? r.peer : r.user),
 				lastMessage: r.last_message ?? '',
 				lastAt: r.last_at,
-				unread: r.unread ?? 0
+				unread: r.unread ?? 0,
+				event: r.event_id ? (eventRefs.get(r.event_id) ?? null) : null
 			}));
 		},
 		async getMessages(conversationId) {

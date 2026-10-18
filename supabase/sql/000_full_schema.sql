@@ -122,6 +122,7 @@ create table if not exists public.conversations (
   last_message text not null default '',
   last_at timestamptz not null default now(),
   unread integer not null default 0,
+  event_id uuid references public.events (id) on delete set null,
   unique (user_id, peer_id)
 );
 
@@ -563,9 +564,13 @@ begin
     for update;
 
     if v_conversation_id is null then
-      insert into public.conversations (user_id, peer_id, last_message, last_at, unread)
-      values (v_request.requester_id, v_request.organizer_id, v_request.body, now(), 0)
+      insert into public.conversations (user_id, peer_id, last_message, last_at, unread, event_id)
+      values (v_request.requester_id, v_request.organizer_id, v_request.body, now(), 0, v_request.event_id)
       returning id into v_conversation_id;
+    else
+      update public.conversations
+      set event_id = v_request.event_id
+      where id = v_conversation_id;
     end if;
 
     insert into public.messages (conversation_id, sender_id, body)
