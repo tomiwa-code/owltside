@@ -100,6 +100,7 @@ import type { EventItem } from '$lib/types';
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-8">
 		<section class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
 			<div class="relative h-32 overflow-hidden" style="background: linear-gradient(140deg, {profile.avatarColor} 0%, #1e1b4b 45%, #0b1326 100%);">
+				{#if profile.bannerUrl}<img src={profile.bannerUrl} alt="{profile.name}'s profile banner" class="absolute inset-0 w-full h-full object-cover" />{/if}
 				<div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-surface-container"></div>
 				<span class="absolute top-3 right-4 {MONO_DESKTOP} text-on-surface-variant">Node 0x7E3 • {profile.city ?? 'Somewhere loud'}</span>
 			</div>
@@ -108,7 +109,7 @@ import type { EventItem } from '$lib/types';
 					<span class="relative shrink-0">
 						<span class="block w-24 h-24 rounded-full overflow-hidden shadow-2xl p-0.5 bg-gradient-to-tr from-primary to-accent-emerald">
 							<span class="block w-full h-full rounded-full bg-surface-container flex items-center justify-center">
-								<Avatar name={profile.name} color={profile.avatarColor} size="xl" />
+								<Avatar name={profile.name} color={profile.avatarColor} src={profile.avatarUrl} size="xl" />
 							</span>
 						</span>
 					</span>
@@ -245,13 +246,14 @@ import type { EventItem } from '$lib/types';
 	<div class="flex flex-col w-full md:max-w-3xl md:mx-auto">
 		<div class="relative w-full h-36 overflow-hidden">
 			<div class="w-full h-full" style="background: linear-gradient(140deg, {profile.avatarColor}33 0%, #0b1326 80%), linear-gradient(#131b2e, #0b1120);"></div>
+			{#if profile.bannerUrl}<img src={profile.bannerUrl} alt="{profile.name}'s profile banner" class="absolute inset-0 w-full h-full object-cover" />{/if}
 			<div class="absolute inset-0 bg-gradient-to-b from-transparent to-surface"></div>
 		</div>
 		<div class="px-gutter -mt-10 relative z-10 flex flex-col gap-space-md">
 			<div class="flex items-end justify-between">
 				<div class="relative">
 					<div class="w-20 h-20 rounded-full p-0.5 bg-surface">
-						<Avatar name={profile.name} color={profile.avatarColor} size="xl" />
+						<Avatar name={profile.name} color={profile.avatarColor} src={profile.avatarUrl} size="xl" />
 					</div>
 				</div>
 				<FollowButton profileId={profile.id} />
