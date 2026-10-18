@@ -6,6 +6,8 @@
 		Bell,
 		BookmarkCheck,
 		CalendarDays,
+		Crown,
+		Mic,
 		ChevronLeft,
 		ChevronRight,
 		Copy,
@@ -24,6 +26,7 @@
 	import Avatar from '$components/Avatar.svelte';
 	import ImageCropSheet from '$components/ImageCropSheet.svelte';
 	import SavedEventsList from '$components/SavedEventsList.svelte';
+	import EventRow from '$components/EventRow.svelte';
 	import Sheet from '$components/Sheet.svelte';
 	import RoleSwitcher from '$components/RoleSwitcher.svelte';
 	import ConnectionsSheet from '$components/ConnectionsSheet.svelte';
@@ -46,6 +49,7 @@
 	const bio = $derived(hasProfileDraft ? profileDraft.value.bio : (data.profile?.bio ?? (session ? 'Chasing good sound and good software across Lagos.' : '')));
 	const city = $derived(hasProfileDraft ? profileDraft.value.city : (data.profile?.city ?? 'Lagos'));
 	const profileLink = $derived(hasProfileDraft ? profileDraft.value.link : (data.profile?.link ?? ''));
+	const publicProfileHref = $derived(`/users/${data.profile?.handle ?? session?.handle ?? handle}`);
 	const interests = $derived(hasProfileDraft ? profileDraft.value.interests : (data.profile?.interests ?? []));
 	const avatarPhoto = $derived((profileAppearance.value.ownerId === session?.userId ? profileAppearance.value.avatarData : null) || data.profile?.avatarUrl || session?.avatarUrl || null);
 	const bannerPhoto = $derived((profileAppearance.value.ownerId === session?.userId ? profileAppearance.value.bannerData : null) || data.profile?.bannerUrl || null);
@@ -58,7 +62,13 @@
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
 	const savedEvents = $derived((data.events ?? []).filter((event) => bookmarks.value.includes(event.id)));
-	let profileTab = $state<'calendar' | 'saved'>('calendar');
+	let profileTab = $state<'events' | 'calendar' | 'saved'>('events');
+	let eventCategory = $state<'all' | 'organized' | 'roles'>('all');
+	const profileId = $derived(session?.userId ?? data.profile?.id ?? '');
+	const organizedEvents = $derived((data.events ?? []).filter((event) => event.organizer?.id === profileId));
+	const roleEvents = $derived((data.events ?? []).filter((event) => event.organizer?.id !== profileId && event.speakers.some((speaker) => speaker.id === profileId && !speaker.displayOnly && (!speaker.invited || speaker.inviteStatus === 'accepted'))));
+	const profileEvents = $derived([...new Map([...organizedEvents, ...roleEvents].map((event) => [event.id, event])).values()]);
+	const visibleProfileEvents = $derived(eventCategory === 'organized' ? organizedEvents : eventCategory === 'roles' ? roleEvents : profileEvents);
 
 	const upcoming = $derived(
 		(data.tickets ?? []).filter((t) => t.status === 'valid' && new Date(t.eventStartsAt) > new Date())
@@ -290,13 +300,13 @@
 			</div>
 			<div class="px-6 pb-6 flex flex-wrap items-start gap-6 justify-between">
 				<span class="flex items-start gap-5 -mt-10 relative min-w-0">
-					<span class="relative shrink-0">
+					<a href={publicProfileHref} aria-label="View {name}'s profile" class="relative shrink-0 block hover:opacity-90 transition-opacity">
 						<span class="block w-24 h-24 rounded-full overflow-hidden shadow-2xl p-0.5 bg-gradient-to-tr from-primary to-accent-emerald">
 							<span class="block w-full h-full rounded-full bg-surface-container flex items-center justify-center">
 								<Avatar name={name} src={avatarPhoto} size="xl" />
 							</span>
 						</span>
-					</span>
+					</a>
 					<span class="min-w-0 pt-1">
 						<span class="flex items-center flex-wrap gap-2">
 							<span class="font-display text-headline-lg text-on-surface tracking-tight">{name}</span>
@@ -331,12 +341,22 @@
 
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-5">
 		<div role="tablist" aria-label="Profile sections" class="inline-flex items-center gap-1 rounded-full border border-surface-glass-border bg-surface-container p-1">
+			<button type="button" role="tab" aria-selected={profileTab === 'events'} onclick={() => (profileTab = 'events')} class="h-10 px-4 rounded-full text-body-sm font-semibold flex items-center gap-2 transition-colors {profileTab === 'events' ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:text-on-surface'}"><CalendarDays class="w-4 h-4" />Events <span class="font-code text-label-badge">{profileEvents.length}</span></button>
 			<button type="button" role="tab" aria-selected={profileTab === 'calendar'} onclick={() => (profileTab = 'calendar')} class="h-10 px-4 rounded-full text-body-sm font-semibold flex items-center gap-2 transition-colors {profileTab === 'calendar' ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:text-on-surface'}"><CalendarDays class="w-4 h-4" />Calendar</button>
 			<button type="button" role="tab" aria-selected={profileTab === 'saved'} onclick={() => (profileTab = 'saved')} class="h-10 px-4 rounded-full text-body-sm font-semibold flex items-center gap-2 transition-colors {profileTab === 'saved' ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:text-on-surface'}"><BookmarkCheck class="w-4 h-4" />Saved <span class="font-code text-label-badge">{savedEvents.length}</span></button>
 		</div>
 	</div>
 	{#if profileTab === 'saved'}
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6"><SavedEventsList events={savedEvents} /></div>
+	{:else if profileTab === 'events'}
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col gap-4">
+			<div class="flex gap-2 flex-wrap">
+				<button type="button" aria-pressed={eventCategory === 'all'} onclick={() => (eventCategory = 'all')} class="h-9 px-4 rounded-full border text-body-sm {eventCategory === 'all' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}">All · {profileEvents.length}</button>
+				<button type="button" aria-pressed={eventCategory === 'organized'} onclick={() => (eventCategory = 'organized')} class="h-9 px-4 rounded-full border text-body-sm {eventCategory === 'organized' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}"><Crown class="inline w-4 h-4 mr-1" />Organized · {organizedEvents.length}</button>
+				<button type="button" aria-pressed={eventCategory === 'roles'} onclick={() => (eventCategory = 'roles')} class="h-9 px-4 rounded-full border text-body-sm {eventCategory === 'roles' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}"><Mic class="inline w-4 h-4 mr-1" />Event Roles · {roleEvents.length}</button>
+			</div>
+			<div class="grid md:grid-cols-2 gap-3">{#each visibleProfileEvents as event (event.id)}<EventRow {event} roleLabel={event.organizer?.id === profileId ? 'Organizer' : `Event role · ${event.speakers.find((speaker) => speaker.id === profileId)?.role ?? 'Speaker'}`} />{:else}<p class="col-span-full rounded-xl border border-surface-glass-border bg-surface-container p-5 text-body-sm text-on-surface-variant">No {eventCategory === 'roles' ? 'accepted event roles' : eventCategory === 'organized' ? 'organized events' : 'events'} yet.</p>{/each}</div>
+		</div>
 	{:else}
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 grid lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px] gap-6 items-start">
 		<div class="flex flex-col gap-6 min-w-0">
@@ -565,13 +585,13 @@
 
 			<div class="px-gutter -mt-14 relative z-10 flex flex-col">
 				<div class="flex items-end justify-between">
-					<div class="relative">
+					<a href={publicProfileHref} aria-label="View {name}'s profile" class="relative block hover:opacity-90 transition-opacity">
 						<div class="w-24 h-24 rounded-full overflow-hidden shadow-2xl p-0.5 bg-gradient-to-tr from-primary to-accent-emerald">
 							<div class="w-full h-full rounded-full bg-surface-container flex items-center justify-center">
 								<Avatar name={name} src={avatarPhoto} size="xl" />
 							</div>
 						</div>
-					</div>
+					</a>
 				</div>
 
 				<div class="mt-3 flex flex-col">
@@ -621,14 +641,30 @@
 					</button>
 				</div>
 
-				<div role="tablist" aria-label="Profile sections" class="grid grid-cols-2 gap-1 mt-4 rounded-full border border-surface-glass-border bg-surface-container-low p-1">
+				<div role="tablist" aria-label="Profile sections" class="grid grid-cols-3 gap-1 mt-4 rounded-full border border-surface-glass-border bg-surface-container-low p-1">
+					<button type="button" role="tab" aria-selected={profileTab === 'events'} onclick={() => (profileTab = 'events')} class="h-10 rounded-full text-body-sm font-semibold flex items-center justify-center gap-1 transition-colors {profileTab === 'events' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}"><CalendarDays class="w-4 h-4" />Events</button>
 					<button type="button" role="tab" aria-selected={profileTab === 'calendar'} onclick={() => (profileTab = 'calendar')} class="h-10 rounded-full text-body-sm font-semibold flex items-center justify-center gap-2 transition-colors {profileTab === 'calendar' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}"><CalendarDays class="w-4 h-4" />Calendar</button>
 					<button type="button" role="tab" aria-selected={profileTab === 'saved'} onclick={() => (profileTab = 'saved')} class="h-10 rounded-full text-body-sm font-semibold flex items-center justify-center gap-2 transition-colors {profileTab === 'saved' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}"><BookmarkCheck class="w-4 h-4" />Saved <span class="font-code text-label-badge">{savedEvents.length}</span></button>
 				</div>
 				{#if profileTab === 'saved'}
 					<div class="mt-4 pb-6"><SavedEventsList events={savedEvents} /></div>
+				{:else if profileTab === 'events'}
+					<div class="mt-4 pb-6 flex flex-col gap-3">
+						<div class="flex gap-2 overflow-x-auto pb-1">
+							<button type="button" aria-pressed={eventCategory === 'all'} onclick={() => (eventCategory = 'all')} class="shrink-0 px-3 h-9 rounded-full border text-label-badge {eventCategory === 'all' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}">All · {profileEvents.length}</button>
+							<button type="button" aria-pressed={eventCategory === 'organized'} onclick={() => (eventCategory = 'organized')} class="shrink-0 px-3 h-9 rounded-full border text-label-badge {eventCategory === 'organized' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}">Organized · {organizedEvents.length}</button>
+							<button type="button" aria-pressed={eventCategory === 'roles'} onclick={() => (eventCategory = 'roles')} class="shrink-0 px-3 h-9 rounded-full border text-label-badge {eventCategory === 'roles' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}">Event Roles · {roleEvents.length}</button>
+						</div>
+						<div class="flex flex-col gap-2">
+							{#each visibleProfileEvents as event (event.id)}
+								<EventRow {event} roleLabel={event.organizer?.id === profileId ? 'Organizer' : `Event role · ${event.speakers.find((speaker) => speaker.id === profileId)?.role ?? 'Speaker'}`} />
+							{:else}
+								<p class="rounded-xl border border-surface-glass-border bg-surface-container p-4 text-body-sm text-on-surface-variant">No {eventCategory === 'roles' ? 'accepted event roles' : eventCategory === 'organized' ? 'organized events' : 'events'} yet.</p>
+							{/each}
+						</div>
+					</div>
 				{:else}
-				<!-- calendar popover -->
+					<!-- calendar popover -->
 				{#if calendarOpen}
 					<div class="mt-3 bg-surface-container-high rounded-2xl p-4 shadow-xl transition-all">
 						<div class="flex items-center justify-between pb-3">

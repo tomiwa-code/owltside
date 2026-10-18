@@ -63,7 +63,7 @@
 	const curatedPages = $derived(Math.max(1, Math.ceil(curated.length / 3)));
 
 	const organizers = $derived(() => {
-		const map = new Map<string, { name: string; handle: string; avatarColor: string; events: number; attended: number; id: string }>();
+		const map = new Map<string, { name: string; handle: string; avatarColor: string; avatarUrl?: string | null; events: number; attended: number; id: string }>();
 		for (const e of events) {
 			if (!e.organizer.verified) continue;
 			const cur = map.get(e.organizer.id) ?? {
@@ -71,6 +71,7 @@
 				handle: e.organizer.handle,
 				name: e.organizer.name,
 				avatarColor: e.organizer.avatarColor,
+				avatarUrl: e.organizer.avatarUrl,
 				events: 0,
 				attended: 0
 			};
@@ -368,7 +369,7 @@
 					{#each organizers() as org (org.id)}
 						<div class="flex items-center gap-3">
 							<a href="/users/{org.handle}" aria-label="View {org.name}'s profile" class="flex flex-1 min-w-0 items-center gap-3 rounded-lg hover:bg-surface-container-high/60 transition-colors">
-								<Avatar name={org.name} color={org.avatarColor} size="md" />
+								<Avatar name={org.name} color={org.avatarColor} src={org.avatarUrl} size="md" />
 								<span class="flex-1 min-w-0">
 									<span class="flex items-center gap-1 min-w-0"><span class="text-body-md font-semibold text-on-surface truncate">{org.name}</span><BadgeCheck class="w-3.5 h-3.5 text-tertiary shrink-0" /></span>
 									<span class="block text-body-sm text-on-surface-variant truncate">{org.events} Events • {compact(org.attended)} Attended</span>

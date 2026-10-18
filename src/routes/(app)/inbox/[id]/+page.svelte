@@ -105,7 +105,7 @@
 		<section class="rounded-xl border border-surface-glass-border bg-surface-container flex flex-col overflow-hidden max-h-[calc(100dvh-8rem)] lg:sticky lg:top-24">
 			<div class="p-4 flex items-center gap-4 border-b border-surface-glass-border">
 				<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="shrink-0 hover:opacity-90 transition-opacity">
-					<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="lg" />
+					<Avatar name={conv.peer.name} color={conv.peer.avatarColor} src={conv.peer.avatarUrl} size="lg" />
 				</a>
 				<div class="flex-1 min-w-0">
 					<span class="flex items-center gap-2 min-w-0">
@@ -163,7 +163,7 @@
 						</div>
 					{:else}
 						<div class="flex items-end gap-3 self-start max-w-[80%]">
-							<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="shrink-0 hover:opacity-90 transition-opacity"><Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="xs" /></a>
+							<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="shrink-0 hover:opacity-90 transition-opacity"><Avatar name={conv.peer.name} color={conv.peer.avatarColor} src={conv.peer.avatarUrl} size="xs" /></a>
 							<div class="flex flex-col gap-1 min-w-0">
 								<div class="bg-surface-container-low border border-surface-glass-border text-on-surface p-4 rounded-xl rounded-bl-sm shadow-sm">
 									<p class="text-body-md leading-relaxed">{m.body}</p>
@@ -271,7 +271,7 @@
 <div class="md:hidden">
 <TopBar back title={conv.peer.name} subtitle={conv.peer.verified ? 'Verified organiser' : `@${conv.peer.handle}`}>
 	{#snippet right()}
-		<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="hover:opacity-90 transition-opacity"><Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="sm" /></a>
+		<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="hover:opacity-90 transition-opacity"><Avatar name={conv.peer.name} color={conv.peer.avatarColor} src={conv.peer.avatarUrl} size="sm" /></a>
 	{/snippet}
 </TopBar>
 
@@ -313,7 +313,7 @@
 					</div>
 				{:else}
 					<div class="flex items-end gap-space-xs max-w-[88%] self-start">
-						<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="shrink-0 hover:opacity-90 transition-opacity"><Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="xs" /></a>
+						<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="shrink-0 hover:opacity-90 transition-opacity"><Avatar name={conv.peer.name} color={conv.peer.avatarColor} src={conv.peer.avatarUrl} size="xs" /></a>
 						<div class="flex flex-col gap-1 min-w-0">
 							<div class="bg-surface-container-low text-on-surface p-space-md rounded-2xl rounded-bl-xs shadow-sm">
 								<p class="text-body-md leading-relaxed">{m.body}</p>

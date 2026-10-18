@@ -91,7 +91,7 @@
 		<div class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-wrap items-center gap-x-5 gap-y-4 justify-between">
 			<span class="flex items-center gap-4 min-w-0">
 				<span class="relative shrink-0">
-					<Avatar name={session?.name ?? 'Guest Explorer'} size="md" />
+					<Avatar name={session?.name ?? 'Guest Explorer'} src={session?.avatarUrl} size="md" />
 				</span>
 				<span class="min-w-0">
 					<span class="flex items-center gap-2 flex-wrap">
@@ -215,7 +215,7 @@
 					<div class="absolute -right-8 -top-8 w-32 h-32 bg-primary-container/20 rounded-full blur-2xl pointer-events-none"></div>
 					<div class="flex items-center gap-space-md relative z-10">
 						<div class="relative">
-							<Avatar name={session?.name ?? 'Guest Explorer'} size="lg" />
+							<Avatar name={session?.name ?? 'Guest Explorer'} src={session?.avatarUrl} size="lg" />
 						</div>
 						<div class="flex-1 min-w-0">
 							<div class="flex items-center gap-space-xs">

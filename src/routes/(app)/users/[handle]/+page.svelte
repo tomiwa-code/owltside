@@ -106,13 +106,13 @@ import type { EventItem } from '$lib/types';
 			</div>
 			<div class="px-6 pb-6 flex flex-wrap items-start gap-6 justify-between">
 				<span class="flex items-start gap-5 -mt-10 relative min-w-0">
-					<span class="relative shrink-0">
+					<a href="/users/{profile.handle}" aria-label="View {profile.name}'s profile" class="relative shrink-0 block hover:opacity-90 transition-opacity">
 						<span class="block w-24 h-24 rounded-full overflow-hidden shadow-2xl p-0.5 bg-gradient-to-tr from-primary to-accent-emerald">
 							<span class="block w-full h-full rounded-full bg-surface-container flex items-center justify-center">
 								<Avatar name={profile.name} color={profile.avatarColor} src={profile.avatarUrl} size="xl" />
 							</span>
 						</span>
-					</span>
+					</a>
 					<span class="min-w-0 pt-1">
 						<span class="flex items-center flex-wrap gap-2">
 							<span class="font-display text-headline-lg text-on-surface tracking-tight">{profile.name}</span>
@@ -251,11 +251,11 @@ import type { EventItem } from '$lib/types';
 		</div>
 		<div class="px-gutter -mt-10 relative z-10 flex flex-col gap-space-md">
 			<div class="flex items-end justify-between">
-				<div class="relative">
+				<a href="/users/{profile.handle}" aria-label="View {profile.name}'s profile" class="block hover:opacity-90 transition-opacity">
 					<div class="w-20 h-20 rounded-full p-0.5 bg-surface">
 						<Avatar name={profile.name} color={profile.avatarColor} src={profile.avatarUrl} size="xl" />
 					</div>
-				</div>
+				</a>
 				<FollowButton profileId={profile.id} />
 			</div>
 

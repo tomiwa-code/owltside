@@ -205,7 +205,7 @@
 					onkeydown={(e) => e.key === 'Enter' && goto(`/inbox/${conv.id}`)}
 				>
 					<a href="/users/{conv.peer.handle}" aria-label="View {conv.peer.name}'s profile" class="shrink-0 hover:opacity-90 transition-opacity" onclick={(e) => e.stopPropagation()}>
-						<Avatar name={conv.peer.name} color={conv.peer.avatarColor} size="lg" />
+						<Avatar name={conv.peer.name} color={conv.peer.avatarColor} src={conv.peer.avatarUrl} size="lg" />
 					</a>
 					<div class="flex-1 min-w-0">
 						<span class="flex items-center justify-between gap-2">

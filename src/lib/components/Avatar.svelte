@@ -19,6 +19,12 @@
 		xl: 'w-20 h-20 text-2xl'
 	} as const;
 
+	let imageFailed = $state(false);
+
+	$effect(() => {
+		imageFailed = false;
+	});
+
 	const initials = $derived(
 		name
 			.split(/\s+/)
@@ -29,8 +35,8 @@
 </script>
 
 <div class="relative shrink-0 {sizes[size]}">
-	{#if src}
-		<img src={src} alt={name} class="w-full h-full rounded-full object-cover ring-1 ring-surface-glass-border" />
+	{#if src && !imageFailed}
+		<img src={src} alt={name} onerror={() => (imageFailed = true)} class="w-full h-full rounded-full object-cover ring-1 ring-surface-glass-border" />
 	{:else}
 		<div
 			class="w-full h-full rounded-full flex items-center justify-center font-semibold text-on-primary-container ring-1 ring-surface-glass-border"

@@ -43,7 +43,7 @@ begin
     insert into public.notifications (user_id, kind, title, body, href)
     select p.id,
            'event',
-           'Speaker invitation · ' || new.title,
+           'Invitation · ' || new.title,
            coalesce(v_organizer_name, 'The organizer') || ' invited you as ' || v_role || ' for this event.',
            '/events/' || new.slug
     from public.profiles p

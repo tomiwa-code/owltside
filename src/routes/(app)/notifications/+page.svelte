@@ -137,6 +137,8 @@
 			.filter(Boolean) as { key: string; label: string; right: string; rows: NotificationItem[] }[]
 	);
 
+	const displayTitle = (title: string) => title.replace(/^Speaker invitation\s*[·—-]\s*/i, 'Invitation · ');
+
 	const deskTime = (n: NotificationItem) =>
 		dayKey(n.at) === 'yesterday' ? `Yesterday at ${fmtTime(n.at)}` : fmtRelative(n.at);
 
@@ -310,7 +312,7 @@
 												</span>
 											{/if}
 										</div>
-										<h3 class="font-display text-[15px] font-bold text-on-surface mt-1.5">{n.title}</h3>
+										<h3 class="font-display text-[15px] font-bold text-on-surface mt-1.5">{displayTitle(n.title)}</h3>
 										<p class="text-body-sm text-on-surface-variant mt-1">{n.body}</p>
 										<div class="flex items-center gap-3 mt-3">
 											{#if meta.action}
@@ -444,7 +446,7 @@ href={n.href ?? meta.action.href}
 									<span class="w-10 h-10 rounded-xl bg-surface-container-high border border-surface-glass-border flex items-center justify-center shrink-0"><Icon class="w-5 h-5 text-primary" /></span>
 									<div class="flex-1 min-w-0">
 										<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-label-badge"><span class="text-on-surface-variant uppercase tracking-wider">{meta.code}</span><span class="text-outline-variant">{meta.source}</span>{#if meta.tag}<span class="text-accent-emerald">· {meta.tag}</span>{/if}</div>
-										<h3 class="font-display text-body-md font-bold text-on-surface mt-1">{n.title}</h3>
+										<h3 class="font-display text-body-md font-bold text-on-surface mt-1">{displayTitle(n.title)}</h3>
 										<p class="text-body-sm text-on-surface-variant mt-1">{n.body}</p>
 										<div class="flex items-center justify-between gap-2 mt-3 flex-wrap">
 											{#if meta.action}<a href={n.href ?? meta.action.href} class="h-9 px-3 rounded-lg {meta.action.solid ? 'bg-primary text-on-primary' : 'bg-surface-container-high border border-surface-glass-border text-on-surface'} text-label-badge font-semibold flex items-center">{meta.action.label}</a>{/if}
