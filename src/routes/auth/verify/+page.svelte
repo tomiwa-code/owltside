@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
-	import { ArrowLeft, ArrowRight, Loader2, ShieldCheck, Timer } from '@lucide/svelte';
+	import { ArrowLeft, ArrowRight, ShieldCheck, Timer } from '@lucide/svelte';
 	import { toast } from '$lib/state/toast.svelte';
 
 	let { data, form } = $props();
@@ -230,7 +230,6 @@
 							class="{MONO} text-on-surface-variant enabled:text-primary enabled:hover:underline disabled:opacity-50 transition-colors flex items-center gap-1.5"
 						>
 							{#if resending}
-								<Loader2 class="w-3.5 h-3.5 animate-spin" />
 								<span>Sending code…</span>
 							{:else}
 								<span>Resend Code</span>
@@ -252,7 +251,6 @@
 						type="submit"
 					>
 						{#if verifying}
-							<Loader2 class="w-4 h-4 animate-spin" />
 							<span>Verifying code…</span>
 						{:else}
 							<span>Verify & Enter OWLTSIDE</span>
@@ -346,7 +344,6 @@
 				type="submit"
 			>
 				{#if verifying}
-					<Loader2 class="w-4.5 h-4.5 animate-spin" />
 					<span>Verifying code…</span>
 				{:else}
 					<span>Verify & Enter</span>
@@ -360,7 +357,6 @@
 				disabled={resendIn > 0 || resending || verifying}
 			>
 				{#if resending}
-					<Loader2 class="w-4 h-4 animate-spin" />
 					<span>Sending code…</span>
 				{:else if resendIn > 0}
 					<span>Resend code in {mm}:{ss}</span>

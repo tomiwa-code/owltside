@@ -8,9 +8,7 @@
 		CircleCheck,
 		Clock,
 		CreditCard,
-		Info,
-		Loader2,
-		Lock,
+		Info,		Lock,
 		MapPin,
 		QrCode,
 		ScanLine,
@@ -439,7 +437,6 @@
 						class="w-full h-12 rounded-lg bg-primary text-on-primary text-body-lg font-semibold flex items-center justify-center gap-2.5 hover:bg-primary-container transition-colors disabled:opacity-50 glow-primary"
 					>
 						{#if submitting}
-							<Loader2 class="w-4.5 h-4.5 animate-spin" />
 							<span>Opening Paystack…</span>
 						{:else}
 							<Lock class="w-4 h-4" />
@@ -701,7 +698,6 @@
 				onclick={onPay}
 			>
 				{#if submitting}
-					<Loader2 class="w-4.5 h-4.5 animate-spin" />
 					<span>Processing…</span>
 				{:else}
 					<span>Pay Securely</span>

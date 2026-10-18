@@ -7,7 +7,6 @@
 		Copy,
 		CreditCard,
 		Download,
-		Loader2,
 		LockKeyhole,
 		MapPin,
 		ScanLine,
@@ -389,7 +388,6 @@ import Cover from '$components/Cover.svelte';
 			disabled={!transferHandle.trim() || transferring}
 		>
 			{#if transferring}
-				<Loader2 class="w-4.5 h-4.5 animate-spin" />
 				<span>Transferring…</span>
 			{:else}
 				<span>Confirm transfer</span>
@@ -420,7 +418,6 @@ import Cover from '$components/Cover.svelte';
 				class="w-full h-12 rounded-xl bg-error-container text-on-error-container font-semibold text-body-md flex items-center justify-center gap-2 disabled:opacity-40"
 			>
 				{#if refunding}
-					<Loader2 class="w-4.5 h-4.5 animate-spin" />
 					<span>Submitting refund…</span>
 				{:else}
 					<span>Confirm & Submit Refund ({formatMoney(refundAmount)})</span>
