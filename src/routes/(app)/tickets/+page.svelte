@@ -408,8 +408,8 @@
 							<button class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => toast('Offline PDF cached for gate mode', 'success')}>
 								<Download class="w-4 h-4" /><span>Download Offline PDF</span>
 							</button>
-							<button class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => toast('Refund request queued — window open', 'info')}>
-								<History class="w-4 h-4" /><span>Request Refund (Window Open)</span>
+							<button class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => goto(`/tickets/${selected.id}?refund=1`)}>
+								<History class="w-4 h-4" /><span>Request Refund</span>
 							</button>
 						</div>
 					</div>
