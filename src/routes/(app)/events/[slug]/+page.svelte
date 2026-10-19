@@ -34,7 +34,9 @@
 	import { countdownLabel, fmtDate, fmtDateFull, fmtTime } from '$lib/utils/dates';
 	import { formatMoney } from '$lib/utils/money';
 	import { currency } from '$lib/state/prefs.svelte';
-	import type { MessageRequest } from '$lib/types';
+	import { promoDiscount } from '$lib/utils/promo';
+import { requestEventPromo } from '$lib/utils/promo-client';
+import type { MessageRequest, ResolvedPromo } from '$lib/types';
 	import { categories } from '$components/iconMap';
 
 	let { data } = $props();
@@ -70,17 +72,13 @@
 
 	/* ── desktop ticket selector extras ── */
 	let promoInput = $state('');
-	let appliedPromo = $state<string | null>(null);
+	let appliedPromo = $state<ResolvedPromo | null>(null);
+	let promoApplying = $state(false);
 	let agendaDayIdx = $state(0);
 
 	const base = $derived(tier.price * qty);
 	const fee = $derived(base > 0 ? Math.min(Math.round(base * 0.015), 1000) : 0);
-	const discount = $derived.by(() => {
-		if (!appliedPromo) return 0;
-		if (appliedPromo === 'TECHCOMMUNITY') return Math.min(5000, base);
-		if (appliedPromo === 'OWL10') return Math.round(base * 0.1);
-		return 0;
-	});
+	const discount = $derived(promoDiscount(base, appliedPromo));
 	const totalPayable = $derived(Math.max(0, base + fee - discount));
 	const soldPct = $derived.by(() => {
 		const cap = event.tiers.reduce((s, t) => s + t.capacity, 0);
@@ -166,13 +164,17 @@
 		}
 	}
 
-	function applyPromo() {
-		const code = promoInput.trim().toUpperCase();
-		if (code === 'TECHCOMMUNITY' || code === 'OWL10') {
-			appliedPromo = code;
-			toast(`Promo ${code} applied`, 'success');
-		} else {
-			toast('That code isn’t valid', 'error');
+	async function applyPromo() {
+		if (promoApplying) return;
+		promoApplying = true;
+		try {
+			appliedPromo = await requestEventPromo(event.slug, promoInput);
+			toast(`Promo ${appliedPromo.code} applied`, 'success');
+		} catch (error) {
+			appliedPromo = null;
+			toast(error instanceof Error ? error.message : 'That code isn’t valid for this event', 'error');
+		} finally {
+			promoApplying = false;
 		}
 	}
 
@@ -183,7 +185,7 @@
 
 	function checkout() {
 		goto(
-			`/checkout?event=${event.slug}&tier=${tierId}&qty=${qty}${appliedPromo ? `&promo=${appliedPromo}` : ''}`
+			`/checkout?event=${encodeURIComponent(event.slug)}&tier=${encodeURIComponent(tierId)}&qty=${qty}${appliedPromo ? `&promo=${encodeURIComponent(appliedPromo.code)}` : ''}`
 		);
 	}
 
@@ -543,14 +545,14 @@
 					<div class="flex flex-col gap-2">
 						<span class="text-body-sm text-on-surface-variant">Have a community promo code?</span>
 						<div class="flex items-center justify-between gap-3">
-							<span class="{MONO} text-accent-emerald flex items-center gap-1.5"><CircleCheck class="w-3.5 h-3.5" /> {appliedPromo}_Applied</span>
+							<span class="{MONO} text-accent-emerald flex items-center gap-1.5"><CircleCheck class="w-3.5 h-3.5" /> {appliedPromo.code}_Applied</span>
 							<span class="font-code text-body-sm font-bold text-accent-emerald">-{formatMoney(discount, currency.value)}</span>
 						</div>
 					</div>
 				{:else}
 					<div class="flex items-center gap-2">
 						<input bind:value={promoInput} placeholder="PROMO CODE" class="flex-1 h-10 px-3 rounded-lg bg-surface-base border border-surface-glass-border font-code text-label-code text-on-surface uppercase placeholder:text-outline-variant focus:outline-none focus:border-primary/50" />
-						<button type="button" onclick={applyPromo} class="{MONO} h-10 px-3 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface hover:bg-primary hover:text-on-primary hover:border-primary transition-colors">Apply</button>
+						<button type="button" disabled={promoApplying} onclick={applyPromo} class="{MONO} h-10 px-3 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface hover:bg-primary hover:text-on-primary hover:border-primary transition-colors disabled:opacity-50">{promoApplying ? 'Checking…' : 'Apply'}</button>
 					</div>
 				{/if}
 
@@ -902,9 +904,9 @@
 			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-space-sm">
 				<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Promo &amp; total</h2><span class="text-label-badge text-on-surface-variant">Secure checkout</span></div>
 				{#if appliedPromo}
-					<div class="flex items-center justify-between gap-2 rounded-lg bg-accent-emerald/10 border border-accent-emerald/20 px-3 py-2.5"><span class="flex items-center gap-1.5 text-label-badge text-accent-emerald"><CircleCheck class="w-4 h-4" />{appliedPromo} applied</span><span class="font-code text-body-sm font-bold text-accent-emerald">−{formatMoney(discount, currency.value)}</span></div>
+					<div class="flex items-center justify-between gap-2 rounded-lg bg-accent-emerald/10 border border-accent-emerald/20 px-3 py-2.5"><span class="flex items-center gap-1.5 text-label-badge text-accent-emerald"><CircleCheck class="w-4 h-4" />{appliedPromo.code} applied</span><span class="font-code text-body-sm font-bold text-accent-emerald">−{formatMoney(discount, currency.value)}</span></div>
 				{:else}
-					<div class="flex gap-2"><input bind:value={promoInput} aria-label="Promo code" placeholder="PROMO CODE" class="flex-1 min-w-0 h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border font-code text-label-code text-on-surface uppercase placeholder:text-outline-variant focus:outline-none focus:border-primary/50" onkeydown={(e) => { if (e.key === 'Enter') applyPromo(); }} /><button type="button" onclick={applyPromo} class="h-11 px-4 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm font-semibold text-on-surface">Apply</button></div>
+					<div class="flex gap-2"><input bind:value={promoInput} aria-label="Promo code" placeholder="PROMO CODE" class="flex-1 min-w-0 h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border font-code text-label-code text-on-surface uppercase placeholder:text-outline-variant focus:outline-none focus:border-primary/50" onkeydown={(e) => { if (e.key === 'Enter') applyPromo(); }} /><button type="button" disabled={promoApplying} onclick={applyPromo} class="h-11 px-4 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm font-semibold text-on-surface disabled:opacity-50">{promoApplying ? 'Checking…' : 'Apply'}</button></div>
 				{/if}
 				<div class="flex flex-col gap-2 border-t border-surface-glass-border pt-3">
 					<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">{qty}× {tier.name}</span><span class="font-code text-on-surface">{formatMoney(base, currency.value)}</span></div>

@@ -5,6 +5,7 @@ import type {
 	Conversation,
 	EventFilters,
 	EventItem,
+	EventPromo,
 	EventSpeaker,
 	Message,
 	MessageRequest,
@@ -12,6 +13,7 @@ import type {
 	Order,
 	OrganizerPayload,
 	Profile,
+	ResolvedPromo,
 	SpeakerInviteStatus,
 	Ticket,
 	WizardPayload
@@ -20,6 +22,12 @@ import * as demo from './demo/seed';
 import { isOperatingIdentity, type OperatingIdentity } from '$lib/constants/operating-identity';
 import { createHash, randomInt } from 'node:crypto';
 import { newTicketCode } from '$lib/utils/qr';
+import {
+	normalizeEventPromos,
+	normalizePromoCode,
+	promoDiscount
+} from '$lib/utils/promo';
+import { globalPromoForCode } from './promos';
 
 const demoMeId = 'u-ada';
 const demoFollows = new Map<string, Set<string>>();
@@ -109,7 +117,14 @@ export interface DataSource {
 	getIncomingMessageRequests(organizerId: string): Promise<MessageRequest[]>;
 	getEventMessageRequest(requesterId: string, eventId: string): Promise<MessageRequest | undefined>;
 	respondToMessageRequest(organizerId: string, requestId: string, accept: boolean): Promise<MessageRequest>;
-	createOrder(userId: string, eventSlug: string, items: CheckoutItem[]): Promise<OrderResult>;
+	/** Validate a buyer-entered code for one event without exposing the event's other codes. */
+	resolvePromoCode(eventSlug: string, code: string): Promise<ResolvedPromo | null>;
+	createOrder(
+		userId: string,
+		eventSlug: string,
+		items: CheckoutItem[],
+		promoCode?: string | null
+	): Promise<OrderResult>;
 	sendMessage(conversationId: string, senderId: string, body: string): Promise<Message>;
 	markConversationRead(conversationId: string): Promise<void>;
 	markAllNotificationsRead(userId: string): Promise<void>;
@@ -181,6 +196,33 @@ export function minPrice(e: EventItem): number {
 	return Math.min(...e.tiers.map((t) => t.price));
 }
 
+/** Public/demo catalogue reads must never leak an event's promo definitions. */
+function publicEvent(event: EventItem): EventItem {
+	const { promos: _promos, ...publicFields } = event;
+	return publicFields;
+}
+
+function demoPromoForOrder(
+	event: EventItem,
+	codeInput: string | null | undefined
+): { resolved: ResolvedPromo | null; definition?: EventPromo } {
+	const code = normalizePromoCode(codeInput);
+	if (!code) return { resolved: null };
+	const definition = (event.promos ?? []).find((promo) => normalizePromoCode(promo.code) === code);
+	if (definition) {
+		if ((definition.uses ?? 0) >= definition.maxUses) {
+			throw new Error('That promo code has reached its usage limit');
+		}
+		return {
+			definition,
+			resolved: { code: definition.code, kind: 'pct', value: definition.percent, source: 'event' }
+		};
+	}
+	const global = globalPromoForCode(code);
+	if (global) return { resolved: global };
+	throw new Error("That promo code isn't valid for this event");
+}
+
 function resolveDemoStaffScanToken(tokenHash: string): StaffScanResolution | null {
 	const candidates: StaffScanContext[] = [];
 	for (const [key, stored] of demoGateTokens) {
@@ -212,10 +254,14 @@ function newDemoStaffScanCode(isOwnContext: (context: StaffScanContext) => boole
 export const demoSource: DataSource = {
 	mode: 'demo',
 	async listEvents(filters = {}) {
-		return sortEvents(demo.events.filter((e) => matches(e, filters)), filters.sort);
+		return sortEvents(
+			demo.events.filter((e) => matches(e, filters)).map(publicEvent),
+			filters.sort
+		);
 	},
 	async getEvent(slug) {
-		return demo.events.find((e) => e.slug === slug);
+		const event = demo.events.find((e) => e.slug === slug);
+		return event ? publicEvent(event) : undefined;
 	},
 	async getTickets(userId = 'demo') {
 		const uid = userId === 'demo' ? demoMeId : userId;
@@ -292,13 +338,15 @@ export const demoSource: DataSource = {
 	},
 
 	async getProfileEvents(profileId) {
-		return demo.events.filter(
-			(event) => event.organizer?.id === profileId || event.speakers?.some((speaker) =>
-				speaker?.id === profileId &&
-				!speaker.displayOnly &&
-				(speaker.invited ? speaker.inviteStatus === 'accepted' : speaker.inviteStatus !== 'declined')
+		return demo.events
+			.filter(
+				(event) => event.organizer?.id === profileId || event.speakers?.some((speaker) =>
+					speaker?.id === profileId &&
+					!speaker.displayOnly &&
+					(speaker.invited ? speaker.inviteStatus === 'accepted' : speaker.inviteStatus !== 'declined')
+				)
 			)
-		);
+			.map(publicEvent);
 	},
 	async respondToSpeakerInvite(inviteeId, eventSlug, accept) {
 		const uid = inviteeId === 'demo' ? demoMeId : inviteeId;
@@ -412,18 +460,37 @@ export const demoSource: DataSource = {
 		request.conversationId = conversationId;
 		return request;
 	},
-	async createOrder(userId, eventSlug, items) {
+	async resolvePromoCode(eventSlug, code) {
+		const event = demo.events.find((e) => e.slug === eventSlug);
+		if (!event) return null;
+		try {
+			return demoPromoForOrder(event, code).resolved;
+		} catch {
+			return null;
+		}
+	},
+	async createOrder(userId, eventSlug, items, promoCode) {
 		const event = demo.events.find((e) => e.slug === eventSlug);
 		if (!event) throw new Error('Event not found');
+		const promo = demoPromoForOrder(event, promoCode);
 		const holder = 'Ada Obi';
 		const created: Ticket[] = [];
-		let total = 0;
+		const requestedByTier = new Map<string, number>();
+		let gross = 0;
 		for (const item of items) {
 			const tier = event.tiers.find((t) => t.id === item.tierId);
 			if (!tier) throw new Error('Tier not found');
-			if (tier.capacity - tier.sold < item.qty) throw new Error(`Only ${tier.capacity - tier.sold} ${tier.name} passes left`);
+			const requested = (requestedByTier.get(tier.id) ?? 0) + item.qty;
+			requestedByTier.set(tier.id, requested);
+			if (tier.capacity - tier.sold < requested) {
+				throw new Error(`Only ${tier.capacity - tier.sold} ${tier.name} passes left`);
+			}
+			gross += tier.price * item.qty;
+		}
+		const total = Math.max(0, gross - promoDiscount(gross, promo.resolved));
+		for (const item of items) {
+			const tier = event.tiers.find((t) => t.id === item.tierId)!;
 			tier.sold += item.qty;
-			total += tier.price * item.qty;
 			for (let i = 0; i < item.qty; i++) {
 				created.push({
 					id: `t-${Math.random().toString(36).slice(2, 8)}`,
@@ -444,6 +511,9 @@ export const demoSource: DataSource = {
 		}
 		demo.tickets.unshift(...created);
 		event.attendees += created.length;
+		// A promo use is one completed purchase/order, not one use per ticket
+		// in a multi-pass order.
+		if (promo.definition) promo.definition.uses = (promo.definition.uses ?? 0) + 1;
 		void userId;
 		return {
 			orderId: `ord-${Math.random().toString(36).slice(2, 8)}`,
@@ -579,6 +649,7 @@ export const demoSource: DataSource = {
 			}),
 			agenda: payload.agenda.map((a, i) => ({ id: `ag-${i}`, ...a })),
 			tiers: payload.tiers.map((t, i) => ({ id: `tier-${i}`, sold: 0, ...t })),
+			promos: normalizeEventPromos(payload.promos).map((promo) => ({ ...promo, uses: 0 })),
 			faqs: [],
 			policies: [],
 			gates: payload.gates,
@@ -699,6 +770,13 @@ export const demoSource: DataSource = {
 		if (updates.speakers !== undefined) event.speakers = updates.speakers.map((speaker, index) => ({ id: speaker.id ?? `speaker-${index}`, handle: speaker.handle ?? '', name: speaker.name, avatarColor: speaker.avatarColor ?? '#8083ff', avatarUrl: speaker.avatarUrl ?? null, followers: speaker.followers ?? 0, following: speaker.following ?? 0, role: speaker.role, bio: speaker.bio, invited: speaker.invited, inviteStatus: speaker.invited ? (speaker.inviteStatus ?? 'pending') : undefined, displayOnly: speaker.displayOnly }));
 		if (updates.agenda !== undefined) event.agenda = updates.agenda.map((item, index) => ({ id: event.agenda[index]?.id ?? `ag-${index}`, ...item }));
 		if (updates.tiers !== undefined) event.tiers = updates.tiers.map((tier, index) => ({ id: event.tiers[index]?.id ?? `tier-${index}`, sold: event.tiers[index]?.sold ?? 0, ...tier, capacity: Math.max(tier.capacity, event.tiers[index]?.sold ?? 0) }));
+		if (updates.promos !== undefined) {
+			const previousUses = new Map((event.promos ?? []).map((promo) => [promo.code, promo.uses ?? 0]));
+			event.promos = normalizeEventPromos(updates.promos).map((promo) => {
+				const uses = previousUses.get(promo.code) ?? 0;
+				return { ...promo, maxUses: Math.max(promo.maxUses, uses), uses };
+			});
+		}
 		if (updates.gates !== undefined) event.gates = updates.gates;
 		if (updates.live !== undefined) event.live = updates.live;
 		return event;
@@ -939,6 +1017,121 @@ const isMissingFunctionError = (error: { code?: string; message?: string } | nul
 	if (error.code === '42883' || error.code === 'PGRST202') return true;
 	return /function .* does not exist|could not find the function/i.test(error.message ?? '');
 };
+
+const isMissingPromoStorageError = (error: { code?: string; message?: string } | null): boolean => {
+	if (!error) return false;
+	if (error.code === '42P01' || error.code === 'PGRST205') return true;
+	return /event_promos.*(?:does not exist|not found)|relation .*event_promos|could not find the table .*event_promos/i.test(
+		error.message ?? ''
+	);
+};
+
+const promoStorageError = () =>
+	new Error('Event promo storage is not installed. Apply supabase/sql/020_event_promos.sql, then try again.');
+
+const toEventPromo = (r: Row): EventPromo => ({
+	code: normalizePromoCode(String(r.code ?? '')),
+	percent: Number(r.percent ?? 0),
+	maxUses: Number(r.max_uses ?? r.maxUses ?? 0),
+	uses: Number(r.uses_count ?? r.uses ?? 0)
+});
+
+async function fetchEventPromos(
+	db: SupabaseClient,
+	eventIds: string[]
+): Promise<Map<string, EventPromo[]>> {
+	const byEvent = new Map<string, EventPromo[]>();
+	if (eventIds.length === 0) return byEvent;
+	const { data, error } = await db.from('event_promos').select('*').in('event_id', eventIds);
+	if (error) {
+		// Organizer screens should keep working on a database that has not
+		// received migration 020 yet; saving a new promo fails explicitly.
+		if (isMissingPromoStorageError(error)) return byEvent;
+		throw error;
+	}
+	for (const row of (data ?? []) as Row[]) {
+		const promos = byEvent.get(row.event_id) ?? [];
+		promos.push(toEventPromo(row));
+		byEvent.set(row.event_id, promos);
+	}
+	for (const promos of byEvent.values()) promos.sort((a, b) => a.code.localeCompare(b.code));
+	return byEvent;
+}
+
+async function insertEventPromos(
+	db: SupabaseClient,
+	eventId: string,
+	definitions: EventPromo[]
+): Promise<EventPromo[]> {
+	const promos = normalizeEventPromos(definitions).map((promo) => ({ ...promo, uses: 0 }));
+	if (promos.length === 0) return [];
+	const { error } = await db.from('event_promos').insert(
+		promos.map((promo) => ({
+			event_id: eventId,
+			code: promo.code,
+			percent: promo.percent,
+			max_uses: promo.maxUses
+		}))
+	);
+	if (error) {
+		if (isMissingPromoStorageError(error)) throw promoStorageError();
+		throw error;
+	}
+	return promos;
+}
+
+async function replaceEventPromos(
+	db: SupabaseClient,
+	eventId: string,
+	definitions: EventPromo[]
+): Promise<EventPromo[]> {
+	const desired = normalizeEventPromos(definitions);
+	const { data: existingRows, error: fetchError } = await db
+		.from('event_promos')
+		.select('*')
+		.eq('event_id', eventId);
+	if (fetchError) {
+		if (isMissingPromoStorageError(fetchError)) {
+			if (desired.length === 0) return [];
+			throw promoStorageError();
+		}
+		throw fetchError;
+	}
+	const existing = ((existingRows ?? []) as Row[]).map(toEventPromo);
+	const existingByCode = new Map(existing.map((promo) => [promo.code, promo]));
+	const synced = desired.map((promo) => {
+		const uses = existingByCode.get(promo.code)?.uses ?? 0;
+		return { ...promo, maxUses: Math.max(promo.maxUses, uses), uses };
+	});
+
+	if (synced.length > 0) {
+		const { error } = await db.from('event_promos').upsert(
+			synced.map((promo) => ({
+				event_id: eventId,
+				code: promo.code,
+				percent: promo.percent,
+				max_uses: promo.maxUses
+			})),
+			{ onConflict: 'event_id,code' }
+		);
+		if (error) {
+			if (isMissingPromoStorageError(error)) throw promoStorageError();
+			throw error;
+		}
+	}
+
+	const desiredCodes = new Set(synced.map((promo) => promo.code));
+	const removedCodes = existing.filter((promo) => !desiredCodes.has(promo.code)).map((promo) => promo.code);
+	if (removedCodes.length > 0) {
+		const { error } = await db
+			.from('event_promos')
+			.delete()
+			.eq('event_id', eventId)
+			.in('code', removedCodes);
+		if (error) throw error;
+	}
+	return synced.sort((a, b) => a.code.localeCompare(b.code));
+}
 
 const mapStaffScanResolution = (data: Row | null): StaffScanResolution | null => {
 	if (!data) return null;
@@ -1332,13 +1525,56 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (error) throw error;
 			return toMessageRequest(data);
 		},
-		async createOrder(userId, eventSlug, items) {
+		async resolvePromoCode(eventSlug, codeInput) {
+			const code = normalizePromoCode(codeInput);
+			if (!code) return null;
+			if (typeof db.rpc === 'function') {
+				const { data, error } = await db.rpc('validate_event_promo', {
+					p_event_slug: eventSlug,
+					p_code: code
+				});
+				if (error) {
+					if (isMissingFunctionError(error) || isMissingPromoStorageError(error)) {
+						return globalPromoForCode(code);
+					}
+					throw error;
+				}
+				const row = data as Row | null;
+				if (row?.valid === true || (row?.code && row?.value !== undefined)) {
+					return {
+						code: normalizePromoCode(String(row.code ?? code)),
+						kind: row.kind === 'flat' ? 'flat' : 'pct',
+						value: Number(row.value ?? 0),
+						source: 'event'
+					};
+				}
+				// An exhausted event code intentionally shadows any global code
+				// with the same spelling for this event.
+				if (row?.state === 'exhausted') return null;
+			}
+			return globalPromoForCode(code);
+		},
+		async createOrder(userId, eventSlug, items, promoCodeInput) {
 			if (!isUuid(userId)) throw new Error('Sign in required to purchase tickets');
-			const { data, error } = await db.rpc('create_order', {
+			const promoCode = normalizePromoCode(promoCodeInput);
+			let { data, error } = await db.rpc('create_order', {
 				p_owner: userId,
 				p_event_slug: eventSlug,
-				p_items: items
+				p_items: items,
+				p_promo_code: promoCode || null
 			});
+			if (error && isMissingFunctionError(error)) {
+				if (promoCode) throw promoStorageError();
+				// Databases that have not received migration 020 still accept
+				// ordinary orders through the original three-argument RPC.
+				const retry = await db.rpc('create_order', {
+					p_owner: userId,
+					p_event_slug: eventSlug,
+					p_items: items
+				});
+				data = retry.data;
+				error = retry.error;
+			}
 			if (error) throw error;
 			return {
 				orderId: data.orderId,
@@ -1384,11 +1620,13 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			const ids = evs.map((e) => e.id);
 			if (ids.length === 0)
 				return { events: [], stats: computeOrganizer([], [], [], []).stats, checkins: [], orders: [] };
-			const [t, o, c] = await Promise.all([
+			const [t, o, c, promosByEvent] = await Promise.all([
 				db.from('tickets').select('*').in('event_id', ids),
 				db.from('orders').select('*').in('event_id', ids),
-				db.from('checkins').select('*').in('event_id', ids)
+				db.from('checkins').select('*').in('event_id', ids),
+				fetchEventPromos(db, ids)
 			]);
+			for (const event of evs) event.promos = promosByEvent.get(event.id) ?? [];
 			return computeOrganizer(
 				evs,
 				(t.data ?? []).map(toTicket),
@@ -1403,7 +1641,10 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				.select('*, organizer:profiles(*)')
 				.eq('id', eventId)
 				.maybeSingle();
-			return data ? toEvent(data, toProfile(data.organizer)) : undefined;
+			if (!data) return undefined;
+			const event = toEvent(data, toProfile(data.organizer));
+			event.promos = (await fetchEventPromos(db, [eventId])).get(eventId) ?? [];
+			return event;
 		},
 		async getEventTickets(eventId) {
 			if (!isUuid(eventId)) return [];
@@ -1488,7 +1729,19 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				.select('*, organizer:profiles(*)')
 				.single();
 			if (error) throw error;
-			return toEvent(data, toProfile(data.organizer));
+			const event = toEvent(data, toProfile(data.organizer));
+			try {
+				event.promos = await insertEventPromos(
+					db,
+					event.id,
+					normalizeEventPromos(payload.promos)
+				);
+			} catch (promoError) {
+				// Do not publish an event whose advertised promo codes were lost.
+				await db.from('events').delete().eq('id', event.id).eq('organizer_id', userId);
+				throw promoError;
+			}
+			return event;
 		},
 		async issueGateToken(userId, eventId, gateName) {
 			if (!isUuid(userId) || !isUuid(eventId)) throw new Error('Invalid event or organizer ID');
@@ -1602,7 +1855,12 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				.select('*, organizer:profiles(*)')
 				.single();
 			if (error) throw error;
-			return toEvent(data, toProfile(data.organizer));
+			const event = toEvent(data, toProfile(data.organizer));
+			event.promos =
+				updates.promos !== undefined
+					? await replaceEventPromos(db, eventId, normalizeEventPromos(updates.promos))
+					: ((await fetchEventPromos(db, [eventId])).get(eventId) ?? []);
+			return event;
 		},
 		async deleteEvent(userId, eventId) {
 			if (!isUuid(userId) || !isUuid(eventId)) throw new Error('Invalid event or organizer ID');
@@ -1760,9 +2018,12 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				.update({ status: 'refunded' })
 				.eq('id', ticketId)
 				.eq('owner_id', userId)
+				// A gate-verified (`used`) pass can no longer be refunded.
+				.eq('status', 'valid')
 				.select('*')
-				.single();
+				.maybeSingle();
 			if (error) throw error;
+			if (!data) throw new Error('Only active tickets can be refunded');
 			await db.from('notifications').insert({
 				user_id: userId,
 				kind: 'ticket',

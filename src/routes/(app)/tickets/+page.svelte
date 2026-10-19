@@ -3,6 +3,7 @@
 	import {
 		Bell,
 		CalendarPlus,
+		Check,
 		ChevronRight,
 		CloudCheck,
 		Database,
@@ -29,6 +30,12 @@
 	import { downloadIcs } from '$lib/utils/ics';
 	import { signToken } from '$lib/utils/qr';
 	import { formatMoney } from '$lib/utils/money';
+import {
+	canUseTicketActions,
+	isVerifiedTicket,
+	ticketStatusChip,
+	ticketStatusLabel
+} from '$lib/utils/tickets';
 	import type { Ticket } from '$lib/types';
 
 	let { data } = $props();
@@ -57,13 +64,8 @@
 	let selectedId = $state('');
 	const deskList = $derived(deskTab === 'upcoming' ? upcoming : deskTab === 'past' ? pastDesk : archived);
 	const selected = $derived(all.find((t) => t.id === selectedId) ?? upcoming[0] ?? all[0]);
-
-	const statusChip: Record<Ticket['status'], string> = {
-		valid: 'Pass_Valid',
-		used: 'Pass_Used',
-		refunded: 'Pass_Refunded',
-		transferred: 'Pass_Transferred'
-	};
+	const selectedVerified = $derived(selected ? isVerifiedTicket(selected) : false);
+	const selectedActionsDisabled = $derived(!selected || !canUseTicketActions(selected));
 	const refOf = (t: Ticket) => `#${t.code.split('-').slice(-2).join('-')}`;
 	const stampTime = (iso: string) =>
 		`${fmtDate(iso)} • ${new Date(iso).toLocaleTimeString('en-NG', { hour12: false })}`;
@@ -185,13 +187,17 @@
 					<div class="flex items-center justify-between gap-3">
 						<span class="flex items-center gap-2 min-w-0">
 							<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-highest border border-surface-glass-border text-on-surface shrink-0">
-								{isSel ? 'Selected Pass' : statusChip[t.status]}
+								{isSel ? 'Selected Pass' : ticketStatusChip(t.status)}
 							</span>
 							<span class="{MONO} text-outline-variant truncate">{refOf(t)}</span>
 						</span>
 						{#if isSel && t.status === 'valid'}
 							<span class="flex items-center gap-1.5 {MONO} text-on-surface shrink-0">
 								<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> Gate Ready
+							</span>
+						{:else if isSel && t.status === 'used'}
+							<span class="flex items-center gap-1.5 {MONO} text-accent-emerald shrink-0">
+								<Check class="h-3.5 w-3.5" strokeWidth={3} /> Verified
 							</span>
 						{:else}
 							<span class="{MONO} text-on-surface-variant shrink-0">{fmtDate(t.eventStartsAt)}</span>
@@ -241,24 +247,26 @@
 							>
 								<CalendarPlus class="w-4 h-4" />
 							</span>
-							<span
-								role="button"
-								tabindex="0"
-								aria-label="Transfer or share"
-								class="w-8 h-8 rounded-md flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
-								onclick={(e) => {
-									e.stopPropagation();
-									goto(`/tickets/${t.id}?transfer=1`);
-								}}
-								onkeydown={(e) => {
-									if (e.key === 'Enter' || e.key === ' ') {
+							{#if canUseTicketActions(t)}
+								<span
+									role="button"
+									tabindex="0"
+									aria-label="Transfer or share"
+									class="w-8 h-8 rounded-md flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors"
+									onclick={(e) => {
 										e.stopPropagation();
 										goto(`/tickets/${t.id}?transfer=1`);
-									}
-								}}
-							>
-								<Send class="w-4 h-4" />
-							</span>
+									}}
+									onkeydown={(e) => {
+										if (e.key === 'Enter' || e.key === ' ') {
+											e.stopPropagation();
+											goto(`/tickets/${t.id}?transfer=1`);
+										}
+									}}
+								>
+									<Send class="w-4 h-4" />
+								</span>
+							{/if}
 						</span>
 					</div>
 				</button>
@@ -267,7 +275,7 @@
 					<span class="w-12 h-12 rounded-xl bg-surface-container-high border border-surface-glass-border text-primary flex items-center justify-center">
 						<TicketIcon class="w-5 h-5" />
 					</span>
-					<h2 class="font-display text-headline-md text-on-surface">{deskTab === 'upcoming' ? 'No upcoming passes' : deskTab === 'past' ? 'No scanned passes' : 'Nothing archived'}</h2>
+					<h2 class="font-display text-headline-md text-on-surface">{deskTab === 'upcoming' ? 'No upcoming passes' : deskTab === 'past' ? 'No verified passes' : 'Nothing archived'}</h2>
 					<p class="text-body-sm text-on-surface-variant max-w-xs">Grab a pass and it will mint here instantly with a rotating gate QR.</p>
 					<a href="/explore" class="h-10 px-5 rounded-lg bg-on-surface text-surface-base text-body-sm font-semibold flex items-center justify-center hover:opacity-90 transition-opacity">Explore events</a>
 				</section>
@@ -293,7 +301,7 @@
 						<Cover cover={selected.cover} class="w-full h-full" iconClass="w-12 h-12 text-white/25" />
 						<div class="absolute inset-0 bg-gradient-to-t from-surface-container via-surface-container/40 to-transparent"></div>
 						<span class="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded {MONO} bg-surface-base/75 backdrop-blur text-on-surface">
-							<TicketIcon class="w-3.5 h-3.5" /> {selected.tierName} • Auth_Active
+							<TicketIcon class="w-3.5 h-3.5" /> {selected.tierName} • {selectedVerified ? 'Verified' : selected.status === 'valid' ? 'Auth_Active' : ticketStatusChip(selected.status)}
 						</span>
 						<span class="absolute top-3 right-3 px-2.5 py-1 rounded {MONO} bg-surface-base/75 backdrop-blur text-on-surface">
 							Gate 02 • {selected.tierName.split(' ')[0]} Turnstile
@@ -317,22 +325,38 @@
 							{/each}
 						</div>
 
+						{#if selectedVerified}
+							<div class="mt-5 flex items-center gap-3 rounded-lg border border-accent-emerald/40 bg-accent-emerald/10 px-4 py-3" role="status">
+								<span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-emerald text-surface-base"><Check class="h-5 w-5" strokeWidth={3} /></span>
+								<div class="min-w-0">
+									<p class="font-display text-body-lg font-bold text-on-surface">Verified at the gate</p>
+									<p class="text-body-sm text-on-surface-variant">Transfer, Apple/Google Wallet, and refund actions are disabled for this checked-in pass.</p>
+								</div>
+							</div>
+						{/if}
+
 						<div class="rounded-lg border border-surface-glass-border bg-surface-container-high/40 p-6 mt-5 flex flex-col items-center">
 							<span class="flex items-center gap-2 {MONO} text-on-surface">
-								<Lock class="w-3.5 h-3.5 text-primary" /> Pass refreshes in {qrSeconds}s
+								<Lock class="w-3.5 h-3.5 text-primary" /> {selectedVerified ? 'Verified at the gate' : `Pass refreshes in ${qrSeconds}s`}
 							</span>
-							<div class="relative bg-white rounded-md p-4 mt-5" style="box-shadow: 0 0 24px -6px rgba(99,102,241,0.45);">
+							<div class="relative bg-white rounded-md p-4 mt-5 {selectedActionsDisabled ? 'opacity-50 grayscale' : ''}" style="box-shadow: 0 0 24px -6px rgba(99,102,241,0.45);">
 								{#if qrUrl}
-									<img src={qrUrl} alt="Rotating gate QR" class="w-56 h-56" />
+									<img src={qrUrl} alt={selectedVerified ? 'Verified gate QR' : 'Rotating gate QR'} class="w-56 h-56" />
 								{:else}
 									<div class="w-56 h-56 bg-white animate-pulse rounded"></div>
 								{/if}
-								<div class="absolute inset-x-6 top-1/2 h-0.5 bg-primary/70 animate-pulse pointer-events-none"></div>
+								{#if selectedVerified}
+									<div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+										<span class="flex items-center gap-1.5 rounded-full bg-surface-base/90 px-3 py-1.5 text-label-badge font-bold text-accent-emerald uppercase"><Check class="h-4 w-4" strokeWidth={3} /> Verified</span>
+									</div>
+								{:else if !selectedActionsDisabled}
+									<div class="absolute inset-x-6 top-1/2 h-0.5 bg-primary/70 animate-pulse pointer-events-none"></div>
+								{/if}
 							</div>
 							<div class="w-56 h-1 rounded-full bg-surface-container-highest overflow-hidden mt-5">
 								<div class="h-full bg-primary rounded-full transition-all duration-1000" style="width: {(qrSeconds / 30) * 100}%"></div>
 							</div>
-							<span class="{MONO} text-on-surface-variant mt-3">Auto-refreshing HMAC signature prevents screenshot fraud</span>
+							<span class="{MONO} text-on-surface-variant mt-3">{selectedVerified ? 'Checked in — this QR cannot be used again' : 'Auto-refreshing HMAC signature prevents screenshot fraud'}</span>
 						</div>
 
 						<div class="rounded-lg border border-surface-glass-border bg-surface-container-high/40 p-5 mt-5 flex items-start gap-3">
@@ -354,21 +378,21 @@
 							<p class="font-code text-label-code text-on-surface tracking-wider mt-2 break-all">HMAC-SHA256: {hexStamp(selected.code)}</p>
 							<div class="flex items-center justify-between gap-3 mt-3">
 								<span class="{MONO} text-on-surface-variant">Signature Verifier</span>
-								<span class="{MONO} text-on-surface">Token_Valid_OK</span>
+								<span class="{MONO} text-on-surface">{selectedVerified ? 'Verified_OK' : selected.status === 'valid' ? 'Token_Valid_OK' : 'Token_Inactive'}</span>
 							</div>
 						</div>
 
 						<div class="grid sm:grid-cols-2 gap-3 mt-5">
-							<button disabled={selected.status !== 'valid'} class="h-11 rounded-md flex items-center justify-center gap-2 bg-primary-container text-on-primary-container text-body-sm font-semibold hover:bg-primary/30 transition-colors disabled:opacity-40" onclick={() => goto(`/tickets/${selected.id}?transfer=1`)}>
+							<button disabled={selectedActionsDisabled} title={selectedVerified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-md flex items-center justify-center gap-2 bg-primary-container text-on-primary-container text-body-sm font-semibold hover:bg-primary/30 transition-colors disabled:cursor-not-allowed disabled:opacity-40" onclick={() => goto(`/tickets/${selected.id}?transfer=1`)}>
 								<Send class="w-4 h-4" /><span>Transfer Ticket</span>
 							</button>
-							<button class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => toast('Wallet export queued to device', 'info')}>
+							<button disabled={selectedActionsDisabled} title={selectedVerified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors disabled:cursor-not-allowed disabled:opacity-40" onclick={() => toast('Wallet export queued to device', 'info')}>
 								<Wallet class="w-4 h-4" /><span>Add to Apple / Google</span>
 							</button>
 							<button class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => toast('Offline PDF cached for gate mode', 'success')}>
 								<Download class="w-4 h-4" /><span>Download Offline PDF</span>
 							</button>
-							<button class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => goto(`/tickets/${selected.id}?refund=1`)}>
+							<button disabled={selectedActionsDisabled} title={selectedVerified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors disabled:cursor-not-allowed disabled:opacity-40" onclick={() => goto(`/tickets/${selected.id}?refund=1`)}>
 								<History class="w-4 h-4" /><span>Request Refund</span>
 							</button>
 						</div>
@@ -479,7 +503,7 @@
 							{ticket.tierName}
 						</span>
 						{#if isPast}
-							<span class="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-surface-container-highest/90 text-label-badge text-on-surface-variant uppercase">{ticket.status}</span>
+							<span class="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-surface-container-highest/90 text-label-badge text-on-surface-variant uppercase">{ticketStatusLabel(ticket.status)}</span>
 						{:else}
 							<span class="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-accent-emerald/90 text-label-badge text-surface-base font-bold">ACTIVE</span>
 						{/if}
@@ -495,7 +519,7 @@
 					</div>
 				</button>
 			{:else}
-				<EmptyState title={tab === 'upcoming' ? 'No upcoming passes' : tab === 'past' ? 'No scanned passes' : 'Nothing archived'} sub="Your wallet keeps active, scanned, and refunded or transferred passes in separate vault tabs.">
+				<EmptyState title={tab === 'upcoming' ? 'No upcoming passes' : tab === 'past' ? 'No verified passes' : 'Nothing archived'} sub="Your wallet keeps active, verified, and refunded or transferred passes in separate vault tabs.">
 					{#snippet icon()}<TicketIcon class="w-6 h-6" />{/snippet}
 					{#snippet action()}
 						<a href="/explore" class="h-11 px-6 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center">Explore events</a>

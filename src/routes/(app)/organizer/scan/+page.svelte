@@ -4,6 +4,7 @@
 	import {
 		ArrowLeft,
 		Bell,
+		Check,
 		CheckCircle2,
 		Camera,
 		ExternalLink,
@@ -205,6 +206,39 @@
 	let manualCode = $state('');
 	let last = $state<Checkin | null>(null);
 	let counts = $state({ verified: 0, duplicate: 0, invalid: 0 });
+	let verifiedPop = $state<Checkin | null>(null);
+	let verifiedPopTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function dismissVerifiedPop() {
+		verifiedPop = null;
+		if (verifiedPopTimer) {
+			clearTimeout(verifiedPopTimer);
+			verifiedPopTimer = null;
+		}
+	}
+
+	function recordScanResult(ck: Checkin) {
+		last = ck;
+		counts[ck.result] += 1;
+		counts = counts;
+		if (ck.result !== 'verified') {
+			dismissVerifiedPop();
+			return;
+		}
+		// A brief full-screen confirmation is readable across a busy gate,
+		// then clears itself so the next person can be scanned.
+		verifiedPop = ck;
+		if (verifiedPopTimer) clearTimeout(verifiedPopTimer);
+		verifiedPopTimer = setTimeout(() => {
+			verifiedPop = null;
+			verifiedPopTimer = null;
+		}, 3200);
+		try {
+			navigator.vibrate?.(80);
+		} catch {
+			/* vibration is optional device feedback */
+		}
+	}
 	let online = $state(true);
 	let queue = $state<{ code: string; at: string; eventId?: string; gate?: string; staffToken?: string }[]>([]);
 	let stream: MediaStream | null = null;
@@ -247,6 +281,7 @@
 		return () => {
 			window.removeEventListener('online', on);
 			window.removeEventListener('offline', off);
+			if (verifiedPopTimer) clearTimeout(verifiedPopTimer);
 			stopCam();
 		};
 	});
@@ -294,9 +329,7 @@
 			});
 			if (!res.ok) { toast('Scan could not be verified. Please try again.', 'error'); return false; }
 			const ck: Checkin = await res.json();
-			last = ck;
-			counts[ck.result] += 1;
-			counts = counts;
+			recordScanResult(ck);
 			return true;
 		} catch {
 			if (queueOnFailure) queue = [...queue, { code, at: new Date().toISOString(), eventId: scanEventId, gate: scanGate, staffToken: gateToken }];
@@ -341,9 +374,7 @@
 			});
 			if (!res.ok) throw new Error();
 			const ck: Checkin = await res.json();
-			last = ck;
-			counts[ck.result] += 1;
-			counts = counts;
+			recordScanResult(ck);
 		} catch {
 			toast('No more tickets to scan', 'info');
 		} finally { verifying = false; }
@@ -434,6 +465,25 @@
 </script>
 
 <svelte:head><title>Ticket Scanner • Owltside</title></svelte:head>
+
+{#if verifiedPop}
+	<button
+		type="button"
+		class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-6 backdrop-blur-sm"
+		onclick={dismissVerifiedPop}
+		aria-label={`Ticket verified for ${verifiedPop.holder}. Dismiss confirmation.`}
+	>
+		<span class="verified-pop flex max-w-lg flex-col items-center text-center">
+			<span class="flex h-44 w-44 items-center justify-center rounded-full bg-accent-emerald text-surface-base shadow-[0_0_80px_rgba(52,211,153,0.55)] md:h-56 md:w-56">
+				<Check class="h-28 w-28 md:h-36 md:w-36" strokeWidth={3.5} />
+			</span>
+			<span class="mt-7 font-display text-5xl font-bold tracking-tight text-white md:text-6xl">Ticket Verified</span>
+			<span class="mt-3 text-xl font-semibold text-white/90">{verifiedPop.holder} · {verifiedPop.tier}</span>
+			<span class="mt-2 font-code text-sm tracking-[0.18em] text-accent-emerald uppercase">Admit entry · {verifiedPop.gate}</span>
+			<span class="mt-5 text-sm text-white/60">Tap anywhere to continue</span>
+		</span>
+	</button>
+{/if}
 
 <!-- Shared camera state: what the terminal is doing and what to do next. -->
 {#snippet cameraStatus()}
@@ -931,3 +981,30 @@
 	</div>
 </main>
 </div>
+
+<style>
+	@keyframes verified-pop {
+		0% {
+			opacity: 0;
+			transform: scale(0.62);
+		}
+		58% {
+			opacity: 1;
+			transform: scale(1.07);
+		}
+		100% {
+			opacity: 1;
+			transform: scale(1);
+		}
+	}
+
+	.verified-pop {
+		animation: verified-pop 280ms ease-out;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.verified-pop {
+			animation: none;
+		}
+	}
+</style>

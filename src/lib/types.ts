@@ -77,6 +77,23 @@ export interface AgendaItem {
 	speakerIds?: string[];
 }
 
+/** A promo code an organizer configured for one event. */
+export interface EventPromo {
+	code: string;
+	percent: number;
+	maxUses: number;
+	/** Completed orders that redeemed the code. Organizer-scoped reads only. */
+	uses?: number;
+}
+
+/** A promo after server-side validation, safe to show to the buyer who entered it. */
+export interface ResolvedPromo {
+	code: string;
+	kind: 'flat' | 'pct';
+	value: number;
+	source: 'event' | 'global';
+}
+
 export interface EventItem {
 	id: string;
 	slug: string;
@@ -102,6 +119,11 @@ export interface EventItem {
 	live?: boolean;
 	online?: boolean;
 	gates?: GateConfig[];
+	/**
+	 * Organizer-only promo definitions. Public event reads deliberately omit
+	 * this field so unpublished/shared codes are not exposed to every buyer.
+	 */
+	promos?: EventPromo[];
 }
 
 export type CategoryId =
@@ -258,6 +280,7 @@ export interface WizardPayload {
 	description: string;
 	cover: CoverArt;
 	tiers: Array<{ name: string; price: number; capacity: number; benefits?: string }>;
+	promos?: Array<{ code: string; percent: number; maxUses: number }>;
 	agenda: Array<{ start: string; title: string; location?: string }>;
 	speakers: WizardSpeaker[];
 	gates: GateConfig[];

@@ -57,7 +57,8 @@
 	import { toast } from '$lib/state/toast.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { categories } from '$components/iconMap';
-	import type { Profile, WizardSpeaker } from '$lib/types';
+	import { isValidPromoCode, normalizeEventPromos, normalizePromoCode } from '$lib/utils/promo';
+import type { Profile, WizardSpeaker } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { form, data = {} as PageData } = $props();
@@ -125,7 +126,8 @@
 	const categoryOptions = categories.filter((category) => category.id !== 'all');
 
 	let tiers = $state<Array<{ name: string; price: number; capacity: number; benefits: string; editing: boolean }>>([]);
-	let promos = $state<Array<{ code: string; percent: number; maxUses: number }>>([]);
+	let promos = $state<Array<{ code: string; percent: number; maxUses: number; uses?: number }>>([]);
+	const activePromoCount = $derived(promos.filter((promo) => (promo.uses ?? 0) < promo.maxUses).length);
 	let promoCode = $state('');
 	let promoPercent = $state('');
 	let promoMax = $state('');
@@ -219,7 +221,11 @@
 				price: Number(t.price ?? 0),
 				capacity: Number(t.capacity ?? 0)
 			})),
-			promos,
+			promos: promos.map((promo) => ({
+				code: normalizePromoCode(promo.code),
+				percent: Number(promo.percent ?? 0),
+				maxUses: Number(promo.maxUses ?? 0)
+			})),
 			days: days.map((d) => ({ label: d.label, sessions: d.sessions })),
 			gates
 		})
@@ -295,7 +301,7 @@
 		days = (draft.days ?? []).map((day: any) => ({ label: day.label ?? 'Day 1', sessions: (day.sessions ?? []).map((session: any) => ({ time: session.time ?? '12:00', title: session.title ?? '', stage: session.stage ?? '' })) }));
 		roster = (draft.speakers ?? []).map((speaker: any) => ({ ...speaker }));
 		gates = (draft.gates ?? []).map((gate: any) => ({ name: gate.name ?? 'Gate', staff: Number(gate.staff ?? gate.staff?.length ?? 1) }));
-		promos = draft.promos ?? [];
+		promos = normalizeEventPromos(draft.promos ?? []);
 		const security = draft.security ?? {};
 		allowOverride = security.allowOverride ?? true;
 		allowOffline = security.allowOffline ?? true;
@@ -327,7 +333,7 @@
 				title: editingEvent.title, category: editingEvent.category, poster: editingEvent.cover.src ?? '',
 				date: startsAt.toISOString().slice(0, 10), dateEnd: endsAt.toISOString().slice(0, 10),
 				venue: editingEvent.venue, city: editingEvent.city, description: editingEvent.description,
-				tiers: editingEvent.tiers, days: [...sessionsByDay].map(([label, sessions]) => ({ label, sessions })),
+				tiers: editingEvent.tiers, promos: editingEvent.promos ?? [], days: [...sessionsByDay].map(([label, sessions]) => ({ label, sessions })),
 				speakers: editingEvent.speakers, gates: (editingEvent.gates ?? []).map((gate) => ({ name: gate.name, staff: gate.staff.length })),
 				distribution: { launchMode: editingEvent.live ? 'now' : 'staged' }
 			});
@@ -419,16 +425,17 @@
 	}
 	function addPromo() {
 		promoError = '';
-		const code = promoCode.trim();
+		const code = normalizePromoCode(promoCode);
 		const percent = Number(promoPercent);
 		const maxUses = Number(promoMax);
 		if (!code) { promoError = 'Enter a promo code.'; return; }
+		if (!isValidPromoCode(code)) { promoError = 'Use 3–24 letters, numbers, hyphens, or underscores.'; return; }
 		if (!Number.isFinite(percent) || percent < 1 || percent > 100) { promoError = 'Enter % off between 1 and 100.'; return; }
 		if (!Number.isFinite(maxUses) || maxUses < 1 || !Number.isInteger(maxUses)) { promoError = 'Enter number of purchases (e.g. 50).'; return; }
-		if (promos.some((p) => p.code.toLowerCase() === code.toLowerCase())) { promoError = 'That promo code already exists.'; return; }
+		if (promos.some((p) => normalizePromoCode(p.code) === code)) { promoError = 'That promo code already exists.'; return; }
 		promos = [...promos, { code, percent, maxUses }];
 		promoCode = ''; promoPercent = ''; promoMax = '';
-		toast(`Promo "${code}" — ${percent}% off, first ${maxUses} purchases — activated`, 'success');
+		toast(`Promo "${code}" — ${percent}% off, first ${maxUses} purchases — will go live when this event is ${editingEvent ? 'saved' : 'published'}`, 'success');
 	}
 	function removePromo(idx: number) {
 		promos = promos.filter((_, i) => i !== idx);
@@ -759,7 +766,7 @@
 								<span class="font-display text-body-lg font-semibold text-on-surface">Promo Codes</span>
 								<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded text-[10px]">Early Bird Engine</span>
 							</span>
-							<span class="{MONO} text-on-surface-variant">{promos.length} Active</span>
+							<span class="{MONO} text-on-surface-variant">{activePromoCount} Active</span>
 						</div>
 						<p class="text-body-sm text-on-surface-variant">Reward early supporters with a limited promo. Eg: <span class="font-semibold text-on-surface">Owltside — 5% off — first 50 people</span>.</p>
 						<div class="grid grid-cols-[1.4fr_0.6fr_0.8fr_auto] gap-3 items-end">
@@ -793,11 +800,11 @@
 											<span class="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0"><Tag class="w-3.5 h-3.5" /></span>
 											<span class="min-w-0">
 												<span class="block text-body-sm font-semibold text-on-surface truncate">{promo.code} — {promo.percent}% off — first {promo.maxUses} people</span>
-												<span class="block text-xs text-on-surface-variant">{promo.percent}% discount • capped at {promo.maxUses} redemptions</span>
+												<span class="block text-xs text-on-surface-variant">{promo.percent}% discount • {promo.uses ?? 0} of {promo.maxUses} redeemed</span>
 											</span>
 										</span>
 										<span class="flex items-center gap-2 shrink-0">
-											<span class="{MONO} px-2 py-0.5 rounded bg-accent-emerald/10 text-accent-emerald border border-accent-emerald/20">Active</span>
+											<span class="{MONO} px-2 py-0.5 rounded bg-accent-emerald/10 text-accent-emerald border border-accent-emerald/20">{(promo.uses ?? 0) >= promo.maxUses ? 'Used up' : 'Active'}</span>
 											<button type="button" aria-label="Remove {promo.code}" onclick={() => removePromo(idx)} class="w-8 h-8 rounded-lg bg-surface-container-high border border-surface-glass-border flex items-center justify-center text-on-surface-variant hover:text-error transition-colors"><Trash2 class="w-3.5 h-3.5" /></button>
 										</span>
 									</div>
@@ -2058,7 +2065,7 @@
 							<Tag class="w-4 h-4 text-primary" />
 							<span class="font-display text-body-lg font-semibold text-on-surface">Promo Codes</span>
 						</span>
-						<span class="text-label-badge px-2 py-0.5 rounded bg-surface-container-high border border-surface-glass-border text-on-surface-variant">{promos.length} Active</span>
+						<span class="text-label-badge px-2 py-0.5 rounded bg-surface-container-high border border-surface-glass-border text-on-surface-variant">{activePromoCount} Active</span>
 					</div>
 					<p class="text-body-sm text-on-surface-variant">Eg: <span class="font-semibold text-on-surface">Owltside — 5% off — first 50 people</span>.</p>
 					<div class="flex flex-col gap-2.5">
@@ -2079,7 +2086,7 @@
 									<div class="flex items-center justify-between gap-2 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5">
 										<span class="min-w-0">
 											<span class="block text-body-sm font-semibold text-on-surface">{promo.code} — {promo.percent}% off — first {promo.maxUses}</span>
-											<span class="block text-xs text-on-surface-variant">{promo.maxUses} redemptions • {promo.percent}%</span>
+											<span class="block text-xs text-on-surface-variant">{promo.uses ?? 0} of {promo.maxUses} redeemed • {promo.percent}%</span>
 										</span>
 										<button type="button" aria-label="Remove {promo.code}" onclick={() => removePromo(idx)} class="w-8 h-8 rounded-full bg-surface-container border border-surface-glass-border flex items-center justify-center text-on-surface-variant hover:text-error shrink-0"><Trash2 class="w-3.5 h-3.5" /></button>
 									</div>

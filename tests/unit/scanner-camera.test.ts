@@ -200,6 +200,14 @@ describe('scanner camera', () => {
 			});
 		});
 		await waitFor(() => expect(screen.getAllByText(/verified/i).length).toBeGreaterThan(0));
+
+		const confirmation = await screen.findByRole('button', { name: /Ticket verified for Guest/i });
+		expect(confirmation).toHaveTextContent('Ticket Verified');
+		expect(confirmation).toHaveTextContent('Admit entry · Main Gate');
+		await fireEvent.click(confirmation);
+		await waitFor(() =>
+			expect(screen.queryByRole('button', { name: /Ticket verified for Guest/i })).toBeNull()
+		);
 	});
 
 	it('explains a blocked camera instead of leaving a black screen', async () => {

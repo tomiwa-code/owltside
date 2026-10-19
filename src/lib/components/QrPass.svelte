@@ -8,7 +8,11 @@
 	 * Re-signs every 30 s (HMAC over code + time window); the ring shows the
 	 * seconds left in the current window. Intervals are cleaned up on destroy.
 	 */
-	let { code, disabled = false }: { code: string; disabled?: boolean } = $props();
+	let {
+		code,
+		disabled = false,
+		disabledLabel = 'Not active'
+	}: { code: string; disabled?: boolean; disabledLabel?: string } = $props();
 
 	let dataUrl = $state('');
 	let seconds = $state(30);
@@ -67,7 +71,7 @@
 		{#if disabled}
 			<div class="absolute inset-0 flex items-center justify-center">
 				<span class="px-3 py-1 rounded-full bg-surface-base/90 text-on-surface text-label-badge font-bold uppercase tracking-wider">
-					{code === '' ? '' : 'Not active'}
+					{code === '' ? '' : disabledLabel}
 				</span>
 			</div>
 		{/if}
