@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import {
 		ArrowLeft,
 		ArrowRight,
@@ -112,9 +113,9 @@ import type { ResolvedPromo } from '$lib/types';
 
 	async function onPay() {
 		if (submitting) return;
-		if (!data.demoMode && !data.holder?.authenticated) {
+		if (!data.holder?.authenticated) {
 			toast('Please sign in to complete your ticket purchase.', 'info');
-			goto('/auth/login');
+			goto(`/auth/login?next=${encodeURIComponent(`${page.url.pathname}${page.url.search}`)}`);
 			return;
 		}
 

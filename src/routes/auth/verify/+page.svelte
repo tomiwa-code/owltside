@@ -16,6 +16,7 @@
 	const code = $derived(digits.join(''));
 	const complete = $derived(code.length === 6);
 	const email = $derived(form?.email || data.email || '');
+	const loginHref = $derived(data.next && data.next !== '/home' ? `/auth/login?next=${encodeURIComponent(data.next)}` : '/auth/login');
 
 	/* resend countdown: starts at 0 so the user can resend immediately if needed */
 	let resendIn = $state(0);
@@ -187,13 +188,14 @@
 				</p>
 				<p class="text-body-sm text-on-surface-variant mt-2">
 					Wrong email?
-					<a href="/auth/login" class="text-on-surface underline underline-offset-4 hover:text-primary transition-colors">Change</a>
+					<a href={loginHref} class="text-on-surface underline underline-offset-4 hover:text-primary transition-colors">Change</a>
 				</p>
 
 				<form method="POST" action="?/verify" use:enhance={handleVerifyEnhance} class="w-full flex flex-col items-center mt-8">
 					<input type="hidden" name="email" value={email} />
 					<input type="hidden" name="name" value={data.name ?? ''} />
 					<input type="hidden" name="username" value={data.username ?? ''} />
+					<input type="hidden" name="next" value={data.next ?? ''} />
 					<input type="hidden" name="code" value={code} />
 					<div class="flex items-center justify-center gap-3">
 						{#each digits as d, i (i)}
@@ -284,7 +286,7 @@
 <div class="md:hidden">
 <header class="fixed top-0 inset-x-0 z-50 bg-surface/90 backdrop-blur-xl border-b border-surface-glass-border pt-safe">
 	<div class="h-16 px-space-md md:max-w-lg md:mx-auto flex items-center">
-		<a href="/auth/login" aria-label="Back" class="w-11 h-11 -ml-2 flex items-center justify-center text-on-surface rounded-full hover:bg-surface-container transition-colors">
+		<a href={loginHref} aria-label="Back" class="w-11 h-11 -ml-2 flex items-center justify-center text-on-surface rounded-full hover:bg-surface-container transition-colors">
 			<ArrowLeft class="w-5 h-5" />
 		</a>
 		<h1 class="font-display text-headline-md font-semibold text-on-surface truncate">Verify it's you</h1>
@@ -317,6 +319,7 @@
 			<input type="hidden" name="email" value={email} />
 			<input type="hidden" name="name" value={data.name ?? ''} />
 			<input type="hidden" name="username" value={data.username ?? ''} />
+			<input type="hidden" name="next" value={data.next ?? ''} />
 			<input type="hidden" name="code" value={code} />
 			<div class="flex items-center justify-center gap-2">
 				{#each digits as d, i (i)}

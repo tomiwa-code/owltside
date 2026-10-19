@@ -1,3 +1,4 @@
+import { safeAuthNext } from '$lib/server/oauth';
 import { createSupabase, supabaseConfigured } from '$lib/server/supabase';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
@@ -7,16 +8,17 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
 	const pkceCode = url.searchParams.get('code');
 	const tokenHash = url.searchParams.get('token_hash');
 	const otpType = url.searchParams.get('type') as 'email' | 'signup' | 'magiclink' | null;
+	const next = safeAuthNext(url.searchParams.get('next'));
 
 	if (db && pkceCode) {
 		const { error } = await db.auth.exchangeCodeForSession(pkceCode);
-		if (!error) redirect(303, '/home');
+		if (!error) redirect(303, next);
 	} else if (db && tokenHash) {
 		const { error } = await db.auth.verifyOtp({
 			token_hash: tokenHash,
 			type: otpType || 'email'
 		});
-		if (!error) redirect(303, '/home');
+		if (!error) redirect(303, next);
 	}
 
 	return {
@@ -24,6 +26,7 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
 		name: url.searchParams.get('name'),
 		username: url.searchParams.get('username'),
 		isNew: url.searchParams.get('new') === '1',
+		next,
 		demoMode: !supabaseConfigured()
 	};
 };
@@ -33,6 +36,7 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const email = String(form.get('email') || url.searchParams.get('email') || '').trim().toLowerCase();
 		const code = String(form.get('code') ?? '').trim();
+		const next = safeAuthNext(String(form.get('next') ?? '') || url.searchParams.get('next'));
 
 		if (!/^\d{6}$/.test(code)) return fail(400, { error: 'Enter the 6-digit code', email });
 
@@ -58,7 +62,7 @@ export const actions: Actions = {
 				maxAge: 60 * 60 * 24 * 30
 			});
 		}
-		redirect(303, '/home');
+		redirect(303, next);
 	},
 
 	resend: async ({ request, cookies, url }) => {
@@ -66,6 +70,7 @@ export const actions: Actions = {
 		const email = String(form.get('email') || url.searchParams.get('email') || '').trim().toLowerCase();
 		const name = String(form.get('name') || url.searchParams.get('name') || '').trim();
 		const username = String(form.get('username') || url.searchParams.get('username') || '').trim().replace(/^@/, '').toLowerCase();
+		const next = safeAuthNext(String(form.get('next') ?? '') || url.searchParams.get('next'));
 		if (!/^\S+@\S+\.\S+$/.test(email)) return fail(400, { error: 'Enter a valid email address', email });
 
 		const db = createSupabase(cookies);
@@ -78,7 +83,7 @@ export const actions: Actions = {
 				options: {
 					shouldCreateUser: true,
 					...(Object.keys(metadata).length ? { data: metadata } : {}),
-					emailRedirectTo: `${url.origin}/auth/verify`
+					emailRedirectTo: `${url.origin}/auth/verify?next=${encodeURIComponent(next)}`
 				}
 			});
 			if (error) return fail(400, { error: error.message, email });

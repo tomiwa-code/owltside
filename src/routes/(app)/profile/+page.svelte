@@ -258,10 +258,10 @@
 					</p>
 				</div>
 				<div class="flex flex-col sm:flex-row items-center gap-3 w-full pt-2">
-					<a href="/auth/login" class="w-full sm:flex-1 h-12 rounded-lg bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center transition-colors hover:bg-primary-container glow-primary">
+					<a href="/auth/login?next=/profile" class="w-full sm:flex-1 h-12 rounded-lg bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center transition-colors hover:bg-primary-container glow-primary">
 						Sign In
 					</a>
-					<a href="/auth/signup" class="w-full sm:flex-1 h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface font-semibold text-body-md flex items-center justify-center hover:border-primary/40 transition-colors">
+					<a href="/auth/signup?next=/profile" class="w-full sm:flex-1 h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface font-semibold text-body-md flex items-center justify-center hover:border-primary/40 transition-colors">
 						Create Account
 					</a>
 				</div>
@@ -566,10 +566,10 @@
 						</p>
 					</div>
 					<div class="flex flex-col gap-2.5 w-full pt-2">
-						<a href="/auth/login" class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center transition-all active:scale-[0.98] glow-primary">
+						<a href="/auth/login?next=/profile" class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center transition-all active:scale-[0.98] glow-primary">
 							Sign In
 						</a>
-						<a href="/auth/signup" class="w-full h-12 rounded-full bg-surface-base border border-surface-glass-border text-on-surface font-semibold text-body-md flex items-center justify-center transition-all active:scale-[0.98]">
+						<a href="/auth/signup?next=/profile" class="w-full h-12 rounded-full bg-surface-base border border-surface-glass-border text-on-surface font-semibold text-body-md flex items-center justify-center transition-all active:scale-[0.98]">
 							Create Account
 						</a>
 					</div>

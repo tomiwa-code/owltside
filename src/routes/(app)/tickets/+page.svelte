@@ -40,12 +40,15 @@ import {
 
 	let { data } = $props();
 
+	const session = $derived(data.session !== undefined ? data.session : page.data.session);
+	const isGuest = $derived(!session);
+
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
 	const tickets = useQuery<Ticket[]>(
 		'tickets:mine',
 		async () => (await fetch('/api/tickets')).json(),
-		{ staleTime: 15_000 },
+		{ staleTime: 15_000, enabled: !isGuest },
 		data.tickets
 	);
 
@@ -143,6 +146,34 @@ import {
 </script>
 
 <svelte:head><title>Ticket Wallet • Owltside</title></svelte:head>
+
+{#if isGuest}
+	<!-- Unregistered visitors must sign in before the wallet opens -->
+	<div class="flex flex-col min-h-[70dvh] bg-surface-base text-on-surface">
+		<div class="mx-auto w-full max-w-xl px-6 py-16 md:py-20 flex-1 flex flex-col items-center justify-center text-center">
+			<section class="w-full rounded-2xl border border-surface-glass-border bg-surface-container p-8 md:p-10 flex flex-col items-center gap-5">
+				<div class="w-16 h-16 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center glow-primary">
+					<TicketIcon class="w-8 h-8" />
+				</div>
+				<div>
+					<span class="{MONO} text-on-surface-variant">Guest Session</span>
+					<h1 class="font-display text-headline-lg text-on-surface mt-2">Sign in to view your tickets</h1>
+					<p class="text-body-md text-on-surface-variant mt-2 max-w-md">
+						Sign in or create an account to see your gate passes, keep them synced across devices, and have your QR ready at the door.
+					</p>
+				</div>
+				<div class="flex flex-col sm:flex-row items-center gap-3 w-full pt-2">
+					<a href="/auth/login?next=/tickets" class="w-full sm:flex-1 h-12 rounded-lg bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center transition-colors hover:bg-primary-container glow-primary">
+						Sign In
+					</a>
+					<a href="/auth/signup?next=/tickets" class="w-full sm:flex-1 h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface font-semibold text-body-md flex items-center justify-center hover:border-primary/40 transition-colors">
+						Create Account
+					</a>
+				</div>
+			</section>
+		</div>
+	</div>
+{:else}
 
 <!-- ── desktop (md+) "Cryptographic Vault" wallet per the desktop design source
      (ticket_wallet_dynamic_qr_desktop), themed with Evently Pulse tokens;
@@ -529,3 +560,5 @@ import {
 		</div>
 	</main>
 </div>
+
+{/if}

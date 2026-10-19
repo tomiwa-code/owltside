@@ -87,7 +87,7 @@ describe('database-backed follow lists', () => {
 	it('guest profile prompts sign-in and does not show dummy followers', () => {
 		const { container } = render(ProfilePage, { props: { data: { ...ownProfileData, session: null } } });
 		expect(container.textContent).toContain('Sign in to view your profile');
-		expect(container.querySelector('a[href="/auth/login"]')).not.toBeNull();
+		expect(container.querySelector('a[href="/auth/login?next=/profile"]')).not.toBeNull();
 		expect(container.textContent).not.toContain('342');
 	});
 });

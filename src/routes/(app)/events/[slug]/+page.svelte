@@ -101,7 +101,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 
 	function contactOrganizer() {
 		if (!session) {
-			void goto('/auth/login');
+			void goto(`/auth/login?next=${encodeURIComponent(page.url.pathname)}`);
 			return;
 		}
 		if (isOrganizer) {
@@ -183,10 +183,19 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 		...event.faqs.map((f) => ({ icon: Lock, color: 'text-tertiary', title: f.q, body: f.a }))
 	]);
 
+	const checkoutUrl = $derived(
+		`/checkout?event=${encodeURIComponent(event.slug)}&tier=${encodeURIComponent(tierId)}&qty=${qty}${appliedPromo ? `&promo=${encodeURIComponent(appliedPromo.code)}` : ''}`
+	);
+	let showSignInDialog = $state(false);
+
 	function checkout() {
-		goto(
-			`/checkout?event=${encodeURIComponent(event.slug)}&tier=${encodeURIComponent(tierId)}&qty=${qty}${appliedPromo ? `&promo=${encodeURIComponent(appliedPromo.code)}` : ''}`
-		);
+		/* Unregistered visitors are asked to sign in before buying; the
+		   sign-in flow returns them to this exact checkout afterwards. */
+		if (!session) {
+			showSignInDialog = true;
+			return;
+		}
+		goto(checkoutUrl);
 	}
 
 	function share() {
@@ -982,6 +991,33 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 					<button type="submit" disabled={!messageDraft.trim() || messageSending} class="h-10 px-4 rounded-full bg-primary text-on-primary text-body-sm font-semibold disabled:opacity-50">{messageSending ? 'Sending…' : 'Send request'}</button>
 				</div>
 			</form>
+		</div>
+	</div>
+{/if}
+
+{#if showSignInDialog}
+	<div class="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4">
+		<button type="button" aria-label="Close sign-in prompt" class="absolute inset-0 bg-surface-base/80 backdrop-blur-sm" onclick={() => (showSignInDialog = false)}></button>
+		<div role="dialog" aria-modal="true" aria-labelledby="buy-sign-in-title" class="relative z-10 w-full max-w-md rounded-2xl border border-surface-glass-border bg-surface-container p-6 md:p-7 shadow-2xl flex flex-col items-center text-center gap-4">
+			<div class="w-14 h-14 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center glow-primary">
+				<ShieldCheck class="w-7 h-7" />
+			</div>
+			<div>
+				<span class="{MONO} text-on-surface-variant">Account Required</span>
+				<h2 id="buy-sign-in-title" class="font-display text-headline-md text-on-surface mt-1.5">Sign in to buy tickets</h2>
+				<p class="text-body-sm text-on-surface-variant mt-1.5">
+					You need an Owltside account to purchase tickets for <span class="text-on-surface font-semibold">{event.title}</span>. Sign in and we'll bring you straight back to checkout.
+				</p>
+			</div>
+			<div class="flex flex-col gap-2.5 w-full pt-1">
+				<a href="/auth/login?next={encodeURIComponent(checkoutUrl)}" class="w-full h-12 rounded-lg bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center transition-colors hover:bg-primary-container glow-primary">
+					Sign In
+				</a>
+				<a href="/auth/signup?next={encodeURIComponent(checkoutUrl)}" class="w-full h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface font-semibold text-body-md flex items-center justify-center hover:border-primary/40 transition-colors">
+					Create Account
+				</a>
+				<button type="button" class="w-full h-11 rounded-lg text-body-sm font-semibold text-on-surface-variant hover:text-on-surface transition-colors" onclick={() => (showSignInDialog = false)}>Not now</button>
+			</div>
 		</div>
 	</div>
 {/if}

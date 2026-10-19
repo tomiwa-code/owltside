@@ -88,6 +88,12 @@ describe('Google server-side PKCE flow using the actual Supabase SSR client', ()
 		expect(new URL(start.location).searchParams.get('redirect_to')).toBe('https://owltside.example/auth/callback');
 		expect(JSON.parse(cookies.get('owltside_oauth_context')!).handle).toBe('myhandle');
 	});
+	it('returns the user to a gated destination after Google sign-in', async () => {
+		const cookies = cookieJar();
+		await redirected(startGoogleSignIn(cookies, new URL('https://owltside.example/auth/login'), undefined, '/checkout?event=promo-night&tier=tier-1&qty=2'));
+		const finish = await redirected(GET({ cookies, url: new URL('https://owltside.example/auth/callback?code=fake-code') } as never));
+		expect(finish).toMatchObject({ status: 303, location: '/checkout?event=promo-night&tier=tier-1&qty=2' });
+	});
 	it('reports expired or missing verification instead of navigating home as a guest', async () => {
 		const cookies = cookieJar();
 		failExchange = true;

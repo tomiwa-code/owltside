@@ -25,7 +25,7 @@ export function readOAuthContext(cookies: Cookies): { next: string; handle?: str
 }
 
 /** Keep the provider callback fixed so an exact Supabase redirect allowlist entry works. */
-export async function startGoogleSignIn(cookies: Cookies, url: URL, handle?: string) {
+export async function startGoogleSignIn(cookies: Cookies, url: URL, handle?: string, next?: string | null) {
 	const db = createSupabase(cookies, { freshAuth: true });
 	if (!db) return fail(503, { error: 'Google sign-in is not configured. Please contact support or use email sign-in.' });
 	let authorizationUrl: string | undefined;
@@ -40,7 +40,7 @@ export async function startGoogleSignIn(cookies: Cookies, url: URL, handle?: str
 		return fail(503, { error: 'Google sign-in is temporarily unavailable. Please try again.' });
 	}
 	if (!authorizationUrl) return fail(502, { error: 'Google sign-in did not return an authorization URL. Please try again.' });
-	cookies.set(CONTEXT_COOKIE, JSON.stringify({ next: '/home', handle, createdAt: Date.now() }), {
+	cookies.set(CONTEXT_COOKIE, JSON.stringify({ next: safeAuthNext(next), handle, createdAt: Date.now() }), {
 		path: '/', httpOnly: true, sameSite: 'lax', secure: url.protocol === 'https:', maxAge: MAX_AGE
 	});
 	redirect(303, authorizationUrl);

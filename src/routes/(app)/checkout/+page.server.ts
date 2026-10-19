@@ -18,6 +18,11 @@ import { normalizePromoCode } from '$lib/utils/promo';
 export const load: PageServerLoad = async ({ url, locals, cookies }) => {
 	const slug = url.searchParams.get('event');
 	if (!slug) error(400, 'Missing event');
+	/* Buying requires an account: unregistered visitors are asked to sign
+	   in and returned to this exact checkout afterwards. */
+	if (!locals.session?.userId) {
+		redirect(303, `/auth/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`);
+	}
 	const source = getSource(createSupabase(cookies));
 	const event = await source.getEvent(slug);
 	if (!event) error(404, 'Event not found');
@@ -53,8 +58,9 @@ export const actions: Actions = {
 		const paystackReference = String(form.get('paystackReference') ?? '').trim();
 
 		const source = getSource(createSupabase(cookies));
-		if (source.mode === 'supabase' && !locals.session?.userId) {
-			redirect(303, '/auth/login');
+		if (!locals.session?.userId) {
+			const backToCheckout = `/checkout?event=${encodeURIComponent(slug)}&tier=${encodeURIComponent(tierId)}&qty=${qty}${promoCode ? `&promo=${encodeURIComponent(promoCode)}` : ''}`;
+			redirect(303, `/auth/login?next=${encodeURIComponent(backToCheckout)}`);
 		}
 		const event = await source.getEvent(slug);
 		if (!event) return fail(404, { error: 'Event not found' });
