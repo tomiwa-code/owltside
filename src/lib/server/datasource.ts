@@ -79,6 +79,17 @@ export interface OrderResult {
 	tickets: Ticket[];
 }
 
+/**
+ * What a scanner PIN unlocks. Gate and terminal PINs are bearer credentials
+ * an organizer can hand to door staff, so resolution deliberately does not
+ * depend on the signed-in scanner user owning the event.
+ */
+export type StaffScanContext =
+	| { kind: 'gate'; eventId: string; gate: string; eventTitle: string; organizerId: string }
+	| { kind: 'terminal'; organizerId: string };
+
+export type StaffScanResolution = StaffScanContext | { kind: 'ambiguous' };
+
 export interface DataSource {
 	mode: 'demo' | 'supabase';
 	listEvents(filters?: EventFilters): Promise<EventItem[]>;
@@ -115,6 +126,15 @@ export interface DataSource {
 	/** Organizer-scoped scanner ("terminal") PIN — arms the scanner with no event/gate context. */
 	issueScannerToken(userId: string): Promise<{ code: string; expiresAt: string }>;
 	verifyScannerToken(userId: string, code: string): Promise<boolean>;
+	/** Resolve any active staff PIN to the gate/terminal it was issued for, whoever presents it. */
+	resolveStaffScanToken(code: string): Promise<StaffScanResolution | null>;
+	/** Check a ticket in under a resolved staff PIN (used when the scanner user is not the event owner). */
+	checkInWithStaffToken(input: {
+		context: StaffScanContext;
+		staffToken: string;
+		ticketCode?: string;
+		simulate?: boolean;
+	}): Promise<Checkin>;
 	recordEventView(slug: string): Promise<void>;
 	updateEvent(
 		userId: string,
@@ -159,6 +179,34 @@ function sortEvents(list: EventItem[], sort: EventFilters['sort']): EventItem[] 
 
 export function minPrice(e: EventItem): number {
 	return Math.min(...e.tiers.map((t) => t.price));
+}
+
+function resolveDemoStaffScanToken(tokenHash: string): StaffScanResolution | null {
+	const candidates: StaffScanContext[] = [];
+	for (const [key, stored] of demoGateTokens) {
+		if (stored.code !== tokenHash || Date.parse(stored.expiresAt) <= Date.now()) continue;
+		const separator = key.indexOf(':');
+		const eventId = key.slice(0, separator);
+		const gate = key.slice(separator + 1);
+		const event = demo.events.find((item) => item.id === eventId);
+		if (!event?.gates?.some((configured) => configured.name === gate)) continue;
+		candidates.push({ kind: 'gate', eventId, gate, eventTitle: event.title, organizerId: event.organizer.id });
+	}
+	for (const [organizerId, stored] of demoScannerTokens) {
+		if (stored.code !== tokenHash || Date.parse(stored.expiresAt) <= Date.now()) continue;
+		candidates.push({ kind: 'terminal', organizerId });
+	}
+	if (candidates.length > 1) return { kind: 'ambiguous' };
+	return candidates[0] ?? null;
+}
+
+function newDemoStaffScanCode(isOwnContext: (context: StaffScanContext) => boolean): string {
+	for (let attempt = 0; attempt < 20; attempt++) {
+		const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+		const resolution = resolveDemoStaffScanToken(gateTokenHash(code));
+		if (!resolution || (resolution.kind !== 'ambiguous' && isOwnContext(resolution))) return code;
+	}
+	throw new Error('Could not generate a unique scanner PIN. Please try again.');
 }
 
 export const demoSource: DataSource = {
@@ -487,49 +535,7 @@ export const demoSource: DataSource = {
 			.sort((a, b) => +new Date(b.at) - +new Date(a.at));
 	},
 	async checkInTicket(eventId, code, gate) {
-		const ticket = allDemoTickets().find((t) => t.eventId === eventId && t.code === code);
-		const at = new Date().toISOString();
-		if (!ticket) {
-			const ck: Checkin = {
-				id: `ck-${Math.random().toString(36).slice(2, 8)}`,
-				eventId,
-				ticketCode: code,
-				holder: 'Unknown pass',
-				tier: '—',
-				gate,
-				at,
-				result: 'invalid'
-			};
-			demo.checkins.unshift(ck);
-			return ck;
-		}
-		if (ticket.status === 'used') {
-			const ck: Checkin = {
-				id: `ck-${Math.random().toString(36).slice(2, 8)}`,
-				eventId,
-				ticketCode: code,
-				holder: ticket.holder,
-				tier: ticket.tierName,
-				gate,
-				at,
-				result: 'duplicate'
-			};
-			demo.checkins.unshift(ck);
-			return ck;
-		}
-		ticket.status = 'used';
-		const ck: Checkin = {
-			id: `ck-${Math.random().toString(36).slice(2, 8)}`,
-			eventId,
-			ticketCode: code,
-			holder: ticket.holder,
-			tier: ticket.tierName,
-			gate,
-			at,
-			result: 'verified'
-		};
-		demo.checkins.unshift(ck);
-		return ck;
+		return performDemoCheckin(eventId, code, gate);
 	},
 	async createEvent(userId, payload) {
 		const uid = userId === 'demo' ? demoMeId : userId;
@@ -601,20 +607,26 @@ export const demoSource: DataSource = {
 		const uid = userId === 'demo' ? demoMeId : userId;
 		const event = demo.events.find((item) => item.id === eventId && item.organizer.id === uid);
 		if (!event || !event.gates?.some((gate) => gate.name === gateName)) throw new Error('Gate not found for this event');
-		const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+		const code = newDemoStaffScanCode(
+			(context) => context.kind === 'gate' && context.eventId === eventId && context.gate === gateName
+		);
 		const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
 		demoGateTokens.set(`${eventId}:${gateName}`, { code: gateTokenHash(code), expiresAt });
 		return { code, expiresAt };
 	},
-	async verifyGateToken(userId, eventId, gateName, code) {
-		const uid = userId === 'demo' ? demoMeId : userId;
-		const event = demo.events.find((item) => item.id === eventId && item.organizer.id === uid);
+	async verifyGateToken(_userId, eventId, gateName, code) {
+		// A gate PIN is the staff credential itself: whoever presents a valid,
+		// unexpired PIN for this configured gate may scan at it. Ownership is
+		// still required to issue or rotate the PIN.
+		const event = demo.events.find((item) => item.id === eventId);
 		const stored = demoGateTokens.get(`${eventId}:${gateName}`);
 		return Boolean(event?.gates?.some((gate) => gate.name === gateName) && stored && Date.parse(stored.expiresAt) > Date.now() && stored.code === gateTokenHash(code));
 	},
 	async issueScannerToken(userId) {
 		const uid = userId === 'demo' ? demoMeId : userId;
-		const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+		const code = newDemoStaffScanCode(
+			(context) => context.kind === 'terminal' && context.organizerId === uid
+		);
 		const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
 		demoScannerTokens.set(uid, { code: gateTokenHash(code), expiresAt });
 		return { code, expiresAt };
@@ -623,6 +635,49 @@ export const demoSource: DataSource = {
 		const uid = userId === 'demo' ? demoMeId : userId;
 		const stored = demoScannerTokens.get(uid);
 		return Boolean(stored && Date.parse(stored.expiresAt) > Date.now() && stored.code === gateTokenHash(code));
+	},
+	async resolveStaffScanToken(code) {
+		return resolveDemoStaffScanToken(gateTokenHash(code));
+	},
+	async checkInWithStaffToken({ context, staffToken, ticketCode, simulate = false }) {
+		const resolved = resolveDemoStaffScanToken(gateTokenHash(staffToken));
+		const matches =
+			resolved?.kind === context.kind &&
+			(context.kind !== 'gate' ||
+				(resolved.kind === 'gate' && resolved.eventId === context.eventId && resolved.gate === context.gate)) &&
+			(context.kind !== 'terminal' ||
+				(resolved.kind === 'terminal' && resolved.organizerId === context.organizerId));
+		if (!matches) throw new Error('Gate PIN is invalid or expired');
+
+		if (context.kind === 'gate') {
+			const code = simulate
+				? (allDemoTickets().find((ticket) => ticket.eventId === context.eventId && ticket.status === 'valid') ??
+					allDemoTickets().find((ticket) => ticket.eventId === context.eventId))?.code
+				: ticketCode;
+			if (!code) throw new Error(simulate ? 'No tickets left to scan' : 'Invalid scan request');
+			return performDemoCheckin(context.eventId, code, context.gate);
+		}
+
+		const ownerTickets = allDemoTickets().filter((ticket) =>
+			demo.events.some((event) => event.id === ticket.eventId && event.organizer.id === context.organizerId)
+		);
+		const ticket = simulate
+			? (ownerTickets.find((candidate) => candidate.status === 'valid') ?? ownerTickets[0])
+			: ownerTickets.find((candidate) => candidate.code === ticketCode);
+		if (!ticket) {
+			if (simulate) throw new Error('No tickets left to scan');
+			return {
+				id: `ck-${ticketCode ?? 'unknown'}`,
+				eventId: '',
+				ticketCode: ticketCode ?? '',
+				holder: 'Unknown pass',
+				tier: '—',
+				gate: 'Terminal',
+				at: new Date().toISOString(),
+				result: 'invalid' as const
+			};
+		}
+		return performDemoCheckin(ticket.eventId, ticket.code, 'Terminal');
 	},
 		async recordEventView(slug) {
 		const event = demo.events.find((e) => e.slug === slug);
@@ -773,6 +828,52 @@ function allDemoTickets(): Ticket[] {
 	return [...demo.tickets, ...demo.rooftopTickets];
 }
 
+function performDemoCheckin(eventId: string, code: string, gate: string): Checkin {
+	const ticket = allDemoTickets().find((t) => t.eventId === eventId && t.code === code);
+	const at = new Date().toISOString();
+	if (!ticket) {
+		const ck: Checkin = {
+			id: `ck-${Math.random().toString(36).slice(2, 8)}`,
+			eventId,
+			ticketCode: code,
+			holder: 'Unknown pass',
+			tier: '—',
+			gate,
+			at,
+			result: 'invalid'
+		};
+		demo.checkins.unshift(ck);
+		return ck;
+	}
+	if (ticket.status === 'used') {
+		const ck: Checkin = {
+			id: `ck-${Math.random().toString(36).slice(2, 8)}`,
+			eventId,
+			ticketCode: code,
+			holder: ticket.holder,
+			tier: ticket.tierName,
+			gate,
+			at,
+			result: 'duplicate'
+		};
+		demo.checkins.unshift(ck);
+		return ck;
+	}
+	ticket.status = 'used';
+	const ck: Checkin = {
+		id: `ck-${Math.random().toString(36).slice(2, 8)}`,
+		eventId,
+		ticketCode: code,
+		holder: ticket.holder,
+		tier: ticket.tierName,
+		gate,
+		at,
+		result: 'verified'
+	};
+	demo.checkins.unshift(ck);
+	return ck;
+}
+
 /**
  * Demo passes only carry a holder name, so resolve the account that owns each
  * pass of an event. Used to deliver broadcast announcements to ticket owners.
@@ -838,6 +939,53 @@ const isMissingFunctionError = (error: { code?: string; message?: string } | nul
 	if (error.code === '42883' || error.code === 'PGRST202') return true;
 	return /function .* does not exist|could not find the function/i.test(error.message ?? '');
 };
+
+const mapStaffScanResolution = (data: Row | null): StaffScanResolution | null => {
+	if (!data) return null;
+	if (data.kind === 'ambiguous') return { kind: 'ambiguous' };
+	if (data.kind === 'gate') {
+		return {
+			kind: 'gate',
+			eventId: data.eventId,
+			gate: data.gate,
+			eventTitle: data.eventTitle ?? 'Shared event',
+			organizerId: data.organizerId
+		};
+	}
+	if (data.kind === 'terminal') return { kind: 'terminal', organizerId: data.organizerId };
+	return null;
+};
+
+async function resolveStaffScanTokenHash(
+	db: SupabaseClient,
+	tokenHash: string
+): Promise<StaffScanResolution | null> {
+	const { data, error } = await db.rpc('resolve_staff_scan_token', { p_token_hash: tokenHash });
+	if (error) throw error;
+	return mapStaffScanResolution(data as Row | null);
+}
+
+/**
+ * Generate a PIN that is not already active for a different gate/terminal,
+ * so presenting it later resolves to exactly one scanner context. Falls
+ * back to a plain random PIN when migration 019 is not installed yet.
+ */
+async function newStaffScanCode(
+	db: SupabaseClient,
+	isOwnContext: (context: StaffScanContext) => boolean
+): Promise<string> {
+	for (let attempt = 0; attempt < 20; attempt++) {
+		const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+		try {
+			const resolution = await resolveStaffScanTokenHash(db, gateTokenHash(code));
+			if (!resolution || (resolution.kind !== 'ambiguous' && isOwnContext(resolution))) return code;
+		} catch (error) {
+			if (isMissingFunctionError(error as { code?: string; message?: string })) return code;
+			throw error;
+		}
+	}
+	throw new Error('Could not generate a unique scanner PIN. Please try again.');
+}
 
 /** Chosen operating identity from a profile row (column added in 017; absent on un-migrated DBs). */
 const rowOperatingIdentity = (r: Row): OperatingIdentity | undefined => {
@@ -1347,7 +1495,10 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			const { data: event, error: eventError } = await db.from('events').select('gates').eq('id', eventId).eq('organizer_id', userId).maybeSingle();
 			if (eventError) throw eventError;
 			if (!event || !(event.gates ?? []).some((gate: Row) => gate.name === gateName)) throw new Error('Gate not found for this event');
-			const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+			const code = await newStaffScanCode(
+				db,
+				(context) => context.kind === 'gate' && context.eventId === eventId && context.gate === gateName
+			);
 			const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
 			const { error } = await db.from('gate_staff_tokens').upsert({ event_id: eventId, gate_name: gateName, token_hash: gateTokenHash(code), expires_at: expiresAt, created_by: userId }, { onConflict: 'event_id,gate_name' });
 			if (error) throw error;
@@ -1355,16 +1506,26 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 		},
 		async verifyGateToken(userId, eventId, gateName, code) {
 			if (!isUuid(userId) || !isUuid(eventId)) return false;
-			const { data: event, error: eventError } = await db.from('events').select('gates').eq('id', eventId).eq('organizer_id', userId).maybeSingle();
+			const { data: event, error: eventError } = await db.from('events').select('gates,organizer_id').eq('id', eventId).maybeSingle();
 			if (eventError) throw eventError;
 			if (!event || !(event.gates ?? []).some((gate: Row) => gate.name === gateName)) return false;
+			if (event.organizer_id !== userId) {
+				// Door staff present another organizer's PIN: their session cannot
+				// read that token row under RLS, so resolve it through the
+				// security-definer RPC from migration 019 instead.
+				const resolution = await resolveStaffScanTokenHash(db, gateTokenHash(code));
+				return resolution?.kind === 'gate' && resolution.eventId === eventId && resolution.gate === gateName;
+			}
 			const { data, error } = await db.from('gate_staff_tokens').select('token_hash,expires_at').eq('event_id', eventId).eq('gate_name', gateName).eq('token_hash', gateTokenHash(code)).gt('expires_at', new Date().toISOString()).maybeSingle();
 			if (error) throw error;
 			return Boolean(data);
 		},
 		async issueScannerToken(userId) {
 			if (!isUuid(userId)) throw new Error('Invalid organizer ID');
-			const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+			const code = await newStaffScanCode(
+				db,
+				(context) => context.kind === 'terminal' && context.organizerId === userId
+			);
 			const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
 			const { error } = await db.from('organizer_scanner_tokens').upsert({ organizer_id: userId, token_hash: gateTokenHash(code), expires_at: expiresAt }, { onConflict: 'organizer_id' });
 			if (error) throw error;
@@ -1375,6 +1536,36 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			const { data, error } = await db.from('organizer_scanner_tokens').select('token_hash,expires_at').eq('organizer_id', userId).eq('token_hash', gateTokenHash(code)).gt('expires_at', new Date().toISOString()).maybeSingle();
 			if (error) throw error;
 			return Boolean(data);
+		},
+		async resolveStaffScanToken(code) {
+			return resolveStaffScanTokenHash(db, gateTokenHash(code));
+		},
+		async checkInWithStaffToken({ context, staffToken, ticketCode, simulate = false }) {
+			// The scanner user may not own this event, so ordinary table access
+			// is closed to them by RLS. The 019 RPCs re-verify the PIN hash and
+			// perform the check-in atomically as security definers.
+			if (context.kind === 'gate') {
+				if (!isUuid(context.eventId)) throw new Error('Invalid scan request');
+				const { data, error } = await db.rpc('staff_check_in_ticket', {
+					p_event_id: context.eventId,
+					p_gate: context.gate,
+					p_ticket_code: ticketCode ?? null,
+					p_token_hash: gateTokenHash(staffToken),
+					p_simulate: simulate
+				});
+				if (error) throw error;
+				return toCheckin(data as Row);
+			}
+			if (!isUuid(context.organizerId)) throw new Error('Invalid scan request');
+			const { data, error } = await db.rpc('staff_check_in_terminal', {
+				p_organizer_id: context.organizerId,
+				p_ticket_code: ticketCode ?? null,
+				p_token_hash: gateTokenHash(staffToken),
+				p_simulate: simulate
+			});
+			if (error) throw error;
+			const row = data as Row;
+			return toCheckin({ ...row, event_id: row.event_id ?? '' });
 		},
 		async recordEventView(slug) {
 			try {

@@ -140,8 +140,11 @@ describe('demo datasource', () => {
 		const token = await demoSource.issueGateToken('u-ada', event.id, 'Main Gate');
 		expect(token.code).toMatch(/^\d{6}$/);
 		expect(await demoSource.verifyGateToken('u-ada', event.id, 'Main Gate', token.code)).toBe(true);
-		expect(await demoSource.verifyGateToken('u-ada', event.id, 'Main Gate', '000000')).toBe(false);
-		expect(await demoSource.verifyGateToken('u-tunde', event.id, 'Main Gate', token.code)).toBe(false);
+		expect(await demoSource.verifyGateToken('u-ada', event.id, 'Main Gate', token.code === '000000' ? '111111' : '000000')).toBe(false);
+		// The PIN is a staff bearer credential, so a helper can verify it too;
+		// issuing one for somebody else's event stays owner-only.
+		expect(await demoSource.verifyGateToken('u-tunde', event.id, 'Main Gate', token.code)).toBe(true);
+		await expect(demoSource.issueGateToken('u-tunde', event.id, 'Main Gate')).rejects.toThrow('Gate not found');
 		const order = await demoSource.createOrder('u-ada', event.slug, [{ tierId: event.tiers[0].id, qty: 1 }]);
 		const validCheckin = await demoSource.checkInTicket(event.id, order.tickets[0].code, 'Main Gate');
 		expect(validCheckin.result).toBe('verified');
@@ -169,6 +172,52 @@ describe('demo datasource', () => {
 			expect(await demoSource.verifyScannerToken('u-ada', token.code)).toBe(false);
 		}
 		expect(await demoSource.verifyScannerToken('u-ada', rotated.code)).toBe(true);
+	});
+	it('resolves a shared gate PIN and checks tickets in for a helper with no event', async () => {
+		const event = await demoSource.createEvent('u-ada', {
+			title: 'Shared Staff Scanner Test', category: 'music', tags: [],
+			startsAt: new Date().toISOString(), venue: 'Helper Hall', city: 'Lagos', description: 'A test event scanned by a helper.',
+			cover: { from: '#111827', to: '#312e81', icon: 'image' }, tiers: [{ name: 'General', price: 0, capacity: 5, benefits: '' }], agenda: [], speakers: [],
+			gates: [{ id: 'gate-main', name: 'Main Gate', modes: ['QR'], staff: ['Door lead'] }]
+		});
+		const order = await demoSource.createOrder('u-ada', event.slug, [{ tierId: event.tiers[0].id, qty: 2 }]);
+		const token = await demoSource.issueGateToken('u-ada', event.id, 'Main Gate');
+
+		const resolution = await demoSource.resolveStaffScanToken(token.code);
+		expect(resolution).toEqual({
+			kind: 'gate',
+			eventId: event.id,
+			gate: 'Main Gate',
+			eventTitle: 'Shared Staff Scanner Test',
+			organizerId: 'u-ada'
+		});
+		if (!resolution || resolution.kind !== 'gate') throw new Error('Expected a gate resolution');
+
+		const checkin = await demoSource.checkInWithStaffToken({
+			context: resolution,
+			staffToken: token.code,
+			ticketCode: order.tickets[0].code
+		});
+		expect(checkin).toMatchObject({ eventId: event.id, gate: 'Main Gate', result: 'verified' });
+		await expect(
+			demoSource.checkInWithStaffToken({
+				context: resolution,
+				staffToken: token.code === '000000' ? '111111' : '000000',
+				ticketCode: order.tickets[1].code
+			})
+		).rejects.toThrow('Gate PIN is invalid or expired');
+
+		// A shared terminal PIN resolves to its organizer and scans their events.
+		const terminal = await demoSource.issueScannerToken('u-ada');
+		const terminalResolution = await demoSource.resolveStaffScanToken(terminal.code);
+		expect(terminalResolution).toEqual({ kind: 'terminal', organizerId: 'u-ada' });
+		if (!terminalResolution || terminalResolution.kind !== 'terminal') throw new Error('Expected a terminal resolution');
+		const terminalCheckin = await demoSource.checkInWithStaffToken({
+			context: terminalResolution,
+			staffToken: terminal.code,
+			ticketCode: order.tickets[1].code
+		});
+		expect(terminalCheckin).toMatchObject({ eventId: event.id, gate: 'Terminal', result: 'verified' });
 	});
 
 });

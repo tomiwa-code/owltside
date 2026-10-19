@@ -1,4 +1,4 @@
-import { getSource } from '$lib/server/datasource';
+import { getSource, type StaffScanContext, type StaffScanResolution } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
 import { error, json } from '@sveltejs/kit';
 import { hasOrganizerIdentity } from '$lib/server/organizer-access';
@@ -6,11 +6,12 @@ import { z } from 'zod';
 import type { Checkin } from '$lib/types';
 import type { RequestHandler } from './$types';
 
-// With an event + gate, scans settle at that gate (its staff PIN or the
-// organizer's terminal PIN). Without them the scanner runs in standalone
-// terminal mode — exactly the same flow before any event exists — and a
-// scanned code is resolved against tickets from all of the organizer's
-// events. Unknown codes come back invalid either way.
+// Scans settle three ways, all behind a six-digit staff PIN:
+//  1. The scanner user's own event gate (gate PIN or their terminal PIN).
+//  2. A shared PIN an organizer handed to door staff — resolved to that
+//     organizer's gate/terminal, so helpers with no events can scan for them.
+//  3. The scanner user's own standalone terminal (no event context), where
+//     codes resolve against tickets from all of their events.
 const body = z
 	.object({
 		eventId: z.string().min(1).optional(),
@@ -26,6 +27,23 @@ const body = z
 /** Gate label recorded for standalone terminal check-ins. */
 const TERMINAL_GATE = 'Terminal';
 
+function throwStaffScanError(cause: unknown): never {
+	const detail = cause && typeof cause === 'object' ? cause as { message?: string; code?: string } : {};
+	const message = detail.message ?? (cause instanceof Error ? cause.message : '');
+	if (/Gate PIN is invalid or expired/i.test(message)) error(403, 'Gate PIN is invalid or expired');
+	if (/No tickets left to scan/i.test(message)) error(409, 'No tickets left to scan');
+	if (/Choose a gate configured|Invalid scan request/i.test(message)) error(400, message);
+	if (
+		/resolve_staff_scan_token|staff_check_in_/i.test(message) ||
+		detail.code === '42883' ||
+		detail.code === 'PGRST202'
+	) {
+		error(503, 'Shared scanner PIN support is not installed. Apply supabase/sql/019_shared_staff_scanner.sql, then try again.');
+	}
+	console.error('Staff scan failed', { code: detail.code, message });
+	error(503, 'Scan could not be verified. Please try again.');
+}
+
 export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 	if (!hasOrganizerIdentity(locals.session)) error(403, 'Organizer identity required');
 	const userId = locals.session?.userId ?? 'demo';
@@ -36,29 +54,78 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 	if (!parsed.success) error(400, 'Invalid scan request');
 	const { eventId, gate, simulate } = parsed.data;
 
-	if (eventId && gate) {
-		const event = organizer.events.find((candidate) => candidate.id === eventId);
-		if (!event) error(403, 'Not your event');
-		if (!event.gates?.some((configured) => configured.name === gate)) error(400, 'Choose a gate configured for this event');
-		const authorized =
-			(await source.verifyGateToken(userId, eventId, gate, parsed.data.staffToken)) ||
-			(await source.verifyScannerToken(userId, parsed.data.staffToken));
-		if (!authorized) error(403, 'Gate PIN is invalid or expired');
+	const staffCheckin = async (context: StaffScanContext): Promise<Response> => {
+		try {
+			const checkin = await source.checkInWithStaffToken({
+				context,
+				staffToken: parsed.data.staffToken,
+				ticketCode: parsed.data.code,
+				simulate
+			});
+			return json(checkin);
+		} catch (cause) {
+			throwStaffScanError(cause);
+		}
+	};
 
-		let code = parsed.data.code;
-		if (simulate) {
-			const tickets = await source.getEventTickets(eventId);
-			const open = tickets.find((t) => t.status === 'valid') ?? tickets[0];
-			code = open?.code;
-			if (!code) error(409, 'No tickets left to scan');
+	const resolveShared = async (): Promise<StaffScanResolution | null> => {
+		try {
+			return await source.resolveStaffScanToken(parsed.data.staffToken);
+		} catch (cause) {
+			throwStaffScanError(cause);
+		}
+	};
+
+	if (eventId && gate) {
+		const ownEvent = organizer.events.find((candidate) => candidate.id === eventId);
+		if (ownEvent) {
+			if (!ownEvent.gates?.some((configured) => configured.name === gate)) error(400, 'Choose a gate configured for this event');
+			const authorized =
+				(await source.verifyGateToken(userId, eventId, gate, parsed.data.staffToken)) ||
+				(await source.verifyScannerToken(userId, parsed.data.staffToken));
+			if (!authorized) error(403, 'Gate PIN is invalid or expired');
+
+			let code = parsed.data.code;
+			if (simulate) {
+				const tickets = await source.getEventTickets(eventId);
+				const open = tickets.find((t) => t.status === 'valid') ?? tickets[0];
+				code = open?.code;
+				if (!code) error(409, 'No tickets left to scan');
+			}
+
+			const checkin = await source.checkInTicket(eventId, code!, gate);
+			return json(checkin);
 		}
 
-		const checkin = await source.checkInTicket(eventId, code!, gate);
-		return json(checkin);
+		/* Not the scanner user's event: settle only under a PIN issued for it. */
+		const resolution = await resolveShared();
+		if (resolution?.kind === 'ambiguous') {
+			error(409, 'This PIN matches more than one active scanner. Ask the organizer to generate a new PIN.');
+		}
+		if (resolution?.kind === 'gate') {
+			if (resolution.eventId !== eventId || resolution.gate !== gate) error(403, 'Gate PIN is invalid or expired');
+			return staffCheckin(resolution);
+		}
+		if (resolution?.kind === 'terminal') {
+			const target = await source.getOrganizerEvent(eventId).catch(() => undefined);
+			if (!target || target.organizer.id !== resolution.organizerId) error(403, 'Gate PIN is invalid or expired');
+			if (!target.gates?.some((configured) => configured.name === gate)) error(400, 'Choose a gate configured for this event');
+			return staffCheckin(resolution);
+		}
+		error(403, 'Gate PIN is invalid or expired');
 	}
 
 	/* ── standalone terminal mode: no event/gate context ── */
-	if (!(await source.verifyScannerToken(userId, parsed.data.staffToken))) error(403, 'Gate PIN is invalid or expired');
+	if (!(await source.verifyScannerToken(userId, parsed.data.staffToken))) {
+		const resolution = await resolveShared();
+		if (resolution?.kind === 'ambiguous') {
+			error(409, 'This PIN matches more than one active scanner. Ask the organizer to generate a new PIN.');
+		}
+		if (resolution?.kind === 'gate' || resolution?.kind === 'terminal') {
+			return staffCheckin(resolution);
+		}
+		error(403, 'Gate PIN is invalid or expired');
+	}
 
 	// Resolve the scan against every event this organizer runs. With no
 	// events at all there is nothing to resolve and every code is invalid —

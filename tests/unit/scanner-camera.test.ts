@@ -150,6 +150,58 @@ describe('scanner camera', () => {
 		expect(screen.getAllByPlaceholderText(/EV-XXXX/i).length).toBeGreaterThan(0);
 	});
 
+	it('switches to the organizers event when a helper enters a shared gate PIN', async () => {
+		const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+			if (String(url).includes('/api/scan/authorize')) {
+				return new Response(
+					JSON.stringify({
+						authorized: true,
+						context: { mode: 'shared-gate', eventId: 'e-owner', gate: 'Main Gate', eventTitle: 'Owner Event' }
+					}),
+					{ status: 200 }
+				);
+			}
+			return new Response(
+				JSON.stringify({
+					id: 'ck-shared',
+					eventId: 'e-owner',
+					ticketCode: 'EV-SHARED-0001',
+					holder: 'Guest',
+					tier: 'General',
+					gate: 'Main Gate',
+					at: new Date().toISOString(),
+					result: 'verified'
+				}),
+				{ status: 200 }
+			);
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		// The helper has no events of their own.
+		renderScanner([], '');
+		await armScanner();
+
+		expect(screen.getAllByText(/Owner Event/i).length).toBeGreaterThan(0);
+		expect(screen.getAllByText(/Main Gate/i).length).toBeGreaterThan(0);
+
+		const manual = screen.getAllByPlaceholderText(/EV-XXXX/i)[0];
+		await fireEvent.input(manual, { target: { value: 'EV-SHARED-0001' } });
+		await fireEvent.click(screen.getAllByRole('button', { name: /^Verify$/i })[0]);
+
+		await waitFor(() => {
+			const scanCall = fetchMock.mock.calls.find(([url]) => String(url) === '/api/scan');
+			expect(scanCall).toBeDefined();
+			const sent = JSON.parse(String(scanCall?.[1]?.body ?? '{}')) as Record<string, unknown>;
+			expect(sent).toMatchObject({
+				eventId: 'e-owner',
+				gate: 'Main Gate',
+				code: 'EV-SHARED-0001',
+				staffToken: '123456'
+			});
+		});
+		await waitFor(() => expect(screen.getAllByText(/verified/i).length).toBeGreaterThan(0));
+	});
+
 	it('explains a blocked camera instead of leaving a black screen', async () => {
 		vi.stubGlobal(
 			'fetch',

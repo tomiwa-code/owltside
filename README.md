@@ -52,6 +52,8 @@ code paths switch to the live backend — no component changes.
      shown under a chat peer's name in conversation lists
    - `018_organizer_scanner_tokens.sql` — organizer-scoped terminal PIN so the
      ticket scanner arms (PIN → camera → scan) even before any event exists
+   - `019_shared_staff_scanner.sql` — lets door staff use an organizer's shared
+     PIN from their own account (token resolution + staff check-in RPCs)
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
