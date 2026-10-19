@@ -6,6 +6,7 @@
 	import { BadgeCheck, Search, SlidersHorizontal } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import Avatar from './Avatar.svelte';
+	import { peerIdentityLabel } from '$lib/constants/operating-identity';
 	import { fmtDate, fmtRelative, fmtTime } from '$lib/utils/dates';
 	import type { Conversation } from '$lib/types';
 
@@ -29,10 +30,9 @@
 			.sort((a, b) => +new Date(b.lastAt) - +new Date(a.lastAt))
 	);
 
+	/** Badge under the peer's name: the operating identity they chose. */
 	function roleBadge(c: Conversation): string {
-		if (c.peer.verified) return 'Official Organizer';
-		if (c.peer.handle === 'owltside') return 'Event Channel';
-		return 'Keynote Speaker';
+		return peerIdentityLabel(c.peer);
 	}
 
 	function timeLabel(iso: string): string {

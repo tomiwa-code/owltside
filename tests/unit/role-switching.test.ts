@@ -4,7 +4,14 @@ vi.mock('$lib/server/supabase', () => ({ createSupabase: () => state.db }));
 import { actions } from '../../src/routes/(app)/settings/+page.server';
 import { hasOrganizerIdentity } from '$lib/server/organizer-access';
 
-beforeEach(() => { state.db = { auth: { updateUser: vi.fn().mockResolvedValue({ error: null }) } }; });
+beforeEach(() => {
+	state.db = {
+		auth: { updateUser: vi.fn().mockResolvedValue({ error: null }) },
+		from: vi.fn(() => ({
+			update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) }))
+		}))
+	};
+});
 async function switchRole(identity: string, options: { demo?: boolean; guest?: boolean; returnTo?: string } = {}) {
 	const form = new FormData(); form.set('identity', identity); if (options.returnTo) form.set('returnTo', options.returnTo);
 	const set = vi.fn();
@@ -20,6 +27,21 @@ describe('account role switching', () => {
 			expect(set).toHaveBeenCalledWith('owltside_operating_identity', identity, expect.objectContaining({ httpOnly: true, path: '/' }));
 			expect(result).toMatchObject({ status: 303, location: '/profile' });
 		}
+	});
+	it('mirrors the chosen identity onto the public profile so chat peers can see it', async () => {
+		const eq = vi.fn().mockResolvedValue({ error: null });
+		const update = vi.fn(() => ({ eq }));
+		state.db.from = vi.fn(() => ({ update }));
+		await switchRole('organizer');
+		expect(state.db.from).toHaveBeenCalledWith('profiles');
+		expect(update).toHaveBeenCalledWith({ operating_identity: 'organizer' });
+		expect(eq).toHaveBeenCalledWith('id', 'me');
+	});
+	it('still switches when the public profile mirror is unavailable (un-migrated database)', async () => {
+		state.db.from = vi.fn(() => { throw new Error('column does not exist'); });
+		const { result, set } = await switchRole('organizer');
+		expect(result).toMatchObject({ status: 303 });
+		expect(set).toHaveBeenCalled();
 	});
 	it('does not grant a role to unauthenticated users or accept unknown roles', async () => {
 		expect((await switchRole('organizer', { guest: true })).result).toMatchObject({ status: 401 });

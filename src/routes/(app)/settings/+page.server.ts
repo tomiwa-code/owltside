@@ -18,6 +18,14 @@ export const actions: Actions = {
 				const { error } = await db.auth.updateUser({ data: { operating_identity: identity } });
 				if (error) return fail(503, { error: 'Your role could not be saved. Please try again.' });
 			} catch { return fail(503, { error: 'Your role could not be saved. Please try again.' }); }
+			// Mirror the choice onto the public profile so other people see it
+			// (e.g. under the name in conversation lists). Best-effort: auth
+			// metadata stays the source of truth for the user's own session, and
+			// an un-migrated database (017 not yet applied) must not block the
+			// switch — the request hook re-syncs the mirror whenever it drifts.
+			try {
+				await db.from('profiles').update({ operating_identity: identity }).eq('id', locals.session.userId);
+			} catch { /* mirror re-syncs on the next request */ }
 		}
 
 		cookies.set(OPERATING_IDENTITY_COOKIE, identity, {

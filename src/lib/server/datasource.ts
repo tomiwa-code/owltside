@@ -17,6 +17,7 @@ import type {
 	WizardPayload
 } from '$lib/types';
 import * as demo from './demo/seed';
+import { isOperatingIdentity, type OperatingIdentity } from '$lib/constants/operating-identity';
 import { createHash, randomInt } from 'node:crypto';
 import { newTicketCode } from '$lib/utils/qr';
 
@@ -821,6 +822,12 @@ const isMissingFunctionError = (error: { code?: string; message?: string } | nul
 	return /function .* does not exist|could not find the function/i.test(error.message ?? '');
 };
 
+/** Chosen operating identity from a profile row (column added in 017; absent on un-migrated DBs). */
+const rowOperatingIdentity = (r: Row): OperatingIdentity | undefined => {
+	const raw = r.operating_identity ?? r.operatingIdentity;
+	return typeof raw === 'string' && isOperatingIdentity(raw) ? raw : undefined;
+};
+
 const toProfile = (r: Row): Profile => ({
 	id: r.id,
 	handle: r.handle,
@@ -833,6 +840,7 @@ const toProfile = (r: Row): Profile => ({
 	bannerUrl: r.banner_url,
 	interests: r.interests ?? [],
 	usernameChangedAt: r.username_changed_at,
+	operatingIdentity: rowOperatingIdentity(r),
 	verified: !!r.verified,
 	followers: r.followers ?? 0,
 	following: r.following ?? 0
@@ -846,6 +854,7 @@ const toEventSpeaker = (r: Row, index: number): EventSpeaker => ({
 	avatarUrl: r.avatarUrl ?? r.avatar_url ?? null,
 	bio: r.bio ?? r.role,
 	city: r.city,
+	operatingIdentity: rowOperatingIdentity(r),
 	verified: !!r.verified,
 	followers: r.followers ?? 0,
 	following: r.following ?? 0,

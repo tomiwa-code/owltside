@@ -1,3 +1,5 @@
+import type { OperatingIdentity } from './constants/operating-identity';
+
 export type Currency = 'NGN' | 'USD';
 
 export interface Session {
@@ -23,6 +25,8 @@ export interface Profile {
 	bannerUrl?: string | null;
 	interests?: string[];
 	usernameChangedAt?: string | null;
+	/** Operating identity this user chose for themselves (public mirror of the auth preference). */
+	operatingIdentity?: OperatingIdentity;
 	verified?: boolean;
 	followers: number;
 	following: number;

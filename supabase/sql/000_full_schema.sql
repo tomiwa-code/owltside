@@ -20,6 +20,8 @@ create table if not exists public.profiles (
   city text,
   interests text[] not null default '{}',
   username_changed_at timestamptz,
+  operating_identity text not null default 'attendee'
+    check (operating_identity in ('attendee', 'guest', 'organizer')),
   verified boolean not null default false,
   followers integer not null default 0,
   following integer not null default 0,

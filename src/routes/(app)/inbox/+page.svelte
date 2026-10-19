@@ -8,6 +8,7 @@
 	import EmptyState from '$components/EmptyState.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import { queryClient, useQuery } from '$lib/state/query.svelte';
+	import { peerIdentityLabel } from '$lib/constants/operating-identity';
 	import { fmtRelative } from '$lib/utils/dates';
 	import { page } from '$app/state';
 	import type { Conversation, MessageRequest } from '$lib/types';
@@ -214,7 +215,7 @@
 							</span>
 							<span class="text-body-sm text-outline shrink-0">{fmtRelative(conv.lastAt)}</span>
 						</span>
-						<span class="text-label-badge text-tertiary pt-0.5">{conv.peer.verified ? 'Official organiser' : conv.peer.handle === 'owltside' ? 'Event channel' : 'Speaker'}</span>
+						<span class="text-label-badge text-tertiary pt-0.5">{peerIdentityLabel(conv.peer)}</span>
 						<span class="flex items-center justify-between gap-2">
 							<span class="text-body-sm truncate {conv.unread ? 'text-on-surface font-medium' : 'text-on-surface-variant'}">{conv.lastMessage}</span>
 							{#if conv.unread > 0}
