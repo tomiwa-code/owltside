@@ -10,7 +10,6 @@
 		KeyRound,
 		Lock,
 		OctagonAlert,
-		Plus,
 		RadioTower,
 		ScanLine,
 		Search,
@@ -48,10 +47,17 @@
 	$effect(() => {
 		if (event && !event.gates?.some((configured) => configured.name === gateName)) gateName = event.gates?.[0]?.name ?? '';
 	});
-	/** The scanner opens even with nothing set up yet — it then guides the setup. */
-	const hasEvent = $derived(Boolean(event));
-	const hasGate = $derived((event?.gates?.length ?? 0) > 0);
-	const setupHref = $derived(event ? `/organizer/create?edit=${event.id}` : '/organizer/create');
+	/**
+	 * The scanner runs the same PIN → camera → scan flow whether or not an
+	 * event exists yet. With a gated event selected it settles scans at that
+	 * gate; without one (no event yet, or no gate configured) it arms in
+	 * standalone terminal mode — the organizer's terminal PIN, with codes
+	 * checked against tickets from all of their events.
+	 */
+	const standalone = $derived(!(event && gate));
+	const scanEventId = $derived(standalone ? '' : event!.id);
+	const scanGate = $derived(standalone ? 'Terminal' : gate);
+	const contextLabel = $derived(standalone ? (events.length > 0 ? 'All events' : 'No event yet') : event!.title);
 	/** Link that reopens this scanner in its own tab (cameras need a top-level page). */
 	const scannerHref = $derived(
 		event ? `/organizer/scan?eventId=${encodeURIComponent(event.id)}` : '/organizer/scan'
@@ -118,7 +124,7 @@
 		if (e.key === 'Backspace' && !digits[i] && i > 0) cellRefsDesk[i - 1]?.focus();
 	}
 	async function activate() {
-		if (!pinComplete || pinBusy || !event || !gate) return;
+		if (!pinComplete || pinBusy) return;
 		pinBusy = true;
 		pinError = '';
 		try {
@@ -126,7 +132,7 @@
 			const response = await fetch('/api/scan/authorize', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ eventId: event.id, gate, code })
+				body: JSON.stringify(standalone ? { code } : { eventId: event!.id, gate, code })
 			});
 			if (!response.ok) {
 				const result = await response.json().catch(() => null);
@@ -134,7 +140,7 @@
 			}
 			gateToken = code;
 			phase = 'scan';
-			toast(`Scanner armed for ${gate}`, 'success');
+			toast(standalone ? 'Scanner armed' : `Scanner armed for ${gate}`, 'success');
 			void flushQueue();
 		} catch (error) {
 			pinError = error instanceof Error ? error.message : 'The gate PIN could not be verified.';
@@ -217,7 +223,7 @@
 		flushingQueue = true;
 		try {
 			while (queue.length > 0 && online && gateToken) {
-				const index = queue.findIndex((item) => (item.eventId ?? event.id) === event.id && (item.gate ?? gate) === gate);
+				const index = queue.findIndex((item) => (item.eventId ?? scanEventId) === scanEventId && (item.gate ?? scanGate) === scanGate);
 				if (index < 0) break;
 				const item = queue[index];
 				if (!await postScan(item.code, false, item)) break;
@@ -227,11 +233,19 @@
 	}
 
 	async function postScan(code: string, queueOnFailure = true, context?: { eventId?: string; gate?: string; staffToken?: string }): Promise<boolean> {
+		const contextEventId = context?.eventId ?? scanEventId;
+		const contextGate = context?.gate ?? scanGate;
 		try {
 			const res = await fetch('/api/scan', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ eventId: context?.eventId ?? event.id, code, gate: context?.gate ?? gate, staffToken: context?.staffToken ?? gateToken })
+				body: JSON.stringify({
+					// Standalone queue items carry an empty eventId: omit the
+					// event/gate pair so the server resolves them in terminal mode.
+					...(contextEventId ? { eventId: contextEventId, gate: contextGate } : {}),
+					code,
+					staffToken: context?.staffToken ?? gateToken
+				})
 			});
 			if (!res.ok) { toast('Scan could not be verified. Please try again.', 'error'); return false; }
 			const ck: Checkin = await res.json();
@@ -240,7 +254,7 @@
 			counts = counts;
 			return true;
 		} catch {
-			if (queueOnFailure) queue = [...queue, { code, at: new Date().toISOString(), eventId: event.id, gate, staffToken: gateToken }];
+			if (queueOnFailure) queue = [...queue, { code, at: new Date().toISOString(), eventId: scanEventId, gate: scanGate, staffToken: gateToken }];
 			saveQueue(queue);
 			toast('Offline — scan queued, will sync', 'info');
 			return false;
@@ -258,7 +272,7 @@
 		const code = ticketCodeFromScan(codeRaw);
 		if (!code || verifying) return;
 		if (!online) {
-			queue = [...queue, { code, at: new Date().toISOString(), eventId: event.id, gate, staffToken: gateToken }];
+			queue = [...queue, { code, at: new Date().toISOString(), eventId: scanEventId, gate: scanGate, staffToken: gateToken }];
 			saveQueue(queue);
 			toast('Offline — scan queued, will sync', 'info');
 			return;
@@ -278,7 +292,7 @@
 			const res = await fetch('/api/scan', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ eventId: event.id, gate, staffToken: gateToken, simulate: true })
+				body: JSON.stringify({ ...(standalone ? {} : { eventId: event!.id, gate }), staffToken: gateToken, simulate: true })
 			});
 			if (!res.ok) throw new Error();
 			const ck: Checkin = await res.json();
@@ -413,38 +427,6 @@
 	{/if}
 {/snippet}
 
-<!-- Shared "set the scanner up" panel: the terminal is always open, it just
-     tells the organizer what to finish before it can arm. -->
-{#snippet setupPanel()}
-	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-8 flex flex-col items-center text-center">
-		<span class="relative w-24 h-24 flex items-center justify-center">
-			<span class="absolute inset-0 rounded-full bg-primary/20 blur-2xl"></span>
-			<span class="relative w-16 h-16 rounded-full bg-primary/10 border border-outline-variant/40 flex items-center justify-center text-primary">
-				<ScanLine class="w-7 h-7" />
-			</span>
-		</span>
-		<h2 class="font-display text-headline-lg text-on-surface mt-4">{hasEvent ? 'This event has no gate yet' : 'No event to scan yet'}</h2>
-		<p class="text-body-sm text-on-surface-variant mt-1 max-w-md">
-			{hasEvent
-				? 'The scanner is ready — add a gate to this event and generate its staff PIN to arm this terminal.'
-				: 'The scanner is ready — publish your first event, add a gate, and arm this terminal with its staff PIN.'}
-		</p>
-		<ol class="text-left text-body-sm text-on-surface-variant flex flex-col gap-1.5 mt-4">
-			<li>1. {hasEvent ? 'Add a gate to this event' : 'Create your first event'}</li>
-			<li>2. Generate the six-digit staff PIN in Organizer Console → Hardware &amp; Gates</li>
-			<li>3. Enter the PIN here to arm the scanner</li>
-		</ol>
-		<div class="flex items-center gap-2.5 mt-6 flex-wrap justify-center">
-			<a href={setupHref} class="h-11 px-5 rounded-full bg-primary text-on-primary text-body-sm font-semibold flex items-center gap-2 glow-primary">
-				<Plus class="w-4 h-4" /> {hasEvent ? 'Configure gates' : 'Create event'}
-			</a>
-			<a href="/organizer" class="h-11 px-5 rounded-full bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm font-medium flex items-center gap-2 hover:bg-surface-bright transition-colors">
-				<RadioTower class="w-4 h-4" /> Back to console
-			</a>
-		</div>
-	</section>
-{/snippet}
-
 <!-- ── desktop (md+) gate scanner terminal in the shipped console design
      language (design source unavailable this turn — extrapolated); mobile
      scanner below unchanged ── -->
@@ -459,7 +441,7 @@
 				<span>Scanner_Terminal</span>
 			</span>
 			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-3">Ticket Scanner & Gate Control</h1>
-			<p class="text-body-md text-on-surface-variant mt-2">Arm this terminal with a staff token, then verify tickets issued for this event and gate while connected or offline{hasGate ? ` at ${gate}` : ''}.</p>
+			<p class="text-body-md text-on-surface-variant mt-2">Arm this terminal with a staff token, then verify tickets while connected or offline{standalone ? ' — codes are checked against all your events' : ` at ${gate}`}.</p>
 		</div>
 		<div class="flex items-center gap-3 flex-wrap">
 			{#if events.length > 1}<select bind:value={eventId} aria-label="Choose event" class="max-w-48 px-3 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm text-on-surface">{#each events as e (e.id)}<option value={e.id}>{e.title}</option>{/each}</select>{/if}
@@ -476,9 +458,7 @@
 
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 grid lg:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
 		<div class="min-w-0">
-			{#if !hasEvent || !hasGate}
-				{@render setupPanel()}
-			{:else if phase === 'pin'}
+			{#if phase === 'pin'}
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-8 flex flex-col items-center text-center">
 					<div class="flex items-center justify-center gap-2 flex-wrap">
 						<span class="flex items-center gap-1.5 rounded-full bg-surface-container-high border border-surface-glass-border px-3 py-1.5 {MONO} text-on-surface-variant">
@@ -497,8 +477,9 @@
 					</div>
 					<h2 class="font-display text-headline-lg text-on-surface mt-4">Verify Security Token</h2>
 					<p class="text-body-sm text-on-surface-variant mt-1 max-w-md">
-						Enter the six-digit staff PIN generated in Organizer Console → Hardware &amp; Gates for {gate}.
+						Enter the six-digit staff PIN generated in Organizer Console → Hardware &amp; Gates{standalone ? '' : ` for ${gate}`}.
 					</p>
+					{#if standalone}<p class="text-label-badge text-on-surface-variant mt-2">Terminal mode — works whether or not an event is active</p>{/if}
 					<span class="font-code text-label-code text-primary mt-2">Staff PIN expires 6 hours after generation</span>
 					<div class="flex gap-2.5 justify-center mt-6">
 						{#each digits as d, i (i)}
@@ -598,7 +579,7 @@
 						<button class="h-11 rounded-lg border border-dashed border-surface-glass-border text-on-surface-variant text-body-sm font-medium flex items-center justify-center gap-2 hover:border-primary hover:text-primary transition-colors" disabled={verifying} aria-busy={verifying} onclick={simulate}>
 							<Zap class="w-4 h-4" /> {verifying ? 'Verifying…' : 'Simulate a scan (demo)'}
 						</button>
-						<p class="text-xs text-on-surface-variant mt-auto">Ticket codes are checked against the selected event; offline scans settle from the local queue when the link returns.</p>
+						<p class="text-xs text-on-surface-variant mt-auto">Ticket codes are checked against {standalone ? 'tickets from all your events' : 'the selected event'}; offline scans settle from the local queue when the link returns.</p>
 					</section>
 				</div>
 
@@ -634,8 +615,8 @@
 				</div>
 				<div class="flex flex-col gap-2 mt-4 text-body-sm">
 					{#each [
-						['Gate', gate],
-						['Event', event?.title ?? 'No event'],
+						['Gate', scanGate],
+						['Event', contextLabel],
 						['Staff PIN', phase === 'pin' ? 'Generate in console' : '6h authorization'],
 						['QR refresh', '30s'],
 						['Cipher', 'TLS 1.3']
@@ -678,7 +659,7 @@
 						</select>
 					</label>
 				{:else}
-					<p class="text-body-sm text-on-surface mt-4">{event?.title ?? 'No event'}</p>
+					<p class="text-body-sm text-on-surface mt-4">{contextLabel}</p>
 				{/if}
 				<div class="flex items-center justify-between gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high px-4 py-3 mt-4">
 					<span class="flex items-center gap-2 min-w-0 {MONO} text-on-surface-variant">
@@ -725,7 +706,7 @@
 				<h1 class="font-display text-headline-md text-on-surface truncate leading-tight">
 					{phase === 'pin' ? 'Verify Security Token' : 'Ticket Scanner'}
 				</h1>
-				<span class="text-label-badge text-on-surface-variant uppercase tracking-wider truncate">{event?.title ?? 'No event'}</span>
+				<span class="text-label-badge text-on-surface-variant uppercase tracking-wider truncate">{contextLabel}</span>
 			</div>
 			{#if events.length > 1}
 				<select bind:value={eventId} class="max-w-[130px] px-2 py-1.5 rounded-lg bg-surface-container-high border border-outline-variant/30 text-body-sm text-on-surface">
@@ -741,9 +722,7 @@
 	</section>
 
 	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md pt-space-sm">
-		{#if !hasEvent || !hasGate}
-			{@render setupPanel()}
-		{:else if phase === 'pin'}
+		{#if phase === 'pin'}
 			<!-- security pills -->
 			<div class="flex items-center justify-center gap-2 flex-wrap">
 				<span class="flex items-center gap-1.5 rounded-full bg-surface-container-high border border-outline-variant/30 px-3 py-1.5 text-label-badge text-on-surface-variant">
@@ -768,8 +747,9 @@
 			<div class="flex flex-col items-center text-center gap-1">
 				<h2 class="font-display text-headline-lg-mobile text-on-surface">Verify Security Token</h2>
 				<p class="text-body-sm text-on-surface-variant">
-					Enter the six-digit staff PIN generated in Organizer Console → Hardware &amp; Gates for {gate}.
+					Enter the six-digit staff PIN generated in Organizer Console → Hardware &amp; Gates{standalone ? '' : ` for ${gate}`}.
 				</p>
+				{#if standalone}<p class="text-label-badge text-on-surface-variant">Terminal mode — works whether or not an event is active</p>{/if}
 				<span class="font-code text-label-code text-primary mt-1">Staff PIN expires 6 hours after generation · {digits.filter(Boolean).length}/6 entered</span>
 			</div>
 

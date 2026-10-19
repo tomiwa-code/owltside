@@ -156,5 +156,19 @@ describe('demo datasource', () => {
 		expect(crossEventCheckin.result).toBe('invalid');
 		await expect(demoSource.issueGateToken('u-ada', event.id, 'Unconfigured Gate')).rejects.toThrow('Gate not found');
 	});
+	it('issues a standalone terminal PIN that needs no event or gate', async () => {
+		const token = await demoSource.issueScannerToken('u-ada');
+		expect(token.code).toMatch(/^\d{6}$/);
+		expect(Date.parse(token.expiresAt)).toBeGreaterThan(Date.now());
+		expect(await demoSource.verifyScannerToken('u-ada', token.code)).toBe(true);
+		expect(await demoSource.verifyScannerToken('u-ada', '000000' === token.code ? '111111' : '000000')).toBe(false);
+		// Another organizer cannot use it, and rotating revokes the old PIN.
+		expect(await demoSource.verifyScannerToken('u-tunde', token.code)).toBe(false);
+		const rotated = await demoSource.issueScannerToken('u-ada');
+		if (rotated.code !== token.code) {
+			expect(await demoSource.verifyScannerToken('u-ada', token.code)).toBe(false);
+		}
+		expect(await demoSource.verifyScannerToken('u-ada', rotated.code)).toBe(true);
+	});
 
 });

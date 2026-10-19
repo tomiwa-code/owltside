@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach } from 'vitest';
 
 const source = vi.hoisted(() => ({ getOrganizer: vi.fn() }));
@@ -88,20 +88,21 @@ describe('gate scanner readiness', () => {
 		expect(requested.initialEventId).toBe('e-plain');
 	});
 
-	it('guides the organizer to set a gate up when there is no event', () => {
+	it('opens the security-token step when there is no event at all', () => {
 		render(ScanPage, {
 			props: {
 				data: { ...layoutData, organizer: { events: [], stats, checkins: [], orders: [] }, initialEventId: '' }
 			}
 		});
 
-		expect(screen.getAllByText(/No event to scan yet/i).length).toBeGreaterThan(0);
-		const createEvent = screen.getAllByRole('link', { name: /Create event/i });
-		expect(createEvent.length).toBeGreaterThan(0);
-		expect(createEvent[0].getAttribute('href')).toBe('/organizer/create');
+		// Same first step as a fully set-up event: verify the security token.
+		expect(screen.getAllByText(/Verify Security Token/i).length).toBeGreaterThan(0);
+		expect(screen.getAllByText(/Terminal mode/i).length).toBeGreaterThan(0);
+		expect(screen.getAllByLabelText(/^Digit \d$/).length).toBeGreaterThanOrEqual(6);
+		expect(screen.queryByText(/No event to scan yet/i)).toBeNull();
 	});
 
-	it('asks for a gate when the event has none configured yet', () => {
+	it('opens the security-token step when the event has no gate configured yet', () => {
 		render(ScanPage, {
 			props: {
 				data: {
@@ -117,9 +118,9 @@ describe('gate scanner readiness', () => {
 			}
 		});
 
-		expect(screen.getAllByText(/no gate yet/i).length).toBeGreaterThan(0);
-		const configure = screen.getAllByRole('link', { name: /Configure gates/i });
-		expect(configure[0].getAttribute('href')).toBe('/organizer/create?edit=e-plain');
+		expect(screen.getAllByText(/Verify Security Token/i).length).toBeGreaterThan(0);
+		expect(screen.getAllByText(/Terminal mode/i).length).toBeGreaterThan(0);
+		expect(screen.queryByText(/no gate yet/i)).toBeNull();
 	});
 
 	it('arms the scanner for an event that already has a gate', () => {
@@ -154,6 +155,35 @@ describe('gate scanner readiness', () => {
 		const desktopLink = screen.getAllByRole('link', { name: /Open Camera QR Scanner/i });
 		expect(desktopLink.length).toBeGreaterThan(0);
 		expect(desktopLink[0].getAttribute('href')).toBe('/organizer/scan');
+
+		vi.unstubAllGlobals();
+	});
+
+	it('generates a terminal PIN from the dashboard before any event exists', async () => {
+		const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+			if (String(url).includes('/api/organizer/gate-token')) {
+				// No event or gate to scope to — an empty body asks for the
+				// organizer's standalone terminal PIN.
+				expect(JSON.parse(String(init?.body ?? '{}'))).toEqual({});
+				return new Response(JSON.stringify({ gate: null, code: '424242', expiresAt: new Date().toISOString() }));
+			}
+			return new Response(JSON.stringify({ events: [], stats, checkins: [], orders: [] }));
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		render(OrganizerPage, {
+			props: { data: { ...layoutData, payload: { events: [], stats, checkins: [], orders: [] } } }
+		});
+
+		const generateButtons = screen.getAllByRole('button', { name: /Generate PIN/i });
+		expect(generateButtons.length).toBeGreaterThan(0);
+		for (const button of generateButtons) expect(button).not.toBeDisabled();
+
+		await fireEvent.click(generateButtons[0]);
+		await waitFor(() =>
+			expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/organizer/gate-token'))).toBe(true)
+		);
+		await waitFor(() => expect(screen.getAllByText('424242').length).toBeGreaterThan(0));
 
 		vi.unstubAllGlobals();
 	});

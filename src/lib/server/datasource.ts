@@ -43,6 +43,8 @@ const demoPrivateConversations: DemoPrivateConversation[] = [];
 const demoPrivateNotifications = new Map<string, NotificationItem[]>();
 const demoUserTickets = new Map<string, Ticket[]>();
 const demoGateTokens = new Map<string, { code: string; expiresAt: string }>();
+/** Standalone terminal PINs, keyed by organizer — the scanner arms with one even before any event exists. */
+const demoScannerTokens = new Map<string, { code: string; expiresAt: string }>();
 const gateTokenHash = (code: string) => createHash('sha256').update(code).digest('hex');
 
 const CANNED: Record<string, string[]> = {
@@ -110,6 +112,9 @@ export interface DataSource {
 	createEvent(userId: string, payload: WizardPayload): Promise<EventItem>;
 	issueGateToken(userId: string, eventId: string, gateName: string): Promise<{ code: string; expiresAt: string }>;
 	verifyGateToken(userId: string, eventId: string, gateName: string, code: string): Promise<boolean>;
+	/** Organizer-scoped scanner ("terminal") PIN — arms the scanner with no event/gate context. */
+	issueScannerToken(userId: string): Promise<{ code: string; expiresAt: string }>;
+	verifyScannerToken(userId: string, code: string): Promise<boolean>;
 	recordEventView(slug: string): Promise<void>;
 	updateEvent(
 		userId: string,
@@ -606,6 +611,18 @@ export const demoSource: DataSource = {
 		const event = demo.events.find((item) => item.id === eventId && item.organizer.id === uid);
 		const stored = demoGateTokens.get(`${eventId}:${gateName}`);
 		return Boolean(event?.gates?.some((gate) => gate.name === gateName) && stored && Date.parse(stored.expiresAt) > Date.now() && stored.code === gateTokenHash(code));
+	},
+	async issueScannerToken(userId) {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+		const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+		demoScannerTokens.set(uid, { code: gateTokenHash(code), expiresAt });
+		return { code, expiresAt };
+	},
+	async verifyScannerToken(userId, code) {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		const stored = demoScannerTokens.get(uid);
+		return Boolean(stored && Date.parse(stored.expiresAt) > Date.now() && stored.code === gateTokenHash(code));
 	},
 		async recordEventView(slug) {
 		const event = demo.events.find((e) => e.slug === slug);
@@ -1342,6 +1359,20 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (eventError) throw eventError;
 			if (!event || !(event.gates ?? []).some((gate: Row) => gate.name === gateName)) return false;
 			const { data, error } = await db.from('gate_staff_tokens').select('token_hash,expires_at').eq('event_id', eventId).eq('gate_name', gateName).eq('token_hash', gateTokenHash(code)).gt('expires_at', new Date().toISOString()).maybeSingle();
+			if (error) throw error;
+			return Boolean(data);
+		},
+		async issueScannerToken(userId) {
+			if (!isUuid(userId)) throw new Error('Invalid organizer ID');
+			const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+			const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+			const { error } = await db.from('organizer_scanner_tokens').upsert({ organizer_id: userId, token_hash: gateTokenHash(code), expires_at: expiresAt }, { onConflict: 'organizer_id' });
+			if (error) throw error;
+			return { code, expiresAt };
+		},
+		async verifyScannerToken(userId, code) {
+			if (!isUuid(userId)) return false;
+			const { data, error } = await db.from('organizer_scanner_tokens').select('token_hash,expires_at').eq('organizer_id', userId).eq('token_hash', gateTokenHash(code)).gt('expires_at', new Date().toISOString()).maybeSingle();
 			if (error) throw error;
 			return Boolean(data);
 		},

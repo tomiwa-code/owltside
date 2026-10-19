@@ -96,7 +96,17 @@
 	let pinGateName = $state('');
 	const scannerEvent = $derived(payload?.events.find((event) => (event.gates ?? []).length > 0));
 	const scannerGates = $derived(scannerEvent?.gates ?? []);
-	const currentDeskPin = $derived(deskPinContext?.eventId === scannerEvent?.id && deskPinContext?.gate === pinGateName ? deskPin : '');
+	// A generated PIN stays visible while it matches the current scanner
+	// context: the selected event gate, or the standalone terminal PIN
+	// (eventId '') when no gated event exists yet.
+	const currentDeskPin = $derived(
+		deskPinContext &&
+			(scannerEvent
+				? deskPinContext.eventId === scannerEvent.id && deskPinContext.gate === pinGateName
+				: deskPinContext.eventId === '')
+			? deskPin
+			: ''
+	);
 	$effect(() => {
 		if (scannerEvent && !scannerGates.some((gate) => gate.name === pinGateName)) pinGateName = scannerGates[0]?.name ?? '';
 	});
@@ -124,17 +134,24 @@
 	);
 
 	async function regenPin() {
-		if (!scannerEvent || !pinGateName) { toast('Add a gate to the event before generating a PIN', 'error'); return; }
+		// With no gated event yet this issues the standalone terminal PIN, so
+		// the scanner can be armed (PIN → camera → scan) before any event exists.
+		const gateContext = scannerEvent && pinGateName ? { eventId: scannerEvent.id, gate: pinGateName } : null;
 		try {
 			const response = await fetch('/api/organizer/gate-token', {
 				method: 'POST', headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ eventId: scannerEvent.id, gate: pinGateName })
+				body: JSON.stringify(gateContext ?? {})
 			});
 			const result = await response.json().catch(() => null);
 			if (!response.ok) throw new Error(result?.message ?? result?.error ?? 'Could not generate a gate PIN');
 			deskPin = result.code;
-			deskPinContext = { eventId: scannerEvent.id, gate: pinGateName };
-			toast(`New ${pinGateName} PIN generated. Share it with assigned staff.`, 'success');
+			deskPinContext = gateContext ?? { eventId: '', gate: '' };
+			toast(
+				gateContext
+					? `New ${pinGateName} PIN generated. Share it with assigned staff.`
+					: 'New terminal PIN generated. Use it to arm the scanner.',
+				'success'
+			);
 		} catch (error) {
 			toast(error instanceof Error ? error.message : 'Could not generate a gate PIN', 'error');
 		}
@@ -199,7 +216,7 @@
 				<button class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={exportCsv}>
 					<Download class="w-4 h-4 text-on-surface-variant" /><span>Export Attendee CSV</span>
 				</button>
-				<a href={scannerHref} class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" title={scannerEvent ? 'Open the gate scanner' : 'Open the gate scanner — set up an event to arm a gate'}>
+				<a href={scannerHref} class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" title="Open the gate scanner">
 					<ScanBarcode class="w-4 h-4 text-on-surface-variant" /><span>Open Camera QR Scanner</span>
 				</a>
 				<a href="/organizer/create" class="h-10 px-4 rounded-lg flex items-center gap-2 bg-on-surface text-surface-base text-body-sm font-semibold hover:opacity-90 transition-opacity">
@@ -444,17 +461,18 @@
 						</button>
 					</div>
 					{:else}
-					<div class="flex flex-col gap-2 mt-3">
-						<span class="font-code text-[30px] leading-9 tracking-[0.18em] text-outline-variant">••••••</span>
-						<p class="text-body-sm text-on-surface-variant">The scanner opens straight away — create an event and configure a gate to generate its private staff PIN.</p>
-						<div class="grid grid-cols-2 gap-2.5">
-							<button class="h-9 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={copyScannerLink}>
-								<Copy class="w-3.5 h-3.5" /><span>Copy Scanner Link</span>
-							</button>
-							<button class="h-9 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm opacity-50 cursor-not-allowed" disabled title="Add a gate to an event to generate a staff PIN">
-								<RefreshCw class="w-3.5 h-3.5" /><span>{currentDeskPin ? 'Rotate PIN' : 'Generate PIN'}</span>
-							</button>
-						</div>
+					<div class="flex items-center justify-between gap-3 mt-2">
+						<span class="font-code text-[30px] leading-9 tracking-[0.18em] {currentDeskPin ? 'text-primary' : 'text-outline-variant'}">{currentDeskPin || '••••••'}</span>
+						<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">{currentDeskPin ? 'Expires in 6h' : 'PIN not generated'}</span>
+					</div>
+					<p class="text-body-sm text-on-surface-variant mt-3">{currentDeskPin ? 'One-time display for this scanner terminal. Give it to gate staff; generate another to revoke this PIN.' : 'No event needed — generate a terminal PIN to arm the scanner now. Scans check tickets from all your events.'}</p>
+					<div class="grid grid-cols-2 gap-2.5 mt-4">
+						<button class="h-9 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={copyScannerLink}>
+							<Copy class="w-3.5 h-3.5" /><span>Copy Scanner Link</span>
+						</button>
+						<button class="h-9 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={regenPin}>
+							<RefreshCw class="w-3.5 h-3.5" /><span>{currentDeskPin ? 'Rotate PIN' : 'Generate PIN'}</span>
+						</button>
 					</div>
 					{/if}
 				</div>
@@ -656,19 +674,13 @@
 				<div class="flex items-center justify-between w-full">
 					<span class="inline-flex items-center gap-2 rounded-full bg-surface-container-highest px-2.5 py-1 border border-outline-variant/30">
 						<span class="relative flex h-2 w-2">
-							{#if scannerEvent}
-								<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75"></span>
-								<span class="relative inline-flex rounded-full h-2 w-2 bg-accent-emerald"></span>
-							{:else}
-								<span class="relative inline-flex rounded-full h-2 w-2 bg-accent-amber"></span>
-							{/if}
+							<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75"></span>
+							<span class="relative inline-flex rounded-full h-2 w-2 bg-accent-emerald"></span>
 						</span>
-						<span class="text-label-badge uppercase tracking-wider {scannerEvent ? 'text-accent-emerald' : 'text-accent-amber'}">
+						<span class="text-label-badge uppercase tracking-wider text-accent-emerald">
 							{scannerEvent
 								? `Ready to scan • ${scannerGates[0]?.name ?? 'Gate 1'}`
-								: scannerTarget
-									? 'Ready — add a gate to arm'
-									: 'Ready — create an event'}
+								: 'Ready to scan • Terminal'}
 						</span>
 					</span>
 					<span class="rounded-full bg-surface-container-highest border border-outline-variant/40 p-1.5 text-on-surface group-hover:bg-primary-fixed group-hover:text-surface transition-colors">
@@ -830,14 +842,9 @@
 					<p class="text-body-sm text-on-surface-variant pt-2">{currentDeskPin ? `One-time PIN for ${pinGateName}. Generate another to revoke it.` : `Generate a staff PIN for ${pinGateName} before arming this gate scanner.`}</p>
 					<div class="grid grid-cols-2 gap-2 pt-3"><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={copyScannerLink}><Copy class="w-3.5 h-3.5" />Copy scanner link</button><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={regenPin}><RefreshCw class="w-3.5 h-3.5" />{currentDeskPin ? 'Rotate PIN' : 'Generate PIN'}</button></div>
 					{:else}
-					<div class="flex flex-col gap-2 pt-2">
-						<span class="font-code text-headline-lg-mobile tracking-[0.16em] text-outline-variant">••••••</span>
-						<p class="text-body-sm text-on-surface-variant">The scanner opens straight away — create an event with a gate to generate its private staff PIN.</p>
-						<div class="grid grid-cols-2 gap-2">
-							<button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={copyScannerLink}><Copy class="w-3.5 h-3.5" />Copy scanner link</button>
-							<button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5 opacity-50 cursor-not-allowed" disabled title="Add a gate to an event to generate a staff PIN"><RefreshCw class="w-3.5 h-3.5" />{currentDeskPin ? 'Rotate PIN' : 'Generate PIN'}</button>
-						</div>
-					</div>
+					<div class="flex items-center justify-between gap-2 pt-1"><span class="font-code text-headline-lg-mobile tracking-[0.16em] {currentDeskPin ? 'text-primary' : 'text-outline-variant'}">{currentDeskPin || '••••••'}</span><span class="text-label-badge text-on-surface-variant">{currentDeskPin ? 'Expires in 6h' : 'PIN not generated'}</span></div>
+					<p class="text-body-sm text-on-surface-variant pt-2">{currentDeskPin ? 'One-time PIN for this scanner terminal. Generate another to revoke it.' : 'No event needed — generate a terminal PIN to arm the scanner now. Scans check tickets from all your events.'}</p>
+					<div class="grid grid-cols-2 gap-2 pt-3"><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={copyScannerLink}><Copy class="w-3.5 h-3.5" />Copy scanner link</button><button class="h-9 rounded-lg bg-surface-container border border-outline-variant/30 text-on-surface text-body-sm flex items-center justify-center gap-1.5" onclick={regenPin}><RefreshCw class="w-3.5 h-3.5" />{currentDeskPin ? 'Rotate PIN' : 'Generate PIN'}</button></div>
 					{/if}
 			</div>
 			<div><span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Configured event gates</span><div class="flex flex-col gap-2 pt-2">{#each terminals as term}<div class="flex items-center justify-between gap-2 rounded-lg bg-surface-container-high/60 border border-outline-variant/20 px-3 py-2"><span class="flex items-center gap-2 min-w-0"><span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span><span class="min-w-0"><span class="block text-body-sm text-on-surface truncate">{term.name}</span><span class="block text-label-badge text-on-surface-variant truncate">{term.sub}</span></span></span><span class="text-label-badge text-on-surface-variant shrink-0">{term.ms}</span></div>{:else}<p class="text-body-sm text-on-surface-variant pt-2">No active terminals reported.</p>{/each}</div></div>
@@ -1016,8 +1023,8 @@
 
 <Sheet open={staffOpen} title="Gate staff access" close={() => (staffOpen = false)}>
 	{#snippet footer()}
-		<button class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md disabled:opacity-40" disabled={!scannerEvent} onclick={regenPin}>
-			Generate gate PIN
+		<button class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md" onclick={regenPin}>
+			{scannerEvent ? 'Generate gate PIN' : 'Generate terminal PIN'}
 		</button>
 	{/snippet}
 	<div class="flex flex-col gap-3">
@@ -1030,7 +1037,12 @@
 				<p class="text-label-badge text-on-surface-variant mt-2">{currentDeskPin ? 'Shown only in this organizer session. Share securely with assigned staff.' : 'No PIN generated for this selected gate in this session yet.'}</p>
 			</div>
 		{:else}
-			<p class="text-body-sm text-on-surface-variant">Create an event and configure at least one gate before generating staff access.</p>
+			<p class="text-body-sm text-on-surface-variant">Generate a real six-digit terminal PIN for this scanner. It works whether or not an event is active, expires after six hours, and generating another one revokes it. Scans check tickets from all your events.</p>
+			<div class="rounded-lg bg-surface-container-low border border-surface-glass-border p-4">
+				<p class="text-label-badge text-on-surface-variant uppercase">Terminal staff PIN</p>
+				<p class="font-code text-headline-md text-primary tracking-widest mt-1">{currentDeskPin || '••••••'}</p>
+				<p class="text-label-badge text-on-surface-variant mt-2">{currentDeskPin ? 'Shown only in this organizer session. Share securely with assigned staff.' : 'No terminal PIN generated in this session yet.'}</p>
+			</div>
 		{/if}
 	</div>
 </Sheet>

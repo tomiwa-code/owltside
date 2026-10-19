@@ -6,8 +6,9 @@ export const load: PageServerLoad = async ({ locals, cookies, url }) => {
 	const organizer = await getSource(createSupabase(cookies)).getOrganizer(
 		locals.session?.userId ?? 'demo'
 	);
-	// The scanner is always reachable: without an event it explains how to set
-	// one up instead of bouncing the organizer back to the console.
+	// The scanner always opens into the same PIN → camera → scan flow: with a
+	// gated event it settles scans at that gate, and without one (including
+	// before any event exists) it arms in standalone terminal mode.
 	const events = organizer.events;
 	const requestedEvent = url.searchParams.get('eventId');
 	const initialEventId =
