@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import {
 		ArrowLeft,
@@ -22,6 +23,11 @@
 	const valid = $derived(/^\S+@\S+\.\S+$/.test(email));
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
+
+	/* Where to land after sign-up when a gated action (buying tickets,
+	   opening the wallet/profile) sent the guest here. */
+	const next = $derived(page.url.searchParams.get('next') ?? '');
+	const loginHref = $derived(next ? `/auth/login?next=${encodeURIComponent(next)}` : '/auth/login');
 
 	function handleSignupEnhance({ action, submitter }: { action: URL; submitter: HTMLElement | null }) {
 		const isGoogle = action.search.includes('google') || submitter?.getAttribute('formaction')?.includes('google');
@@ -108,10 +114,11 @@
 						<span class="{MONO} text-on-surface-variant">Node Access // Sign Up</span>
 						<h2 class="font-display text-headline-lg text-on-surface pt-2">Create your account</h2>
 					</div>
-					<a href="/auth/login" class="{MONO} text-primary hover:underline shrink-0 pb-1">Login</a>
+					<a href={loginHref} class="{MONO} text-primary hover:underline shrink-0 pb-1">Login</a>
 				</div>
 
 				<form method="POST" action="?/create" use:enhance={handleSignupEnhance} class="rounded-2xl border border-surface-glass-border bg-surface-container p-7 flex flex-col gap-5">
+					<input type="hidden" name="next" value={next} />
 					<div class="flex flex-col gap-1.5">
 						<label class="{MONO} text-on-surface-variant" for="name-input-desktop">Full Name</label>
 						<div class="relative flex items-center">
@@ -213,7 +220,7 @@
 				<div class="flex flex-col items-center justify-center gap-1 text-center">
 					<p class="text-body-md text-on-surface-variant">
 						Already have an account?
-						<a class="text-primary font-semibold hover:underline underline-offset-4" href="/auth/login">Login</a>
+						<a class="text-primary font-semibold hover:underline underline-offset-4" href={loginHref}>Login</a>
 					</p>
 					<p class="{MONO} text-on-surface-variant">Instant gate QR issuance upon zero-friction signup</p>
 				</div>
@@ -244,7 +251,7 @@
 <header class="fixed top-0 inset-x-0 z-50 bg-surface/90 backdrop-blur-xl border-b border-surface-glass-border pt-safe">
 	<div class="h-16 px-space-md md:max-w-lg md:mx-auto flex items-center justify-between">
 		<div class="flex items-center gap-space-xs">
-			<a href="/auth/login" aria-label="Back" class="w-11 h-11 -ml-2 flex items-center justify-center text-on-surface rounded-full hover:bg-surface-container transition-colors">
+			<a href={loginHref} aria-label="Back" class="w-11 h-11 -ml-2 flex items-center justify-center text-on-surface rounded-full hover:bg-surface-container transition-colors">
 				<ArrowLeft class="w-5 h-5" />
 			</a>
 			<h1 class="font-display text-headline-md font-semibold text-on-surface truncate">Create account</h1>
@@ -265,6 +272,7 @@
 		</div>
 
 		<form method="POST" action="?/create" use:enhance={handleSignupEnhance} class="bg-surface-container border border-surface-glass-border rounded-xl p-space-md flex flex-col gap-space-md">
+			<input type="hidden" name="next" value={next} />
 			<div class="flex flex-col gap-1.5">
 				<label class="text-label-badge uppercase tracking-wider text-outline" for="name-input">Full Name</label>
 				<div class="relative flex items-center">
@@ -350,7 +358,7 @@
 		<div class="flex flex-col items-center justify-center gap-1 text-center pt-space-md">
 			<p class="text-body-md text-on-surface-variant">
 				Already have an account?
-				<a class="text-primary font-semibold hover:underline underline-offset-4" href="/auth/login">Login</a>
+				<a class="text-primary font-semibold hover:underline underline-offset-4" href={loginHref}>Login</a>
 			</p>
 		</div>
 	</div>

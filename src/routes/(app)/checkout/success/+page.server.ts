@@ -16,6 +16,12 @@ export const load: PageServerLoad = async ({ url, cookies, locals }) => {
 		redirect(303, '/tickets');
 	}
 
+	/* Tickets are minted to a registered account. If the session is gone
+	   when the gateway returns, ask the buyer to sign in and resume here. */
+	if (!locals.session?.userId) {
+		redirect(303, `/auth/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`);
+	}
+
 	const source = getSource(createSupabase(cookies));
 	const userId = locals.session?.userId ?? 'demo';
 

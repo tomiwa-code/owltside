@@ -4,7 +4,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ locals, cookies }) => {
-	const userId = locals.session?.userId ?? 'demo';
-	const tickets = await getSource(createSupabase(cookies)).getTickets(userId);
+	if (!locals.session?.userId) {
+		return json({ error: 'Sign in to view your tickets.' }, { status: 401 });
+	}
+	const tickets = await getSource(createSupabase(cookies)).getTickets(locals.session.userId);
 	return json(tickets, { headers: { 'cache-control': 'private, max-age=10, stale-while-revalidate=30' } });
 };

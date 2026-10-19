@@ -20,6 +20,11 @@
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
+	/* Where to land after sign-in when a gated action (buying tickets,
+	   opening the wallet/profile) sent the guest here. */
+	const next = $derived(page.url.searchParams.get('next') ?? '');
+	const signupHref = $derived(next ? `/auth/signup?next=${encodeURIComponent(next)}` : '/auth/signup');
+
 	function handleSendCode() {
 		submitting = true;
 		return async ({ result, update }: { result: { type: string; location?: string }; update: () => Promise<void> }) => {
@@ -106,10 +111,11 @@
 						<span class="{MONO} text-on-surface-variant">Node Access // Login</span>
 						<h2 class="font-display text-headline-lg text-on-surface pt-2">Sign in to Owltside</h2>
 					</div>
-					<a href="/auth/signup" class="{MONO} text-primary hover:underline shrink-0 pb-1">Sign Up</a>
+					<a href={signupHref} class="{MONO} text-primary hover:underline shrink-0 pb-1">Sign Up</a>
 				</div>
 
 				<form method="POST" action="?/sendCode" use:enhance={handleSendCode} class="rounded-2xl border border-surface-glass-border bg-surface-container p-7 flex flex-col gap-5">
+					<input type="hidden" name="next" value={next} />
 					<div class="flex flex-col gap-1.5">
 						<label class="{MONO} text-on-surface-variant flex items-center justify-between" for="email-input-desktop">
 							<span>Email Address</span>
@@ -170,6 +176,7 @@
 
 				<div class="grid grid-cols-1 gap-3">
 					<form method="POST" action="?/google" use:enhance={handleGoogle}>
+						<input type="hidden" name="next" value={next} />
 						<button type="submit" disabled={submitting || googleLoading} class="w-full h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md font-semibold flex items-center justify-center gap-2 hover:border-primary/40 disabled:opacity-40">
 							{#if googleLoading}
 								<span>Connecting to Google…</span>
@@ -192,7 +199,7 @@
 				<div class="flex flex-col items-center justify-center gap-1 text-center">
 					<p class="text-body-md text-on-surface-variant">
 						Don't have an account?
-						<a class="text-primary font-semibold hover:underline underline-offset-4" href="/auth/signup">Sign Up</a>
+						<a class="text-primary font-semibold hover:underline underline-offset-4" href={signupHref}>Sign Up</a>
 					</p>
 					<p class="{MONO} text-on-surface-variant">Instant gate QR issuance upon zero-friction signup</p>
 				</div>
@@ -245,6 +252,7 @@
 		</div>
 
 		<form method="POST" action="?/sendCode" use:enhance={handleSendCode} class="bg-surface-container border border-surface-glass-border rounded-xl p-space-md flex flex-col gap-space-md">
+			<input type="hidden" name="next" value={next} />
 			<div class="flex flex-col gap-1.5">
 				<label class="text-label-badge uppercase tracking-wider text-outline flex items-center justify-between" for="email-input">
 					<span>Email Address</span>
@@ -305,6 +313,7 @@
 
 		<div class="grid grid-cols-1 gap-space-sm mb-space-sm">
 			<form method="POST" action="?/google" use:enhance={handleGoogle}>
+				<input type="hidden" name="next" value={next} />
 				<button type="submit" disabled={submitting || googleLoading} class="w-full h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md font-semibold flex items-center justify-center gap-2 hover:border-primary/40 disabled:opacity-40">
 					{#if googleLoading}
 						<span>Connecting to Google…</span>
@@ -327,7 +336,7 @@
 		<div class="flex flex-col items-center justify-center gap-1 text-center pt-space-xs">
 			<p class="text-body-md text-on-surface-variant">
 				Don't have an account?
-				<a class="text-primary font-semibold hover:underline underline-offset-4" href="/auth/signup">Sign Up</a>
+				<a class="text-primary font-semibold hover:underline underline-offset-4" href={signupHref}>Sign Up</a>
 			</p>
 			<p class="text-body-sm text-outline">Instant gate QR issuance upon zero-friction signup</p>
 		</div>
