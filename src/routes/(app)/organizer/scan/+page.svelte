@@ -52,12 +52,40 @@
 	 * event exists yet. With a gated event selected it settles scans at that
 	 * gate; without one (no event yet, or no gate configured) it arms in
 	 * standalone terminal mode — the organizer's terminal PIN, with codes
-	 * checked against tickets from all of their events.
+	 * checked against tickets from all of their events. A PIN another
+	 * organizer shared resolves server-side and the terminal switches to
+	 * that organizer's event via `sharedContext`.
 	 */
+	type SharedScanContext =
+		| { mode: 'shared-gate'; eventId: string; gate: string; eventTitle: string }
+		| { mode: 'shared-terminal' };
+	let sharedContext = $state<SharedScanContext | null>(null);
 	const standalone = $derived(!(event && gate));
-	const scanEventId = $derived(standalone ? '' : event!.id);
-	const scanGate = $derived(standalone ? 'Terminal' : gate);
-	const contextLabel = $derived(standalone ? (events.length > 0 ? 'All events' : 'No event yet') : event!.title);
+	const scanEventId = $derived(
+		sharedContext?.mode === 'shared-gate'
+			? sharedContext.eventId
+			: sharedContext?.mode === 'shared-terminal' || standalone
+				? ''
+				: event!.id
+	);
+	const scanGate = $derived(
+		sharedContext?.mode === 'shared-gate'
+			? sharedContext.gate
+			: sharedContext?.mode === 'shared-terminal' || standalone
+				? 'Terminal'
+				: gate
+	);
+	const contextLabel = $derived(
+		sharedContext?.mode === 'shared-gate'
+			? sharedContext.eventTitle
+			: sharedContext?.mode === 'shared-terminal'
+				? 'Shared events'
+				: standalone
+					? events.length > 0
+						? 'All events'
+						: 'No event yet'
+					: event!.title
+	);
 	/** Link that reopens this scanner in its own tab (cameras need a top-level page). */
 	const scannerHref = $derived(
 		event ? `/organizer/scan?eventId=${encodeURIComponent(event.id)}` : '/organizer/scan'
@@ -76,6 +104,7 @@
 	$effect(() => {
 		eventId; gate;
 		gateToken = '';
+		sharedContext = null;
 		phase = 'pin';
 		digits = ['', '', '', '', '', ''];
 		pinError = '';
@@ -134,13 +163,29 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify(standalone ? { code } : { eventId: event!.id, gate, code })
 			});
+			const result = await response.json().catch(() => null);
 			if (!response.ok) {
-				const result = await response.json().catch(() => null);
 				throw new Error(result?.message ?? result?.error ?? 'The gate PIN is invalid or expired.');
 			}
+			// A PIN shared by another organizer resolves to their event: the
+			// terminal switches to it, so scans settle there exactly as if the
+			// helper owned the event.
+			sharedContext =
+				result?.context?.mode === 'shared-gate' || result?.context?.mode === 'shared-terminal'
+					? (result.context as SharedScanContext)
+					: null;
 			gateToken = code;
 			phase = 'scan';
-			toast(standalone ? 'Scanner armed' : `Scanner armed for ${gate}`, 'success');
+			toast(
+				sharedContext?.mode === 'shared-gate'
+					? `Scanner armed for ${sharedContext.gate} · ${sharedContext.eventTitle}`
+					: sharedContext
+						? 'Scanner armed for shared events'
+						: standalone
+							? 'Scanner armed'
+							: `Scanner armed for ${gate}`,
+				'success'
+			);
 			void flushQueue();
 		} catch (error) {
 			pinError = error instanceof Error ? error.message : 'The gate PIN could not be verified.';
@@ -292,7 +337,7 @@
 			const res = await fetch('/api/scan', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ ...(standalone ? {} : { eventId: event!.id, gate }), staffToken: gateToken, simulate: true })
+				body: JSON.stringify({ ...(scanEventId ? { eventId: scanEventId, gate: scanGate } : {}), staffToken: gateToken, simulate: true })
 			});
 			if (!res.ok) throw new Error();
 			const ck: Checkin = await res.json();
@@ -441,7 +486,7 @@
 				<span>Scanner_Terminal</span>
 			</span>
 			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-3">Ticket Scanner & Gate Control</h1>
-			<p class="text-body-md text-on-surface-variant mt-2">Arm this terminal with a staff token, then verify tickets while connected or offline{standalone ? ' — codes are checked against all your events' : ` at ${gate}`}.</p>
+			<p class="text-body-md text-on-surface-variant mt-2">Arm this terminal with a staff token, then verify tickets while connected or offline{scanEventId ? ` at ${scanGate}` : ' — codes are checked against all events for this terminal'}.</p>
 		</div>
 		<div class="flex items-center gap-3 flex-wrap">
 			{#if events.length > 1}<select bind:value={eventId} aria-label="Choose event" class="max-w-48 px-3 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm text-on-surface">{#each events as e (e.id)}<option value={e.id}>{e.title}</option>{/each}</select>{/if}
@@ -479,7 +524,7 @@
 					<p class="text-body-sm text-on-surface-variant mt-1 max-w-md">
 						Enter the six-digit staff PIN generated in Organizer Console → Hardware &amp; Gates{standalone ? '' : ` for ${gate}`}.
 					</p>
-					{#if standalone}<p class="text-label-badge text-on-surface-variant mt-2">Terminal mode — works whether or not an event is active</p>{/if}
+					{#if standalone}<p class="text-label-badge text-on-surface-variant mt-2">Terminal mode — use your own PIN, or one an organizer shared with you</p>{/if}
 					<span class="font-code text-label-code text-primary mt-2">Staff PIN expires 6 hours after generation</span>
 					<div class="flex gap-2.5 justify-center mt-6">
 						{#each digits as d, i (i)}
@@ -579,7 +624,7 @@
 						<button class="h-11 rounded-lg border border-dashed border-surface-glass-border text-on-surface-variant text-body-sm font-medium flex items-center justify-center gap-2 hover:border-primary hover:text-primary transition-colors" disabled={verifying} aria-busy={verifying} onclick={simulate}>
 							<Zap class="w-4 h-4" /> {verifying ? 'Verifying…' : 'Simulate a scan (demo)'}
 						</button>
-						<p class="text-xs text-on-surface-variant mt-auto">Ticket codes are checked against {standalone ? 'tickets from all your events' : 'the selected event'}; offline scans settle from the local queue when the link returns.</p>
+						<p class="text-xs text-on-surface-variant mt-auto">Ticket codes are checked against {scanEventId ? 'the selected event' : 'tickets from all events for this terminal'}; offline scans settle from the local queue when the link returns.</p>
 					</section>
 				</div>
 
@@ -651,7 +696,10 @@
 					<h2 class="font-display text-headline-md text-on-surface">Gate Assignment</h2>
 					<span class="{MONO} text-on-surface-variant">Node_0x7E3</span>
 				</div>
-				{#if events.length > 1}
+				{#if sharedContext}
+					<p class="text-body-sm text-on-surface mt-4">{contextLabel}</p>
+					<p class="text-body-sm text-on-surface-variant mt-1">Armed with a PIN shared by the event organizer.</p>
+				{:else if events.length > 1}
 					<label class="block mt-4">
 						<span class="{MONO} text-on-surface-variant block mb-1.5">Active event</span>
 						<select bind:value={eventId} class="w-full px-3 py-2.5 rounded-lg bg-surface-container-high border border-surface-glass-border text-body-sm text-on-surface">
@@ -749,7 +797,7 @@
 				<p class="text-body-sm text-on-surface-variant">
 					Enter the six-digit staff PIN generated in Organizer Console → Hardware &amp; Gates{standalone ? '' : ` for ${gate}`}.
 				</p>
-				{#if standalone}<p class="text-label-badge text-on-surface-variant">Terminal mode — works whether or not an event is active</p>{/if}
+				{#if standalone}<p class="text-label-badge text-on-surface-variant">Terminal mode — use your own PIN, or one an organizer shared with you</p>{/if}
 				<span class="font-code text-label-code text-primary mt-1">Staff PIN expires 6 hours after generation · {digits.filter(Boolean).length}/6 entered</span>
 			</div>
 
