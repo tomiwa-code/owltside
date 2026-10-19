@@ -4,7 +4,7 @@
 	import { Bell, MessageSquare, Search, Settings2 } from '@lucide/svelte';
 	import Avatar from './Avatar.svelte';
 	import { profileAppearance } from '$lib/state/profile.svelte';
-	import { useQuery } from '$lib/state/query.svelte';
+	import { queryClient, useQuery } from '$lib/state/query.svelte';
 	import type { Conversation, MessageRequest, NotificationItem } from '$lib/types';
 	let search = $state('');
 	const profile = $derived(page.data.currentProfile);
@@ -54,6 +54,22 @@
 	});
 
 	const formatBadge = (n: number) => (n > 99 ? '99+' : String(n));
+
+	/**
+	 * The notifications screen acknowledges everything as it opens, so clear the
+	 * shared cache at click time too: the badge disappears on the tap instead of
+	 * flashing until the next poll/paint.
+	 */
+	function clearNotificationBadge() {
+		const items = notificationsQuery.data;
+		if (!items?.some((n) => !n.read)) return;
+		queryClient.set(
+			'notifications:mine',
+			items.map((n) => (n.read ? n : { ...n, read: true }))
+		);
+		// Persist too, in case the navigation is interrupted before the hub mounts.
+		void fetch('/api/notifications/read', { method: 'POST' }).catch(() => {});
+	}
 </script>
 <header class="fixed top-0 inset-x-0 z-50 border-b border-surface-glass-border bg-surface/90 backdrop-blur-xl pt-safe">
 	<div class="mx-auto max-w-[1400px] h-16 px-gutter md:px-6 xl:px-10 flex items-center gap-3 md:gap-5">
@@ -72,7 +88,7 @@
 			<input type="search" aria-label="Search events, venues and users" placeholder="Search events, venues, users…" bind:value={search} class="w-full h-10 rounded-full border border-surface-glass-border bg-surface-container-low pl-10 pr-3 text-body-sm" />
 		</form>
 		<a href="/explore" aria-label="Search" class="lg:hidden text-on-surface-variant"><Search class="w-5 h-5" /></a>
-		<a href="/notifications" aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'} class="relative w-9 h-10 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors">
+		<a href="/notifications" onclick={clearNotificationBadge} aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'} class="relative w-9 h-10 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors">
 			<Bell class="w-5 h-5" />
 			{#if unreadCount > 0}
 				<span

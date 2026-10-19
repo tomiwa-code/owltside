@@ -5,11 +5,12 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 	const source = getSource(createSupabase(cookies));
-	const conversations = await source.getConversations(locals.session?.userId ?? 'demo');
+	const userId = locals.session?.userId ?? 'demo';
+	const conversations = await source.getConversations(userId);
 	const conversation = conversations.find((c) => c.id === params.id);
 	if (!conversation) error(404, 'Conversation not found');
 	const messages = await source.getMessages(params.id);
-	return { conversation, messages };
+	return { conversation, messages, conversations };
 };
 
 export const actions: Actions = {
@@ -19,10 +20,6 @@ export const actions: Actions = {
 		if (!body) return error(400, 'Empty message');
 		const senderId = locals.session?.userId ?? 'u-ada';
 		await getSource(createSupabase(cookies)).sendMessage(params.id, senderId, body);
-		return { ok: true };
-	},
-	read: async ({ params, cookies }) => {
-		await getSource(createSupabase(cookies)).markConversationRead(params.id);
 		return { ok: true };
 	}
 };
