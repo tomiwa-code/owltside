@@ -39,6 +39,37 @@
 		data.items
 	);
 
+	// Opening the hub acknowledges the stream. Persist the read state once, and
+	// publish it into the shared cache (AppHeader renders the same key) so the
+	// red badge is gone immediately instead of waiting for the next poll. The
+	// write stays out of `load` so hover-prefetching the page never silently
+	// clears somebody's notifications.
+	const acknowledgedIds = new Set(data.items.map((n) => n.id));
+	$effect(() => {
+		if (!page.data.session) return;
+		void fetch('/api/notifications/read', { method: 'POST' }).catch(() => {});
+	});
+	$effect(() => {
+		if (!page.data.session) return;
+		// Seed from the hub's own load as it opens (depends only on the page
+		// prop, so publishing to the cache cannot re-trigger this effect).
+		const acknowledged = data.items.map((n) => (n.read ? n : { ...n, read: true }));
+		queryClient.set('notifications:mine', acknowledged);
+	});
+	$effect(() => {
+		// Keep already-seen rows acknowledged if a background poll re-applies
+		// their unread state. Rows that arrive while the hub is open stay unread.
+		if (!page.data.session) return;
+		const list = items.data;
+		if (!list) return;
+		const acknowledged = list.map((n) =>
+			acknowledgedIds.has(n.id) && !n.read ? { ...n, read: true } : n
+		);
+		if (acknowledged.every((n, index) => n === list[index])) return;
+		queryClient.set('notifications:mine', acknowledged);
+		void fetch('/api/notifications/read', { method: 'POST' }).catch(() => {});
+	});
+
 	// Desktop and mobile share filter, dismissal, and delivery-preference state.
 	let deskFilter = $state<'all' | 'tickets' | 'security' | 'events' | 'organizers'>('all');
 	let dismissed = $state<string[]>([]);

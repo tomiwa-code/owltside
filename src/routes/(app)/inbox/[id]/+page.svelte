@@ -43,8 +43,40 @@
 	const conversations = useQuery<Conversation[]>(
 		'conversations:mine',
 		async () => (await fetch('/api/conversations')).json(),
-		{ staleTime: 15_000, refetchInterval: 20_000 }
+		{ staleTime: 15_000, refetchInterval: 20_000 },
+		data.conversations
 	);
+
+	// Opening the thread acknowledges it. Adopt the thread list that came with
+	// this navigation, clear this thread's unread count in the shared cache
+	// (AppHeader renders the same key) and persist the read state, so the red
+	// inbox badge drops immediately instead of waiting for the next poll.
+	// Keeping the write out of `load` means hover-prefetching a thread never
+	// silently marks it read.
+	$effect(() => {
+		if (!page.data.session) return;
+		const fresh = data.conversations;
+		if (!fresh?.length) return;
+		queryClient.set(
+			'conversations:mine',
+			fresh.map((c) => (c.id === conv.id ? { ...c, unread: 0 } : c))
+		);
+		if (fresh.some((c) => c.id === conv.id && c.unread > 0)) {
+			void fetch(`/api/conversations/${encodeURIComponent(conv.id)}/read`, { method: 'POST' }).catch(() => {});
+		}
+	});
+	// Keep the thread acknowledged while it stays open: a background poll can
+	// re-apply an unread count after a message arrives.
+	$effect(() => {
+		if (!page.data.session) return;
+		const list = conversations.data;
+		if (!list?.some((c) => c.id === conv.id && c.unread > 0)) return;
+		queryClient.set(
+			'conversations:mine',
+			list.map((c) => (c.id === conv.id ? { ...c, unread: 0 } : c))
+		);
+		void fetch(`/api/conversations/${encodeURIComponent(conv.id)}/read`, { method: 'POST' }).catch(() => {});
+	});
 
 	let body = $state('');
 	let scroller: HTMLDivElement | undefined = $state();
@@ -56,13 +88,6 @@
 			const current = queryClient.get<Message[]>(key)?.data ?? [];
 			if (!current.some((x) => x.id === m.id)) queryClient.set(key, [...current, m]);
 		});
-	});
-
-	// mark read once on open
-	$effect(() => {
-		if (conv.unread > 0) {
-			fetch(`/inbox/${conv.id}?/read`, { method: 'POST', body: new FormData() });
-		}
 	});
 
 	// autoscroll on new messages
