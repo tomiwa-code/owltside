@@ -48,6 +48,10 @@ code paths switch to the live backend — no component changes.
    - `015_conversation_events.sql` — links chats to the event they started from
    - `016_event_broadcast_notifications.sql` — broadcast RPC that delivers organizer
      announcements to every ticket owner
+   - `017_profile_operating_identity.sql` — public operating identity on profiles,
+     shown under a chat peer's name in conversation lists
+   - `018_organizer_scanner_tokens.sql` — organizer-scoped terminal PIN so the
+     ticket scanner arms (PIN → camera → scan) even before any event exists
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 

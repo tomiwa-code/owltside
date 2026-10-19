@@ -41,13 +41,13 @@ const layoutData = {
 	followLoadError: false
 };
 
-function renderScanner() {
+function renderScanner(events: EventItem[] = [gatedEvent], initialEventId = 'e-rooftop') {
 	return render(ScanPage, {
 		props: {
 			data: {
 				...layoutData,
-				organizer: { events: [gatedEvent], stats, checkins: [], orders: [] },
-				initialEventId: 'e-rooftop'
+				organizer: { events, stats, checkins: [], orders: [] },
+				initialEventId
 			}
 		}
 	});
@@ -108,6 +108,46 @@ describe('scanner camera', () => {
 			expect(videos.some((video) => video.srcObject === stream)).toBe(true);
 		});
 		expect(screen.getAllByText(/Camera live/i).length).toBeGreaterThan(0);
+	});
+
+	it('runs the same PIN → camera flow when no event exists yet', async () => {
+		const authorize = vi.fn(
+			async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ ok: true }), { status: 200 })
+		);
+		vi.stubGlobal('fetch', authorize);
+		const stream = {
+			getTracks: () => [{ stop: vi.fn() }],
+			getVideoTracks: () => []
+		} as unknown as MediaStream;
+		const getUserMedia = vi.fn(async (_constraints: MediaStreamConstraints) => stream);
+		Object.defineProperty(navigator, 'mediaDevices', {
+			value: { getUserMedia },
+			configurable: true,
+			writable: true
+		});
+		Object.defineProperty(HTMLMediaElement.prototype, 'paused', {
+			value: false,
+			configurable: true
+		});
+		vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+
+		renderScanner([], '');
+		await armScanner();
+		expect(authorize).toHaveBeenCalledWith('/api/scan/authorize', expect.anything());
+		// Standalone arming sends only the PIN — no event or gate to name.
+		const sent = JSON.parse(String(authorize.mock.calls[0][1]?.body ?? '{}')) as Record<string, unknown>;
+		expect(sent).toEqual({ code: '123456' });
+
+		await fireEvent.click(screen.getAllByRole('button', { name: /Start camera/i })[0]);
+
+		await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+		await waitFor(() => {
+			const videos = Array.from(document.querySelectorAll('video'));
+			expect(videos.some((video) => video.srcObject === stream)).toBe(true);
+		});
+		expect(screen.getAllByText(/Camera live/i).length).toBeGreaterThan(0);
+		// Manual entry is there too, exactly like the gated flow.
+		expect(screen.getAllByPlaceholderText(/EV-XXXX/i).length).toBeGreaterThan(0);
 	});
 
 	it('explains a blocked camera instead of leaving a black screen', async () => {

@@ -20,6 +20,8 @@ create table if not exists public.profiles (
   city text,
   interests text[] not null default '{}',
   username_changed_at timestamptz,
+  operating_identity text not null default 'attendee'
+    check (operating_identity in ('attendee', 'guest', 'organizer')),
   verified boolean not null default false,
   followers integer not null default 0,
   following integer not null default 0,
@@ -1028,3 +1030,15 @@ create table if not exists public.gate_staff_tokens (
 alter table public.gate_staff_tokens enable row level security;
 drop policy if exists "Organizer manages own gate staff tokens" on public.gate_staff_tokens;
 create policy "Organizer manages own gate staff tokens" on public.gate_staff_tokens for all using (exists (select 1 from public.events e where e.id = event_id and e.organizer_id = auth.uid())) with check (created_by = auth.uid() and exists (select 1 from public.events e where e.id = event_id and e.organizer_id = auth.uid()));
+
+-- Organizer-scoped scanner ("terminal") PINs: arm the scanner even before
+-- any event exists. Generated, hashed, one active PIN per organizer.
+create table if not exists public.organizer_scanner_tokens (
+  organizer_id uuid primary key references public.profiles(id) on delete cascade,
+  token_hash text not null,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+alter table public.organizer_scanner_tokens enable row level security;
+drop policy if exists "Organizer manages own scanner token" on public.organizer_scanner_tokens;
+create policy "Organizer manages own scanner token" on public.organizer_scanner_tokens for all using (organizer_id = auth.uid()) with check (organizer_id = auth.uid());

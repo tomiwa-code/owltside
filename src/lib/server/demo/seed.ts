@@ -31,6 +31,7 @@ export const people: Record<string, Profile> = {
 		bio: 'Chasing good sound and good software across Lagos.',
 		link: 'https://adaobi.dev',
 		city: 'Lagos',
+		operatingIdentity: 'attendee',
 		followers: 214,
 		following: 189
 	},
@@ -42,6 +43,7 @@ export const people: Record<string, Profile> = {
 		bio: 'Public-health technologist • Keynote speaker • She/her',
 		city: 'Abuja',
 		verified: true,
+		operatingIdentity: 'attendee',
 		followers: 12_400,
 		following: 310
 	},
@@ -52,6 +54,7 @@ export const people: Record<string, Profile> = {
 		avatarColor: '#f59e0b',
 		bio: 'Weekend raver, weekday engineer.',
 		city: 'Lagos',
+		operatingIdentity: 'attendee',
 		followers: 388,
 		following: 402
 	},
@@ -63,6 +66,7 @@ export const people: Record<string, Profile> = {
 		bio: 'Design leader. I teach product craft.',
 		city: 'Lagos',
 		verified: true,
+		operatingIdentity: 'organizer',
 		followers: 8_930,
 		following: 122
 	},
@@ -74,6 +78,7 @@ export const people: Record<string, Profile> = {
 		bio: 'Promoter & selector. Beach season is every season.',
 		city: 'Lagos',
 		verified: true,
+		operatingIdentity: 'organizer',
 		followers: 22_100,
 		following: 87
 	},
@@ -85,6 +90,7 @@ export const people: Record<string, Profile> = {
 		bio: 'Payments infrastructure for the next billion users.',
 		city: 'Kano',
 		verified: true,
+		operatingIdentity: 'organizer',
 		followers: 15_700,
 		following: 240
 	},
@@ -96,6 +102,7 @@ export const people: Record<string, Profile> = {
 		bio: 'Building the Pulse summit series.',
 		city: 'Lagos',
 		verified: true,
+		operatingIdentity: 'organizer',
 		followers: 5_310,
 		following: 190
 	},
@@ -106,6 +113,7 @@ export const people: Record<string, Profile> = {
 		avatarColor: '#ffb2b7',
 		bio: 'Product coach, ex-fintech, forever curious.',
 		city: 'Enugu',
+		operatingIdentity: 'attendee',
 		followers: 4_020,
 		following: 350
 	}

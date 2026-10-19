@@ -49,12 +49,28 @@ export const handle: Handle = async ({ event, resolve }) => {
 						if (updated) profile = updated;
 					}
 				}
+				const identity: 'attendee' | 'organizer' | 'guest' = isOperatingIdentity(String(meta.operating_identity ?? ''))
+					? (meta.operating_identity as 'attendee' | 'organizer' | 'guest')
+					: 'attendee';
+				// Keep the public profile's operating identity in step with the
+				// private auth preference so other users see the current choice
+				// under this user's name. Runs only when the column exists (017)
+				// and the saved values have drifted apart.
+				if (profile && 'operating_identity' in profile && profile.operating_identity !== identity) {
+					const { data: synced } = await db
+						.from('profiles')
+						.update({ operating_identity: identity })
+						.eq('id', user.id)
+						.select('*')
+						.maybeSingle();
+					if (synced) profile = synced;
+				}
 				event.locals.session = {
 					userId: user.id,
 					email: user.email ?? '',
 					handle: profile?.handle ?? 'you',
 					name: profile?.name ?? (user.email?.split('@')[0] || 'Explorer'),
-					role: isOperatingIdentity(String(meta.operating_identity ?? '')) ? meta.operating_identity as 'attendee' | 'organizer' | 'guest' : 'attendee',
+					role: identity,
 					avatarUrl: profile?.avatar_url ?? null,
 					usernameChangedAt: profile?.username_changed_at ?? null
 				};
