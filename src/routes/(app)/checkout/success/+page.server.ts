@@ -2,6 +2,7 @@ import { error, redirect } from '@sveltejs/kit';
 import { getSource } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
 import { paystackSecretConfigured, verifyTransaction } from '$lib/server/paystack';
+import { normalizePromoCode } from '$lib/utils/promo';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url, cookies, locals }) => {
@@ -9,6 +10,7 @@ export const load: PageServerLoad = async ({ url, cookies, locals }) => {
 	const slug = url.searchParams.get('slug') || url.searchParams.get('event');
 	const tierId = url.searchParams.get('tier');
 	const qty = Math.max(1, Math.min(6, Number(url.searchParams.get('qty') ?? 1)));
+	const promoCode = normalizePromoCode(url.searchParams.get('promo')) || null;
 
 	if (!ref || !slug || !tierId) {
 		redirect(303, '/tickets');
@@ -24,7 +26,7 @@ export const load: PageServerLoad = async ({ url, cookies, locals }) => {
 		}
 	}
 
-	const order = await source.createOrder(userId, slug, [{ tierId, qty }]);
+	const order = await source.createOrder(userId, slug, [{ tierId, qty }], promoCode);
 	if (order && order.tickets && order.tickets.length > 0) {
 		redirect(303, `/tickets/${order.tickets[0].id}?new=1`);
 	}

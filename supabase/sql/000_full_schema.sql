@@ -58,6 +58,19 @@ create table if not exists public.events (
 create index if not exists events_starts_at_idx on public.events (starts_at);
 create index if not exists events_category_idx on public.events (category);
 
+-- Event-specific organizer promo codes (kept private from public event rows)
+create table if not exists public.event_promos (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references public.events(id) on delete cascade,
+  code text not null check (code ~ '^[A-Z0-9][A-Z0-9_-]{2,23}$'),
+  percent numeric(5,2) not null check (percent >= 1 and percent <= 100),
+  max_uses integer not null check (max_uses >= 1 and max_uses <= 1000000),
+  uses_count integer not null default 0 check (uses_count >= 0 and uses_count <= max_uses),
+  created_at timestamptz not null default now(),
+  unique (event_id, code)
+);
+create index if not exists event_promos_event_id_idx on public.event_promos (event_id);
+
 -- Tickets (Gate passes with rotating HMAC payload)
 create table if not exists public.tickets (
   id uuid primary key default gen_random_uuid(),
@@ -183,6 +196,7 @@ create index if not exists profile_follows_following_idx on public.profile_follo
 alter table public.profiles enable row level security;
 alter table public.profile_follows enable row level security;
 alter table public.events enable row level security;
+alter table public.event_promos enable row level security;
 alter table public.tickets enable row level security;
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
@@ -221,6 +235,24 @@ create policy events_select on public.events for select using (true);
 
 drop policy if exists events_write on public.events;
 create policy events_write on public.events for all using (auth.uid() = organizer_id) with check (auth.uid() = organizer_id);
+
+-- Event promos: only the organizer who owns the event can read/manage them.
+drop policy if exists event_promos_select on public.event_promos;
+create policy event_promos_select on public.event_promos for select to authenticated
+  using (exists (select 1 from public.events e where e.id = event_promos.event_id and e.organizer_id = auth.uid()));
+
+drop policy if exists event_promos_insert on public.event_promos;
+create policy event_promos_insert on public.event_promos for insert to authenticated
+  with check (exists (select 1 from public.events e where e.id = event_promos.event_id and e.organizer_id = auth.uid()));
+
+drop policy if exists event_promos_update on public.event_promos;
+create policy event_promos_update on public.event_promos for update to authenticated
+  using (exists (select 1 from public.events e where e.id = event_promos.event_id and e.organizer_id = auth.uid()))
+  with check (exists (select 1 from public.events e where e.id = event_promos.event_id and e.organizer_id = auth.uid()));
+
+drop policy if exists event_promos_delete on public.event_promos;
+create policy event_promos_delete on public.event_promos for delete to authenticated
+  using (exists (select 1 from public.events e where e.id = event_promos.event_id and e.organizer_id = auth.uid()));
 
 -- Tickets: owner reads, event organizer reads and updates (check-in)
 drop policy if exists tickets_select on public.tickets;
@@ -393,8 +425,47 @@ create trigger messages_touch_conversation
   after insert on public.messages
   for each row execute function public.touch_conversation();
 
+-- Validate one event promo code without exposing the organizer's other codes.
+create or replace function public.validate_event_promo(p_event_slug text, p_code text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_code text := upper(regexp_replace(btrim(coalesce(p_code, '')), '\s+', '-', 'g'));
+  v_promo public.event_promos%rowtype;
+begin
+  if v_code = '' then return null; end if;
+  select ep.* into v_promo
+  from public.event_promos ep
+  join public.events e on e.id = ep.event_id
+  where e.slug = p_event_slug and ep.code = v_code;
+  if not found then return null; end if;
+  if v_promo.uses_count >= v_promo.max_uses then
+    return jsonb_build_object('valid', false, 'state', 'exhausted', 'code', v_promo.code);
+  end if;
+  return jsonb_build_object(
+    'valid', true,
+    'code', v_promo.code,
+    'kind', 'pct',
+    'value', v_promo.percent,
+    'source', 'event'
+  );
+end;
+$$;
+
+grant execute on function public.validate_event_promo(text, text) to anon, authenticated;
+
 -- Atomic order creation RPC
-create or replace function public.create_order(p_owner uuid, p_event_slug text, p_items jsonb)
+drop function if exists public.create_order(uuid, text, jsonb);
+create or replace function public.create_order(
+  p_owner uuid,
+  p_event_slug text,
+  p_items jsonb,
+  p_promo_code text default null
+)
 returns jsonb
 language plpgsql
 security definer set search_path = public
@@ -403,6 +474,8 @@ declare
   v_event public.events%rowtype;
   v_item jsonb;
   v_tier jsonb;
+  v_gross numeric := 0;
+  v_discount numeric := 0;
   v_total numeric := 0;
   v_qty int;
   v_order_id uuid;
@@ -410,11 +483,51 @@ declare
   v_tickets jsonb := '[]';
   v_code text;
   v_holder text;
+  v_promo_code text := upper(regexp_replace(btrim(coalesce(p_promo_code, '')), '\s+', '-', 'g'));
+  v_promo public.event_promos%rowtype;
+  v_has_event_promo boolean := false;
+  v_promo_percent numeric;
+  v_promo_flat numeric := 0;
 begin
-  select * into v_event from public.events where slug = p_event_slug;
+  select * into v_event from public.events where slug = p_event_slug for update;
   if not found then raise exception 'Event not found'; end if;
 
   select name into v_holder from public.profiles where id = p_owner;
+
+  if v_promo_code <> '' then
+    select * into v_promo
+    from public.event_promos
+    where event_id = v_event.id and code = v_promo_code
+    for update;
+    if found then
+      v_has_event_promo := true;
+      if v_promo.uses_count >= v_promo.max_uses then
+        raise exception 'That promo code has reached its usage limit';
+      end if;
+      v_promo_percent := v_promo.percent;
+    elsif v_promo_code = 'TECHCOMMUNITY' then
+      v_promo_flat := 5000;
+    elsif v_promo_code = 'OWL10' then
+      v_promo_percent := 10;
+    else
+      raise exception 'That promo code isn''t valid for this event';
+    end if;
+  end if;
+
+  for v_item in select * from jsonb_array_elements(p_items)
+  loop
+    v_qty := (v_item->>'qty')::int;
+    select t into v_tier from jsonb_array_elements(v_event.tiers) t where t->>'id' = v_item->>'tierId';
+    if v_tier is null then raise exception 'Unknown tier'; end if;
+    v_gross := v_gross + (v_tier->>'price')::numeric * v_qty;
+  end loop;
+
+  if v_promo_percent is not null then
+    v_discount := round(v_gross * v_promo_percent / 100);
+  elsif v_promo_flat > 0 then
+    v_discount := least(v_promo_flat, v_gross);
+  end if;
+  v_total := greatest(0, v_gross - v_discount);
 
   for v_item in select * from jsonb_array_elements(p_items)
   loop
@@ -433,8 +546,6 @@ begin
           else t end
       ) from jsonb_array_elements(v_event.tiers) t
     );
-    v_total := v_total + (v_tier->>'price')::numeric * v_qty;
-
     insert into public.orders (owner_id, event_id, reference, total, status, owner_name, items_label)
     values (p_owner, v_event.id, v_reference, v_total, 'paid', coalesce(v_holder, 'Attendee'), v_qty || 'x ' || (v_tier->>'name'))
     returning id into v_order_id;
@@ -462,6 +573,15 @@ begin
     set tiers = v_event.tiers, attendees = attendees + jsonb_array_length(v_tickets)
     where id = v_event.id;
 
+  if v_has_event_promo then
+    update public.event_promos
+      set uses_count = uses_count + 1
+      where id = v_promo.id and uses_count < max_uses;
+    if not found then
+      raise exception 'That promo code has reached its usage limit';
+    end if;
+  end if;
+
   -- Notify buyer of confirmed pass
   insert into public.notifications (user_id, kind, title, body, href)
   values (
@@ -488,12 +608,14 @@ begin
     'orderId', v_order_id,
     'reference', v_reference,
     'total', v_total,
+    'discount', v_discount,
+    'promoCode', nullif(v_promo_code, ''),
     'tickets', v_tickets
   );
 end;
 $$;
 
-grant execute on function public.create_order(uuid, text, jsonb) to authenticated;
+grant execute on function public.create_order(uuid, text, jsonb, text) to authenticated;
 
 -- Notify organizer when a new message request is created
 create or replace function public.notify_new_message_request()

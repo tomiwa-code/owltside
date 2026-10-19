@@ -220,4 +220,76 @@ describe('demo datasource', () => {
 		expect(terminalCheckin).toMatchObject({ eventId: event.id, gate: 'Terminal', result: 'verified' });
 	});
 
+	it('persists organizer event promos, applies them once per order, and enforces max purchases', async () => {
+		const event = await demoSource.createEvent('u-ada', {
+			title: 'Event Promo Redemption Test',
+			category: 'music',
+			tags: [],
+			startsAt: new Date(Date.now() + 86_400_000).toISOString(),
+			venue: 'Promo Hall',
+			city: 'Lagos',
+			description: 'An event with organizer promo codes.',
+			cover: { from: '#111827', to: '#312e81', icon: 'image' },
+			tiers: [{ name: 'General', price: 10_000, capacity: 10, benefits: '' }],
+			promos: [
+				{ code: 'early bird', percent: 20, maxUses: 1 },
+				{ code: 'STUDENT10', percent: 10, maxUses: 5 }
+			],
+			agenda: [],
+			speakers: [],
+			gates: []
+		});
+
+		expect(event.promos).toEqual([
+			{ code: 'EARLY-BIRD', percent: 20, maxUses: 1, uses: 0 },
+			{ code: 'STUDENT10', percent: 10, maxUses: 5, uses: 0 }
+		]);
+		// Buyer-facing catalogue reads do not leak the organizer's codes.
+		expect((await demoSource.getEvent(event.slug))?.promos).toBeUndefined();
+		expect(
+			(await demoSource.listEvents({ query: 'Event Promo Redemption' })).find((item) => item.id === event.id)?.promos
+		).toBeUndefined();
+
+		await expect(demoSource.resolvePromoCode(event.slug, 'early bird')).resolves.toEqual({
+			code: 'EARLY-BIRD',
+			kind: 'pct',
+			value: 20,
+			source: 'event'
+		});
+		// The same organizer code is not valid for a different event.
+		await expect(
+			demoSource.resolvePromoCode('product-craft-masterclass', 'EARLY-BIRD')
+		).resolves.toBeNull();
+
+		const order = await demoSource.createOrder(
+			'u-ada',
+			event.slug,
+			[{ tierId: event.tiers[0].id, qty: 2 }],
+			'EARLY-BIRD'
+		);
+		expect(order.total).toBe(16_000);
+		expect(order.tickets).toHaveLength(2);
+		// One purchase with two tickets consumes exactly one max-use slot.
+		expect(event.promos?.find((promo) => promo.code === 'EARLY-BIRD')?.uses).toBe(1);
+		await expect(demoSource.resolvePromoCode(event.slug, 'EARLY-BIRD')).resolves.toBeNull();
+		await expect(
+			demoSource.createOrder('u-ada', event.slug, [{ tierId: event.tiers[0].id, qty: 1 }], 'EARLY-BIRD')
+		).rejects.toThrow(/usage limit/i);
+		expect(event.tiers[0].sold).toBe(2);
+
+		// Global codes still work, and editing preserves the redemption count.
+		const globalOrder = await demoSource.createOrder(
+			'u-ada',
+			event.slug,
+			[{ tierId: event.tiers[0].id, qty: 1 }],
+			'owl10'
+		);
+		expect(globalOrder.total).toBe(9_000);
+		const updated = await demoSource.updateEvent('u-ada', event.id, {
+			promos: [{ code: 'EARLY-BIRD', percent: 25, maxUses: 3 }]
+		});
+		expect(updated.promos).toEqual([{ code: 'EARLY-BIRD', percent: 25, maxUses: 3, uses: 1 }]);
+		await expect(demoSource.resolvePromoCode(event.slug, 'EARLY-BIRD')).resolves.toMatchObject({ value: 25 });
+	});
+
 });

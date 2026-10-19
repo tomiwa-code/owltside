@@ -5,6 +5,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 import { hasOrganizerIdentity } from '$lib/server/organizer-access';
+import { isValidPromoCode, normalizePromoCode } from '$lib/utils/promo';
 import type { WizardSpeaker } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -58,6 +59,25 @@ const draftSchema = z.object({
 			})
 		)
 		.min(1, 'Add at least one ticket tier').max(20),
+	promos: z
+		.array(
+			z.object({
+				code: z
+					.string()
+					.trim()
+					.min(3, 'Promo codes must be at least 3 characters')
+					.max(64)
+					.transform((value) => normalizePromoCode(value))
+					.refine(isValidPromoCode, 'Use 3–24 letters, numbers, hyphens, or underscores for each promo code'),
+				percent: z.number().min(1, 'Promo discount must be at least 1%').max(100, 'Promo discount cannot exceed 100%'),
+				maxUses: z.number().int('Promo purchases must be a whole number').min(1).max(1_000_000)
+			})
+		)
+		.max(50)
+		.default([])
+		.refine((promos) => new Set(promos.map((promo) => promo.code)).size === promos.length, {
+			message: 'Each promo code can only be added once'
+		}),
 	days: z
 		.array(
 			z.object({
@@ -162,6 +182,7 @@ export const actions: Actions = {
 				description: d.description,
 				cover: poster ? { from: '#2b2a3f', to: '#14131f', icon: 'image', src: poster } : existing!.cover,
 				tiers: d.tiers,
+				promos: d.promos,
 				agenda: d.days.flatMap((day) => day.sessions.map((session) => ({ start: `${day.label} ${session.time}`, title: session.title, location: session.stage }))),
 				speakers,
 				gates: gatePayload,

@@ -54,6 +54,8 @@ code paths switch to the live backend — no component changes.
      ticket scanner arms (PIN → camera → scan) even before any event exists
    - `019_shared_staff_scanner.sql` — lets door staff use an organizer's shared
      PIN from their own account (token resolution + staff check-in RPCs)
+   - `020_event_promos.sql` — private event promo codes, buyer validation,
+     discounted order totals, and atomic max-purchase redemption
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 

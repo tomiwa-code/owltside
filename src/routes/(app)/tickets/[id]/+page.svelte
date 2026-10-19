@@ -30,6 +30,7 @@
 	import { downloadIcs } from '$lib/utils/ics';
 	import { fmtDateFull, fmtTime } from '$lib/utils/dates';
 	import { addFee, formatMoney } from '$lib/utils/money';
+import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/utils/tickets';
 	import { page } from '$app/state';
 	import type { Profile } from '$lib/types';
 
@@ -43,9 +44,19 @@
 	const refundFee = $derived(addFee(ticket.price));
 	const refundAmount = $derived(Math.max(0, ticket.price - refundFee));
 	const refundEligible = $derived(ticket.status === 'valid' && Date.now() < refundDeadline.getTime());
+	const verified = $derived(isVerifiedTicket(ticket));
+	const ticketActionsDisabled = $derived(!canUseTicketActions(ticket));
+	const statusLabel = $derived(ticketStatusLabel(ticket.status));
 
-	let transferOpen = $state(page.url.searchParams.get('transfer') === '1');
-	let refundOpen = $state(page.url.searchParams.get('refund') === '1');
+	let transferOpen = $state(page.url.searchParams.get('transfer') === '1' && data.ticket.status === 'valid');
+	let refundOpen = $state(page.url.searchParams.get('refund') === '1' && data.ticket.status === 'valid');
+
+	$effect(() => {
+		if (ticketActionsDisabled) {
+			transferOpen = false;
+			refundOpen = false;
+		}
+	});
 	let transferHandle = $state('');
 	let transferMatches = $state<Profile[]>([]);
 	let selectedRecipient = $state<Profile | null>(null);
@@ -70,8 +81,20 @@
 	);
 
 	function openTransferSheet() {
+		if (ticketActionsDisabled) return;
 		transferError = '';
 		transferOpen = true;
+	}
+
+	function openRefundSheet() {
+		if (ticketActionsDisabled) return;
+		refundError = '';
+		refundOpen = true;
+	}
+
+	function addToWallet() {
+		if (ticketActionsDisabled) return;
+		toast('Wallet export queued to device', 'info');
 	}
 
 	function closeTransferSheet() {
@@ -233,6 +256,21 @@
 
 <svelte:head><title>{ticket.eventTitle} • Gate Pass</title></svelte:head>
 
+{#snippet verifiedBanner()}
+	{#if verified}
+		<div class="flex items-center gap-3 rounded-xl border border-accent-emerald/40 bg-accent-emerald/10 px-4 py-3" role="status">
+			<span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent-emerald text-surface-base">
+				<Check class="h-6 w-6" strokeWidth={3} />
+			</span>
+			<div class="min-w-0 flex-1">
+				<p class="font-display text-body-lg font-bold text-on-surface">Verified at the gate</p>
+				<p class="text-body-sm text-on-surface-variant">This ticket has been checked in. Transfer, Apple/Google Wallet, and refund actions are disabled.</p>
+			</div>
+			<span class="shrink-0 rounded-full bg-accent-emerald px-3 py-1 text-label-badge font-bold text-surface-base uppercase">Verified</span>
+		</div>
+	{/if}
+{/snippet}
+
 <!-- ── Desktop console (md+) — mirrors app header + Gate Pass in 2-col console layout ── -->
 <div class="hidden md:flex flex-col min-h-dvh bg-surface-base text-on-surface">
 
@@ -245,10 +283,11 @@
 			</div>
 			<span class="hidden lg:inline-flex items-center gap-2 bg-surface-container-high px-4 py-2 rounded-full shadow-sm shrink-0">
 				<span class="relative flex h-2.5 w-2.5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-emerald"></span></span>
-				<span class="text-label-badge text-on-surface uppercase tracking-wider font-semibold">Offline Gate Ready</span>
+				<span class="text-label-badge text-on-surface uppercase tracking-wider font-semibold">{verified ? 'Verified at Gate' : 'Offline Gate Ready'}</span>
 				<span class="flex items-center gap-1.5 bg-surface-container-lowest px-2.5 py-1 rounded-full ml-2"><CloudCheck class="w-4 h-4 text-accent-emerald" /><span class="text-label-badge text-accent-emerald">v1.0 SECURE</span></span>
 			</span>
 		</div>
+		{@render verifiedBanner()}
 		<div class="grid grid-cols-[420px_1fr] xl:grid-cols-[460px_1fr] gap-6 items-start">
 			<!-- left: ticket card + actions (mirrors mobile) -->
 			<div class="flex flex-col gap-4">
@@ -279,23 +318,23 @@
 					</div>
 					<div class="p-5 flex flex-col items-center gap-4 bg-surface-container-low/70">
 						<div class="inline-flex items-center gap-2 bg-surface-container-highest px-3 py-1.5 rounded-full shadow-sm">
-							<span class="text-label-badge text-on-surface font-semibold tracking-wide">Rotating QR • 30s HMAC window</span>
+							<span class="text-label-badge text-on-surface font-semibold tracking-wide">{verified ? 'Verified • Checked in' : 'Rotating QR • 30s HMAC window'}</span>
 						</div>
-						<QrPass code={ticket.code} disabled={!active} />
+						<QrPass code={ticket.code} disabled={!active} disabledLabel={verified ? 'Verified' : 'Not active'} />
 						<div class="mt-4 flex items-center gap-2 bg-surface-container-high px-3 py-1.5 rounded-lg w-full max-w-[300px] justify-between">
 							<div class="flex flex-col min-w-0"><span class="text-label-badge text-on-surface-variant uppercase">Manual Gate Code</span><span class="font-code text-label-code text-on-surface font-semibold tracking-wider">{ticket.code}</span></div>
 							<button aria-label="Copy Ticket Code" onclick={copyCode} class="w-8 h-8 rounded-full bg-surface-container-highest hover:bg-primary-container hover:text-on-primary-container flex items-center justify-center text-on-surface transition-colors"><Copy class="w-4 h-4" /></button>
 						</div>
-						{#if !active}<p class="text-body-sm text-on-surface-variant text-center">This pass is {ticket.status} and will not scan at the gate.</p>{/if}
+						{#if verified}<p class="text-body-sm text-on-surface-variant text-center">Verified at the gate — this pass has been checked in and cannot be scanned again.</p>{:else if !active}<p class="text-body-sm text-on-surface-variant text-center">This pass is {statusLabel.toLowerCase()} and will not scan at the gate.</p>{/if}
 					</div>
 				</div>
 				<div class="grid grid-cols-3 gap-2">
 					<button class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => downloadIcs({ title: ticket.eventTitle, venue: ticket.venue, startsAt: ticket.eventStartsAt })}><CalendarPlus class="w-4 h-4" /> Calendar</button>
-					<button disabled={ticket.status !== 'valid'} class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:opacity-40" onclick={openTransferSheet}><Send class="w-4 h-4" /> Transfer</button>
-					<button class="h-11 rounded-full bg-surface-container-high hover:bg-error-container text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => (refundOpen = true)}><Undo2 class="w-4 h-4" /> Refund</button>
+					<button disabled={ticketActionsDisabled} title={verified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40" onclick={openTransferSheet}><Send class="w-4 h-4" /> Transfer</button>
+					<button disabled={ticketActionsDisabled} title={verified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-full bg-surface-container-high hover:bg-error-container text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40" onclick={openRefundSheet}><Undo2 class="w-4 h-4" /> Refund</button>
 				</div>
 				<div class="grid grid-cols-2 gap-2">
-					<button class="h-11 rounded-xl bg-surface-container-high border border-surface-glass-border text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => toast('Wallet export queued to device', 'info')}><Wallet class="w-4 h-4" /> Apple / Google</button>
+					<button disabled={ticketActionsDisabled} title={verified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-xl bg-surface-container-high border border-surface-glass-border text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40" onclick={addToWallet}><Wallet class="w-4 h-4" /> Apple / Google</button>
 					<button class="h-11 rounded-xl bg-surface-container-high border border-surface-glass-border text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => toast('Offline PDF cached for gate mode', 'success')}><Download class="w-4 h-4" /> Offline PDF</button>
 				</div>
 				<div class="bg-surface-container-low rounded-xl p-3 flex items-center gap-3 border border-surface-glass-border">
@@ -306,7 +345,7 @@
 			<!-- right: Gate Security + Scan Ledger (same as mobile) -->
 			<div class="flex flex-col gap-4">
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col gap-4">
-					<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Gate Security</h2><span class="text-label-badge text-accent-emerald bg-accent-emerald/10 px-2 py-1 rounded-full">Token valid</span></div>
+					<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Gate Security</h2><span class="text-label-badge text-accent-emerald bg-accent-emerald/10 px-2 py-1 rounded-full">{verified ? 'Verified at gate' : active ? 'Token valid' : 'Token inactive'}</span></div>
 					<div class="rounded-xl bg-surface-container-high p-4 border border-surface-glass-border">
 						<div class="flex items-center gap-2 text-body-sm font-semibold text-on-surface"><ScanLine class="w-4 h-4 text-primary" />Gate 02 Fast-Pass Turnstile</div>
 						<p class="text-body-sm text-on-surface-variant pt-2">Present this rotating QR at eye level, or hold your device near the NFC target. Biometric verification is enabled at the hall entry.</p>
@@ -314,7 +353,7 @@
 					<div class="rounded-xl border border-surface-glass-border bg-surface-container-high/60 p-4">
 						<div class="flex items-center justify-between gap-2 text-label-badge text-on-surface-variant"><span>Cryptographic hash stamp</span><span>HMAC-SHA-256</span></div>
 						<p class="font-code text-label-code text-on-surface break-all pt-3">HMAC-SHA256: {hexStamp(ticket.code)}</p>
-						<div class="flex items-center justify-between gap-2 border-t border-surface-glass-border pt-3 mt-3 text-label-badge"><span class="text-on-surface-variant">Signature verifier</span><span class="text-accent-emerald font-medium">Token_Valid_OK</span></div>
+						<div class="flex items-center justify-between gap-2 border-t border-surface-glass-border pt-3 mt-3 text-label-badge"><span class="text-on-surface-variant">Signature verifier</span><span class="text-accent-emerald font-medium">{verified ? 'Verified_OK' : active ? 'Token_Valid_OK' : 'Token_Inactive'}</span></div>
 					</div>
 				</section>
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5">
@@ -348,8 +387,8 @@
 					<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-emerald"></span>
 				</span>
 				<div class="flex flex-col min-w-0">
-					<span class="text-label-badge text-on-surface uppercase tracking-wider font-semibold truncate">Offline Gate Ready</span>
-					<span class="text-body-sm text-on-surface-variant truncate">Verifies without internet at the door</span>
+					<span class="text-label-badge text-on-surface uppercase tracking-wider font-semibold truncate">{verified ? 'Verified at Gate' : 'Offline Gate Ready'}</span>
+					<span class="text-body-sm text-on-surface-variant truncate">{verified ? 'This pass has already been checked in' : 'Verifies without internet at the door'}</span>
 				</div>
 			</div>
 			<span class="flex items-center gap-1.5 bg-surface-container-lowest px-2.5 py-1 rounded-full shrink-0">
@@ -357,6 +396,8 @@
 				<span class="text-label-badge text-accent-emerald">v1.0 SECURE</span>
 			</span>
 		</div>
+
+		{@render verifiedBanner()}
 
 		<!-- ticket card -->
 		<div class="relative bg-surface-raised rounded-xl overflow-hidden shadow-xl">
@@ -400,10 +441,10 @@
 			<div class="p-space-md flex flex-col items-center gap-4 bg-surface-container-low/70 pb-6">
 				<div class="inline-flex items-center gap-2 bg-surface-container-highest px-3 py-1.5 rounded-full shadow-sm">
 					<span class="text-label-badge text-on-surface font-semibold tracking-wide">
-						Rotating QR • 30s HMAC window
+						{verified ? 'Verified • Checked in' : 'Rotating QR • 30s HMAC window'}
 					</span>
 				</div>
-				<QrPass code={ticket.code} disabled={!active} />
+				<QrPass code={ticket.code} disabled={!active} disabledLabel={verified ? 'Verified' : 'Not active'} />
 				<div class="mt-4 flex items-center gap-2 bg-surface-container-high px-3 py-1.5 rounded-lg w-full max-w-[260px] justify-between">
 					<div class="flex flex-col min-w-0">
 						<span class="text-label-badge text-on-surface-variant uppercase">Manual Gate Code</span>
@@ -413,8 +454,10 @@
 						<Copy class="w-4 h-4" />
 					</button>
 				</div>
-				{#if !active}
-					<p class="text-body-sm text-on-surface-variant text-center">This pass is {ticket.status} and will not scan at the gate.</p>
+				{#if verified}
+					<p class="text-body-sm text-on-surface-variant text-center">Verified at the gate — this pass has been checked in and cannot be scanned again.</p>
+				{:else if !active}
+					<p class="text-body-sm text-on-surface-variant text-center">This pass is {statusLabel.toLowerCase()} and will not scan at the gate.</p>
 				{/if}
 			</div>
 		</div>
@@ -424,16 +467,16 @@
 			<button class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => downloadIcs({ title: ticket.eventTitle, venue: ticket.venue, startsAt: ticket.eventStartsAt })}>
 				<CalendarPlus class="w-4 h-4" /> Calendar
 			</button>
-			<button disabled={ticket.status !== 'valid'} class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:opacity-40" onclick={openTransferSheet}>
+			<button disabled={ticketActionsDisabled} title={verified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40" onclick={openTransferSheet}>
 				<Send class="w-4 h-4" /> Transfer
 			</button>
-			<button class="h-11 rounded-full bg-surface-container-high hover:bg-error-container text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => (refundOpen = true)}>
+			<button disabled={ticketActionsDisabled} title={verified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-full bg-surface-container-high hover:bg-error-container text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40" onclick={openRefundSheet}>
 				<Undo2 class="w-4 h-4" /> Refund
 			</button>
 		</div>
 
 		<div class="grid grid-cols-2 gap-2">
-			<button class="h-11 rounded-xl bg-surface-container-high border border-surface-glass-border text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => toast('Wallet export queued to device', 'info')}>
+			<button disabled={ticketActionsDisabled} title={verified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-xl bg-surface-container-high border border-surface-glass-border text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40" onclick={addToWallet}>
 				<Wallet class="w-4 h-4" /> Apple / Google
 			</button>
 			<button class="h-11 rounded-xl bg-surface-container-high border border-surface-glass-border text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => toast('Offline PDF cached for gate mode', 'success')}>
@@ -451,7 +494,7 @@
 		</div>
 
 		<section class="rounded-xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-space-sm">
-			<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Gate Security</h2><span class="text-label-badge text-accent-emerald">Token valid</span></div>
+			<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Gate Security</h2><span class="text-label-badge text-accent-emerald">{verified ? 'Verified at gate' : active ? 'Token valid' : 'Token inactive'}</span></div>
 			<div class="rounded-xl bg-surface-container-high p-3">
 				<div class="flex items-center gap-2 text-body-sm font-semibold text-on-surface"><ScanLine class="w-4 h-4 text-primary" />Gate 02 Fast-Pass Turnstile</div>
 				<p class="text-body-sm text-on-surface-variant pt-2">Present this rotating QR at eye level, or hold your device near the NFC target. Biometric verification is enabled at the hall entry.</p>
@@ -459,7 +502,7 @@
 			<div class="rounded-xl border border-surface-glass-border bg-surface-container-high/60 p-3">
 				<div class="flex items-center justify-between gap-2 text-label-badge text-on-surface-variant"><span>Cryptographic hash stamp</span><span>HMAC-SHA-256</span></div>
 				<p class="font-code text-label-code text-on-surface break-all pt-2">HMAC-SHA256: {hexStamp(ticket.code)}</p>
-				<div class="flex items-center justify-between gap-2 border-t border-surface-glass-border pt-2 mt-2 text-label-badge"><span class="text-on-surface-variant">Signature verifier</span><span class="text-accent-emerald">Token_Valid_OK</span></div>
+				<div class="flex items-center justify-between gap-2 border-t border-surface-glass-border pt-2 mt-2 text-label-badge"><span class="text-on-surface-variant">Signature verifier</span><span class="text-accent-emerald">{verified ? 'Verified_OK' : active ? 'Token_Valid_OK' : 'Token_Inactive'}</span></div>
 			</div>
 		</section>
 
@@ -484,7 +527,7 @@
 			type="submit"
 			form="ticket-transfer-form"
 			class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold text-body-md flex items-center justify-center gap-2 disabled:opacity-40"
-			disabled={!transferHandle.trim().replace(/^@+/, '').trim() || transferring || ticket.status !== 'valid'}
+			disabled={!transferHandle.trim().replace(/^@+/, '').trim() || transferring || ticketActionsDisabled}
 		>
 			{#if transferring}
 				<span>Transferring…</span>
@@ -583,7 +626,7 @@
 			<button
 				type="submit"
 				form="ticket-refund-form"
-				disabled={!refundReason || !refundConfirmed || refunding}
+				disabled={!refundReason || !refundConfirmed || refunding || ticketActionsDisabled}
 				class="w-full h-12 rounded-xl bg-error-container text-on-error-container font-semibold text-body-md flex items-center justify-center gap-2 disabled:opacity-40"
 			>
 				{#if refunding}
@@ -600,6 +643,9 @@
 		{#if refundError}
 			<p class="rounded-lg bg-error/10 border border-error/30 px-3 py-2 text-body-sm text-error" role="alert">{refundError}</p>
 		{/if}
+		{#if verified}
+			<p class="rounded-lg bg-accent-emerald/10 border border-accent-emerald/30 px-3 py-2 text-body-sm text-on-surface" role="alert">This ticket has been verified at the gate, so it can no longer be refunded.</p>
+		{/if}
 
 		<div class="rounded-xl border border-surface-glass-border bg-surface-container-high p-4">
 			<div class="flex items-start justify-between gap-3">
@@ -613,8 +659,8 @@
 			<div class="mt-4 rounded-lg bg-surface-container px-3 py-2.5 flex items-start gap-2.5">
 				<span class="w-2 h-2 rounded-full bg-primary mt-1.5 shrink-0"></span>
 				<div class="min-w-0">
-					<p class="font-code text-label-badge tracking-wide text-on-surface">{refundEligible ? 'Eligible for Full Refund' : 'Organizer Policy Review'}</p>
-					<p class="text-body-sm text-on-surface-variant mt-0.5">{refundEligible ? `Valid policy window until ${refundDeadlineLabel} WAT` : 'Your request will be reviewed under the organizer’s refund policy.'}</p>
+					<p class="font-code text-label-badge tracking-wide text-on-surface">{verified ? 'Verified — refund unavailable' : refundEligible ? 'Eligible for Full Refund' : 'Organizer Policy Review'}</p>
+					<p class="text-body-sm text-on-surface-variant mt-0.5">{verified ? 'This pass has already been checked in at the gate.' : refundEligible ? `Valid policy window until ${refundDeadlineLabel} WAT` : 'Your request will be reviewed under the organizer’s refund policy.'}</p>
 				</div>
 			</div>
 		</div>

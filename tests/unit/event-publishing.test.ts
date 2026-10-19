@@ -38,6 +38,29 @@ describe('publishing validation and failure UI', () => {
 		await expect(publish(draft())).rejects.toMatchObject({ status: 303, location: '/organizer/events/created-event' });
 		expect(source.createEvent).toHaveBeenCalledWith('signed-in-user', expect.objectContaining({ title: 'My real event', description: draft().description, cover: expect.objectContaining({ src: expect.stringMatching(/^data:image\/jpeg;base64,/) }), startsAt: '2099-11-20T09:00:00+01:00' }));
 	});
+	it('passes normalized organizer promo codes to the datasource without trusting client use counts', async () => {
+		const payload = {
+			...draft(),
+			promos: [{ code: 'early bird', percent: 15, maxUses: 25, uses: 999 }]
+		};
+
+		await expect(publish(payload)).rejects.toMatchObject({ status: 303, location: '/organizer/events/created-event' });
+		expect(source.createEvent).toHaveBeenCalledWith('signed-in-user', expect.objectContaining({
+			promos: [{ code: 'EARLY-BIRD', percent: 15, maxUses: 25 }]
+		}));
+	});
+	it('rejects duplicate promo codes after normalization', async () => {
+		const payload = {
+			...draft(),
+			promos: [
+				{ code: 'early bird', percent: 15, maxUses: 25 },
+				{ code: 'EARLY-BIRD', percent: 20, maxUses: 10 }
+			]
+		};
+
+		expect(await publish(payload)).toMatchObject({ status: 400 });
+		expect(source.createEvent).not.toHaveBeenCalled();
+	});
 	it('uses the invited profile avatar resolved on the server', async () => {
 		source.searchProfiles.mockResolvedValue([{
 			id: 'speaker-profile', handle: 'guesthost', name: 'Guest Host', avatarColor: '#123456',

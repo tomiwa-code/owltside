@@ -26,6 +26,9 @@
 	import { toast } from '$lib/state/toast.svelte';
 	import { formatMoney } from '$lib/utils/money';
 	import { fmtDate } from '$lib/utils/dates';
+import { promoDiscount } from '$lib/utils/promo';
+import { requestEventPromo } from '$lib/utils/promo-client';
+import type { ResolvedPromo } from '$lib/types';
 
 	let { data } = $props();
 	const event = $derived(data.event);
@@ -33,7 +36,8 @@
 	let tierId = $state(data.tierId);
 	let qty = $state(data.qty);
 	let promoInput = $state('');
-	let appliedPromo = $state<string | null>(data.promo ?? null);
+	let appliedPromo = $state<ResolvedPromo | null>(data.promo ?? null);
+	let promoApplying = $state(false);
 	let paystackReference = $state('');
 	let submitting = $state(false);
 
@@ -42,12 +46,7 @@
 	const tier = $derived(event.tiers.find((t) => t.id === tierId)!);
 	const base = $derived(tier.price * qty);
 	const fee = $derived(base > 0 ? Math.min(Math.round(base * 0.015), 1000) : 0);
-	const discount = $derived.by(() => {
-		if (!appliedPromo) return 0;
-		if (appliedPromo === 'TECHCOMMUNITY') return Math.min(5000, base);
-		if (appliedPromo === 'OWL10') return Math.round(base * 0.1);
-		return 0;
-	});
+	const discount = $derived(promoDiscount(base, appliedPromo));
 	const total = $derived(Math.max(0, base + fee - discount));
 
 	// reservation countdown 10:00
@@ -60,13 +59,17 @@
 		`${String(Math.floor(secondsLeft / 60)).padStart(2, '0')}:${String(secondsLeft % 60).padStart(2, '0')}`
 	);
 
-	function applyPromo() {
-		const code = promoInput.trim().toUpperCase();
-		if (code === 'TECHCOMMUNITY' || code === 'OWL10') {
-			appliedPromo = code;
-			toast(`Promo ${code} applied`, 'success');
-		} else {
-			toast('That code isn\u2019t valid', 'error');
+	async function applyPromo() {
+		if (promoApplying) return;
+		promoApplying = true;
+		try {
+			appliedPromo = await requestEventPromo(event.slug, promoInput);
+			toast(`Promo ${appliedPromo.code} applied`, 'success');
+		} catch (error) {
+			appliedPromo = null;
+			toast(error instanceof Error ? error.message : 'That code isn’t valid for this event', 'error');
+		} finally {
+			promoApplying = false;
 		}
 	}
 
@@ -274,7 +277,7 @@
 		<input type="hidden" name="event" value={event.slug} />
 		<input type="hidden" name="tier" value={tierId} />
 		<input type="hidden" name="qty" value={qty} />
-		<input type="hidden" name="promo" value={appliedPromo ?? ''} />
+		<input type="hidden" name="promo" value={appliedPromo?.code ?? ''} />
 		<input type="hidden" name="paystackReference" value={paystackReference} />
 
 		<!-- left column -->
@@ -322,7 +325,7 @@
 					<div class="flex items-center gap-3 pt-4">
 						<div class="flex-1 flex items-center gap-3 bg-surface-base border border-surface-glass-border rounded-lg px-4 h-12 min-w-0">
 							<Tag class="w-4 h-4 text-primary shrink-0" />
-							<span class="font-code text-body-md text-on-surface truncate">{appliedPromo}</span>
+							<span class="font-code text-body-md text-on-surface truncate">{appliedPromo.code}</span>
 							<span class="{MONO} bg-accent-emerald/15 border border-accent-emerald/30 text-accent-emerald px-2 py-0.5 rounded ml-auto shrink-0">-{formatMoney(discount)} Applied</span>
 						</div>
 						<button type="button" onclick={() => (appliedPromo = null)} class="{MONO} h-12 px-4 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface hover:text-error hover:border-error/40 transition-colors shrink-0">
@@ -335,8 +338,8 @@
 							<Tag class="w-4 h-4 text-on-surface-variant shrink-0" />
 							<input bind:value={promoInput} placeholder="PROMO CODE" class="w-full bg-transparent font-code text-body-md text-on-surface uppercase placeholder:text-outline-variant focus:outline-none" />
 						</div>
-						<button type="button" onclick={applyPromo} class="{MONO} h-12 px-4 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface hover:bg-primary hover:text-on-primary hover:border-primary transition-colors shrink-0">
-							Apply
+						<button type="button" disabled={promoApplying} onclick={applyPromo} class="{MONO} h-12 px-4 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface hover:bg-primary hover:text-on-primary hover:border-primary transition-colors shrink-0 disabled:opacity-50">
+							{promoApplying ? 'Checking…' : 'Apply'}
 						</button>
 					</div>
 				{/if}
@@ -412,7 +415,7 @@
 							<div class="flex items-center justify-between gap-3">
 								<span class="flex items-center gap-2 text-body-sm text-on-surface-variant min-w-0">
 									<span class="truncate">Partner Pass Incentive</span>
-									<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-tertiary px-2 py-0.5 rounded shrink-0">{appliedPromo}</span>
+									<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-tertiary px-2 py-0.5 rounded shrink-0">{appliedPromo?.code}</span>
 								</span>
 								<span class="font-code text-body-sm font-bold text-accent-emerald">-{formatMoney(discount)}</span>
 							</div>
@@ -549,7 +552,7 @@
 			<input type="hidden" name="event" value={event.slug} />
 			<input type="hidden" name="tier" value={tierId} />
 			<input type="hidden" name="qty" value={qty} />
-			<input type="hidden" name="promo" value={appliedPromo ?? ''} />
+			<input type="hidden" name="promo" value={appliedPromo?.code ?? ''} />
 			<input type="hidden" name="paystackReference" value={paystackReference} />
 
 			<!-- order summary -->
@@ -592,7 +595,7 @@
 						<div class="flex justify-between items-center text-body-sm text-accent-emerald bg-accent-emerald/10 border border-accent-emerald/20 px-2.5 py-1 rounded-lg">
 							<span class="flex items-center gap-1">
 								<Tag class="w-4 h-4" />
-								<span class="font-code text-label-code font-semibold tracking-tight">{appliedPromo}</span>
+								<span class="font-code text-label-code font-semibold tracking-tight">{appliedPromo?.code}</span>
 								<span class="text-[10px] uppercase font-bold px-1 rounded bg-accent-emerald/20">Applied</span>
 							</span>
 							<span class="font-semibold">-{formatMoney(discount)}</span>
@@ -609,8 +612,8 @@
 							class="w-full pl-9 pr-3 py-2 bg-surface-container-low border border-surface-glass-border rounded-lg font-code text-label-code text-on-surface focus:outline-none focus:bg-surface-bright uppercase transition-all"
 						/>
 					</div>
-					<button type="button" onclick={applyPromo} class="px-4 py-2 bg-surface-container-high border border-surface-glass-border hover:bg-surface-bright active:scale-95 text-on-surface text-label-badge rounded-lg transition-transform">
-						Apply
+					<button type="button" disabled={promoApplying} onclick={applyPromo} class="px-4 py-2 bg-surface-container-high border border-surface-glass-border hover:bg-surface-bright active:scale-95 text-on-surface text-label-badge rounded-lg transition-transform disabled:opacity-50">
+						{promoApplying ? 'Checking…' : 'Apply'}
 					</button>
 				</div>
 
