@@ -58,12 +58,16 @@
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { categories } from '$components/iconMap';
 	import { isValidPromoCode, normalizeEventPromos, normalizePromoCode } from '$lib/utils/promo';
+	import { maskAccountNumber, payoutBankMark } from '$lib/utils/payout';
 import type { Profile, WizardSpeaker } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { form, data = {} as PageData } = $props();
 	let draftHydrated = $state(false);
 	const editingEvent = $derived(data.event ?? null);
+	// Every settlement line in the wizard reads the account verified in Settings.
+	const savedPayout = $derived(appSettings.value.payout);
+	const savedPayoutReady = $derived(appSettings.value.verification.payoutAccount && !!savedPayout.bank);
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 	let dateEnd = $state('');
@@ -1739,19 +1743,19 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 							<Landmark class="w-4.5 h-4.5 text-primary" />
 							<span class="font-display text-headline-md text-on-surface">Settlement &amp; Payouts</span>
 						</span>
-						<button type="button" onclick={() => toast('Payout rails are managed from the organizer console', 'info')} class="{MONO} text-on-surface underline underline-offset-4 hover:text-primary">Change</button>
+						<button type="button" onclick={() => toast('Update your payout account in Settings → Verification', 'info')} class="{MONO} text-on-surface underline underline-offset-4 hover:text-primary">Change</button>
 					</div>
 					<div class="rounded-lg bg-surface-container-low border border-surface-glass-border p-4 flex items-center gap-3">
-						<span class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border font-code text-label-badge font-bold text-on-surface flex items-center justify-center shrink-0">{appSettings.value.payout.bank ? appSettings.value.payout.bank.slice(0,3).toUpperCase() : '—'}</span>
+						<span class="w-10 h-10 rounded-lg bg-surface-container-high border border-surface-glass-border font-code text-label-badge font-bold text-on-surface flex items-center justify-center shrink-0">{savedPayoutReady ? payoutBankMark(savedPayout.bank) : '—'}</span>
 						<span class="min-w-0 flex-1">
-							<span class="text-body-md font-semibold text-on-surface block">{appSettings.value.payout.bank || 'No payout account linked'}</span>
-							<span class="font-code text-[12px] tracking-[0.06em] text-on-surface-variant block pt-0.5">{appSettings.value.payout.accountNumber ? `•••• ${appSettings.value.payout.accountNumber.slice(-4)} (NGN Main)` : 'Add payout in Settings → Verification'}</span>
+							<span class="text-body-md font-semibold text-on-surface block">{savedPayoutReady ? savedPayout.bank : 'No payout account linked'}</span>
+							<span class="font-code text-[12px] tracking-[0.06em] text-on-surface-variant block pt-0.5">{savedPayoutReady ? `${maskAccountNumber(savedPayout.accountNumber)} (NGN Main)` : 'Add payout in Settings → Verification'}</span>
 						</span>
-						<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded shrink-0">{appSettings.value.verification.payoutAccount ? 'Verified' : 'Not verified'}</span>
+						<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface-variant px-2 py-0.5 rounded shrink-0">{savedPayoutReady ? 'Verified' : 'Not verified'}</span>
 					</div>
 					<div class="flex flex-col gap-2">
 						{#each [
-							['Account Holder:', appSettings.value.payout.accountName || 'Not linked'],
+							['Account Holder:', savedPayout.accountName || 'Not linked'],
 							['Gateway Engine:', 'Paystack Split Gateway (KYC Tier 3)'],
 							['Payout Frequency:', 'T+2 Rolling Settlement']
 						] as [k, v]}
@@ -2100,7 +2104,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-space-sm">
 					<h3 class="font-display text-headline-md text-on-surface">Issuance &amp; Settlement</h3>
 					<div class="grid grid-cols-3 gap-2"><div class="rounded-lg bg-surface-container-high p-2.5"><span class="block text-label-badge text-on-surface-variant">Starting at</span><span class="block text-body-sm font-bold text-on-surface pt-1">{minTierPrice === 0 ? 'Free' : formatMoney(minTierPrice)}</span></div><div class="rounded-lg bg-surface-container-high p-2.5"><span class="block text-label-badge text-on-surface-variant">Capacity</span><span class="block text-body-sm font-bold text-on-surface pt-1">{totalCapacity.toLocaleString()}</span></div><div class="rounded-lg bg-surface-container-high p-2.5"><span class="block text-label-badge text-on-surface-variant">Gross cap</span><span class="block text-body-sm font-bold text-on-surface pt-1">{formatMoney(totalGross)}</span></div></div>
-					<div class="flex items-start gap-2 rounded-lg bg-surface-container-low border border-surface-glass-border p-3"><Landmark class="w-4 h-4 text-primary shrink-0 mt-0.5" /><p class="text-body-sm text-on-surface-variant"><span class="text-on-surface font-semibold">GTB · •••• 4821</span><br />Paystack split gateway · KYC Tier 3<br />T+2 rolling settlement · 3% protocol fee · no upfront listing charge.</p></div>
+					<div class="flex items-start gap-2 rounded-lg bg-surface-container-low border border-surface-glass-border p-3"><Landmark class="w-4 h-4 text-primary shrink-0 mt-0.5" /><p class="text-body-sm text-on-surface-variant">{#if savedPayoutReady}<span class="text-on-surface font-semibold">{savedPayout.bank} · {maskAccountNumber(savedPayout.accountNumber)}</span><br />{savedPayout.accountName || 'Account holder'} · Paystack split gateway · KYC Tier 3{:else}<span class="text-on-surface font-semibold">No payout account linked</span><br />Add your payout account in Settings → Verification{/if}<br />T+2 rolling settlement · 3% protocol fee · no upfront listing charge.</p></div>
 				</section>
 			</div>
 
@@ -2276,9 +2280,9 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 				</div>
 
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-space-sm">
-					<div class="flex items-center justify-between gap-2"><span class="font-display text-headline-md text-on-surface">Settlement &amp; Payouts</span><button type="button" onclick={() => toast('Payout rails are managed from the organizer console', 'info')} class="text-label-badge text-primary underline">Change</button></div>
-					<div class="rounded-xl bg-surface-container-low border border-surface-glass-border p-3 flex items-center gap-3"><span class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center font-code text-label-badge font-bold text-on-surface">GTB</span><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Guaranty Trust Bank</span><span class="block text-label-badge text-on-surface-variant pt-1">•••• 4821 · NGN Main · Verified</span></span></div>
-					<div class="flex flex-col gap-2 text-label-badge"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Account holder</span><span class="text-on-surface text-right">Starlight Experiences Ltd</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Gateway</span><span class="text-on-surface text-right">Paystack Split · KYC Tier 3</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Payout frequency</span><span class="text-on-surface text-right">T+2 rolling</span></div></div>
+					<div class="flex items-center justify-between gap-2"><span class="font-display text-headline-md text-on-surface">Settlement &amp; Payouts</span><button type="button" onclick={() => toast('Update your payout account in Settings → Verification', 'info')} class="text-label-badge text-primary underline">Change</button></div>
+					<div class="rounded-xl bg-surface-container-low border border-surface-glass-border p-3 flex items-center gap-3"><span class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center font-code text-label-badge font-bold text-on-surface">{savedPayoutReady ? payoutBankMark(savedPayout.bank) : '—'}</span><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface">{savedPayoutReady ? savedPayout.bank : 'No payout account linked'}</span><span class="block text-label-badge text-on-surface-variant pt-1">{savedPayoutReady ? `${maskAccountNumber(savedPayout.accountNumber)} · NGN Main · Verified` : 'Add payout in Settings → Verification'}</span></span></div>
+					<div class="flex flex-col gap-2 text-label-badge"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Account holder</span><span class="text-on-surface text-right">{savedPayoutReady ? savedPayout.accountName || '—' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Gateway</span><span class="text-on-surface text-right">Paystack Split · KYC Tier 3</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Payout frequency</span><span class="text-on-surface text-right">T+2 rolling</span></div></div>
 					<div class="rounded-lg bg-surface-container-low p-3 flex items-start gap-2"><Info class="w-4 h-4 text-primary shrink-0 mt-0.5" /><p class="text-label-badge text-on-surface-variant">No upfront listing fee. A 3% protocol charge is deducted at checkout.</p></div>
 				</section>
 

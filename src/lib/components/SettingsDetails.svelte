@@ -20,9 +20,23 @@
 		Wallet,
 		Phone,
 		Upload,
-		Camera
+		Camera,
+		Loader2
 	} from '@lucide/svelte';
+	import { onDestroy } from 'svelte';
+	import { page } from '$app/state';
 	import { appSettings, type AppSettings } from '$lib/state/settings.svelte';
+	import {
+		NUBAN_LENGTH,
+		PAYOUT_BANKS,
+		PAYOUT_LOOKUP_MS,
+		PAYOUT_SAVE_MS,
+		isValidNuban,
+		lookupAccountName,
+		maskAccountNumber,
+		normaliseNuban,
+		type PayoutAccount
+	} from '$lib/utils/payout';
 	import { toast } from '$lib/state/toast.svelte';
 	import Sheet from '$components/Sheet.svelte';
 	import ImageCropSheet from '$components/ImageCropSheet.svelte';
@@ -77,21 +91,23 @@
 	let payoutName = $state('');
 	let payoutError = $state('');
 	let payoutVerifying = $state(false);
-
-	const banks = [
-		'GTBank',
-		'Access Bank',
-		'Zenith Bank',
-		'First Bank',
-		'UBA',
-		'Kuda',
-		'Moniepoint',
-		'OPay',
-		'PalmPay',
-		'Fidelity Bank',
-		'Union Bank',
-		'Sterling Bank'
-	];
+	/** Name-enquiry progress: the name appears here before the user saves. */
+	let payoutLookup = $state<'idle' | 'loading' | 'ready'>('idle');
+	let payoutLookupTimer: ReturnType<typeof setTimeout> | undefined;
+	let payoutLookupToken = 0;
+	let payoutSaveTimer: ReturnType<typeof setTimeout> | undefined;
+	const payoutHolderName = $derived(page.data.session?.name ?? '');
+	onDestroy(() => {
+		if (payoutLookupTimer) clearTimeout(payoutLookupTimer);
+		if (payoutSaveTimer) clearTimeout(payoutSaveTimer);
+	});
+	const payoutVerifiedSummary = $derived(
+		appSettings.value.verification.payoutAccount && appSettings.value.payout.bank
+			? `${appSettings.value.payout.bank} ${maskAccountNumber(appSettings.value.payout.accountNumber)} verified${
+					appSettings.value.payout.accountName ? ` · ${appSettings.value.payout.accountName}` : ''
+				}`
+			: ''
+	);
 
 	function openPhone() {
 		phoneError = '';
@@ -205,35 +221,109 @@
 		toast('Identity verified — liveness check passed', 'success');
 	}
 
+	function clearPayoutLookup() {
+		if (payoutLookupTimer) clearTimeout(payoutLookupTimer);
+		payoutLookupTimer = undefined;
+		payoutLookupToken += 1;
+		payoutName = '';
+		payoutLookup = 'idle';
+	}
+
 	function openPayout() {
 		payoutError = '';
 		payoutVerifying = false;
-		payoutName = '';
+		// Re-verification starts from the account that is actually live, so the
+		// sheet never looks empty while the card above shows a linked account.
+		const saved = appSettings.value.payout;
+		payoutBank = saved.bank;
+		payoutAccount = saved.accountNumber;
+		clearPayoutLookup();
+		if (saved.bank && isValidNuban(saved.accountNumber) && saved.accountName) {
+			payoutName = saved.accountName;
+			payoutLookup = 'ready';
+		}
 		payoutOpen = true;
 	}
+	function closePayout() {
+		payoutOpen = false;
+		clearPayoutLookup();
+	}
+
+	/**
+	 * Runs the name enquiry as soon as a bank and a full ten-digit number are
+	 * present — the account name must be visible *before* the user verifies.
+	 * Every edit cancels the previous enquiry so a stale name never lingers.
+	 */
+	function resolvePayoutName() {
+		clearPayoutLookup();
+		payoutError = '';
+		if (!payoutBank || !isValidNuban(payoutAccount)) return;
+
+		const saved = appSettings.value.payout;
+		if (saved.bank === payoutBank && saved.accountNumber === payoutAccount && saved.accountName) {
+			// Already verified: show the bank-confirmed name without a round-trip.
+			payoutName = saved.accountName;
+			payoutLookup = 'ready';
+			return;
+		}
+
+		payoutLookup = 'loading';
+		const token = payoutLookupToken;
+		payoutLookupTimer = setTimeout(() => {
+			if (token !== payoutLookupToken) return;
+			payoutLookupTimer = undefined;
+			const resolved = lookupAccountName(payoutBank, payoutAccount, payoutHolderName || identityName || 'Ada Obi');
+			if (!resolved) {
+				payoutLookup = 'idle';
+				payoutError = 'That account could not be resolved. Check the number and bank.';
+				return;
+			}
+			payoutName = resolved;
+			payoutLookup = 'ready';
+		}, PAYOUT_LOOKUP_MS);
+	}
+
+	function onPayoutBankChange(event: Event) {
+		payoutBank = (event.currentTarget as HTMLSelectElement).value;
+		resolvePayoutName();
+	}
+
+	function onPayoutAccountInput(event: Event) {
+		payoutAccount = normaliseNuban((event.currentTarget as HTMLInputElement).value);
+		resolvePayoutName();
+	}
+
 	function verifyPayout() {
 		payoutError = '';
 		if (!payoutBank) {
 			payoutError = 'Select your bank.';
 			return;
 		}
-		if (!/^\d{10}$/.test(payoutAccount.trim())) {
+		if (!isValidNuban(payoutAccount)) {
 			payoutError = 'Enter a valid 10-digit NUBAN account number.';
 			return;
 		}
+		if (payoutLookup !== 'ready' || !payoutName) {
+			payoutError = 'Wait for the account name to appear before saving.';
+			return;
+		}
 		payoutVerifying = true;
-		// simulate NIBSS lookup
-		setTimeout(() => {
+		const account: PayoutAccount = {
+			bank: payoutBank,
+			accountNumber: payoutAccount,
+			accountName: payoutName
+		};
+		// Simulated gateway save. The lookup already happened above, so this
+		// step only confirms and persists the account.
+		payoutSaveTimer = setTimeout(() => {
+			payoutSaveTimer = undefined;
 			payoutVerifying = false;
-			// simulate name matches identity name or session name, use identityName or fallback
-			const baseName = identityName.trim() || 'Ada Obi';
-			payoutName = baseName.toUpperCase();
-			// compare to identity name - if mismatch we still pass for demo but show warning?
 			appSettings.value.verification.payoutAccount = true;
-			appSettings.value.payout = { bank: payoutBank, accountNumber: payoutAccount, accountName: payoutName };
-			toast(`Payout account verified — ${payoutBank} ••${payoutAccount.slice(-4)} matches ${payoutName}`, 'success');
+			appSettings.value.payout = account;
+			toast(`Payout account verified — ${account.bank} ${maskAccountNumber(account.accountNumber)} · ${account.accountName}`, 'success');
 			payoutOpen = false;
-		}, 900);
+			clearPayoutLookup();
+		}, PAYOUT_SAVE_MS);
 	}
 
 	function toggleNotification(key: NotificationToggle) {
@@ -369,15 +459,15 @@
 						<div>
 							<h3 class="text-body-md font-semibold text-on-surface flex items-center gap-2">3. Payout Account <span class="text-label-badge px-2 py-0.5 rounded-full border {appSettings.value.verification.payoutAccount ? 'bg-accent-emerald/10 text-accent-emerald border-accent-emerald/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'}">{appSettings.value.verification.payoutAccount ? 'Verified' : 'Not Verified'}</span></h3>
 							<p class="text-body-sm text-on-surface-variant mt-1"><span class="font-semibold text-on-surface">Requirement:</span> A valid, active Nigerian bank account or payment processor account that matches your verified identity name.</p>
-							{#if appSettings.value.verification.payoutAccount}
-								<p class="text-xs text-accent-emerald mt-1 flex items-center gap-1"><CheckCheck class="w-3 h-3" /> {payoutBank || 'GTBank'} ••{payoutAccount.slice(-4) || '4821'} verified</p>
+							{#if payoutVerifiedSummary}
+								<p class="text-xs text-accent-emerald mt-1 flex items-center gap-1"><CheckCheck class="w-3 h-3" /> {payoutVerifiedSummary}</p>
 							{/if}
 						</div>
 					</div>
 					{#if !appSettings.value.verification.payoutAccount}
-						<button type="button" class="h-9 px-4 rounded-full bg-primary text-on-primary text-body-sm font-semibold shrink-0 hover:opacity-90" onclick={openPayout}>Start</button>
+						<button type="button" aria-label="Add payout account" class="h-9 px-4 rounded-full bg-primary text-on-primary text-body-sm font-semibold shrink-0 hover:opacity-90" onclick={openPayout}>Start</button>
 					{:else}
-						<button type="button" class="h-9 px-4 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface text-body-sm font-semibold shrink-0" onclick={openPayout}>Re-verify</button>
+						<button type="button" aria-label="Re-verify payout account" class="h-9 px-4 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface text-body-sm font-semibold shrink-0" onclick={openPayout}>Re-verify</button>
 					{/if}
 				</div>
 			</div>
@@ -547,7 +637,7 @@
 	/>
 
 	<!-- Payout Sheet -->
-	<Sheet open={payoutOpen} title="Verify Payout Account" close={() => (payoutOpen = false)}>
+	<Sheet open={payoutOpen} title="Verify Payout Account" close={closePayout}>
 		<div class="flex flex-col gap-4">
 			<div class="rounded-lg bg-surface-container-high/40 border border-surface-glass-border p-3 flex items-start gap-3">
 				<Building2 class="w-5 h-5 text-primary shrink-0 mt-0.5" />
@@ -558,26 +648,68 @@
 			</div>
 			<label class="flex flex-col gap-1.5 text-body-sm text-on-surface-variant">
 				Bank Name
-				<select bind:value={payoutBank} class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface">
+				<select
+					value={payoutBank}
+					onchange={onPayoutBankChange}
+					disabled={payoutVerifying}
+					class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface disabled:opacity-60"
+				>
 					<option value="">Select bank</option>
-					{#each banks as b}<option value={b}>{b}</option>{/each}
+					{#each PAYOUT_BANKS as b}<option value={b}>{b}</option>{/each}
 				</select>
 			</label>
 			<label class="flex flex-col gap-1.5 text-body-sm text-on-surface-variant">
 				10-digit NUBAN Account Number
-				<input type="text" inputmode="numeric" maxlength="10" placeholder="0123456789" bind:value={payoutAccount} class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface tracking-widest" />
+				<input
+					type="text"
+					inputmode="numeric"
+					autocomplete="off"
+					maxlength="10"
+					placeholder="0123456789"
+					value={payoutAccount}
+					oninput={onPayoutAccountInput}
+					disabled={payoutVerifying}
+					aria-describedby="payout-name-status"
+					class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface tracking-widest disabled:opacity-60"
+				/>
 			</label>
-			{#if payoutName}
-				<div class="rounded-lg bg-accent-emerald/10 border border-accent-emerald/20 p-3">
-					<p class="text-body-sm text-accent-emerald font-semibold">Account name: {payoutName}</p>
-					<p class="text-xs text-accent-emerald/80 mt-0.5">Matches identity name — ready for payouts.</p>
-				</div>
-			{/if}
+			<div id="payout-name-status" aria-live="polite" class="min-h-0">
+				{#if payoutLookup === 'loading'}
+					<div class="rounded-lg bg-surface-container-high/60 border border-surface-glass-border p-3 flex items-center gap-2.5">
+						<Loader2 class="w-4 h-4 text-primary animate-spin shrink-0" />
+						<div>
+							<p class="text-body-sm font-semibold text-on-surface">Resolving account name…</p>
+							<p class="text-xs text-on-surface-variant mt-0.5">Name enquiry via NIBSS · {payoutBank} {maskAccountNumber(payoutAccount)}</p>
+						</div>
+					</div>
+				{:else if payoutName && payoutLookup === 'ready'}
+					<div class="rounded-lg bg-accent-emerald/10 border border-accent-emerald/20 p-3">
+						<p class="text-body-sm text-accent-emerald font-semibold flex items-center gap-1.5"><CheckCheck class="w-4 h-4 shrink-0" /> Account name: {payoutName}</p>
+						<p class="text-xs text-accent-emerald/80 mt-0.5">Name enquiry successful — confirm it matches your identity before saving.</p>
+					</div>
+				{:else}
+					<p class="text-xs text-on-surface-variant">
+						{#if !payoutBank}
+							Choose your bank, then enter your 10-digit account number — the account name appears here automatically.
+						{:else if payoutAccount.length === 0}
+							Enter your 10-digit NUBAN account number to look up the account name.
+						{:else}
+							{payoutAccount.length}/{NUBAN_LENGTH} digits — the account name appears automatically at 10.
+						{/if}
+					</p>
+				{/if}
+			</div>
 			{#if payoutError}<p class="text-body-sm text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">{payoutError}</p>{/if}
-			<button type="button" class="w-full h-11 rounded-full bg-primary text-on-primary font-semibold disabled:opacity-50" disabled={payoutVerifying} onclick={verifyPayout}>
-				{#if payoutVerifying}Verifying via NIBSS...{:else}Verify & save payout account{/if}
+			<button
+				type="button"
+				aria-label="Verify and save payout account"
+				class="w-full h-11 rounded-full bg-primary text-on-primary font-semibold disabled:opacity-50"
+				disabled={payoutVerifying || !payoutName}
+				onclick={verifyPayout}
+			>
+				{#if payoutVerifying}Saving payout account…{:else if payoutLookup === 'loading'}Looking up account name…{:else}Verify &amp; save payout account{/if}
 			</button>
-			<p class="text-xs text-on-surface-variant text-center">We perform an automated account name lookup via NIBSS/Paystack/Flutterwave.</p>
+			<p class="text-xs text-on-surface-variant text-center">The account name is confirmed by NIBSS before the account is saved.</p>
 		</div>
 	</Sheet>
 	{/if}
