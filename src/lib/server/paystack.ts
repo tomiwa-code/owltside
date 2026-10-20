@@ -72,3 +72,52 @@ export async function verifyTransaction(reference: string): Promise<boolean> {
 	const json = await res.json();
 	return json.status === true && json.data?.status === 'success';
 }
+
+/**
+ * Paystack bank codes for the banks offered in the payout sheet.
+ *
+ * Only banks listed here can be resolved against the live register; anything
+ * else deliberately falls back to the demo directory instead of guessing a
+ * code, because a wrong code returns another customer's name.
+ */
+export const PAYSTACK_BANK_CODES: Record<string, string> = {
+	GTBank: '058',
+	'Access Bank': '044',
+	'Zenith Bank': '057',
+	'First Bank': '011',
+	UBA: '033',
+	Kuda: '50211',
+	Moniepoint: '50515',
+	OPay: '999992',
+	PalmPay: '999991',
+	'Fidelity Bank': '070',
+	'Union Bank': '032',
+	'Sterling Bank': '232'
+};
+
+export class PaystackResolveError extends Error {}
+
+/**
+ * Resolve the account holder's name from the live NIBSS register via Paystack.
+ * Throws `PaystackResolveError` when the bank is unsupported, the account does
+ * not exist or Paystack rejects the request — callers must not invent a name.
+ */
+export async function resolveBankAccountName(bank: string, accountNumber: string): Promise<string> {
+	const secret = resolvePaystackSecretKey();
+	if (!secret) throw new PaystackResolveError('No Paystack secret key configured.');
+	const bankCode = PAYSTACK_BANK_CODES[bank];
+	if (!bankCode) throw new PaystackResolveError(`No bank code for ${bank}.`);
+	const url = `${BASE}/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`;
+	const response = await fetch(url, { headers: { Authorization: `Bearer ${secret}` } });
+	let payload: { status?: boolean; message?: string; data?: { account_name?: string } } = {};
+	try {
+		payload = await response.json();
+	} catch {
+		/* non-JSON error page */
+	}
+	const name = payload.data?.account_name?.trim();
+	if (!response.ok || !payload.status || !name) {
+		throw new PaystackResolveError(payload.message ?? 'The bank could not confirm that account.');
+	}
+	return name;
+}
