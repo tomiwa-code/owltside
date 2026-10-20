@@ -21,6 +21,7 @@
 		Phone,
 		Upload,
 		Camera,
+		AlertTriangle,
 		Loader2
 	} from '@lucide/svelte';
 	import { onDestroy } from 'svelte';
@@ -32,8 +33,8 @@
 		PAYOUT_LOOKUP_MS,
 		PAYOUT_SAVE_MS,
 		isValidNuban,
-		lookupAccountName,
 		maskAccountNumber,
+		namesMatch,
 		normaliseNuban,
 		type PayoutAccount
 	} from '$lib/utils/payout';
@@ -93,10 +94,16 @@
 	let payoutVerifying = $state(false);
 	/** Name-enquiry progress: the name appears here before the user saves. */
 	let payoutLookup = $state<'idle' | 'loading' | 'ready'>('idle');
+	/** True when the name came from the demo directory rather than the live register. */
+	let payoutSimulated = $state(true);
 	let payoutLookupTimer: ReturnType<typeof setTimeout> | undefined;
 	let payoutLookupToken = 0;
 	let payoutSaveTimer: ReturnType<typeof setTimeout> | undefined;
-	const payoutHolderName = $derived(page.data.session?.name ?? '');
+	/** The name the payout account has to belong to (verified identity, else the signed-in name). */
+	const payoutIdentityName = $derived(identityName.trim() || page.data.session?.name || '');
+	const payoutNameMatchesIdentity = $derived(
+		!payoutIdentityName || !payoutName ? true : namesMatch(payoutName, payoutIdentityName)
+	);
 	onDestroy(() => {
 		if (payoutLookupTimer) clearTimeout(payoutLookupTimer);
 		if (payoutSaveTimer) clearTimeout(payoutSaveTimer);
@@ -227,6 +234,7 @@
 		payoutLookupToken += 1;
 		payoutName = '';
 		payoutLookup = 'idle';
+		payoutSimulated = true;
 	}
 
 	function openPayout() {
@@ -252,7 +260,9 @@
 	/**
 	 * Runs the name enquiry as soon as a bank and a full ten-digit number are
 	 * present — the account name must be visible *before* the user verifies.
-	 * Every edit cancels the previous enquiry so a stale name never lingers.
+	 * The answer comes from the account itself (server-side, so a live provider
+	 * key stays private); every edit cancels the previous enquiry so a stale
+	 * name never lingers.
 	 */
 	function resolvePayoutName() {
 		clearPayoutLookup();
@@ -269,17 +279,34 @@
 
 		payoutLookup = 'loading';
 		const token = payoutLookupToken;
+		const bank = payoutBank;
+		const accountNumber = payoutAccount;
 		payoutLookupTimer = setTimeout(() => {
-			if (token !== payoutLookupToken) return;
 			payoutLookupTimer = undefined;
-			const resolved = lookupAccountName(payoutBank, payoutAccount, payoutHolderName || identityName || 'Ada Obi');
-			if (!resolved) {
-				payoutLookup = 'idle';
-				payoutError = 'That account could not be resolved. Check the number and bank.';
-				return;
-			}
-			payoutName = resolved;
-			payoutLookup = 'ready';
+			void (async () => {
+				try {
+					const response = await fetch('/api/payout/resolve', {
+						method: 'POST',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({ bank, accountNumber })
+					});
+					const payload = await response.json().catch(() => null);
+					if (token !== payoutLookupToken) return;
+					if (!response.ok || !payload?.accountName) {
+						payoutLookup = 'idle';
+						payoutError =
+							payload?.error ?? 'That account could not be resolved. Check the number and bank.';
+						return;
+					}
+					payoutName = String(payload.accountName).trim().toUpperCase();
+					payoutSimulated = Boolean(payload.simulated);
+					payoutLookup = 'ready';
+				} catch {
+					if (token !== payoutLookupToken) return;
+					payoutLookup = 'idle';
+					payoutError = 'Could not reach the name enquiry. Check your connection and try again.';
+				}
+			})();
 		}, PAYOUT_LOOKUP_MS);
 	}
 
@@ -320,7 +347,14 @@
 			payoutVerifying = false;
 			appSettings.value.verification.payoutAccount = true;
 			appSettings.value.payout = account;
-			toast(`Payout account verified — ${account.bank} ${maskAccountNumber(account.accountNumber)} · ${account.accountName}`, 'success');
+			if (payoutIdentityName && !namesMatch(account.accountName, payoutIdentityName)) {
+				toast(
+					`Payout account saved — ${account.accountName} does not match your verified identity (${payoutIdentityName})`,
+					'info'
+				);
+			} else {
+				toast(`Payout account verified — ${account.bank} ${maskAccountNumber(account.accountNumber)} · ${account.accountName}`, 'success');
+			}
 			payoutOpen = false;
 			clearPayoutLookup();
 		}, PAYOUT_SAVE_MS);
@@ -679,13 +713,17 @@
 						<Loader2 class="w-4 h-4 text-primary animate-spin shrink-0" />
 						<div>
 							<p class="text-body-sm font-semibold text-on-surface">Resolving account name…</p>
-							<p class="text-xs text-on-surface-variant mt-0.5">Name enquiry via NIBSS · {payoutBank} {maskAccountNumber(payoutAccount)}</p>
+							<p class="text-xs text-on-surface-variant mt-0.5">Account name enquiry · {payoutBank} {maskAccountNumber(payoutAccount)}</p>
 						</div>
 					</div>
 				{:else if payoutName && payoutLookup === 'ready'}
-					<div class="rounded-lg bg-accent-emerald/10 border border-accent-emerald/20 p-3">
-						<p class="text-body-sm text-accent-emerald font-semibold flex items-center gap-1.5"><CheckCheck class="w-4 h-4 shrink-0" /> Account name: {payoutName}</p>
-						<p class="text-xs text-accent-emerald/80 mt-0.5">Name enquiry successful — confirm it matches your identity before saving.</p>
+					<div class="rounded-lg {payoutNameMatchesIdentity ? 'bg-accent-emerald/10 border-accent-emerald/20' : 'bg-accent-amber/10 border-accent-amber/30'} border p-3">
+						<p class="text-body-sm font-semibold flex items-center gap-1.5 {payoutNameMatchesIdentity ? 'text-accent-emerald' : 'text-accent-amber'}"><CheckCheck class="w-4 h-4 shrink-0" /> Account name: {payoutName}</p>
+						{#if payoutNameMatchesIdentity}
+							<p class="text-xs text-accent-emerald/80 mt-0.5">Matches your verified identity — ready for payouts.</p>
+						{:else}
+							<p class="text-xs mt-0.5 flex items-start gap-1.5 text-on-surface-variant"><AlertTriangle class="w-3.5 h-3.5 text-accent-amber shrink-0 mt-0.5" /> This account is registered to <span class="font-semibold text-on-surface">{payoutName}</span>, not to your verified identity ({payoutIdentityName}). Payouts to it may be rejected.</p>
+						{/if}
 					</div>
 				{:else}
 					<p class="text-xs text-on-surface-variant">
@@ -709,7 +747,15 @@
 			>
 				{#if payoutVerifying}Saving payout account…{:else if payoutLookup === 'loading'}Looking up account name…{:else}Verify &amp; save payout account{/if}
 			</button>
-			<p class="text-xs text-on-surface-variant text-center">The account name is confirmed by NIBSS before the account is saved.</p>
+			<p class="text-xs text-on-surface-variant text-center">
+				{#if payoutLookup !== 'ready'}
+					The name is resolved from the account before anything is saved.
+				{:else if payoutSimulated}
+					Demo bank directory — this name is simulated, not a NIBSS record. Set <span class="font-code">PAYSTACK_SECRET_KEY</span> for live lookups.
+				{:else}
+					Live account name enquiry via NIBSS (Paystack).
+				{/if}
+			</p>
 		</div>
 	</Sheet>
 	{/if}

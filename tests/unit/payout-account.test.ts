@@ -7,12 +7,14 @@ import { appSettings } from '$lib/state/settings.svelte';
 import {
 	PAYOUT_LOOKUP_MS,
 	PAYOUT_SAVE_MS,
+	DEMO_ACCOUNT_DIRECTORY,
 	isValidNuban,
-	lookupAccountName,
 	maskAccountNumber,
+	namesMatch,
 	normaliseNuban,
 	payoutAccountLabel,
-	payoutBankMark
+	payoutBankMark,
+	resolveAccountName
 } from '$lib/utils/payout';
 
 const setSession = (session: Record<string, unknown> | null) => {
@@ -52,18 +54,77 @@ describe('payout account helpers', () => {
 		expect(payoutBankMark('')).toBe('—');
 	});
 
-	it('resolves the account holder name from the bank enquiry', () => {
-		expect(lookupAccountName('GTBank', '0123456789', 'Ada Obi')).toBe('ADA OBI');
-		expect(lookupAccountName('GTBank', '0123456789', '  ada   obi ')).toBe('ADA OBI');
-		expect(lookupAccountName('GTBank', '012345678', 'Ada Obi')).toBeNull();
-		expect(lookupAccountName('', '0123456789', 'Ada Obi')).toBeNull();
-		expect(lookupAccountName('GTBank', '0123456789', '')).toBeNull();
+	it('resolves the name of the account, not of whoever is signed in', () => {
+		// The placeholder account belongs to the demo identity.
+		expect(resolveAccountName('GTBank', '0123456789')).toBe('ADA OBI');
+		// A different account number is a different person, at the same bank.
+		expect(resolveAccountName('GTBank', '9876543210')).toBe('AMINA BELLO');
+		expect(resolveAccountName('Zenith Bank', '4455667788')).toBe('CHIAMAKA OKAFOR');
+	});
+
+	it('never returns one account holder for every account', () => {
+		const numbers = ['1111111111', '2222222222', '3333333333', '4444444444', '5555555555', '6666666666'];
+		const names = numbers.map((nuban) => resolveAccountName('GTBank', nuban));
+		expect(new Set(names).size).toBeGreaterThan(1);
+		expect(names).not.toContain(null);
+	});
+
+	it('is deterministic for a given bank and account number', () => {
+		const first = resolveAccountName('Access Bank', '8064512397');
+		expect(first).not.toBeNull();
+		expect(resolveAccountName('Access Bank', '8064512397')).toBe(first);
+		// The same digits at another bank are another account.
+		expect(typeof resolveAccountName('Kuda', '8064512397')).toBe('string');
+	});
+
+	it('returns nothing until the details can be looked up', () => {
+		expect(resolveAccountName('GTBank', '012345678')).toBeNull();
+		expect(resolveAccountName('', '0123456789')).toBeNull();
+		expect(resolveAccountName('GTBank', '')).toBeNull();
+	});
+
+	it('publishes its demo accounts so they can be used in the app', () => {
+		expect(Object.keys(DEMO_ACCOUNT_DIRECTORY)).toContain('0123456789');
+		for (const nuban of Object.keys(DEMO_ACCOUNT_DIRECTORY)) expect(isValidNuban(nuban)).toBe(true);
+	});
+
+	it('compares identity names ignoring case and spacing', () => {
+		expect(namesMatch('ADA OBI', 'Ada Obi')).toBe(true);
+		expect(namesMatch('ADA  OBI', 'ada obi')).toBe(true);
+		expect(namesMatch('STARLIGHT EXPERIENCES LTD', 'Ada Obi')).toBe(false);
+		expect(namesMatch('', 'Ada Obi')).toBe(false);
 	});
 });
 
 describe('payout account verification in settings', () => {
+	/** Stand-in for `POST /api/payout/resolve`: the same directory the server uses. */
+	const stubResolveEndpoint = () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+				if (String(input) !== '/api/payout/resolve') return new Response('{}', { status: 200 });
+				const body = JSON.parse(String(init?.body ?? '{}')) as { bank: string; accountNumber: string };
+				const accountName = resolveAccountName(body.bank, body.accountNumber);
+				return new Response(
+					JSON.stringify(
+						accountName ? { ok: true, accountName, simulated: true } : { error: 'That account could not be resolved.' }
+					),
+					{ status: accountName ? 200 : 404, headers: { 'content-type': 'application/json' } }
+				);
+			})
+		);
+	};
+
+	/** Let the enquiry timer fire and its fetch promise chain settle. */
+	const finishLookup = async () => {
+		await vi.advanceTimersByTimeAsync(PAYOUT_LOOKUP_MS + 10);
+		for (let i = 0; i < 6; i += 1) await Promise.resolve();
+		await tick();
+	};
+
 	beforeEach(() => {
 		vi.useFakeTimers();
+		stubResolveEndpoint();
 		setSession({ userId: 'u-ada', name: 'Ada Obi', role: 'attendee' });
 		appSettings.value.verification.payoutAccount = false;
 		appSettings.value.payout = { ...EMPTY_PAYOUT };
@@ -71,6 +132,7 @@ describe('payout account verification in settings', () => {
 
 	afterEach(() => {
 		vi.useRealTimers();
+		vi.unstubAllGlobals();
 		setSession(null);
 		appSettings.value.verification.payoutAccount = false;
 		appSettings.value.payout = { ...EMPTY_PAYOUT };
@@ -94,7 +156,7 @@ describe('payout account verification in settings', () => {
 		const save = screen.getByRole('button', { name: 'Verify and save payout account' });
 		expect(save).toBeDisabled();
 
-		await vi.advanceTimersByTimeAsync(PAYOUT_LOOKUP_MS + 10);
+		await finishLookup();
 
 		expect(screen.getByText(/Account name: ADA OBI/)).toBeInTheDocument();
 		expect(save).not.toBeDisabled();
@@ -102,6 +164,39 @@ describe('payout account verification in settings', () => {
 		// Nothing is stored until the user confirms.
 		expect(appSettings.value.payout).toEqual(EMPTY_PAYOUT);
 		expect(appSettings.value.verification.payoutAccount).toBe(false);
+	});
+
+	it('resolves the name of the account that was entered, not the signed-in user', async () => {
+		// The signed-in profile is Ada Obi, but 9876543210 belongs to Amina Bello.
+		await fillPayout('9876543210');
+		await finishLookup();
+
+		expect(screen.getByText(/Account name: AMINA BELLO/)).toBeInTheDocument();
+		expect(screen.queryByText(/Account name: ADA OBI/)).not.toBeInTheDocument();
+		// A payout account registered to somebody else cannot be called "ready".
+		expect(screen.getByText(/not to your verified identity \(Ada Obi\)/)).toBeInTheDocument();
+		expect(screen.queryByText(/Matches your verified identity/)).not.toBeInTheDocument();
+	});
+
+	it('greets the account holder when the name matches the verified identity', async () => {
+		await fillPayout('0123456789');
+		await finishLookup();
+
+		expect(screen.getByText(/Account name: ADA OBI/)).toBeInTheDocument();
+		expect(screen.getByText(/Matches your verified identity — ready for payouts/)).toBeInTheDocument();
+		expect(screen.queryByText(/may be rejected/)).not.toBeInTheDocument();
+	});
+
+	it('changes the resolved name when the account number changes', async () => {
+		const input = await fillPayout('0123456789');
+		await finishLookup();
+		expect(screen.getByText(/Account name: ADA OBI/)).toBeInTheDocument();
+
+		await fireEvent.input(input, { target: { value: '4455667788' } });
+		await finishLookup();
+
+		expect(screen.queryByText(/Account name: ADA OBI/)).not.toBeInTheDocument();
+		expect(screen.getByText(/Account name: CHIAMAKA OKAFOR/)).toBeInTheDocument();
 	});
 
 	it('does not look up anything until a full account number is present', async () => {
@@ -118,7 +213,7 @@ describe('payout account verification in settings', () => {
 
 	it('clears a resolved name as soon as the account is edited', async () => {
 		const input = await fillPayout();
-		await vi.advanceTimersByTimeAsync(PAYOUT_LOOKUP_MS + 10);
+		await finishLookup();
 		expect(screen.getByText(/Account name: ADA OBI/)).toBeInTheDocument();
 
 		await fireEvent.input(input, { target: { value: '0123456788' } });
@@ -130,7 +225,7 @@ describe('payout account verification in settings', () => {
 
 	it('saves the verified account and shows it on the verification card', async () => {
 		await fillPayout();
-		await vi.advanceTimersByTimeAsync(PAYOUT_LOOKUP_MS + 10);
+		await finishLookup();
 		await fireEvent.click(screen.getByRole('button', { name: 'Verify and save payout account' }));
 
 		expect(screen.getByText(/Saving payout account/)).toBeInTheDocument();
