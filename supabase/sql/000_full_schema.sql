@@ -137,6 +137,7 @@ create table if not exists public.conversations (
   last_message text not null default '',
   last_at timestamptz not null default now(),
   unread integer not null default 0,
+  peer_unread integer not null default 0,
   event_id uuid references public.events (id) on delete set null,
   unique (user_id, peer_id)
 );
@@ -414,7 +415,8 @@ begin
   update public.conversations
   set last_message = new.body,
       last_at = new.sent_at,
-      unread = case when new.sender_id <> user_id then unread + 1 else unread end
+      unread = case when new.sender_id <> user_id then unread + 1 else unread end,
+      peer_unread = case when new.sender_id <> peer_id then peer_unread + 1 else peer_unread end
   where id = new.conversation_id;
   return new;
 end;

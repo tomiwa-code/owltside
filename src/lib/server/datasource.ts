@@ -126,7 +126,8 @@ export interface DataSource {
 		promoCode?: string | null
 	): Promise<OrderResult>;
 	sendMessage(conversationId: string, senderId: string, body: string): Promise<Message>;
-	markConversationRead(conversationId: string): Promise<void>;
+	/** Clear the caller's own unread counter — opening a chat only acknowledges it for the reader. */
+	markConversationRead(conversationId: string, readerId: string): Promise<void>;
 	markAllNotificationsRead(userId: string): Promise<void>;
 	/* organizer side */
 	getOrganizer(userId: string): Promise<OrganizerPayload>;
@@ -536,6 +537,9 @@ export const demoSource: DataSource = {
 			if (conv) {
 				conv.lastMessage = m.body;
 				conv.lastAt = m.sentAt;
+				// Seeded threads are the demo account's inbox: a reply counts as
+				// unread until that account opens the thread.
+				if (m.senderId !== demoMeId) conv.unread += 1;
 			}
 			const dynamic = demoPrivateConversations.find((c) => c.id === m.conversationId);
 			if (dynamic) {
@@ -565,14 +569,20 @@ export const demoSource: DataSource = {
 		}
 		return msg;
 	},
-	async markConversationRead(conversationId) {
-		const conv = demo.conversations.find((c) => c.id === conversationId);
-		if (conv) conv.unread = 0;
-		const dynamic = demoPrivateConversations.find((c) => c.id === conversationId);
-		if (dynamic) {
-			dynamic.requesterUnread = 0;
-			dynamic.organizerUnread = 0;
+	async markConversationRead(conversationId, readerId = demoMeId) {
+		const uid = readerId === 'demo' ? demoMeId : readerId;
+		// Seeded threads are the demo account's own inbox.
+		const seeded = demo.conversations.find((c) => c.id === conversationId);
+		if (seeded) {
+			if (uid === demoMeId) seeded.unread = 0;
+			return;
 		}
+		const dynamic = demoPrivateConversations.find((c) => c.id === conversationId);
+		if (!dynamic) return;
+		// Read state belongs to the receiver: opening the thread must never
+		// clear the other participant's counter.
+		if (dynamic.requesterId === uid) dynamic.requesterUnread = 0;
+		else if (dynamic.organizerId === uid) dynamic.organizerUnread = 0;
 	},
 	async markAllNotificationsRead(userId = 'demo') {
 		const uid = userId === 'demo' ? demoMeId : userId;
@@ -1351,7 +1361,10 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				peer: toProfile(r.user_id === userId ? r.peer : r.user),
 				lastMessage: r.last_message ?? '',
 				lastAt: r.last_at,
-				unread: r.unread ?? 0,
+				// Read state is per participant (021): `unread` counts what the row
+				// owner has not opened, `peer_unread` what the other side has not.
+				// peer_unread is read defensively so an un-migrated database lists 0.
+				unread: r.user_id === userId ? (r.unread ?? 0) : (r.peer_unread ?? 0),
 				event: r.event_id ? (eventRefs.get(r.event_id) ?? null) : null
 			}));
 		},
@@ -1598,9 +1611,33 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				sentAt: data.sent_at
 			};
 		},
-		async markConversationRead(conversationId) {
-			if (!isUuid(conversationId)) return;
-			await db.from('conversations').update({ unread: 0 }).eq('id', conversationId);
+		async markConversationRead(conversationId, readerId) {
+			if (!isUuid(conversationId) || !isUuid(readerId)) return;
+			const { data: row, error } = await db
+				.from('conversations')
+				.select('*')
+				.eq('id', conversationId)
+				.maybeSingle();
+			if (error || !row) return;
+			// Only a participant may acknowledge, and only their own counter.
+			if (row.user_id === readerId) {
+				if ((row.unread ?? 0) === 0) return;
+				await db
+					.from('conversations')
+					.update({ unread: 0 })
+					.eq('id', conversationId)
+					.eq('user_id', readerId);
+				return;
+			}
+			if (row.peer_id !== readerId) return;
+			// peer_unread arrives with 021; on an older database the peer never
+			// reports a count, so there is nothing to clear.
+			if ((row.peer_unread ?? 0) === 0) return;
+			await db
+				.from('conversations')
+				.update({ peer_unread: 0 })
+				.eq('id', conversationId)
+				.eq('peer_id', readerId);
 		},
 		async markAllNotificationsRead(userId) {
 			if (!isUuid(userId)) return;
