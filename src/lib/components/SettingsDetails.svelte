@@ -20,23 +20,16 @@
 		Wallet,
 		Phone,
 		Upload,
-		Camera,
-		AlertTriangle,
-		Loader2
+		Camera
 	} from '@lucide/svelte';
 	import { onDestroy } from 'svelte';
-	import { page } from '$app/state';
 	import { appSettings, type AppSettings } from '$lib/state/settings.svelte';
 	import {
-		NUBAN_LENGTH,
 		PAYOUT_BANKS,
-		PAYOUT_LOOKUP_MS,
 		PAYOUT_SAVE_MS,
 		isValidNuban,
 		maskAccountNumber,
-		namesMatch,
-		normaliseNuban,
-		type PayoutAccount
+		normaliseNuban
 	} from '$lib/utils/payout';
 	import { toast } from '$lib/state/toast.svelte';
 	import Sheet from '$components/Sheet.svelte';
@@ -89,30 +82,15 @@
 	let payoutOpen = $state(false);
 	let payoutBank = $state('');
 	let payoutAccount = $state('');
-	let payoutName = $state('');
 	let payoutError = $state('');
 	let payoutVerifying = $state(false);
-	/** Name-enquiry progress: the name appears here before the user saves. */
-	let payoutLookup = $state<'idle' | 'loading' | 'ready'>('idle');
-	/** True when the name came from the demo directory rather than the live register. */
-	let payoutSimulated = $state(true);
-	let payoutLookupTimer: ReturnType<typeof setTimeout> | undefined;
-	let payoutLookupToken = 0;
 	let payoutSaveTimer: ReturnType<typeof setTimeout> | undefined;
-	/** The name the payout account has to belong to (verified identity, else the signed-in name). */
-	const payoutIdentityName = $derived(identityName.trim() || page.data.session?.name || '');
-	const payoutNameMatchesIdentity = $derived(
-		!payoutIdentityName || !payoutName ? true : namesMatch(payoutName, payoutIdentityName)
-	);
 	onDestroy(() => {
-		if (payoutLookupTimer) clearTimeout(payoutLookupTimer);
 		if (payoutSaveTimer) clearTimeout(payoutSaveTimer);
 	});
 	const payoutVerifiedSummary = $derived(
 		appSettings.value.verification.payoutAccount && appSettings.value.payout.bank
-			? `${appSettings.value.payout.bank} ${maskAccountNumber(appSettings.value.payout.accountNumber)} verified${
-					appSettings.value.payout.accountName ? ` · ${appSettings.value.payout.accountName}` : ''
-				}`
+			? `${appSettings.value.payout.bank} ${maskAccountNumber(appSettings.value.payout.accountNumber)} verified`
 			: ''
 	);
 
@@ -228,15 +206,6 @@
 		toast('Identity verified — liveness check passed', 'success');
 	}
 
-	function clearPayoutLookup() {
-		if (payoutLookupTimer) clearTimeout(payoutLookupTimer);
-		payoutLookupTimer = undefined;
-		payoutLookupToken += 1;
-		payoutName = '';
-		payoutLookup = 'idle';
-		payoutSimulated = true;
-	}
-
 	function openPayout() {
 		payoutError = '';
 		payoutVerifying = false;
@@ -245,79 +214,19 @@
 		const saved = appSettings.value.payout;
 		payoutBank = saved.bank;
 		payoutAccount = saved.accountNumber;
-		clearPayoutLookup();
-		if (saved.bank && isValidNuban(saved.accountNumber) && saved.accountName) {
-			payoutName = saved.accountName;
-			payoutLookup = 'ready';
-		}
 		payoutOpen = true;
 	}
 	function closePayout() {
 		payoutOpen = false;
-		clearPayoutLookup();
-	}
-
-	/**
-	 * Runs the name enquiry as soon as a bank and a full ten-digit number are
-	 * present — the account name must be visible *before* the user verifies.
-	 * The answer comes from the account itself (server-side, so a live provider
-	 * key stays private); every edit cancels the previous enquiry so a stale
-	 * name never lingers.
-	 */
-	function resolvePayoutName() {
-		clearPayoutLookup();
 		payoutError = '';
-		if (!payoutBank || !isValidNuban(payoutAccount)) return;
-
-		const saved = appSettings.value.payout;
-		if (saved.bank === payoutBank && saved.accountNumber === payoutAccount && saved.accountName) {
-			// Already verified: show the bank-confirmed name without a round-trip.
-			payoutName = saved.accountName;
-			payoutLookup = 'ready';
-			return;
-		}
-
-		payoutLookup = 'loading';
-		const token = payoutLookupToken;
-		const bank = payoutBank;
-		const accountNumber = payoutAccount;
-		payoutLookupTimer = setTimeout(() => {
-			payoutLookupTimer = undefined;
-			void (async () => {
-				try {
-					const response = await fetch('/api/payout/resolve', {
-						method: 'POST',
-						headers: { 'content-type': 'application/json' },
-						body: JSON.stringify({ bank, accountNumber })
-					});
-					const payload = await response.json().catch(() => null);
-					if (token !== payoutLookupToken) return;
-					if (!response.ok || !payload?.accountName) {
-						payoutLookup = 'idle';
-						payoutError =
-							payload?.error ?? 'That account could not be resolved. Check the number and bank.';
-						return;
-					}
-					payoutName = String(payload.accountName).trim().toUpperCase();
-					payoutSimulated = Boolean(payload.simulated);
-					payoutLookup = 'ready';
-				} catch {
-					if (token !== payoutLookupToken) return;
-					payoutLookup = 'idle';
-					payoutError = 'Could not reach the name enquiry. Check your connection and try again.';
-				}
-			})();
-		}, PAYOUT_LOOKUP_MS);
 	}
-
 	function onPayoutBankChange(event: Event) {
 		payoutBank = (event.currentTarget as HTMLSelectElement).value;
-		resolvePayoutName();
+		payoutError = '';
 	}
-
 	function onPayoutAccountInput(event: Event) {
 		payoutAccount = normaliseNuban((event.currentTarget as HTMLInputElement).value);
-		resolvePayoutName();
+		payoutError = '';
 	}
 
 	function verifyPayout() {
@@ -330,33 +239,16 @@
 			payoutError = 'Enter a valid 10-digit NUBAN account number.';
 			return;
 		}
-		if (payoutLookup !== 'ready' || !payoutName) {
-			payoutError = 'Wait for the account name to appear before saving.';
-			return;
-		}
 		payoutVerifying = true;
-		const account: PayoutAccount = {
-			bank: payoutBank,
-			accountNumber: payoutAccount,
-			accountName: payoutName
-		};
-		// Simulated gateway save. The lookup already happened above, so this
-		// step only confirms and persists the account.
+		const account = { bank: payoutBank, accountNumber: payoutAccount };
+		// Simulated gateway save: the account is persisted exactly as entered.
 		payoutSaveTimer = setTimeout(() => {
 			payoutSaveTimer = undefined;
 			payoutVerifying = false;
 			appSettings.value.verification.payoutAccount = true;
 			appSettings.value.payout = account;
-			if (payoutIdentityName && !namesMatch(account.accountName, payoutIdentityName)) {
-				toast(
-					`Payout account saved — ${account.accountName} does not match your verified identity (${payoutIdentityName})`,
-					'info'
-				);
-			} else {
-				toast(`Payout account verified — ${account.bank} ${maskAccountNumber(account.accountNumber)} · ${account.accountName}`, 'success');
-			}
+			toast(`Payout account verified — ${account.bank} ${maskAccountNumber(account.accountNumber)}`, 'success');
 			payoutOpen = false;
-			clearPayoutLookup();
 		}, PAYOUT_SAVE_MS);
 	}
 
@@ -677,7 +569,7 @@
 				<Building2 class="w-5 h-5 text-primary shrink-0 mt-0.5" />
 				<div>
 					<p class="text-body-sm font-semibold text-on-surface">Nigerian settlement account</p>
-					<p class="text-body-sm text-on-surface-variant mt-1">Must match your verified identity name. Verified via NIBSS/Paystack/Flutterwave lookup.</p>
+					<p class="text-body-sm text-on-surface-variant mt-1">Enter the 10-digit NUBAN account number you want settlements paid into.</p>
 				</div>
 			</div>
 			<label class="flex flex-col gap-1.5 text-body-sm text-on-surface-variant">
@@ -703,59 +595,29 @@
 					value={payoutAccount}
 					oninput={onPayoutAccountInput}
 					disabled={payoutVerifying}
-					aria-describedby="payout-name-status"
+					aria-describedby="payout-account-hint"
 					class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface tracking-widest disabled:opacity-60"
 				/>
 			</label>
-			<div id="payout-name-status" aria-live="polite" class="min-h-0">
-				{#if payoutLookup === 'loading'}
-					<div class="rounded-lg bg-surface-container-high/60 border border-surface-glass-border p-3 flex items-center gap-2.5">
-						<Loader2 class="w-4 h-4 text-primary animate-spin shrink-0" />
-						<div>
-							<p class="text-body-sm font-semibold text-on-surface">Resolving account name…</p>
-							<p class="text-xs text-on-surface-variant mt-0.5">Account name enquiry · {payoutBank} {maskAccountNumber(payoutAccount)}</p>
-						</div>
-					</div>
-				{:else if payoutName && payoutLookup === 'ready'}
-					<div class="rounded-lg {payoutNameMatchesIdentity ? 'bg-accent-emerald/10 border-accent-emerald/20' : 'bg-accent-amber/10 border-accent-amber/30'} border p-3">
-						<p class="text-body-sm font-semibold flex items-center gap-1.5 {payoutNameMatchesIdentity ? 'text-accent-emerald' : 'text-accent-amber'}"><CheckCheck class="w-4 h-4 shrink-0" /> Account name: {payoutName}</p>
-						{#if payoutNameMatchesIdentity}
-							<p class="text-xs text-accent-emerald/80 mt-0.5">Matches your verified identity — ready for payouts.</p>
-						{:else}
-							<p class="text-xs mt-0.5 flex items-start gap-1.5 text-on-surface-variant"><AlertTriangle class="w-3.5 h-3.5 text-accent-amber shrink-0 mt-0.5" /> This account is registered to <span class="font-semibold text-on-surface">{payoutName}</span>, not to your verified identity ({payoutIdentityName}). Payouts to it may be rejected.</p>
-						{/if}
-					</div>
+			<p id="payout-account-hint" class="text-xs text-on-surface-variant">
+				{#if !payoutBank}
+					Choose your bank and enter the 10-digit account number you want settlements paid into.
+				{:else if payoutAccount.length < 10}
+					{payoutAccount.length}/10 digits — enter the full NUBAN account number.
 				{:else}
-					<p class="text-xs text-on-surface-variant">
-						{#if !payoutBank}
-							Choose your bank, then enter your 10-digit account number — the account name appears here automatically.
-						{:else if payoutAccount.length === 0}
-							Enter your 10-digit NUBAN account number to look up the account name.
-						{:else}
-							{payoutAccount.length}/{NUBAN_LENGTH} digits — the account name appears automatically at 10.
-						{/if}
-					</p>
+					{maskAccountNumber(payoutAccount)} at {payoutBank} — ready to verify.
 				{/if}
-			</div>
+			</p>
 			{#if payoutError}<p class="text-body-sm text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">{payoutError}</p>{/if}
 			<button
 				type="button"
 				aria-label="Verify and save payout account"
 				class="w-full h-11 rounded-full bg-primary text-on-primary font-semibold disabled:opacity-50"
-				disabled={payoutVerifying || !payoutName}
+				disabled={payoutVerifying}
 				onclick={verifyPayout}
 			>
-				{#if payoutVerifying}Saving payout account…{:else if payoutLookup === 'loading'}Looking up account name…{:else}Verify &amp; save payout account{/if}
+				{#if payoutVerifying}Saving payout account…{:else}Verify &amp; save payout account{/if}
 			</button>
-			<p class="text-xs text-on-surface-variant text-center">
-				{#if payoutLookup !== 'ready'}
-					The name is resolved from the account before anything is saved.
-				{:else if payoutSimulated}
-					Demo bank directory — this name is simulated, not a NIBSS record. Set <span class="font-code">PAYSTACK_SECRET_KEY</span> for live lookups.
-				{:else}
-					Live account name enquiry via NIBSS (Paystack).
-				{/if}
-			</p>
 		</div>
 	</Sheet>
 	{/if}
