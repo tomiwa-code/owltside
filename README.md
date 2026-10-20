@@ -23,8 +23,7 @@ npm run build        # production build (Vercel adapter, Node 24)
 
 With no env vars the app runs in **demo mode**: seeded Lagos events, simulated
 OTP auth (any 6 digits), a sandbox payment harness (Approve / 3-D Secure /
-Decline), a local bank directory for payout name enquiries and a chat peer that
-replies server-side. Copy `.env.example` →
+Decline) and a chat peer that replies server-side. Copy `.env.example` →
 `.env`, paste your Supabase keys (and optionally Paystack keys) and the same
 code paths switch to the live backend — no component changes.
 

@@ -39,7 +39,6 @@ export interface AppSettings {
 	payout: {
 		bank: string;
 		accountNumber: string;
-		accountName: string;
 	};
 	accessibility: {
 		appearance: 'dark' | 'light';
@@ -76,7 +75,7 @@ const defaults: AppSettings = {
 			{ id: 'verve-1906', brand: 'Verve', last4: '1906', isDefault: false }
 		]
 	},
-	payout: { bank: '', accountNumber: '', accountName: '' },
+	payout: { bank: '', accountNumber: '' },
 	accessibility: {
 		appearance: 'dark',
 		reduceMotion: false,
@@ -96,7 +95,15 @@ const oldAccessibility = stored.accessibility;
 if (!('payout' in stored) || !stored.payout || typeof stored.payout.bank !== 'string') {
 	settings.value = {
 		...settings.value,
-		payout: { bank: '', accountNumber: '', accountName: '' }
+		payout: { bank: '', accountNumber: '' }
+	};
+} else if ('accountName' in stored.payout) {
+	// Accounts saved by an older build carried a looked-up name. That feature
+	// is gone, so drop the stale field and keep only what was entered.
+	const { bank, accountNumber } = stored.payout;
+	settings.value = {
+		...settings.value,
+		payout: { bank: bank ?? '', accountNumber: accountNumber ?? '' }
 	};
 }
 
