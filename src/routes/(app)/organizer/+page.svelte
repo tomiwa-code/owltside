@@ -44,6 +44,7 @@
 	import { page } from '$app/state';
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import { appSettings } from '$lib/state/settings.svelte';
+	import { maskAccountNumber, payoutAccountLabel } from '$lib/utils/payout';
 	import { useQuery } from '$lib/state/query.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { formatMoney } from '$lib/utils/money';
@@ -90,6 +91,10 @@
 
 	// ── desktop console state ──
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
+	// One source of truth: the payout account verified in Settings.
+	const payout = $derived(appSettings.value.payout);
+	const payoutLinked = $derived(appSettings.value.verification.payoutAccount && !!payout.bank);
+	const payoutDestination = $derived(payoutLinked ? payoutAccountLabel(payout) : '');
 	const isFullyVerified = $derived(!!page.data.session && Object.values(appSettings.value.verification).every(Boolean));
 	let deskPin = $state('');
 	let deskPinContext = $state<{ eventId: string; gate: string } | null>(null);
@@ -278,12 +283,12 @@
 			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col">
 				<div class="flex items-center justify-between gap-2">
 					<span class="{MONO} text-on-surface-variant">Available Payout</span>
-					<span class="{MONO} text-on-surface-variant">{#if appSettings.value.verification.payoutAccount && appSettings.value.payout.bank}{appSettings.value.payout.bank} ••{appSettings.value.payout.accountNumber.slice(-4)}{:else}—{/if}</span>
+					<span class="{MONO} text-on-surface-variant">{payoutLinked ? payoutAccountLabel(payout) : '—'}</span>
 				</div>
 				<span class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-4">{formatMoney(stats.payout)}</span>
 				<span class="text-body-sm text-on-surface-variant mt-1.5">Cleared settlement balance</span>
 				<div class="flex-1"></div>
-				<button class="w-full h-9 mt-4 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => toast('Payout of ' + formatMoney(stats.payout) + ' on its way', 'success')}>
+				<button class="w-full h-9 mt-4 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => payoutLinked ? toast(`Payout of ${formatMoney(stats.payout)} on its way to ${payoutDestination}`, 'success') : toast('Verify your payout account in Settings → Verification to receive payouts', 'info')}>
 					<Zap class="w-4 h-4 text-accent-amber" /><span>Request Instant Payout</span>
 				</button>
 			</section>
@@ -570,37 +575,37 @@
 			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
 				<div class="flex items-center justify-between">
 					<h2 class="font-display text-headline-md text-on-surface">Settlement Account</h2>
-					<span class="flex items-center gap-1.5 {MONO} {appSettings.value.verification.payoutAccount ? 'text-accent-emerald' : 'text-on-surface-variant'}"><ShieldCheck class="w-3.5 h-3.5 {appSettings.value.verification.payoutAccount ? 'text-accent-emerald' : 'text-outline-variant'}" /> {appSettings.value.verification.payoutAccount ? 'KYC Active' : 'Not verified'}</span>
+					<span class="flex items-center gap-1.5 {MONO} {payoutLinked ? 'text-accent-emerald' : 'text-on-surface-variant'}"><ShieldCheck class="w-3.5 h-3.5 {payoutLinked ? 'text-accent-emerald' : 'text-outline-variant'}" /> {payoutLinked ? 'KYC Active' : 'Not verified'}</span>
 				</div>
 				<div class="rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-4 mt-4">
-					{#if appSettings.value.verification.payoutAccount && appSettings.value.payout.bank}
+					{#if payoutLinked}
 					<div class="flex items-center justify-between gap-3">
-						<span class="font-display text-body-lg font-bold text-on-surface">{appSettings.value.payout.bank}</span>
+						<span class="font-display text-body-lg font-bold text-on-surface">{payout.bank}</span>
 						<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">NGN Default</span>
 					</div>
-					<span class="{MONO} text-on-surface-variant block mt-2">Account: ••••••{appSettings.value.payout.accountNumber.slice(-4) || '••••'} {#if appSettings.value.payout.accountName}<span class="text-on-surface">— {appSettings.value.payout.accountName}</span>{/if}</span>
+					<span class="{MONO} text-on-surface-variant block mt-2">Account: {maskAccountNumber(payout.accountNumber)} {#if payout.accountName}<span class="text-on-surface">— {payout.accountName}</span>{/if}</span>
 					{:else}
 					<div class="flex items-center justify-between gap-3">
-						<span class="font-display text-body-lg font-bold text-on-surface">{appSettings.value.payout.bank || 'No payout account linked'}</span>
+						<span class="font-display text-body-lg font-bold text-on-surface">{payout.bank || 'No payout account linked'}</span>
 						<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">NGN Default</span>
 					</div>
-					<span class="{MONO} text-on-surface-variant block mt-2">{appSettings.value.payout.accountNumber ? `Account: ••••••${appSettings.value.payout.accountNumber.slice(-4)}` : 'Account: —'}</span>
+					<span class="{MONO} text-on-surface-variant block mt-2">{payout.accountNumber ? `Account: ${maskAccountNumber(payout.accountNumber)}` : 'Account: —'}</span>
 					{/if}
 					<div class="flex flex-col gap-2 mt-4 pt-4 border-t border-surface-glass-border text-body-sm">
 						<div class="flex items-center justify-between gap-3">
 							<span class="text-on-surface-variant">Split Mechanism</span>
-							<span class="text-on-surface">{appSettings.value.verification.payoutAccount ? 'Paystack Split Active' : '—'}</span>
+							<span class="text-on-surface">{payoutLinked ? 'Paystack Split Active' : '—'}</span>
 						</div>
 						<div class="flex items-center justify-between gap-3">
 							<span class="text-on-surface-variant">Protocol Processing Fee</span>
-							<span class="text-on-surface">{appSettings.value.verification.payoutAccount ? '0.00% (Genesis Tier)' : '—'}</span>
+							<span class="text-on-surface">{payoutLinked ? '0.00% (Genesis Tier)' : '—'}</span>
 						</div>
 						<div class="flex items-center justify-between gap-3">
 							<span class="text-on-surface-variant">Next Automated Sweep</span>
-							<span class="text-on-surface">{appSettings.value.verification.payoutAccount ? 'Tonight at 23:59 WAT' : '—'}</span>
+							<span class="text-on-surface">{payoutLinked ? 'Tonight at 23:59 WAT' : '—'}</span>
 						</div>
 					</div>
-					{#if !appSettings.value.verification.payoutAccount || !appSettings.value.payout.bank}
+					{#if !payoutLinked}
 					<p class="text-xs text-on-surface-variant mt-3">Verify your payout account in Settings → Verification to enable settlements.</p>
 					{/if}
 				</div>
@@ -763,7 +768,7 @@
 						<span class="font-display text-headline-lg-mobile text-on-surface block tracking-tight">{formatMoney(stats?.payout ?? 0)}</span>
 						<span class="text-label-badge text-on-surface-variant block mt-1">Ready for transfer</span>
 					</div>
-					<button class="w-full h-8 mt-1 rounded-full bg-primary-fixed text-surface font-medium flex items-center justify-center gap-1 transition-all active:scale-95 shadow-sm" onclick={() => toast('Payout of ' + formatMoney(stats?.payout ?? 0) + ' on its way', 'success')}>
+					<button class="w-full h-8 mt-1 rounded-full bg-primary-fixed text-surface font-medium flex items-center justify-center gap-1 transition-all active:scale-95 shadow-sm" onclick={() => payoutLinked ? toast(`Payout of ${formatMoney(stats?.payout ?? 0)} on its way to ${payoutDestination}`, 'success') : toast('Verify your payout account in Settings → Verification to receive payouts', 'info')}>
 						<Send class="w-3.5 h-3.5" /><span class="text-label-badge font-semibold">Instant Payout</span>
 					</button>
 				</div>
@@ -852,15 +857,15 @@
 
 		<!-- Settlement Account - always visible, pulled from verified payout settings -->
 		<section class="flex flex-col gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
-			<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Settlement Account</h2><span class="inline-flex items-center gap-1 text-label-badge {appSettings.value.verification.payoutAccount ? 'text-accent-emerald' : 'text-on-surface-variant'}"><ShieldCheck class="w-3.5 h-3.5 {appSettings.value.verification.payoutAccount ? 'text-accent-emerald' : 'text-outline-variant'}" />{appSettings.value.verification.payoutAccount ? 'KYC active' : 'Not verified'}</span></div>
-			{#if appSettings.value.verification.payoutAccount && appSettings.value.payout.bank}
-				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3"><div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">{appSettings.value.payout.bank}</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div><span class="block font-code text-label-badge text-on-surface-variant pt-1">Account: ••••••{appSettings.value.payout.accountNumber.slice(-4) || '••••'} {#if appSettings.value.payout.accountName}<span class="text-on-surface">— {appSettings.value.payout.accountName}</span>{/if}</span><div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">Paystack Split Active</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Protocol processing fee</span><span class="text-on-surface">0.00% (Genesis Tier)</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">Tonight at 23:59 WAT</span></div></div></div>
+			<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Settlement Account</h2><span class="inline-flex items-center gap-1 text-label-badge {payoutLinked ? 'text-accent-emerald' : 'text-on-surface-variant'}"><ShieldCheck class="w-3.5 h-3.5 {payoutLinked ? 'text-accent-emerald' : 'text-outline-variant'}" />{payoutLinked ? 'KYC active' : 'Not verified'}</span></div>
+			{#if payoutLinked}
+				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3"><div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">{payout.bank}</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div><span class="block font-code text-label-badge text-on-surface-variant pt-1">Account: {maskAccountNumber(payout.accountNumber)} {#if payout.accountName}<span class="text-on-surface">— {payout.accountName}</span>{/if}</span><div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">Paystack Split Active</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Protocol processing fee</span><span class="text-on-surface">0.00% (Genesis Tier)</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">Tonight at 23:59 WAT</span></div></div></div>
 			{:else}
 				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3">
-					<div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">{appSettings.value.payout.bank || 'No payout account linked'}</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div>
-					<span class="block font-code text-label-badge text-on-surface-variant pt-1">{appSettings.value.payout.accountNumber ? `Account: ••••••${appSettings.value.payout.accountNumber.slice(-4)}` : 'Account: —'}</span>
-					{#if appSettings.value.payout.accountName}<span class="block text-body-sm text-on-surface pt-1">{appSettings.value.payout.accountName}</span>{/if}
-					<div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">{appSettings.value.verification.payoutAccount ? 'Paystack Split Active' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Protocol processing fee</span><span class="text-on-surface">{appSettings.value.verification.payoutAccount ? '0.00% (Genesis Tier)' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">{appSettings.value.verification.payoutAccount ? 'Tonight at 23:59 WAT' : '—'}</span></div></div>
+					<div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">{payout.bank || 'No payout account linked'}</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div>
+					<span class="block font-code text-label-badge text-on-surface-variant pt-1">{payout.accountNumber ? `Account: ${maskAccountNumber(payout.accountNumber)}` : 'Account: —'}</span>
+					{#if payout.accountName}<span class="block text-body-sm text-on-surface pt-1">{payout.accountName}</span>{/if}
+					<div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">{payoutLinked ? 'Paystack Split Active' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Protocol processing fee</span><span class="text-on-surface">{payoutLinked ? '0.00% (Genesis Tier)' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">{payoutLinked ? 'Tonight at 23:59 WAT' : '—'}</span></div></div>
 					<p class="text-xs text-on-surface-variant mt-3">Verify your payout account in Settings → Verification to enable settlements.</p>
 				</div>
 			{/if}
