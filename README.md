@@ -56,6 +56,8 @@ code paths switch to the live backend — no component changes.
      PIN from their own account (token resolution + staff check-in RPCs)
    - `020_event_promos.sql` — private event promo codes, buyer validation,
      discounted order totals, and atomic max-purchase redemption
+   - `021_participant_read_state.sql` — per-participant chat read state, so
+     opening a thread only clears the reader's own unread count
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 

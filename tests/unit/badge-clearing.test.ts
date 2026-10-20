@@ -115,6 +115,13 @@ describe('notification badge clears when the hub is opened', () => {
 
 describe('inbox badge clears when a chat screen is opened', () => {
 	it('publishes the read thread from the chat screen to the header cache', async () => {
+		const readPosts: string[] = [];
+		vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url.endsWith('/read')) readPosts.push(url);
+			return new Response('{"ok":true}');
+		}));
+
 		queryClient.set('conversations:mine', [conversation(2)]);
 		render(AppHeader);
 		expect(screen.getByRole('link', { name: 'Inbox, 2 unread' })).toBeInTheDocument();
@@ -131,13 +138,14 @@ describe('inbox badge clears when a chat screen is opened', () => {
 
 		await waitFor(() => expect(screen.getByRole('link', { name: 'Inbox' })).toBeInTheDocument());
 		expect(queryClient.get<Conversation[]>('conversations:mine')?.data).toEqual([conversation(0)]);
+		expect(readPosts).toEqual(['/api/conversations/c-1/read']);
 
-		// A background conversations poll re-applying the unread count while the
-		// chat stays open is neutralised too.
+		// Messages that arrive while the chat merely stays open keep their
+		// unread count: read state is decoupled from the mounted session.
 		queryClient.set('conversations:mine', [conversation(2)]);
-		await waitFor(() =>
-			expect(queryClient.get<Conversation[]>('conversations:mine')?.data[0].unread).toBe(0)
-		);
+		await tick();
+		expect(queryClient.get<Conversation[]>('conversations:mine')?.data[0].unread).toBe(2);
+		expect(readPosts).toEqual(['/api/conversations/c-1/read']);
 	});
 
 	it('persists the acknowledgement when the chat screen opens', async () => {
@@ -149,7 +157,7 @@ describe('inbox badge clears when a chat screen is opened', () => {
 			locals: { session: { userId: 'u-ada' } },
 			cookies
 		} as never);
-		expect(await response.json()).toEqual({ ok: true });
+		expect(await response.json()).toMatchObject({ ok: true });
 
 		const conversations = await demoSource.getConversations('u-ada');
 		expect(conversations.find((c) => c.id === 'c-amina')?.unread).toBe(0);

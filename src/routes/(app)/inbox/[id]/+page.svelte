@@ -47,43 +47,54 @@
 		data.conversations
 	);
 
-	// Opening the thread acknowledges it: clear this thread's unread count in the
-	// shared cache (AppHeader renders the same key) and persist the read state,
-	// so the red inbox badge drops immediately instead of waiting for the next
-	// poll. Every other chat keeps its own count.
-	//
-	// The navigation snapshot only seeds threads the cache has never seen —
-	// hover-prefetching can hand us a snapshot older than counts another chat
-	// already cleared, and that must not resurrect them. Keeping the write out
-	// of `load` means prefetching a thread never marks it read by itself.
-	$effect(() => {
-		if (!page.data.session) return;
-		const snapshot = data.conversations;
-		if (!snapshot?.length) return;
-		// Read the cache non-reactively: this effect must run once per navigation,
-		// not every time it publishes a list back into that cache.
+	// Read state is decoupled from the live session: a thread is acknowledged
+	// once, when the receiver actively opens it. Messages that arrive while the
+	// screen merely stays mounted keep their unread count (header and inbox row)
+	// until the receiver opens the thread again. Opening it in a background tab
+	// is not an active open either, so the acknowledgement waits until the tab
+	// becomes visible.
+	let acknowledgedThread: string | null = null;
+
+	function acknowledgeOpenThread() {
+		const id = conv.id;
+		if (acknowledgedThread === id) return;
+		acknowledgedThread = id;
+		// Merge the navigation snapshot into the cache (never resurrecting counts
+		// another chat already cleared), then clear this thread for the reader.
 		const cached = queryClient.get<Conversation[]>('conversations:mine')?.data ?? [];
 		const threads = new Map(cached.map((c) => [c.id, c]));
-		for (const c of snapshot) if (!threads.has(c.id)) threads.set(c.id, c);
-		queryClient.set(
-			'conversations:mine',
-			[...threads.values()].map((c) => (c.id === conv.id ? { ...c, unread: 0 } : c))
-		);
-		if (snapshot.some((c) => c.id === conv.id && c.unread > 0)) {
-			void fetch(`/api/conversations/${encodeURIComponent(conv.id)}/read`, { method: 'POST' }).catch(() => {});
-		}
-	});
-	// Keep the thread acknowledged while it stays open: a background poll can
-	// re-apply an unread count after a message arrives.
+		for (const c of data.conversations ?? []) if (!threads.has(c.id)) threads.set(c.id, c);
+		const opened = threads.get(id) ?? data.conversation;
+		// Either source can be the fresher one (the cache polls, this navigation
+		// may have been prefetched); acknowledge when either still sees unread.
+		if (Math.max(opened?.unread ?? 0, data.conversation?.unread ?? 0) <= 0) return;
+		threads.set(id, { ...(opened ?? data.conversation), unread: 0 });
+		queryClient.set('conversations:mine', [...threads.values()]);
+		void fetch(`/api/conversations/${encodeURIComponent(id)}/read`, { method: 'POST' })
+			.then(async (response) => {
+				if (!response.ok) return;
+				// Adopt the server's post-acknowledgement numbers; anything that
+				// arrived after the open stays unread.
+				const payload = await response.json().catch(() => null);
+				if (Array.isArray(payload?.conversations)) queryClient.set('conversations:mine', payload.conversations);
+			})
+			.catch(() => {});
+	}
+
 	$effect(() => {
 		if (!page.data.session) return;
-		const list = conversations.data;
-		if (!list?.some((c) => c.id === conv.id && c.unread > 0)) return;
-		queryClient.set(
-			'conversations:mine',
-			list.map((c) => (c.id === conv.id ? { ...c, unread: 0 } : c))
-		);
-		void fetch(`/api/conversations/${encodeURIComponent(conv.id)}/read`, { method: 'POST' }).catch(() => {});
+		const id = conv.id;
+		if (acknowledgedThread === id) return;
+		if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+			const onVisible = () => {
+				if (document.visibilityState !== 'visible') return;
+				document.removeEventListener('visibilitychange', onVisible);
+				acknowledgeOpenThread();
+			};
+			document.addEventListener('visibilitychange', onVisible);
+			return () => document.removeEventListener('visibilitychange', onVisible);
+		}
+		acknowledgeOpenThread();
 	});
 
 	let body = $state('');
