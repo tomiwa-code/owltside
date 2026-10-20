@@ -51,10 +51,16 @@
 	});
 	$effect(() => {
 		if (!page.data.session) return;
-		// Seed from the hub's own load as it opens (depends only on the page
-		// prop, so publishing to the cache cannot re-trigger this effect).
-		const acknowledged = data.items.map((n) => (n.read ? n : { ...n, read: true }));
-		queryClient.set('notifications:mine', acknowledged);
+		// Publish the acknowledged rows from this load as the hub opens. Merging
+		// by id keeps rows that arrived after the load/prefetch, so a stale
+		// snapshot can never roll back a newer stream. The cache is read
+		// non-reactively; publishing must not re-trigger this effect.
+		const acknowledged = new Map(data.items.map((n) => [n.id, n.read ? n : { ...n, read: true }]));
+		const cached = queryClient.get<NotificationItem[]>('notifications:mine')?.data ?? [];
+		const merged = cached.map((n) => acknowledged.get(n.id) ?? n);
+		const known = new Set(merged.map((n) => n.id));
+		for (const n of acknowledged.values()) if (!known.has(n.id)) merged.push(n);
+		queryClient.set('notifications:mine', merged);
 	});
 	$effect(() => {
 		// Keep already-seen rows acknowledged if a background poll re-applies
