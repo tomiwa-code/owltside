@@ -47,21 +47,29 @@
 		data.conversations
 	);
 
-	// Opening the thread acknowledges it. Adopt the thread list that came with
-	// this navigation, clear this thread's unread count in the shared cache
-	// (AppHeader renders the same key) and persist the read state, so the red
-	// inbox badge drops immediately instead of waiting for the next poll.
-	// Keeping the write out of `load` means hover-prefetching a thread never
-	// silently marks it read.
+	// Opening the thread acknowledges it: clear this thread's unread count in the
+	// shared cache (AppHeader renders the same key) and persist the read state,
+	// so the red inbox badge drops immediately instead of waiting for the next
+	// poll. Every other chat keeps its own count.
+	//
+	// The navigation snapshot only seeds threads the cache has never seen —
+	// hover-prefetching can hand us a snapshot older than counts another chat
+	// already cleared, and that must not resurrect them. Keeping the write out
+	// of `load` means prefetching a thread never marks it read by itself.
 	$effect(() => {
 		if (!page.data.session) return;
-		const fresh = data.conversations;
-		if (!fresh?.length) return;
+		const snapshot = data.conversations;
+		if (!snapshot?.length) return;
+		// Read the cache non-reactively: this effect must run once per navigation,
+		// not every time it publishes a list back into that cache.
+		const cached = queryClient.get<Conversation[]>('conversations:mine')?.data ?? [];
+		const threads = new Map(cached.map((c) => [c.id, c]));
+		for (const c of snapshot) if (!threads.has(c.id)) threads.set(c.id, c);
 		queryClient.set(
 			'conversations:mine',
-			fresh.map((c) => (c.id === conv.id ? { ...c, unread: 0 } : c))
+			[...threads.values()].map((c) => (c.id === conv.id ? { ...c, unread: 0 } : c))
 		);
-		if (fresh.some((c) => c.id === conv.id && c.unread > 0)) {
+		if (snapshot.some((c) => c.id === conv.id && c.unread > 0)) {
 			void fetch(`/api/conversations/${encodeURIComponent(conv.id)}/read`, { method: 'POST' }).catch(() => {});
 		}
 	});

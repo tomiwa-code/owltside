@@ -8,6 +8,7 @@
 	import Avatar from './Avatar.svelte';
 	import { peerIdentityLabel } from '$lib/constants/operating-identity';
 	import { fmtDate, fmtRelative, fmtTime } from '$lib/utils/dates';
+	import { UNREAD_BADGE_CLASS, formatCount } from '$lib/utils/badges';
 	import type { Conversation } from '$lib/types';
 
 	let { items, activeId }: { items: Conversation[]; activeId?: string } = $props();
@@ -86,6 +87,7 @@
 				role="link"
 				tabindex="0"
 				aria-current={c.id === activeId ? 'true' : undefined}
+				aria-label={c.unread > 0 ? `${c.peer.name}, ${formatCount(c.unread)} unread` : c.peer.name}
 				class="flex items-start gap-3 p-4 transition-colors border-l-2 cursor-pointer
 					{c.id === activeId
 						? 'border-l-primary bg-surface-container-high'
@@ -108,7 +110,13 @@
 						</span>
 						<span class="flex items-center gap-1.5 shrink-0">
 							<span class="font-code text-[11px] tracking-[0.08em] text-on-surface-variant">{timeLabel(c.lastAt)}</span>
-							{#if c.unread > 0}<span class="w-2 h-2 rounded-full bg-primary"></span>{/if}
+							{#if c.unread > 0}
+								<span
+									class={UNREAD_BADGE_CLASS}
+									aria-label="{formatCount(c.unread)} unread from {c.peer.name}"
+									title="{formatCount(c.unread)} unread"
+								>{formatCount(c.unread)}</span>
+							{/if}
 						</span>
 					</span>
 					<span class="flex items-center gap-2 pt-1 min-w-0">
@@ -116,7 +124,7 @@
 							{roleBadge(c)}
 						</span>
 					</span>
-					<span class="block text-body-sm text-on-surface-variant truncate pt-1.5">{c.lastMessage}</span>
+					<span class="block text-body-sm truncate pt-1.5 {c.unread > 0 ? 'text-on-surface font-medium' : 'text-on-surface-variant'}">{c.lastMessage}</span>
 				</div>
 			</div>
 		{:else}

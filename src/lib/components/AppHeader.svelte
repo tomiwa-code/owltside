@@ -5,6 +5,7 @@
 	import Avatar from './Avatar.svelte';
 	import { profileAppearance } from '$lib/state/profile.svelte';
 	import { queryClient, useQuery } from '$lib/state/query.svelte';
+	import { UNREAD_BADGE_CLASS, formatCount } from '$lib/utils/badges';
 	import type { Conversation, MessageRequest, NotificationItem } from '$lib/types';
 	let search = $state('');
 	const profile = $derived(page.data.currentProfile);
@@ -41,19 +42,25 @@
 		undefined
 	);
 
+	// A failed API call can resolve with an error object; never let that wipe a
+	// real count (or crash the header) — fall back to the SSR numbers instead.
+	const notifications = $derived(Array.isArray(notificationsQuery.data) ? notificationsQuery.data : undefined);
+	const conversations = $derived(Array.isArray(conversationsQuery.data) ? conversationsQuery.data : undefined);
+	const requests = $derived(Array.isArray(requestsQuery.data) ? requestsQuery.data : undefined);
+
 	const unreadCount = $derived(
-		notificationsQuery.data ? notificationsQuery.data.filter((n) => !n.read).length : (page.data.unread ?? 0)
+		notifications ? notifications.filter((n) => !n.read).length : (page.data.unread ?? 0)
 	);
+	// The inbox badge is the sum of every chat's own count plus pending message
+	// requests. Opening the inbox list changes nothing; only opening a chat (or
+	// answering a request) removes that item's share.
 	const inboxUnreadCount = $derived.by(() => {
-		if (conversationsQuery.data !== undefined || requestsQuery.data !== undefined) {
-			const convoUnread = (conversationsQuery.data ?? []).reduce((sum, c) => sum + (c.unread ?? 0), 0);
-			const reqCount = requestsQuery.data?.length ?? 0;
-			return convoUnread + reqCount;
+		if (conversations !== undefined || requests !== undefined) {
+			const convoUnread = (conversations ?? []).reduce((sum, c) => sum + (c.unread ?? 0), 0);
+			return convoUnread + (requests?.length ?? 0);
 		}
 		return page.data.inboxUnread ?? 0;
 	});
-
-	const formatBadge = (n: number) => (n > 99 ? '99+' : String(n));
 
 	/**
 	 * The notifications screen acknowledges everything as it opens, so clear the
@@ -61,7 +68,7 @@
 	 * flashing until the next poll/paint.
 	 */
 	function clearNotificationBadge() {
-		const items = notificationsQuery.data;
+		const items = notifications;
 		if (!items?.some((n) => !n.read)) return;
 		queryClient.set(
 			'notifications:mine',
@@ -91,22 +98,16 @@
 		<a href="/notifications" onclick={clearNotificationBadge} aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'} class="relative w-9 h-10 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors">
 			<Bell class="w-5 h-5" />
 			{#if unreadCount > 0}
-				<span
-					class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center leading-none border-2 border-surface pointer-events-none shadow-sm"
-					aria-hidden="true"
-				>
-					{formatBadge(unreadCount)}
+				<span class="absolute -top-1 -right-1 {UNREAD_BADGE_CLASS} border-2 border-surface pointer-events-none" aria-hidden="true">
+					{formatCount(unreadCount)}
 				</span>
 			{/if}
 		</a>
 		<a href="/inbox" aria-label={inboxUnreadCount > 0 ? `Inbox, ${inboxUnreadCount} unread` : 'Inbox'} class="relative w-9 h-10 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors">
 			<MessageSquare class="w-5 h-5" />
 			{#if inboxUnreadCount > 0}
-				<span
-					class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[11px] font-bold flex items-center justify-center leading-none border-2 border-surface pointer-events-none shadow-sm"
-					aria-hidden="true"
-				>
-					{formatBadge(inboxUnreadCount)}
+				<span class="absolute -top-1 -right-1 {UNREAD_BADGE_CLASS} border-2 border-surface pointer-events-none" aria-hidden="true">
+					{formatCount(inboxUnreadCount)}
 				</span>
 			{/if}
 		</a>

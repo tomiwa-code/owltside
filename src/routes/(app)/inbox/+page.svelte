@@ -10,6 +10,7 @@
 	import { queryClient, useQuery } from '$lib/state/query.svelte';
 	import { peerIdentityLabel } from '$lib/constants/operating-identity';
 	import { fmtRelative } from '$lib/utils/dates';
+	import { UNREAD_BADGE_CLASS, formatCount } from '$lib/utils/badges';
 	import { page } from '$app/state';
 	import type { Conversation, MessageRequest } from '$lib/types';
 
@@ -92,6 +93,9 @@
 				<span class="{MONO} text-on-surface-variant">Communication_Suite //</span>
 				<span class="font-display text-headline-lg text-on-surface">Direct Comms</span>
 				<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{(conversations.data ?? []).length} Sessions</span>
+				{#if unreadCount > 0}
+					<span class="{MONO} bg-red-600 text-white px-2 py-0.5 rounded" aria-label="{formatCount(unreadCount)} unread messages">{formatCount(unreadCount)} Unread</span>
+				{/if}
 			</span>
 			<div role="tablist" aria-label="Inbox sections" class="flex items-center gap-1 rounded-full border border-surface-glass-border bg-surface-container p-1">
 				<button type="button" role="tab" aria-selected={inboxView === 'messages'} onclick={() => (inboxView = 'messages')} class="h-9 px-3 rounded-full text-body-sm font-semibold {inboxView === 'messages' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}">Messages</button>
@@ -219,7 +223,11 @@
 						<span class="flex items-center justify-between gap-2">
 							<span class="text-body-sm truncate {conv.unread ? 'text-on-surface font-medium' : 'text-on-surface-variant'}">{conv.lastMessage}</span>
 							{#if conv.unread > 0}
-								<span class="min-w-5 h-5 px-1.5 rounded-full bg-primary text-on-primary text-[11px] font-bold flex items-center justify-center shrink-0">{conv.unread}</span>
+								<span
+									class="shrink-0 {UNREAD_BADGE_CLASS}"
+									aria-label="{formatCount(conv.unread)} unread from {conv.peer.name}"
+									title="{formatCount(conv.unread)} unread"
+								>{formatCount(conv.unread)}</span>
 							{/if}
 						</span>
 					</div>
