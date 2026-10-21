@@ -7,7 +7,6 @@
 		CheckCheck,
 		ChevronRight,
 		Coins,
-		CreditCard,
 		Database,
 		HelpCircle,
 		LockKeyhole,
@@ -155,11 +154,6 @@
 				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Security & Sessions</span><span class="block text-body-sm text-on-surface-variant truncate">Biometrics • 2FA • Active sessions</span></span>
 				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
 			</button>
-			<button type="button" onclick={() => (openCategory = 'payments')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
-				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><CreditCard class="w-5 h-5 text-primary" /></span>
-				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Saved Payment Methods</span><span class="block text-body-sm text-on-surface-variant truncate">Cards on this device • Default & removal</span></span>
-				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
-			</button>
 			<button type="button" onclick={() => (openCategory = 'accessibility')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
 				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Accessibility class="w-5 h-5 text-primary" /></span>
 				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Accessibility</span><span class="block text-body-sm text-on-surface-variant truncate">Appearance • Motion • Reading comfort • Page size</span></span>
@@ -281,11 +275,6 @@
 						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Security & Sessions</span><span class="block text-xs text-on-surface-variant truncate">Biometrics • 2FA</span></span>
 						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
 					</button>
-					<button type="button" onclick={() => (openCategory = 'payments')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
-						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><CreditCard class="w-5 h-5 text-primary" /></span>
-						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Saved Payment Methods</span><span class="block text-xs text-on-surface-variant truncate">Cards on this device</span></span>
-						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
-					</button>
 					<button type="button" onclick={() => (openCategory = 'accessibility')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
 						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Accessibility class="w-5 h-5 text-primary" /></span>
 						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Accessibility</span><span class="block text-xs text-on-surface-variant truncate">Appearance • Motion</span></span>
@@ -387,9 +376,6 @@
 	</Sheet>
 	<Sheet open={openCategory === 'securitySessions'} title="Security & Sessions" close={() => (openCategory = null)}>
 		<SettingsDetails category="security" />
-	</Sheet>
-	<Sheet open={openCategory === 'payments'} title="Saved Payment Methods" close={() => (openCategory = null)}>
-		<SettingsDetails category="payments" />
 	</Sheet>
 	<Sheet open={openCategory === 'accessibility'} title="Accessibility" close={() => (openCategory = null)}>
 		<SettingsDetails category="accessibility" />

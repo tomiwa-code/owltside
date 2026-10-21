@@ -5,7 +5,6 @@
 		Bell,
 		Building2,
 		CheckCheck,
-		CreditCard,
 		Database,
 		ExternalLink,
 		HelpCircle,
@@ -55,7 +54,6 @@
 		{ key: 'marketing', label: 'News and offers', description: 'Product news and occasional promotions' }
 	];
 
-	const paymentMethods = $derived(appSettings.value.payments.savedMethods);
 	const isFullyVerified = $derived(Object.values(appSettings.value.verification).every(Boolean));
 	const verifiedCount = $derived(Object.values(appSettings.value.verification).filter(Boolean).length);
 
@@ -260,17 +258,6 @@
 	}
 	function toggleStorage(key: StorageToggle) {
 		appSettings.value.storage[key] = !appSettings.value.storage[key];
-	}
-	function removePayment(id: string) {
-		appSettings.value.payments.savedMethods = appSettings.value.payments.savedMethods.filter((method) => method.id !== id);
-		toast('Saved payment method removed from this device', 'success');
-	}
-	function setDefaultPayment(id: string) {
-		appSettings.value.payments.savedMethods = appSettings.value.payments.savedMethods.map((method) => ({
-				...method,
-				isDefault: method.id === id
-			}));
-		toast('Default payment method updated', 'success');
 	}
 	function setAppearance(value: string) {
 		appSettings.value.accessibility.appearance = value as AppSettings['accessibility']['appearance'];
@@ -694,33 +681,6 @@
 				<span class="text-label-badge text-accent-emerald">Current</span>
 			</div>
 		</div>
-	</section>
-
-	{/if}
-	{#if !category || category === 'payments'}
-	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 md:p-6">
-		<div class="flex items-center justify-between gap-3 mb-4">
-			<div>
-				<h2 class="font-display text-headline-md text-on-surface">Saved payment methods</h2>
-				<p class="text-body-sm text-on-surface-variant mt-1">Manage cards used for faster checkout.</p>
-			</div>
-			<CreditCard class="w-5 h-5 text-primary shrink-0" />
-		</div>
-		{#if paymentMethods.length}
-			<div class="flex flex-col gap-2">
-				{#each paymentMethods as method (method.id)}
-					<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3">
-						<CreditCard class="w-4 h-4 text-on-surface-variant shrink-0" />
-						<span class="flex-1 text-body-sm font-semibold text-on-surface">{method.brand} •••• {method.last4}</span>
-						{#if method.isDefault}<span class="text-label-badge text-accent-emerald">Default</span>{:else}<button type="button" class="text-label-badge text-primary hover:underline" onclick={() => setDefaultPayment(method.id)}>Make default</button>{/if}
-						<button type="button" aria-label="Remove {method.brand} ending {method.last4}" class="w-8 h-8 flex items-center justify-center text-on-surface-variant hover:text-error" onclick={() => removePayment(method.id)}><Trash2 class="w-4 h-4" /></button>
-					</div>
-				{/each}
-			</div>
-		{:else}
-			<p class="text-body-sm text-on-surface-variant rounded-lg bg-surface-container-high/50 p-3">No payment methods are saved on this device.</p>
-		{/if}
-		<button type="button" class="mt-3 h-10 px-4 rounded-lg border border-surface-glass-border text-body-sm text-primary hover:bg-surface-container-high" onclick={() => toast('Add a payment method securely during checkout.', 'info')}>Add a payment method</button>
 	</section>
 
 	{/if}
