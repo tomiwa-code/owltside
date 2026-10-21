@@ -36,6 +36,7 @@ function buildSession(
 
 export const actions: Actions = {
 	credentials: async ({ request, cookies, getClientAddress, url }) => {
+		const https = request.headers.get('x-forwarded-proto') === 'https' || url.protocol === 'https:';
 		const form = await request.formData();
 		const email = String(form.get('email') ?? '').trim();
 		const password = String(form.get('password') ?? '');
@@ -49,18 +50,19 @@ export const actions: Actions = {
 			return fail(result.status ?? 401, { error: result.error ?? 'Sign in failed.', email });
 		}
 
-		writeSessionCookie(cookies, buildSession(result.session, result.expiresAt));
+		writeSessionCookie(cookies, buildSession(result.session, result.expiresAt), { https });
 		redirect(303, safeNext(url.searchParams.get('next')));
 	},
 
-	hardware: async ({ cookies, getClientAddress, url }) => {
+	hardware: async ({ request, cookies, getClientAddress, url }) => {
+		const https = request.headers.get('x-forwarded-proto') === 'https' || url.protocol === 'https:';
 		if (!isDemoMode()) {
 			return fail(400, {
 				error: 'Hardware-key sign-in requires a registered WebAuthn credential for this deployment.'
 			});
 		}
 		const { session, expiresAt } = authenticateWithKey(true, getClientAddress());
-		writeSessionCookie(cookies, buildSession(session, expiresAt));
+		writeSessionCookie(cookies, buildSession(session, expiresAt), { https });
 		redirect(303, safeNext(url.searchParams.get('next')));
 	}
 };

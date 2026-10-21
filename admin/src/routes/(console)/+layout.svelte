@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import Sidebar from '$components/Sidebar.svelte';
 	import TopBar from '$components/TopBar.svelte';
@@ -7,6 +8,12 @@
 
 	let { children, data }: { children: Snippet; data: { admin: AdminSession | null; counts: { pendingEvents: number; refunds: number; moderation: number }; serverTime: string; publicAppUrl: string } } =
 		$props();
+
+	onMount(() => {
+		// Reaching the console means the session cookie stuck — clear the marker the
+		// login screen uses to detect an embedded-preview cookie block.
+		sessionStorage.removeItem('owl-admin-login-attempt');
+	});
 </script>
 
 {#if data.admin}

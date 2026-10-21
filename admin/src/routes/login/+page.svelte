@@ -1,11 +1,73 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { applyAction } from '$app/forms';
+	import { onMount } from 'svelte';
 	import { ArrowRight, Eye, EyeOff, Fingerprint, Lock, Mail, ShieldAlert } from '@lucide/svelte';
 
 	let { data, form } = $props();
 
 	let showPassword = $state(false);
 	let busy = $state<'credentials' | 'hardware' | null>(null);
+	let error = $state<string | null>(null);
+	let blockedHint = $state(false);
+
+	const shownError = $derived(error ?? form?.error ?? null);
+
+	const ATTEMPT_KEY = 'owl-admin-login-attempt';
+
+	onMount(() => {
+		// If we land back on /login right after a sign-in attempt, the session
+		// cookie never stuck (third-party cookie blocking in an embedded preview)
+		// or the action was rejected. Say so instead of silently doing nothing.
+		const attemptedAt = Number(sessionStorage.getItem(ATTEMPT_KEY) ?? 0);
+		if (attemptedAt && Date.now() - attemptedAt < 45_000) {
+			blockedHint = true;
+			sessionStorage.removeItem(ATTEMPT_KEY);
+		}
+	});
+
+	/**
+	 * Submit through the action endpoint ourselves, then navigate with a full
+	 * page load. `use:enhance` routes the redirect through the client router,
+	 * which fails silently (and leaves the button disabled) if anything in the
+	 * chain hiccups. Without JS the form still posts natively.
+	 */
+	async function submit(event: SubmitEvent, kind: 'credentials' | 'hardware') {
+		const element = event.currentTarget as HTMLFormElement;
+		if (!element.reportValidity()) return;
+		event.preventDefault();
+		if (busy) return;
+		busy = kind;
+		error = null;
+		try {
+			const response = await fetch(element.action, {
+				method: 'POST',
+				body: new FormData(element),
+				headers: { accept: 'application/json', 'x-sveltekit-action': 'true' },
+				credentials: 'same-origin',
+				cache: 'no-store'
+			});
+			const payload = await response.json().catch(() => null);
+			if (payload?.type === 'redirect') {
+				sessionStorage.setItem(ATTEMPT_KEY, String(Date.now()));
+				// Full page load: the session must be re-read by the server, and it
+				// keeps working even if the client router is in a bad state.
+				window.location.assign(payload.location ?? data.next ?? '/dashboard');
+				return;
+			}
+			// Failures and errors are devalue-encoded; applyAction renders them into
+			// `form`, which the banner above already displays.
+			if (payload?.type === 'failure' || payload?.type === 'error') {
+				await applyAction(payload);
+				error = null;
+				return;
+			}
+			error = `Sign in failed (HTTP ${response.status}). Retry, or contact the security team.`;
+		} catch {
+			error = 'Could not reach the control plane. Check your connection and try again.';
+		} finally {
+			busy = null;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -50,10 +112,21 @@
 					operations.
 				</p>
 
-				{#if form?.error}
-					<div class="mt-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/[0.08] px-3 py-2.5 text-[11.5px] leading-snug text-red-200">
+				{#if shownError}
+					<div class="mt-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/[0.08] px-3 py-2.5 text-[11.5px] leading-snug text-red-200" role="alert">
 						<ShieldAlert size={14} class="mt-0.5 shrink-0" />
-						<span>{form.error}</span>
+						<span>{shownError}</span>
+					</div>
+				{/if}
+
+				{#if blockedHint}
+					<div class="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2.5 text-[11.5px] leading-snug text-amber-100" role="alert">
+						<ShieldAlert size={14} class="mt-0.5 shrink-0" />
+						<span>
+							The session cookie was not stored — this usually means the console is loading inside an
+							embedded frame that blocks third-party cookies. Open the preview in its own browser tab and
+							sign in there.
+						</span>
 					</div>
 				{/if}
 
@@ -61,13 +134,7 @@
 					method="POST"
 					action="?/credentials"
 					class="mt-6 space-y-4"
-					use:enhance={() => {
-						busy = 'credentials';
-						return async ({ update }) => {
-							await update();
-							busy = null;
-						};
-					}}
+					onsubmit={(event) => submit(event, 'credentials')}
 				>
 					<div>
 						<label class="field-label" for="email">
@@ -144,13 +211,7 @@
 					method="POST"
 					action="?/hardware"
 					class="mt-2.5"
-					use:enhance={() => {
-						busy = 'hardware';
-						return async ({ update }) => {
-							await update();
-							busy = null;
-						};
-					}}
+					onsubmit={(event) => submit(event, 'hardware')}
 				>
 					<button
 						type="submit"

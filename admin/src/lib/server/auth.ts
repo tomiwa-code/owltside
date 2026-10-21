@@ -200,12 +200,24 @@ export function verifySession(token: string | undefined): AdminSession | null {
 	}
 }
 
-export function writeSessionCookie(cookies: Cookies, session: AdminSession): void {
+export function writeSessionCookie(
+	cookies: Cookies,
+	session: AdminSession,
+	options: { https?: boolean } = {}
+): void {
+	const production = process.env.NODE_ENV === 'production';
+	const https = production || options.https === true;
+	// Production is a strict, first-party admin console. Dev servers are often
+	// viewed inside an embedded HTTPS preview iframe, where SameSite=Strict (and
+	// unpartitioned) cookies are dropped as third-party — a partitioned cookie
+	// keeps the session scoped to that top-level site without relaxing prod.
+	const embeddedPreview = https && !production;
 	cookies.set(SESSION_COOKIE, signSession(session), {
 		path: '/',
 		httpOnly: true,
-		sameSite: 'strict',
-		secure: process.env.NODE_ENV === 'production',
+		sameSite: embeddedPreview ? 'none' : production ? 'strict' : 'lax',
+		secure: https,
+		partitioned: embeddedPreview,
 		maxAge: Math.max(60, Math.floor((new Date(session.expiresAt).getTime() - Date.now()) / 1000))
 	});
 }
