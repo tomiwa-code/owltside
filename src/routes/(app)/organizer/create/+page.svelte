@@ -1982,7 +1982,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 						<span class="absolute top-2 left-2 px-2 py-1 rounded bg-surface-base/85 text-label-badge text-on-surface">GPS: 6.4253° N, 3.4219° E</span>
 						<span class="absolute top-2 right-2 px-2 py-1 rounded bg-surface-base/85 text-label-badge text-accent-emerald">Live radar locked</span>
 					</div>
-					<div class="p-3 flex items-center justify-between gap-2"><span class="min-w-0"><span class="block text-label-badge text-on-surface-variant">Physical venue &amp; coordinates</span><span class="block text-body-sm text-on-surface truncate pt-1">{venue || 'Venue TBA'}, Water Corporation Dr · {city}</span></span><button type="button" class="text-label-badge text-primary font-semibold shrink-0" onclick={() => toast('Coordinate calibration locked to venue node', 'info')}>Calibrate</button></div>
+					<div class="p-3 flex items-center justify-between gap-2"><span class="min-w-0"><span class="block text-label-badge text-on-surface-variant">Physical venue &amp; coordinates</span><span class="block text-body-sm text-on-surface truncate pt-1">{venue || 'Venue TBA'} · {city}</span></span><button type="button" class="text-label-badge text-primary font-semibold shrink-0" onclick={() => toast('Coordinate calibration locked to venue node', 'info')}>Calibrate</button></div>
 				</div>
 				<div class="rounded-xl bg-surface-container border border-surface-glass-border overflow-hidden">
 					{#if coverUrl}

@@ -5,7 +5,6 @@
 		Bell,
 		Building2,
 		CheckCheck,
-		CreditCard,
 		Database,
 		ExternalLink,
 		HelpCircle,
@@ -19,8 +18,7 @@
 		UserRound,
 		Wallet,
 		Phone,
-		Upload,
-		Camera
+		Upload
 	} from '@lucide/svelte';
 	import { onDestroy } from 'svelte';
 	import { appSettings, type AppSettings } from '$lib/state/settings.svelte';
@@ -56,7 +54,6 @@
 		{ key: 'marketing', label: 'News and offers', description: 'Product news and occasional promotions' }
 	];
 
-	const paymentMethods = $derived(appSettings.value.payments.savedMethods);
 	const isFullyVerified = $derived(Object.values(appSettings.value.verification).every(Boolean));
 	const verifiedCount = $derived(Object.values(appSettings.value.verification).filter(Boolean).length);
 
@@ -68,7 +65,7 @@
 	let phoneGenerated = $state('123456');
 	let phoneError = $state('');
 	let identityOpen = $state(false);
-	let identityStep = $state<1 | 2 | 3>(1);
+	let identityStep = $state<1 | 2>(1);
 	let identityDoc = $state<'NIN' | 'International Passport' | "Driver's License" | "Permanent Voter's Card (PVC)" | 'BVN'>('NIN');
 	let identityName = $state('');
 	let identityDob = $state('');
@@ -77,7 +74,6 @@
 	let identityBack = $state<{ name: string; preview: string | null } | null>(null);
 	let cropSide = $state<'front' | 'back' | null>(null);
 	let cropFile = $state<File | null>(null);
-	let identitySelfieDone = $state(false);
 	let identityError = $state('');
 	let payoutOpen = $state(false);
 	let payoutBank = $state('');
@@ -170,40 +166,33 @@
 	}
 	function nextIdentity() {
 		identityError = '';
-		if (identityStep === 1) {
-			if (!identityName.trim() || !identityDob) {
-				identityError = 'Enter legal name and date of birth exactly as on your ID.';
-				return;
-			}
-			if (!identityNumber.trim()) {
-				identityError = 'Enter your ID number (e.g. 11-digit NIN or BVN).';
-				return;
-			}
-			if (identityDoc === 'NIN' && !/^\d{11}$/.test(identityNumber.replace(/\s/g, ''))) {
-				identityError = 'NIN must be 11 digits.';
-				return;
-			}
-			if (identityDoc === 'BVN' && !/^\d{11}$/.test(identityNumber.replace(/\s/g, ''))) {
-				identityError = 'BVN must be 11 digits.';
-				return;
-			}
-			identityStep = 2;
-		} else if (identityStep === 2) {
-			if (!identityFront) {
-				identityError = 'Upload a clear photo/scan of your ID (front).';
-				return;
-			}
-			identityStep = 3;
+		if (!identityName.trim() || !identityDob) {
+			identityError = 'Enter legal name and date of birth exactly as on your ID.';
+			return;
 		}
+		if (!identityNumber.trim()) {
+			identityError = 'Enter your ID number (e.g. 11-digit NIN or BVN).';
+			return;
+		}
+		if (identityDoc === 'NIN' && !/^\d{11}$/.test(identityNumber.replace(/\s/g, ''))) {
+			identityError = 'NIN must be 11 digits.';
+			return;
+		}
+		if (identityDoc === 'BVN' && !/^\d{11}$/.test(identityNumber.replace(/\s/g, ''))) {
+			identityError = 'BVN must be 11 digits.';
+			return;
+		}
+		identityStep = 2;
 	}
 	function submitIdentity() {
-		if (!identitySelfieDone) {
-			identityError = 'Complete the liveness check (take a selfie).';
+		identityError = '';
+		if (!identityFront) {
+			identityError = 'Upload a clear photo/scan of your ID (front).';
 			return;
 		}
 		appSettings.value.verification.identity = true;
 		identityOpen = false;
-		toast('Identity verified — liveness check passed', 'success');
+		toast('Identity verified', 'success');
 	}
 
 	function openPayout() {
@@ -269,17 +258,6 @@
 	}
 	function toggleStorage(key: StorageToggle) {
 		appSettings.value.storage[key] = !appSettings.value.storage[key];
-	}
-	function removePayment(id: string) {
-		appSettings.value.payments.savedMethods = appSettings.value.payments.savedMethods.filter((method) => method.id !== id);
-		toast('Saved payment method removed from this device', 'success');
-	}
-	function setDefaultPayment(id: string) {
-		appSettings.value.payments.savedMethods = appSettings.value.payments.savedMethods.map((method) => ({
-				...method,
-				isDefault: method.id === id
-			}));
-		toast('Default payment method updated', 'success');
 	}
 	function setAppearance(value: string) {
 		appSettings.value.accessibility.appearance = value as AppSettings['accessibility']['appearance'];
@@ -469,8 +447,6 @@
 				<span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border {identityStep >=1 ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container-high text-on-surface-variant border-surface-glass-border'}">1</span>
 				<span class="h-px flex-1 bg-surface-glass-border"></span>
 				<span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border {identityStep >=2 ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container-high text-on-surface-variant border-surface-glass-border'}">2</span>
-				<span class="h-px flex-1 bg-surface-glass-border"></span>
-				<span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border {identityStep >=3 ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container-high text-on-surface-variant border-surface-glass-border'}">3</span>
 			</div>
 
 			{#if identityStep === 1}
@@ -526,23 +502,6 @@
 					{#if identityError}<p class="text-body-sm text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">{identityError}</p>{/if}
 					<div class="grid grid-cols-2 gap-2">
 						<button type="button" class="h-11 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface font-semibold" onclick={() => (identityStep = 1)}>Back</button>
-						<button type="button" class="h-11 rounded-full bg-primary text-on-primary font-semibold" onclick={nextIdentity}>Continue to liveness</button>
-					</div>
-				</div>
-			{:else}
-				<div class="flex flex-col gap-3">
-					<div class="rounded-lg bg-surface-container-high/40 border border-surface-glass-border p-4 flex flex-col items-center gap-3">
-						<Camera class="w-8 h-8 text-primary" />
-						<p class="text-body-sm font-semibold text-on-surface">Facial Verification / Liveness Check</p>
-						<p class="text-body-sm text-on-surface-variant text-center">Take a quick selfie — you may be asked to smile, blink, or turn your head to ensure your face matches the ID document.</p>
-						{#if identitySelfieDone}
-							<span class="text-label-badge px-3 py-1 rounded-full bg-accent-emerald/10 text-accent-emerald border border-accent-emerald/20">Selfie captured</span>
-						{/if}
-						<button type="button" class="h-10 px-6 rounded-full {identitySelfieDone ? 'bg-surface-container-high border border-surface-glass-border text-on-surface' : 'bg-primary text-on-primary'} font-semibold" onclick={() => { identitySelfieDone = true; toast('Liveness scan captured (demo)', 'success'); }}>{identitySelfieDone ? 'Retake selfie' : 'Take selfie'}</button>
-					</div>
-					{#if identityError}<p class="text-body-sm text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">{identityError}</p>{/if}
-					<div class="grid grid-cols-2 gap-2">
-						<button type="button" class="h-11 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface font-semibold" onclick={() => (identityStep = 2)}>Back</button>
 						<button type="button" class="h-11 rounded-full bg-primary text-on-primary font-semibold" onclick={submitIdentity}>Submit for verification</button>
 					</div>
 				</div>
@@ -722,33 +681,6 @@
 				<span class="text-label-badge text-accent-emerald">Current</span>
 			</div>
 		</div>
-	</section>
-
-	{/if}
-	{#if !category || category === 'payments'}
-	<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 md:p-6">
-		<div class="flex items-center justify-between gap-3 mb-4">
-			<div>
-				<h2 class="font-display text-headline-md text-on-surface">Saved payment methods</h2>
-				<p class="text-body-sm text-on-surface-variant mt-1">Manage cards used for faster checkout.</p>
-			</div>
-			<CreditCard class="w-5 h-5 text-primary shrink-0" />
-		</div>
-		{#if paymentMethods.length}
-			<div class="flex flex-col gap-2">
-				{#each paymentMethods as method (method.id)}
-					<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3">
-						<CreditCard class="w-4 h-4 text-on-surface-variant shrink-0" />
-						<span class="flex-1 text-body-sm font-semibold text-on-surface">{method.brand} •••• {method.last4}</span>
-						{#if method.isDefault}<span class="text-label-badge text-accent-emerald">Default</span>{:else}<button type="button" class="text-label-badge text-primary hover:underline" onclick={() => setDefaultPayment(method.id)}>Make default</button>{/if}
-						<button type="button" aria-label="Remove {method.brand} ending {method.last4}" class="w-8 h-8 flex items-center justify-center text-on-surface-variant hover:text-error" onclick={() => removePayment(method.id)}><Trash2 class="w-4 h-4" /></button>
-					</div>
-				{/each}
-			</div>
-		{:else}
-			<p class="text-body-sm text-on-surface-variant rounded-lg bg-surface-container-high/50 p-3">No payment methods are saved on this device.</p>
-		{/if}
-		<button type="button" class="mt-3 h-10 px-4 rounded-lg border border-surface-glass-border text-body-sm text-primary hover:bg-surface-container-high" onclick={() => toast('Add a payment method securely during checkout.', 'info')}>Add a payment method</button>
 	</section>
 
 	{/if}

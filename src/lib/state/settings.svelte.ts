@@ -33,9 +33,6 @@ export interface AppSettings {
 		biometricLogin: boolean;
 		twoFactor: boolean;
 	};
-	payments: {
-		savedMethods: Array<{ id: string; brand: string; last4: string; isDefault: boolean }>;
-	};
 	payout: {
 		bank: string;
 		accountNumber: string;
@@ -69,12 +66,6 @@ const defaults: AppSettings = {
 	privacy: { privateProfile: false, showAttendedEvents: true, personalizedAds: false },
 	cookies: { analytics: false, personalization: false },
 	security: { biometricLogin: false, twoFactor: true },
-	payments: {
-		savedMethods: [
-			{ id: 'visa-4821', brand: 'Visa', last4: '4821', isDefault: true },
-			{ id: 'verve-1906', brand: 'Verve', last4: '1906', isDefault: false }
-		]
-	},
 	payout: { bank: '', accountNumber: '' },
 	accessibility: {
 		appearance: 'dark',
@@ -91,6 +82,9 @@ const settings = persisted<AppSettings>('owltside.settings.v1', defaults);
 const stored = settings.value as AppSettings & {
 	accessibility?: AppSettings['accessibility'] & { textSize?: string; largerText?: boolean };
 };
+// Saved payment methods were removed from settings. Older builds persisted
+// them, so drop the stale key before any migration spreads `stored` back in.
+delete (stored as unknown as Record<string, unknown>).payments;
 const oldAccessibility = stored.accessibility;
 if (!('payout' in stored) || !stored.payout || typeof stored.payout.bank !== 'string') {
 	settings.value = {
