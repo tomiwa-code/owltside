@@ -255,3 +255,21 @@ Same-host returns to `/` are recovered if Supabase falls back to Site URL, but t
 cannot repair a callback sent to a different host (where the verifier cookie is absent).
 Never share callback codes, access/refresh tokens, provider secrets, or cookie values
 when reporting a login error; share only the host, failing step, and visible error text.
+
+## Admin control plane
+
+The internal admin workspace lives in its own app at [`admin/`](admin/README.md)
+(port 5174, separate deployment). It covers event moderation, KYB/Paystack
+subaccounts, the user directory, HMAC pass inspection, the order/refund ledger,
+gate check-in operations, settlements, moderation, the immutable audit trail,
+staff access control and platform settings.
+
+```bash
+cd admin
+npm install
+npm run dev      # http://localhost:5174 — demo admin@owltside.com / owltside-admin-2026
+```
+
+The public app links to it from the desktop footer via `PUBLIC_ADMIN_URL`
+(default `http://localhost:5174`), and the admin sidebar links back via
+`PUBLIC_APP_URL`.

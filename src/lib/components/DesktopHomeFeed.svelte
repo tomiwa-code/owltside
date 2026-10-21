@@ -30,6 +30,7 @@
 	import { categories } from './iconMap';
 	import { bookmarks, currency, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
+	import { env as publicEnv } from '$env/dynamic/public';
 	import { fmtDate, fmtTime, fmtDateFull } from '$lib/utils/dates';
 	import { formatMoney } from '$lib/utils/money';
 	import type { CategoryId, EventItem } from '$lib/types';
@@ -37,6 +38,8 @@
 	let { events }: { events: EventItem[] } = $props();
 
 	const WRAP = 'mx-auto w-full max-w-[1400px] px-6 xl:px-10';
+	/** Internal control plane — operators only; exposed as a discreet footer link. */
+	const adminUrl = publicEnv.PUBLIC_ADMIN_URL || 'http://localhost:5174';
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
 	/* ── feed state ─────────────────────────────────────────────────────── */
@@ -414,6 +417,16 @@
 				<span class="{MONO} text-on-surface-variant">Event Ticketing Architecture</span>
 			</div>
 			<div class="flex items-center gap-5">
+				<a
+					href={adminUrl}
+					class="flex items-center gap-1 {MONO} text-on-surface-variant transition-colors hover:text-primary"
+					rel="noreferrer"
+					target="_blank"
+					title="Owltside Admin — internal control plane"
+				>
+					Admin Console
+					<ArrowUpRight size={11} />
+				</a>
 				<span class="flex items-center gap-1.5 {MONO} text-on-surface-variant">
 					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
 					System Status: 99.98% Optimal
