@@ -337,7 +337,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 				</div>
 				<div class="px-5 py-3 border-t border-surface-glass-border">
 					<span class="{MONO} text-on-surface-variant block">Primary Campus</span>
-					<span class="text-body-sm text-on-surface block pt-0.5">{event.venue}, Water Corporation Dr, Oniru, {event.city}</span>
+					<span class="text-body-sm text-on-surface block pt-0.5">{event.venue}, {event.city}</span>
 				</div>
 			</div>
 
