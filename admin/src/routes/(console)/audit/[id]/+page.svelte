@@ -55,7 +55,7 @@
 		<div class="panel p-3.5">
 			<p class="mono-label !text-[7.5px]">Integrity</p>
 			<p class="mt-1 flex items-center gap-1.5 text-[11px] text-emerald-300"><ShieldCheck size={11} /> Verified signature</p>
-			<p class="font-code text-[8px] text-[#5d5d69]">HMAC-SHA256 · node 01</p>
+			<p class="font-code text-[8px] text-[#5d5d69]">SHA-256 · node 01</p>
 		</div>
 	</div>
 

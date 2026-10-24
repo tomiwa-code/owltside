@@ -46,7 +46,7 @@
 
 <div class="flex flex-col items-center">
 	{#if dataUrl}
-		<img src={dataUrl} alt="Rotating HMAC ticket QR code" class="rounded-md border border-[#2a2a32]" style={`width:${size}px;height:${size}px`} />
+		<img src={dataUrl} alt="Attendee pass QR code" class="rounded-md border border-[#2a2a32]" style={`width:${size}px;height:${size}px`} />
 	{:else}
 		<svg viewBox="0 0 {modules} {modules}" width={size} height={size} class="rounded-md border border-[#2a2a32] bg-white p-1.5" role="img" aria-label="Ticket QR preview">
 			<rect width={modules} height={modules} fill="#ffffff" />
@@ -61,6 +61,6 @@
 		</svg>
 	{/if}
 	<p class="mt-2 font-code text-[7.5px] uppercase tracking-[0.16em] text-[#6f6f7b]">
-		Rotates every 30s · HMAC-SHA256
+		Signed pass · Owltside
 	</p>
 </div>

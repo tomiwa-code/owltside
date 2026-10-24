@@ -52,8 +52,6 @@ export function organizerStatus(status: string): StatusMeta {
 
 export function ticketStatus(status: string): StatusMeta {
 	switch (status) {
-		case 'checked_in':
-			return { label: 'Checked in', tone: 'ok' };
 		case 'valid':
 			return { label: 'Valid · unused', tone: 'accent' };
 		case 'void':

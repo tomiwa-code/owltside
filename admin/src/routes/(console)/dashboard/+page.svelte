@@ -30,10 +30,7 @@
 	const grossSeries = $derived(d.series.map((point) => point.grossNgn));
 	const range = $derived(`${shortDate(d.series[0].day)} – ${shortDate(d.series[d.series.length - 1].day)}, ${new Date(d.series[d.series.length - 1].day).getFullYear()}`);
 	const totalPasses = $derived(d.series.reduce((sum, point) => sum + point.passes, 0));
-	const scanRate = $derived.by(() => {
-		const venueTotal = d.venueTelemetry.reduce((sum, venue) => sum + venue.checkedIn, 0);
-		return venueTotal;
-	});
+	const ledgerShare = $derived.by(() => (d.passes ? (d.activePasses / d.passes) * 100 : 0));
 
 	let refreshing = $state(false);
 	async function refresh() {
@@ -105,7 +102,7 @@
 			delta="+8.3%"
 			sub="Capacity 99.2% filled"
 			progress={99.2}
-			footnote="hmac-sha256 · rotating"
+			footnote="signed passes · wallet-ready"
 		/>
 		<KpiCard label="Live & active" value={String(d.liveEvents)} sub="Events active">
 			<div class="grid grid-cols-2 gap-2 border-t border-[#292930] pt-2.5">
@@ -120,12 +117,12 @@
 			</div>
 		</KpiCard>
 		<KpiCard
-			label="Gate scans"
-			value={num(d.ticketsScanned)}
-			sub={`${d.scanSuccessRate}% HMAC verified`}
-			progress={78}
+			label="Active passes"
+			value={num(d.activePasses)}
+			sub={`${pct(ledgerShare, 1)} of the ledger`}
+			progress={ledgerShare}
 			progressTone="accent"
-			footnote={`${num(scanRate)} live venue scans`}
+			footnote="valid · not yet redeemed"
 		/>
 		<KpiCard
 			label="Queue attention"
@@ -293,50 +290,41 @@
 			<div class="panel-head">
 				<div class="flex items-center gap-2">
 					<span class="status-dot"></span>
-					<h2 class="font-display text-[15px] font-semibold text-[#f0f0f5]">Active Venue Telemetry</h2>
+					<h2 class="font-display text-[15px] font-semibold text-[#f0f0f5]">Top Performing Events</h2>
 				</div>
-				<span class="chip !text-[8px]">Live</span>
+				<span class="chip !text-[8px]">By tickets sold</span>
 			</div>
 			<div class="flex-1 space-y-2 px-3 py-3">
-				{#each d.venueTelemetry as venue}
-					<div class="panel-inset p-3">
+				{#each d.topEvents as item}
+					<a href={`/events/${item.id}`} class="panel-inset block p-3 transition hover:border-[#3a3a46]">
 						<div class="flex items-start justify-between gap-2">
-							<div>
-								<p class="text-[11.5px] font-medium text-[#e6e6ec]">{venue.venue}</p>
-								<p class="mt-0.5 font-code text-[8.5px] uppercase tracking-[0.08em] text-[#6f6f7b]">
-									{venue.gate} · {venue.scanners} scanners
+							<div class="min-w-0">
+								<p class="truncate text-[11.5px] font-medium text-[#e6e6ec]">{item.title}</p>
+								<p class="mt-0.5 flex items-center gap-1 font-code text-[8.5px] uppercase tracking-[0.08em] text-[#6f6f7b]">
+									<MapPin size={9} /> {item.venue}
 								</p>
 							</div>
-							<span class="chip chip-ok !text-[8px]">Online</span>
+							<span class="chip chip-ok !text-[8px]">{moneyCompact(item.grossNgn)}</span>
 						</div>
 						<div class="mt-2.5 flex items-center justify-between font-code text-[9px] text-[#9c9ca8]">
-							<span>{num(venue.checkedIn)} / {num(venue.capacity)}</span>
-							<span>{pct((venue.checkedIn / venue.capacity) * 100, 0)} in venue</span>
+							<span>{num(item.sold)} / {num(item.capacity)}</span>
+							<span>{pct(item.capacity ? (item.sold / item.capacity) * 100 : 0, 0)} sold</span>
 						</div>
 						<div class="meter mt-1.5">
-							<div class="meter-fill meter-ok" style={`width:${(venue.checkedIn / venue.capacity) * 100}%`}></div>
+							<div class="meter-fill meter-ok" style={`width:${item.capacity ? Math.min(100, (item.sold / item.capacity) * 100) : 0}%`}></div>
 						</div>
-						<div class="mt-2.5 grid grid-cols-2 gap-2">
-							<div>
-								<p class="mono-label !text-[7.5px]">Ingress velocity</p>
-								<p class="mt-0.5 font-code text-[10px] text-[#d4d4dc]">{venue.rate} scans/min</p>
-							</div>
-							<div class="text-right">
-								<p class="mono-label !text-[7.5px]">Last clearance</p>
-								<p class="mt-0.5 font-code text-[10px] text-[#d4d4dc]">{venue.lastScan} · HMAC</p>
-							</div>
-						</div>
-					</div>
+					</a>
+				{:else}
+					<p class="px-1 py-6 text-center text-[10.5px] text-[#8f8f9b]">No published events yet.</p>
 				{/each}
 			</div>
 			<div class="flex items-center justify-between border-t border-[#26262e] px-4 py-2.5 font-code text-[8.5px] uppercase tracking-[0.08em] text-[#6f6f7b]">
-				<span class="inline-flex items-center gap-1.5"><span class="status-dot !h-1 !w-1"></span>Mesh stable</span>
-				<a href="/settings" class="hover:text-[#fca5a5]">Emergency gate override</a>
+				<span class="inline-flex items-center gap-1.5"><span class="status-dot !h-1 !w-1"></span>Ledger synced</span>
+				<a href="/events" class="hover:text-[#c6bcff]">All events</a>
 			</div>
 		</section>
 	</div>
 
-	<!-- Recent transactions -->
 	<section class="panel overflow-hidden">
 		<div class="panel-head">
 			<div>
@@ -388,11 +376,11 @@
 	<div class="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
 		{#each d.systemHealth as item}
 			<div class="panel flex items-center gap-3 px-4 py-3">
-				{#if item.key === 'mesh'}
+				{#if item.key === 'ledger'}
 					<Zap size={15} class="text-[#c6bcff]" />
 				{:else if item.key === 'paystack'}
 					<Wallet size={15} class="text-emerald-300" />
-				{:else if item.key === 'hmac'}
+				{:else if item.key === 'webhooks'}
 					<ShieldCheck size={15} class="text-[#8dd3c7]" />
 				{:else}
 					<TrendingUp size={15} class="text-[#f2b880]" />

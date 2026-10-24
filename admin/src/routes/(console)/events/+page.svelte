@@ -329,11 +329,11 @@
 						</div>
 
 						<div class="mt-4">
-							<p class="mono-label !text-[8px]">Security & gate compliance</p>
+							<p class="mono-label !text-[8px]">Security & compliance</p>
 							<ul class="mt-1.5 space-y-1.5">
-								<li class="flex items-center gap-1.5 text-[10.5px] text-[#a7a7b3]"><ShieldCheck size={12} class="text-emerald-400" /> HMAC-SHA256 QR dynamic gate · active</li>
+								<li class="flex items-center gap-1.5 text-[10.5px] text-[#a7a7b3]"><ShieldCheck size={12} class="text-emerald-400" /> QR pass registry · active</li>
 								<li class="flex items-center gap-1.5 text-[10.5px] text-[#a7a7b3]"><BadgeCheck size={12} class="text-emerald-400" /> Paystack merchant subaccount · bound</li>
-								<li class="flex items-center gap-1.5 text-[10.5px] text-[#a7a7b3]"><ScanLine size={12} class="text-emerald-400" /> {selected.gates} synchronized turnstile gates</li>
+								<li class="flex items-center gap-1.5 text-[10.5px] text-[#a7a7b3]"><ScanLine size={12} class="text-emerald-400" /> Wallet delivery enabled for all tiers</li>
 							</ul>
 						</div>
 
@@ -426,7 +426,7 @@
 		</div>
 		<div class="flex items-center justify-between gap-2 border-t border-[#26262e] pt-3">
 			<p class="max-w-[240px] font-code text-[8px] uppercase leading-relaxed tracking-[0.08em] text-[#6f6f7b]">
-				Created as a draft with HMAC gates pre-armed.
+				Created as a draft — publish it once the listing passes review.
 			</p>
 			<div class="flex gap-2">
 				<button type="button" class="btn btn-sm btn-ghost" onclick={() => (createOpen = false)}>Cancel</button>

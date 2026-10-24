@@ -4,7 +4,7 @@ export type AdminRole =
 	| 'Super Admin'
 	| 'Trust & Safety Lead'
 	| 'Finance & Treasury'
-	| 'Gate Operations'
+	| 'Event Operations'
 	| 'Support Agent'
 	| 'Read-only Auditor';
 
@@ -51,9 +51,7 @@ export interface AdminEvent {
 	capacity: number;
 	sold: number;
 	grossNgn: number;
-	checkedIn: number;
 	tiers: EventTier[];
-	gates: number;
 	coverFrom: string;
 	coverTo: string;
 	coverIcon: string;
@@ -92,7 +90,7 @@ export interface AdminOrganizer {
 	beneficiaryMismatch?: boolean;
 }
 
-export type TicketStatus = 'valid' | 'checked_in' | 'void' | 'refunded' | 'transferred';
+export type TicketStatus = 'valid' | 'void' | 'refunded' | 'transferred';
 
 export interface AdminTicket {
 	id: string;
@@ -108,10 +106,8 @@ export interface AdminTicket {
 	settlement: 'Paystack' | 'Complementary' | 'USD / Card';
 	orderRef: string;
 	purchasedAt: string;
-	checkedInAt?: string;
-	gate?: string;
-	scannerId?: string;
-	hmacEpoch?: number;
+	reissuedAt?: string;
+	reissueCount?: number;
 	flags?: string[];
 }
 
@@ -256,21 +252,19 @@ export interface AdminDashboard {
 	liveEvents: number;
 	eventsToday: number;
 	pendingReview: number;
-	ticketsScanned: number;
-	scanSuccessRate: number;
+	activePasses: number;
 	refundsPending: number;
 	moderationOpen: number;
 	series: DashboardSeries[];
 	tierMix: { tier: string; count: number; share: number; avgNgn: number }[];
 	categoryMix: { category: string; gmvNgn: number; share: number }[];
-	venueTelemetry: {
+	topEvents: {
+		id: string;
+		title: string;
 		venue: string;
-		gate: string;
-		checkedIn: number;
+		sold: number;
 		capacity: number;
-		scanners: number;
-		lastScan: string;
-		rate: number;
+		grossNgn: number;
 	}[];
 	reviewQueue: { id: string; ref: string; title: string; organizer: string; status: string; tone: 'warn' | 'danger' | 'accent' }[];
 	recentOrders: AdminOrder[];
@@ -313,11 +307,6 @@ export interface SettingsData {
 	disbursementWindow: string;
 	webhookEndpoint: string;
 	webhookHealthy: boolean;
-	hmacRotateSec: number;
-	antiPassbackMinutes: number;
-	reissueSafeguard: boolean;
-	hardwareKeyOnly: boolean;
-	lockdownArmed: boolean;
 	integrations: {
 		key: string;
 		name: string;

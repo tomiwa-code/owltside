@@ -8,7 +8,6 @@
 		LogOut,
 		Receipt,
 		RotateCcw,
-		ScanLine,
 		ScrollText,
 		Search,
 		Settings,
@@ -66,8 +65,7 @@
 			label: 'Ticketing & Ops',
 			items: [
 				{ label: 'Tickets', href: '/tickets', icon: Ticket },
-				{ label: 'Orders & Txns', href: '/orders', icon: Receipt },
-				{ label: 'Check-in Ops', href: '/checkin', icon: ScanLine, live: true }
+				{ label: 'Orders & Txns', href: '/orders', icon: Receipt }
 			]
 		},
 		{

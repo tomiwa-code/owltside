@@ -4,8 +4,8 @@ import { requireSuper } from '$admin/server/auth';
 import { updateSettings } from '$admin/server/store';
 import type { SettingsData } from '$admin/types';
 
-const NUMERIC: (keyof SettingsData)[] = ['platformFeePct', 'escoowDisputePct', 'hmacRotateSec', 'antiPassbackMinutes'];
-const BOOLEAN: (keyof SettingsData)[] = ['reissueSafeguard', 'hardwareKeyOnly'];
+const NUMERIC: (keyof SettingsData)[] = ['platformFeePct', 'escoowDisputePct'];
+const BOOLEAN: (keyof SettingsData)[] = ['webhookHealthy'];
 const STRING: (keyof SettingsData)[] = ['disbursementWindow', 'webhookEndpoint'];
 
 export const POST: RequestHandler = async ({ request, locals }) => {

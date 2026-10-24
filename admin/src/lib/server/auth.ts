@@ -6,8 +6,8 @@ import type { AdminRole, AdminSession, AdminTier } from '$admin/types';
  * Credential + session layer for the admin workspace.
  *
  * Production deployments must set ADMIN_EMAIL, ADMIN_PASSWORD (16+ chars) and
- * ADMIN_SESSION_SECRET. Sessions are stateless HMAC-signed tokens in an
- * HttpOnly, SameSite=Strict cookie. Hardware-key (WebAuthn) sign-in and SSO
+ * ADMIN_SESSION_SECRET. Sessions are stateless signed tokens in an HttpOnly
+ * cookie; the signature only guards the admin session, never attendee passes. Hardware-key (WebAuthn) sign-in and SSO
  * can replace `authenticate()` without touching the rest of the app.
  */
 

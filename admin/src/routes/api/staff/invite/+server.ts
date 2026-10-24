@@ -4,7 +4,7 @@ import { requireSuper } from '$admin/server/auth';
 import { inviteStaff } from '$admin/server/store';
 import type { AdminRole, AdminTier } from '$admin/types';
 
-const ROLES: AdminRole[] = ['Super Admin', 'Trust & Safety Lead', 'Finance & Treasury', 'Gate Operations', 'Support Agent', 'Read-only Auditor'];
+const ROLES: AdminRole[] = ['Super Admin', 'Trust & Safety Lead', 'Finance & Treasury', 'Event Operations', 'Support Agent', 'Read-only Auditor'];
 const TIERS: AdminTier[] = [0, 1, 2, 3];
 
 export const POST: RequestHandler = async ({ request, locals }) => {

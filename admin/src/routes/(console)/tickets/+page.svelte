@@ -5,20 +5,17 @@
 		Eye,
 		FileJson,
 		Fingerprint,
-		KeyRound,
 		Printer,
 		QrCode,
 		RefreshCw,
 		RotateCcw,
-		Search,
 		ShieldCheck,
-		Ticket as TicketIcon,
-		Wifi
+		Ticket as TicketIcon
 	} from '@lucide/svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { toasts } from '$admin/state/toast.svelte';
 	import { chipClass, ticketStatus } from '$admin/utils/status';
-	import { dateTime, money, num, pct, relative, time } from '$admin/utils/format';
+	import { money, num, pct, relative } from '$admin/utils/format';
 	import type { AdminTicket } from '$admin/types';
 	import PageHeader from '$components/PageHeader.svelte';
 	import StatusChip from '$components/StatusChip.svelte';
@@ -42,13 +39,6 @@
 			null
 	);
 
-	function signature(code: string): string {
-		let h = 0x9f4a8b7c;
-		for (const char of code) h = (Math.imul(h ^ char.charCodeAt(0), 16777619) >>> 0);
-		const chunks = [0x21e63d4a, 0x08b12f69, 0xa23d8c47, 0x10bc0928, h >>> 0];
-		return `0x${chunks.map((value) => value.toString(16).padStart(8, '0')).join('')}`;
-	}
-
 	function select(event: Event) {
 		(event.currentTarget as HTMLSelectElement).form?.requestSubmit();
 	}
@@ -70,7 +60,7 @@
 			action === 'void' ? 'Pass revoked' : 'Pass re-issued',
 			action === 'void'
 				? `${selected.code} is void. Wallet passes will refresh within 30 seconds.`
-				: `A new HMAC epoch was minted for ${selected.code}.`
+				: `A replacement pass was minted for ${selected.holderName} — the previous code is void.`
 		);
 		voidOpen = false;
 		reason = '';
@@ -79,9 +69,12 @@
 
 	function exportJson() {
 		if (!selected) return;
-		const blob = new Blob([JSON.stringify({ ticket: selected, hmac: signature(selected.code) }, null, 2)], {
+		const blob = new Blob(
+			[JSON.stringify({ exportedAt: new Date().toISOString(), ticket: selected }, null, 2)],
+			{
 			type: 'application/json'
-		});
+			}
+		);
 		const url = URL.createObjectURL(blob);
 		const anchor = document.createElement('a');
 		anchor.href = url;
@@ -96,14 +89,11 @@
 <div class="space-y-4">
 	<PageHeader
 		title="Tickets Management"
-		subtitle="Search, inspect, and verify cryptographic digital passes, gate scan history, and attendee allocations."
+		subtitle="Search, inspect, and manage digital passes, re-issue history, and attendee allocations."
 		crumbs={['ticketing & ops', 'tickets']}
-		eyebrow="HMAC-SHA256 active"
+		eyebrow="Verified pass registry"
 	>
 		{#snippet actions()}
-			<span class="btn btn-sm btn-ghost pointer-events-none">
-				<KeyRound size={12} /> Key rotation: Normal (Epoch 14)
-			</span>
 			<a class="btn btn-sm btn-primary" href="/api/export/tickets" download>
 				<Download size={12} /> Export Manifest (CSV)
 			</a>
@@ -117,22 +107,22 @@
 			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Across active published events</p>
 		</div>
 		<div class="panel p-4">
-			<div class="flex items-center justify-between"><p class="mono-label">Checked in / validated</p><ShieldCheck size={13} class="text-emerald-400" /></div>
+			<div class="flex items-center justify-between"><p class="mono-label">Active passes</p><ShieldCheck size={13} class="text-emerald-400" /></div>
 			<p class="mt-2 flex items-baseline gap-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-[#f1f1f6]">
-				{num(data.counts.checkedIn)}
-				<span class="font-code text-[10px] font-normal text-emerald-300">{pct(data.counts.clearancePct)}</span>
+				{num(data.counts.valid)}
+				<span class="font-code text-[10px] font-normal text-emerald-300">{pct(data.counts.total ? (data.counts.valid / data.counts.total) * 100 : 0)}</span>
 			</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Total gate clearance rate</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Share of the live ledger</p>
 		</div>
 		<div class="panel p-4">
-			<div class="flex items-center justify-between"><p class="mono-label">Active unused passes</p><Fingerprint size={13} class="text-[#6f6f7b]" /></div>
-			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-[#f1f1f6]">{num(data.counts.valid)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Ready at gate scanners</p>
+			<div class="flex items-center justify-between"><p class="mono-label">Pass value</p><Fingerprint size={13} class="text-[#6f6f7b]" /></div>
+			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-[#f1f1f6]">{money(data.counts.valueNgn)}</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Face value · avg {money(data.counts.avgPriceNgn)}</p>
 		</div>
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Revoked / voided</p><Ban size={13} class="text-red-400" /></div>
 			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-[#f1f1f6]">{num(data.counts.revoked)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Voided HMAC keys & refunds</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Voided, refunded & transferred</p>
 		</div>
 	</div>
 
@@ -148,7 +138,6 @@
 				</select>
 				<select name="status" class="select !h-[34px] !text-[11.5px]" onchange={select} aria-label="Filter by ticket status">
 					<option value="all" selected={data.filters.status === 'all'}>Status: All passes</option>
-					<option value="checked_in" selected={data.filters.status === 'checked_in'}>Checked in</option>
 					<option value="valid" selected={data.filters.status === 'valid'}>Valid · unused</option>
 					<option value="void" selected={data.filters.status === 'void'}>Void</option>
 					<option value="refunded" selected={data.filters.status === 'refunded'}>Refunded</option>
@@ -183,15 +172,15 @@
 
 						<div class="mt-3 rounded-xl border border-[#2a2a32] bg-[#141419] p-3">
 							<div class="mb-2.5 flex items-center justify-between">
-								<p class="mono-label !text-[8px]">Dynamic HMAC QR</p>
-								<span class="chip chip-accent !h-[17px] !text-[8px] flex items-center gap-1"><RefreshCw size={8} /> Epoch: 14</span>
+								<p class="mono-label !text-[8px]">Attendee pass QR</p>
+								<span class="chip chip-accent !h-[17px] !text-[8px] flex items-center gap-1"><RefreshCw size={8} /> {selected.status === 'valid' ? 'Active' : 'Inactive'}</span>
 							</div>
-							<QrPass payload={`owltside://t/${selected.code}?s=${signature(selected.code).slice(0, 18)}&e=14`} size={182} />
+							<QrPass payload={`owltside://t/${selected.code}`} size={182} />
 							<div class="mt-3 flex items-center justify-between gap-2 border-t border-[#2a2a32] pt-2.5">
 								<p class="min-w-0 truncate font-code text-[8.5px] text-[#8f8f9b]">
-									<span class="text-[#5d5d69]">HMAC-SHA256</span> {signature(selected.code).slice(0, 30)}…
+									<span class="text-[#5d5d69]">PASS</span> {selected.code} · {selected.tierName}
 								</p>
-								<CopyButton value={signature(selected.code)} label="Copy signature" compact />
+								<CopyButton value={`owltside://t/${selected.code}`} label="Copy pass link" compact />
 							</div>
 						</div>
 
@@ -218,9 +207,9 @@
 						</div>
 
 						<div class="mt-3 space-y-1.5 border-t border-[#26262e] pt-3 text-[10px]">
-							<p class="flex items-center justify-between"><span class="flex items-center gap-1.5 text-[#8f8f9b]"><Wifi size={11} /> Offline turnstile cache</span><span class="font-code text-emerald-300">Synced (4 nodes)</span></p>
-							<p class="flex items-center justify-between"><span class="flex items-center gap-1.5 text-[#8f8f9b]"><QrCode size={11} /> Gate clearance log</span><span class="font-code text-[#c9c9d4]">{selected.checkedInAt ? time(selected.checkedInAt) + ' WAT' : 'Not scanned'}</span></p>
-							<p class="flex items-center justify-between"><span class="text-[#8f8f9b]">Scanner · Marshal</span><span class="font-code text-[#c9c9d4]">{selected.scannerId ?? '—'} · Tunde B.</span></p>
+							<p class="flex items-center justify-between"><span class="flex items-center gap-1.5 text-[#8f8f9b]"><QrCode size={11} /> Wallet delivery</span><span class="font-code text-emerald-300">Apple / Google</span></p>
+							<p class="flex items-center justify-between"><span class="flex items-center gap-1.5 text-[#8f8f9b]"><RefreshCw size={11} /> Re-issues</span><span class="font-code text-[#c9c9d4]">{selected.reissueCount ?? 0}{selected.reissuedAt ? ` · ${relative(selected.reissuedAt)}` : ''}</span></p>
+							<p class="flex items-center justify-between"><span class="text-[#8f8f9b]">Issued to</span><span class="font-code text-[#c9c9d4]">@{selected.holderHandle}</span></p>
 							<p class="flex items-center justify-between"><span class="text-[#8f8f9b]">Purchased</span><span class="font-code text-[#c9c9d4]">{relative(selected.purchasedAt)}</span></p>
 						</div>
 
@@ -234,12 +223,12 @@
 						{/if}
 
 						<div class="mt-3">
-							<p class="mono-label !text-[8px]">Operational gate overrides</p>
+							<p class="mono-label !text-[8px]">Operational actions</p>
 							<div class="mt-1.5 grid grid-cols-2 gap-1.5">
-								<button type="button" class="btn btn-sm justify-start" disabled={busy} onclick={() => runAction('reissue', 'Pass re-issued from gate console')}>
+								<button type="button" class="btn btn-sm justify-start" disabled={busy} onclick={() => runAction('reissue', 'Pass re-issued by operations')}>
 									<RotateCcw size={11} /> Re-issue pass
 								</button>
-								<button type="button" class="btn btn-sm justify-start" onclick={() => toasts.info('Badge print queued', `Physical badge for ${selected.holderName} sent to Marshal station.`)}>
+								<button type="button" class="btn btn-sm justify-start" onclick={() => toasts.info('Badge print queued', `Physical badge for ${selected.holderName} queued for print.`)}>
 									<Printer size={11} /> Print VIP badge
 								</button>
 								<button type="button" class="btn btn-sm justify-start" onclick={exportJson}>
@@ -255,7 +244,7 @@
 			{/if}
 		</section>
 
-		<!-- Registry + mesh -->
+		<!-- Registry -->
 		<div class="min-w-0 space-y-2.5">
 			<section class="panel overflow-hidden">
 				<div class="flex items-center justify-between border-b border-[#26262e] px-4 py-2.5">
@@ -271,7 +260,7 @@
 				<div class="table-wrap">
 					<table class="tbl">
 						<thead>
-							<tr><th>Ticket ref</th><th>Attendee</th><th>Tier & seat</th><th>Settlement</th><th>Status & gate</th><th class="!text-right">Actions</th></tr>
+							<tr><th>Ticket ref</th><th>Attendee</th><th>Tier & seat</th><th>Settlement</th><th>Status</th><th class="!text-right">Actions</th></tr>
 						</thead>
 						<tbody>
 							{#each data.table.rows as ticket (ticket.id)}
@@ -298,7 +287,7 @@
 									<td>
 										<StatusChip label={s.label} tone={s.tone} />
 										<p class="mt-1 font-code text-[8px] uppercase tracking-[0.04em] text-[#6f6f7b]">
-											{ticket.gate ?? 'Gate awaiting'} {ticket.checkedInAt ? `(${time(ticket.checkedInAt)})` : ''}
+											{ticket.reissueCount ? `Re-issued ×${ticket.reissueCount}` : `Issued ${relative(ticket.purchasedAt)}`}
 										</p>
 									</td>
 									<td>
@@ -315,38 +304,17 @@
 				<Pagination pageNumber={data.table.page} pages={data.table.pages} total={data.table.total} perPage={data.table.perPage} label="passes" />
 			</section>
 
-			<section class="panel overflow-hidden">
-				<div class="panel-head !py-2.5">
-					<div class="flex items-center gap-2">
-						<Wifi size={13} class="text-[#8dd3c7]" />
-						<h2 class="font-display text-[13px] font-semibold text-[#f0f0f5]">On-Site Turnstile Node Mesh</h2>
-					</div>
-					<span class="chip chip-ok !text-[8px]">Local mesh online</span>
-				</div>
-				<div class="grid grid-cols-2 divide-x divide-[#24242c] lg:grid-cols-4">
-					{#each data.mesh as node}
-						<div class="border-b border-[#24242c] p-3 lg:border-b-0">
-							<div class="flex items-center gap-1.5">
-								<span class="status-dot !h-1 !w-1"></span>
-								<p class="font-code text-[8px] uppercase tracking-[0.08em] text-[#9c9ca8]">{node.label}</p>
-							</div>
-							<p class="mt-2 font-display text-[17px] font-semibold text-[#ececf1]">{num(node.scans)} <span class="font-code text-[8px] font-normal text-[#6f6f7b]">scans</span></p>
-							<p class="mt-0.5 font-code text-[8px] text-[#6f6f7b]">Sync: {node.sync}</p>
-						</div>
-					{/each}
-				</div>
-			</section>
 		</div>
 	</div>
 </div>
 
-<Sheet open={voidOpen} title="Revoke cryptographic pass" subtitle="This invalidates the rotating HMAC signature on every device." onclose={() => (voidOpen = false)} width="430px">
+<Sheet open={voidOpen} title="Revoke pass" subtitle="This voids the pass on every device and in both mobile wallets." onclose={() => (voidOpen = false)} width="430px">
 	<form class="space-y-3" onsubmit={(event) => { event.preventDefault(); runAction('void', reason || 'Pass revoked by admin'); }}>
 		<div class="rounded-lg border border-red-500/25 bg-red-500/[0.06] px-3 py-2.5 text-[10.5px] leading-relaxed text-red-100/80">
-			{selected?.code} · {selected?.holderName}. Attendee will be denied entry at every gate. Refunds must be issued separately.
+			{selected?.code} · {selected?.holderName}. The attendee will no longer be able to redeem this pass. Refunds must be issued separately.
 		</div>
 		<label class="field-label" for="void-reason">Reason</label>
-		<textarea id="void-reason" class="textarea" bind:value={reason} required placeholder="e.g. Duplicate QR presentation — encrypted pass cloned."></textarea>
+		<textarea id="void-reason" class="textarea" bind:value={reason} required placeholder="e.g. Duplicate QR presentation — pass screenshot shared publicly."></textarea>
 		<div class="flex justify-end gap-2">
 			<button type="button" class="btn btn-sm btn-ghost" onclick={() => (voidOpen = false)}>Cancel</button>
 			<button type="submit" class="btn btn-sm btn-danger" disabled={busy}>Revoke pass now</button>

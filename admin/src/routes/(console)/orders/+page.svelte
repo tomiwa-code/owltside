@@ -227,7 +227,7 @@
 								<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">Card token auth</span><span class="font-code text-[9px] text-[#dcdce4]">AUTH_804ff7b2c9e</span></p>
 								<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">Settlement card</span><span class="text-[#dcdce4]">GTBank Mastercard (NG)</span></p>
 								<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">Webhook event</span><span class="font-code text-[9px] text-emerald-300">charge.success (200 OK)</span></p>
-								<p class="flex items-center justify-between gap-2"><span class="text-[#6f6f7b]">HMAC signature</span><span class="font-code text-[9px] text-[#dcdce4]">sha512:9b840d…bf</span></p>
+								<p class="flex items-center justify-between gap-2"><span class="text-[#6f6f7b]">Webhook signature</span><span class="font-code text-[9px] text-[#dcdce4]">verified · sha512</span></p>
 							</div>
 						</div>
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AlertTriangle, Building, Check, Copy, Download, Globe, KeyRound, Lock, RefreshCw, ShieldAlert, ShieldCheck, Upload } from '@lucide/svelte';
+	import { Building, Check, Copy, Download, Globe, KeyRound, RefreshCw, ShieldCheck, Upload } from '@lucide/svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { toasts } from '$admin/state/toast.svelte';
@@ -14,15 +14,10 @@
 	let dispute = $state(untrack(() => data.settings.escoowDisputePct));
 	let window_ = $state(untrack(() => data.settings.disbursementWindow));
 	let webhookEndpoint = $state(untrack(() => data.settings.webhookEndpoint));
-	let rotation = $state(untrack(() => data.settings.hmacRotateSec));
-	let antiPassback = $state(untrack(() => data.settings.antiPassbackMinutes));
-	let reissue = $state(untrack(() => data.settings.reissueSafeguard));
-	let hardwareOnly = $state(untrack(() => data.settings.hardwareKeyOnly));
-	let lockdown = $state(untrack(() => data.settings.lockdownArmed));
+	let webhookHealthy = $state(untrack(() => data.settings.webhookHealthy));
 
-	let tab = $state<'financial' | 'gate' | 'integrations'>('financial');
+	let tab = $state<'financial' | 'security' | 'integrations'>('financial');
 	let busy = $state(false);
-	let lockdownOpen = $state(false);
 	let revealKey = $state(false);
 
 	const integrations = $derived(data.settings.integrations);
@@ -37,10 +32,7 @@
 				escoowDisputePct: dispute,
 				disbursementWindow: window_,
 				webhookEndpoint,
-				hmacRotateSec: rotation,
-				antiPassbackMinutes: antiPassback,
-				reissueSafeguard: reissue,
-				hardwareKeyOnly: hardwareOnly
+				webhookHealthy
 			})
 		});
 		busy = false;
@@ -49,24 +41,6 @@
 			return;
 		}
 		toasts.ok('Policy saved', 'Changes pushed to the edge mesh and appended to the ledger.');
-		await invalidateAll();
-	}
-
-	async function toggleLockdown() {
-		busy = true;
-		const response = await fetch('/api/lockdown', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ armed: !lockdown })
-		});
-		busy = false;
-		if (!response.ok) {
-			toasts.error('Blocked', 'Emergency lockdown requires your Super Admin hardware key.');
-			return;
-		}
-		lockdown = !lockdown;
-		lockdownOpen = false;
-		toasts.ok(lockdown ? 'Lockdown armed' : 'Lockdown cleared', lockdown ? 'All turnstiles now validate against the offline cache only.' : 'Cloud validation restored across the fleet.');
 		await invalidateAll();
 	}
 
@@ -87,7 +61,7 @@
 <div class="space-y-4">
 	<PageHeader
 		title="Platform Settings & System Health"
-		subtitle="Configure financial payout policies, gate security cryptographic parameters, and monitor infrastructure integrations."
+		subtitle="Configure financial payout policies, admin credential policy, and monitor infrastructure integrations."
 		crumbs={['sys-cfg', 'node-wat-01']}
 		eyebrow="v4.18.2-prod"
 	>
@@ -99,12 +73,12 @@
 
 	<div class="flex flex-col gap-2 border-b border-[#26262e] pb-2 lg:flex-row lg:items-center">
 		<div class="flex flex-wrap gap-1">
-			{#each [{ key: 'financial', label: 'Paystack & financial rails' }, { key: 'gate', label: 'Gate cryptography & HMAC engine' }, { key: 'integrations', label: `Integration health (${integrations.length} channels)` }] as item}
+			{#each [{ key: 'financial', label: 'Paystack & financial rails' }, { key: 'security', label: 'Security & credentials' }, { key: 'integrations', label: `Integration health (${integrations.length} channels)` }] as item}
 				<button type="button" class="tab !text-[10.5px]" data-active={tab === item.key} onclick={() => (tab = item.key as typeof tab)}>{item.label}</button>
 			{/each}
 		</div>
 		<span class="ml-auto flex items-center gap-1.5 font-code text-[8px] uppercase tracking-[0.08em] text-[#6f6f7b]">
-			<span class={lockdown ? 'status-dot !bg-red-400' : 'status-dot'}></span> {lockdown ? 'Emergency lockdown armed' : 'All systems nominal'}
+			<span class="status-dot"></span> All systems nominal
 		</span>
 	</div>
 
@@ -163,7 +137,7 @@
 							</div>
 							<div>
 								<div class="flex items-center justify-between">
-									<p class="mono-label !text-[7px]">HMAC-SHA512 secret signature</p>
+									<p class="mono-label !text-[7px]">Webhook signing secret</p>
 									<button type="button" class="font-code text-[7.5px] uppercase text-[#c6bcff] hover:underline" onclick={() => (revealKey = !revealKey)}>{revealKey ? 'Hide key' : 'Reveal key'}</button>
 								</div>
 								<div class="mt-1 flex items-center gap-1.5">
@@ -188,60 +162,42 @@
 					<div class="flex items-center gap-2.5">
 						<span class="flex h-8 w-8 items-center justify-center rounded-md border border-[#34343d] bg-[#1e1e25] text-[#c6bcff]"><KeyRound size={14} /></span>
 						<div>
-							<h2 class="font-display text-[14px] font-semibold text-[#f0f0f5]">Gate cryptography</h2>
-							<p class="text-[10px] text-[#6f6f7b]">Offline edge validation engine.</p>
+							<h2 class="font-display text-[14px] font-semibold text-[#f0f0f5]">Credential & access policy</h2>
+							<p class="text-[10px] text-[#6f6f7b]">Admin identity and webhook integrity controls.</p>
 						</div>
 					</div>
-					<span class="chip !h-[17px] !text-[7.5px]">HMAC-256</span>
+					<span class="chip !h-[17px] !text-[7.5px]">FIDO2</span>
 				</header>
 				<div class="space-y-3 p-4">
 					<div class="panel-inset p-2.5">
 						<div class="flex items-center justify-between">
-							<p class="mono-label !text-[7px]">Dynamic QR rotation window</p>
-							<span class="chip chip-ok !h-[16px] !text-[7px]">30 s (recommended)</span>
+							<p class="mono-label !text-[7px]">Admin step-up authentication</p>
+							<span class="chip chip-ok !h-[16px] !text-[7px]">Enforced</span>
 						</div>
-						<div class="mt-1.5 flex items-center gap-2">
-							<input type="range" min="10" max="120" step="5" bind:value={rotation} class="h-1 flex-1 accent-[#c6bcff]" aria-label="QR rotation window" />
-							<span class="font-code text-[10px] text-[#dcdce4]">{rotation}s</span>
-						</div>
-						<p class="mt-1 text-[9px] text-[#6f6f7b]">HMAC-SHA256 rolling timestamp token delta. Variance allowance ±1 step.</p>
+						<p class="mt-1.5 text-[10px] leading-relaxed text-[#a0a0ab]">
+							Tier 0–1 accounts must present a hardware WebAuthn key for refunds, key rotation and policy changes.
+						</p>
 					</div>
 
 					<div class="panel-inset flex items-center justify-between p-2.5">
 						<div>
-							<p class="mono-label !text-[7px]">Mesh cache TTL</p>
-							<p class="mt-0.5 text-[10px] text-[#dcdce4]">Synced RSA turnstile keys 1,248 keys</p>
+							<p class="mono-label !text-[7px]">Hardware keys enrolled</p>
+							<p class="mt-0.5 text-[10px] text-[#dcdce4]">{data.settings.lastHardwareSync}</p>
 						</div>
-						<span class="font-display text-[12px] font-semibold text-[#ececf1]">12 hours</span>
+						<span class="font-display text-[12px] font-semibold text-[#ececf1]">12 admins</span>
 					</div>
 
-					<div class="space-y-2">
-						<div class="flex items-center justify-between gap-2">
-							<div>
-								<p class="text-[10.5px] text-[#d4d4dc]">Anti-passback prevention</p>
-								<p class="text-[8.5px] text-[#6f6f7b]">Reject duplicate scans across synchronized turnstiles within 5 minutes</p>
-							</div>
-							<Toggle checked={antiPassback > 0} onchange={(value) => (antiPassback = value ? 5 : 0)} label="Anti-passback" />
+					<div class="flex items-center justify-between gap-2">
+						<div>
+							<p class="text-[10.5px] text-[#d4d4dc]">Webhook signature verification</p>
+							<p class="text-[8.5px] text-[#6f6f7b]">Reject Paystack callbacks that fail the shared-secret check</p>
 						</div>
-						<div class="flex items-center justify-between gap-2">
-							<div>
-								<p class="text-[10.5px] text-[#d4d4dc]">Reissue safeguard</p>
-								<p class="text-[8.5px] text-[#6f6f7b]">Auto-void superseded tokens upon manual reissue or refund</p>
-							</div>
-							<Toggle checked={reissue} onchange={(value) => (reissue = value)} label="Reissue safeguard" />
-						</div>
-						<div class="flex items-center justify-between gap-2">
-							<div>
-								<p class="text-[10.5px] text-[#d4d4dc]">Hardware key only</p>
-								<p class="text-[8.5px] text-[#6f6f7b]">Block software TOTP fallback for Tier 0–1 accounts</p>
-							</div>
-							<Toggle checked={hardwareOnly} onchange={(value) => (hardwareOnly = value)} label="Hardware key only" />
-						</div>
+						<Toggle checked={webhookHealthy} onchange={(value) => (webhookHealthy = value)} label="Webhook signature verification" />
 					</div>
 
 					<div class="flex items-center justify-between border-t border-[#26262e] pt-2.5">
-						<p class="font-code text-[8px] uppercase tracking-[0.06em] text-[#6f6f7b]">turnstile_rev_id</p>
-						<p class="font-code text-[9px] text-[#c9c9d4]">#0x77E12</p>
+						<p class="font-code text-[8px] uppercase tracking-[0.06em] text-[#6f6f7b]">build_channel</p>
+						<p class="font-code text-[9px] text-[#c9c9d4]">{data.settings.firmware}</p>
 					</div>
 				</div>
 			</section>
@@ -256,12 +212,12 @@
 				</div>
 			</section>
 		</div>
-	{:else if tab === 'gate'}
+	{:else if tab === 'security'}
 		<div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
 			<section class="panel overflow-hidden">
-				<header class="panel-head"><p class="mono-label">Key hierarchy &amp; rotation policy</p><span class="chip chip-ok !h-[17px] !text-[7.5px]">HSM-backed</span></header>
+				<header class="panel-head"><p class="mono-label">Signing keys &amp; rotation policy</p><span class="chip chip-ok !h-[17px] !text-[7.5px]">HSM-backed</span></header>
 				<div class="divide-y divide-[#24242c]">
-					{#each [{ label: 'Root signing key', detail: 'AWS KMS · aws-kms/wat-ng-01', rotate: 'Every 90 days', state: 'Active' }, { label: 'Pass salt key', detail: 'Rolling epoch salt · 30s', rotate: 'Auto, in-engine', state: 'Active' }, { label: 'Scanner mTLS cert', detail: '1,248 device certificates', rotate: 'Every 30 days', state: 'Active' }, { label: 'Webhook secret', detail: 'Paystack HMAC-SHA512', rotate: 'Manual, dual-sig', state: 'Due in 12d' }] as key}
+					{#each [{ label: 'Root signing key', detail: 'AWS KMS · aws-kms/wat-ng-01', rotate: 'Every 90 days', state: 'Active' }, { label: 'Admin session key', detail: 'Stateless cookie signatures', rotate: 'On redeploy', state: 'Active' }, { label: 'Webhook secret', detail: 'Paystack shared secret · SHA-512', rotate: 'Manual, dual-sig', state: 'Due in 12d' }, { label: 'Audit ledger hash', detail: 'SHA-256 chained records', rotate: 'Immutable', state: 'Active' }] as key}
 						<div class="flex items-center gap-3 px-4 py-2.5">
 							<KeyRound size={12} class="shrink-0 text-[#6f6f7b]" />
 							<div class="min-w-0 flex-1">
@@ -275,17 +231,17 @@
 			</section>
 
 			<section class="panel overflow-hidden">
-				<header class="panel-head"><p class="mono-label">Turnstile firmware fleet</p><span class="chip !h-[17px] !text-[7.5px]">v4.18.2-prod</span></header>
+				<header class="panel-head"><p class="mono-label">Release channel</p><span class="chip !h-[17px] !text-[7.5px]">{data.settings.firmware}</span></header>
 				<div class="space-y-2 p-4">
 					<p class="text-[10.5px] leading-relaxed text-[#8f8f9b]">
-						Firmware is signed by the Owltside root key and rolled out canary-first. Devices that fail attestation are quarantined from the mesh and fall back to cached keys only.
+						Admin console releases are signed by the Owltside root key and shipped canary-first. A build that fails attestation never receives production traffic.
 					</p>
 					<div class="grid grid-cols-3 gap-2">
-						<div class="panel-inset p-2.5"><p class="mono-label !text-[7px]">Nodes</p><p class="mt-1 font-display text-[15px] font-semibold text-[#ececf1]">4</p></div>
-						<div class="panel-inset p-2.5"><p class="mono-label !text-[7px]">Attested</p><p class="mt-1 font-display text-[15px] font-semibold text-emerald-300">4</p></div>
+						<div class="panel-inset p-2.5"><p class="mono-label !text-[7px]">Regions</p><p class="mt-1 font-display text-[15px] font-semibold text-[#ececf1]">2</p></div>
+						<div class="panel-inset p-2.5"><p class="mono-label !text-[7px]">Attested</p><p class="mt-1 font-display text-[15px] font-semibold text-emerald-300">2</p></div>
 						<div class="panel-inset p-2.5"><p class="mono-label !text-[7px]">Drift</p><p class="mt-1 font-display text-[15px] font-semibold text-[#ececf1]">0</p></div>
 					</div>
-					<button type="button" class="btn btn-sm w-full" onclick={() => toasts.ok('Firmware check queued', 'Canary node will report in ~90 seconds.')}><Upload size={11} /> Push signed firmware bundle</button>
+					<button type="button" class="btn btn-sm w-full" onclick={() => toasts.ok('Release check queued', 'Canary region will report in ~90 seconds.')}><Upload size={11} /> Verify signed build</button>
 				</div>
 			</section>
 		</div>
@@ -311,56 +267,7 @@
 			</div>
 		</section>
 	{/if}
-
-	<section class="panel overflow-hidden border-red-500/25 bg-red-500/[0.035]">
-		<div class="flex flex-col gap-3 p-4 lg:flex-row lg:items-center">
-			<span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-red-500/30 bg-red-500/10 text-red-300"><AlertTriangle size={18} /></span>
-			<div class="min-w-0 flex-1">
-				<div class="flex flex-wrap items-center gap-2">
-					<h2 class="font-display text-[14px] font-semibold text-red-50">Emergency gate lockdown protocol</h2>
-					<span class="chip chip-danger !h-[17px] !text-[7.5px]">High privileged</span>
-					{#if lockdown}<span class="chip !h-[17px] !border-red-400/40 !bg-red-500/20 !text-[7.5px] !text-red-100">Armed</span>{/if}
-				</div>
-				<p class="mt-1 max-w-3xl text-[10.5px] leading-relaxed text-[#c9b6b6]">
-					Instantly force all synchronized venue turnstiles to verify against local offline cache only and reject cloud API tokens. Used strictly during critical venue connectivity outages or active security incidents.
-				</p>
-				<p class="mt-1.5 flex flex-wrap items-center gap-2 font-code text-[8px] uppercase tracking-[0.06em] text-[#8f7a7a]">
-					<span>Last audit: {data.settings.lastAudit}</span>
-					<span>•</span>
-					<span>CyberGuard SOC-2 Type II certified</span>
-					<span>•</span>
-					<span class="text-emerald-300">Zero unresolved vulnerabilities</span>
-				</p>
-			</div>
-			<button type="button" class="btn btn-sm shrink-0" onclick={() => (lockdownOpen = true)}>
-				<Lock size={12} /> Configure lockdown parameters
-			</button>
-		</div>
-	</section>
 </div>
-
-<Sheet open={lockdownOpen} title={lockdown ? 'Clear emergency lockdown' : 'Arm emergency lockdown'} subtitle="Dual-signature action recorded on the immutable ledger." onclose={() => (lockdownOpen = false)} width="440px">
-	<div class="space-y-3">
-		<div class="rounded-lg border border-red-500/25 bg-red-500/[0.06] p-3 text-[10.5px] leading-relaxed text-red-100/80">
-			{#if lockdown}
-				Clearing the lockdown restores cloud HMAC validation for every synchronized turnstile. Offline cache remains as fallback.
-			{:else}
-				Arming forces every turnstile onto the signed offline cache. Cloud-minted passes created after the last key sync will be rejected until the lockdown is cleared.
-			{/if}
-		</div>
-		<div class="space-y-1.5 text-[10px]">
-			<p class="flex justify-between"><span class="text-[#6f6f7b]">Turnstiles affected</span><span class="font-code text-[#dcdce4]">1,248</span></p>
-			<p class="flex justify-between"><span class="text-[#6f6f7b]">Cached key epoch</span><span class="font-code text-[#dcdce4]">14</span></p>
-			<p class="flex justify-between"><span class="text-[#6f6f7b]">Propagation target</span><span class="font-code text-[#dcdce4]">≤ 20 seconds</span></p>
-		</div>
-		<div class="flex justify-end gap-2">
-			<button type="button" class="btn btn-sm btn-ghost" onclick={() => (lockdownOpen = false)}>Cancel</button>
-			<button type="button" class="btn btn-sm {lockdown ? 'btn-primary' : 'btn-danger'}" disabled={busy} onclick={toggleLockdown}>
-				<ShieldAlert size={12} /> {lockdown ? 'Clear lockdown' : 'Arm lockdown now'}
-			</button>
-		</div>
-	</div>
-</Sheet>
 
 {#snippet integrationCards()}
 	{#each integrations as integration}

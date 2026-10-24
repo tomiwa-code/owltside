@@ -157,9 +157,7 @@ export function createEvent(
 		capacity: input.capacity,
 		sold: 0,
 		grossNgn: 0,
-		checkedIn: 0,
 		tiers,
-		gates: 2,
 		coverFrom: '#1b2a4a',
 		coverTo: '#43318a',
 		coverIcon: 'cpu'
@@ -316,14 +314,14 @@ export interface TicketQuery {
 
 export function countTickets() {
 	const tickets = store().tickets;
-	const checkedIn = tickets.filter((t) => t.status === 'checked_in').length;
 	const revoked = tickets.filter((t) => t.status === 'void' || t.status === 'refunded' || t.status === 'transferred').length;
+	const valueNgn = tickets.reduce((sum, ticket) => sum + ticket.priceNgn, 0);
 	return {
 		total: tickets.length,
-		checkedIn,
 		valid: tickets.filter((t) => t.status === 'valid').length,
 		revoked,
-		clearancePct: tickets.length ? (checkedIn / tickets.length) * 100 : 0
+		valueNgn,
+		avgPriceNgn: tickets.length ? Math.round(valueNgn / tickets.length) : 0
 	};
 }
 
@@ -363,10 +361,34 @@ export function voidTicket(id: string, actor: string, reason: string): AdminTick
 	return ticket;
 }
 
+/**
+ * Mints the next unused pass code for a re-issue so a voided credential can
+ * never be replayed. Falls back to a suffixed code for non-numeric references.
+ */
+function nextPassCode(code: string): string {
+	const used = new Set(store().tickets.map((item) => item.code));
+	const match = code.match(/^(.*?)(\d+)$/);
+	if (!match) {
+		let suffix = 2;
+		while (used.has(`${code}-R${suffix}`)) suffix += 1;
+		return `${code}-R${suffix}`;
+	}
+	const [, prefix, digits] = match;
+	let value = Number(digits);
+	do {
+		value += 1;
+	} while (used.has(`${prefix}${String(value).padStart(digits.length, '0')}`));
+	return `${prefix}${String(value).padStart(digits.length, '0')}`;
+}
+
 export function reissueTicket(id: string, actor: string, reason: string): AdminTicket | null {
 	const ticket = getTicket(id);
 	if (!ticket) return null;
-	ticket.hmacEpoch = (ticket.hmacEpoch ?? 12) + 1;
+	const before = ticket.status;
+	const previousCode = ticket.code;
+	ticket.reissueCount = (ticket.reissueCount ?? 0) + 1;
+	ticket.reissuedAt = new Date().toISOString();
+	ticket.code = nextPassCode(previousCode);
 	if (ticket.status === 'void') ticket.status = 'valid';
 	logAudit({
 		actor,
@@ -376,7 +398,11 @@ export function reissueTicket(id: string, actor: string, reason: string): AdminT
 		target: ticket.code,
 		reason,
 		severity: 'info',
-		diff: [{ field: 'ticket.hmac_epoch', before: String((ticket.hmacEpoch ?? 1) - 1), after: String(ticket.hmacEpoch) }]
+		diff: [
+			{ field: 'ticket.status', before, after: ticket.status },
+			{ field: 'pass_code', before: previousCode, after: ticket.code },
+			{ field: 'reissue_count', before: String((ticket.reissueCount ?? 1) - 1), after: String(ticket.reissueCount) }
+		]
 	});
 	touch();
 	return ticket;
@@ -829,39 +855,30 @@ export function getDashboard(): AdminDashboard {
 		liveEvents: 28,
 		eventsToday: 4,
 		pendingReview: eventCounts.pending,
-		ticketsScanned: ticketCounts.checkedIn,
-		scanSuccessRate: 99.9,
+		activePasses: ticketCounts.valid,
 		refundsPending: getRefundsData().pending,
 		moderationOpen: caseCounts.open,
 		series,
 		tierMix,
 		categoryMix,
-		venueTelemetry: [
-			{
-				venue: 'Landmark Centre · Hall 1',
-				gate: 'VIP Turnstile 02',
-				checkedIn: 840,
-				capacity: 1000,
-				scanners: 4,
-				lastScan: '2 min ago',
-				rate: 14
-			},
-			{
-				venue: 'Eko Atlantic Convention Hall',
-				gate: 'Main Rotunda',
-				checkedIn: 1240,
-				capacity: 2000,
-				scanners: 8,
-				lastScan: 'just now',
-				rate: 29
-			}
-		],
+		topEvents: [...db.events]
+			.filter((event) => event.status === 'published')
+			.sort((a, b) => b.sold - a.sold)
+			.slice(0, 2)
+			.map((event) => ({
+				id: event.id,
+				title: event.title,
+				venue: event.venue,
+				sold: event.sold,
+				capacity: event.capacity,
+				grossNgn: event.grossNgn
+			})),
 		reviewQueue,
 		recentOrders,
 		systemHealth: [
-			{ key: 'mesh', label: 'Turnstile mesh', value: 'Online · 12 nodes', ok: true },
+			{ key: 'ledger', label: 'Ticket ledger', value: 'Synced · 4 replicas', ok: true },
 			{ key: 'paystack', label: 'Paystack rails', value: '42ms · live', ok: true },
-			{ key: 'hmac', label: 'HMAC epoch', value: 'Epoch 14 · 100%', ok: true },
+			{ key: 'webhooks', label: 'Webhook delivery', value: '99.99% · 0 queued', ok: true },
 			{ key: 'users', label: 'Active attendees', value: `${userCounts.active.toLocaleString('en-US')}`, ok: true }
 		]
 	};
@@ -965,22 +982,6 @@ export function updateSettings(
 		reason,
 		severity: 'warning',
 		diff
-	});
-	touch();
-	return settings;
-}
-
-export function setLockdown(armed: boolean, actor: string): SettingsData {
-	const settings = store().settings;
-	settings.lockdownArmed = armed;
-	logAudit({
-		actor,
-		action: armed ? 'EMERGENCY_GATE_LOCKDOWN_ARMED' : 'EMERGENCY_GATE_LOCKDOWN_DISARMED',
-		kind: 'settings',
-		entityId: 'gate-lockdown',
-		target: 'All synchronized venue turnstiles',
-		reason: armed ? 'Critical venue connectivity incident' : 'Connectivity restored — lockdown cleared',
-		severity: 'critical'
 	});
 	touch();
 	return settings;
@@ -1108,7 +1109,7 @@ export function auditStream(limit = 6): { at: string; actor: string; message: st
 			at: record.at,
 			actor: record.actor.toLowerCase().replace(/[^a-z]+/g, '.').replace(/\.$/, ''),
 			message: `${record.action.toLowerCase().replace(/_/g, ' ')} — ${record.target}`,
-			tag: record.severity === 'critical' ? 'DUAL-SIG REQUIRED' : record.severity === 'warning' ? 'POLICY-VOID' : 'HMAC-OK',
+			tag: record.severity === 'critical' ? 'DUAL-SIG REQUIRED' : record.severity === 'warning' ? 'POLICY-VOID' : 'SIGNED',
 			tone: record.severity === 'critical' ? 'danger' : record.severity === 'warning' ? 'warn' : 'ok'
 		}));
 }
@@ -1138,110 +1139,4 @@ export function recordPayoutBatch(organizerIds: string[], actor: string): { coun
 	});
 	touch();
 	return { count, totalNgn };
-}
-
-// ── Check-in operations ────────────────────────────────────────────────────
-
-export interface ScannerNode {
-	id: string;
-	label: string;
-	gate: string;
-	marshal: string;
-	online: boolean;
-	health: number;
-	scans: number;
-	queue: number;
-	mode: 'NFC' | 'HMAC' | 'Hybrid';
-}
-
-export interface CheckinOps {
-	events: { id: string; title: string; venue: string; startsAt: string; capacity: number; checkedIn: number }[];
-	eventId: string;
-	clearance: { checkedIn: number; remaining: number; capacity: number; pct: number };
-	velocity: { value: number; series: number[] };
-	latency: { avgMs: number; p99Ms: number };
-	rejections: { flagged: number; duplicates: number; unverified: number };
-	feed: AdminTicket[];
-	fleet: ScannerNode[];
-	codes: number;
-}
-
-export function getCheckinOps(eventId?: string | null): CheckinOps {
-	const db = store();
-	const events = db.events
-		.filter((event) => event.status === 'published' || event.status === 'completed')
-		.sort((a, b) => b.checkedIn - a.checkedIn || a.startsAt.localeCompare(b.startsAt));
-	const scoped = events.find((event) => event.id === eventId) ?? events.find((event) => event.checkedIn > 0) ?? events[0];
-	const scopedTickets = scoped ? db.tickets.filter((ticket) => ticket.eventId === scoped.id) : [];
-	const checkedIn = scopedTickets.filter((ticket) => ticket.status === 'checked_in');
-	const capacity = scoped?.capacity ?? 0;
-	const scopedChecked = Math.max(scoped?.checkedIn ?? 0, checkedIn.length);
-	const feed = checkedIn
-		.filter((ticket) => Boolean(ticket.checkedInAt))
-		.sort((a, b) => (b.checkedInAt ?? '').localeCompare(a.checkedInAt ?? ''))
-		.slice(0, 8);
-	const gates = Array.from({ length: Math.min(4, Math.max(2, scoped?.gates ?? 4)) }, (_, index) => index);
-	const marshalNames = ['Tunde B.', 'Chuka N.', 'Fola D.', 'Sarah O.'];
-	const fleet: ScannerNode[] = gates.map((index) => ({
-		id: `node-${String(index + 1).padStart(2, '0')}`,
-		label: ['VIP Hall Arch (NFC)', 'Gate 1 Main (Turnstile A)', 'Gate 1 Main (Turnstile B)', 'Gate 2 Fast-Pass'][index] ?? `Node ${index + 1}`,
-		gate: ['VIP Arch', 'Main Entry', 'Main Entry', 'Fast-Pass'][index] ?? 'Main Entry',
-		marshal: marshalNames[index] ?? 'Unassigned',
-		online: index !== 3 || gates.length < 4 ? true : true,
-		health: [96, 88, 94, 92][index] ?? 90,
-		scans: [842, 1120, 684, 494][index] ?? 0,
-		queue: index === 3 ? 0 : 0,
-		mode: ['NFC', 'HMAC', 'HMAC', 'Hybrid'][index] as ScannerNode['mode']
-	}));
-	return {
-		events: events.map((event) => ({ id: event.id, title: event.title, venue: event.venue, startsAt: event.startsAt, capacity: event.capacity, checkedIn: event.checkedIn })),
-		eventId: scoped?.id ?? '',
-		clearance: {
-			checkedIn: scopedChecked,
-			remaining: Math.max(0, capacity - scopedChecked),
-			capacity,
-			pct: capacity ? Math.round((scopedChecked / capacity) * 1000) / 10 : 0
-		},
-		velocity: { value: 14.2, series: [7, 9, 8, 11, 10, 13, 12, 14, 13, 15, 14, 14] },
-		latency: { avgMs: 118, p99Ms: 142 },
-		rejections: { flagged: 3, duplicates: 2, unverified: 1 },
-		feed,
-		fleet,
-		codes: scopedTickets.length
-	};
-}
-
-export function findTicketByCode(code: string): AdminTicket | null {
-	const needle = code.trim().toLowerCase();
-	if (!needle) return null;
-	const tickets = store().tickets;
-	return (
-		tickets.find((ticket) => ticket.code.toLowerCase() === needle) ??
-		tickets.find((ticket) => ticket.code.toLowerCase().includes(needle)) ??
-		tickets.find((ticket) => ticket.id.toLowerCase() === needle) ??
-		tickets.find((ticket) => ticket.holderName.toLowerCase().includes(needle)) ??
-		null
-	);
-}
-
-export function setTicketCheckin(id: string, checkedIn: boolean, actor: string, gate = 'Manual Gate Override'): AdminTicket | null {
-	const ticket = store().tickets.find((item) => item.id === id);
-	if (!ticket) return null;
-	const before = ticket.status;
-	ticket.status = checkedIn ? 'checked_in' : 'valid';
-	ticket.checkedInAt = checkedIn ? new Date().toISOString() : undefined;
-	ticket.gate = checkedIn ? gate : undefined;
-	ticket.scannerId = checkedIn ? 'Scanner #92 (manual)' : undefined;
-	logAudit({
-		actor,
-		action: checkedIn ? 'MANUAL_CHECKIN_GRANTED' : 'CHECKIN_REVERSED',
-		kind: 'ticket',
-		entityId: ticket.id,
-		target: `${ticket.code} · ${ticket.holderName}`,
-		reason: checkedIn ? 'Manual gate override issued by operations' : 'Check-in reversed after marshal dispute',
-		severity: 'warning',
-		diff: [{ field: 'ticket.status', before, after: ticket.status }]
-	});
-	touch();
-	return ticket;
 }

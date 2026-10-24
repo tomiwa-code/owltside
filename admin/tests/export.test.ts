@@ -31,8 +31,7 @@ describe('CSV export contract', () => {
 			'moderation',
 			'audit',
 			'staff',
-			'settlements',
-			'checkin'
+			'settlements'
 		];
 		for (const key of expected) {
 			const report = REPORTS[key];

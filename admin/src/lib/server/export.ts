@@ -10,7 +10,6 @@ import type {
 	AuditRecord
 } from '$admin/types';
 import {
-	getCheckinOps,
 	getSettlements,
 	getSettings,
 	listAudit,
@@ -50,7 +49,6 @@ function eventRows(): Record<string, unknown>[] {
 		city: event.city,
 		capacity: event.capacity,
 		sold: event.sold,
-		checked_in: event.checkedIn,
 		gross_ngn: naira(event.grossNgn)
 	}));
 }
@@ -105,9 +103,7 @@ function ticketRows(): Record<string, unknown>[] {
 		order_ref: ticket.orderRef,
 		price_ngn: naira(ticket.priceNgn),
 		purchased_at: ticket.purchasedAt,
-		checked_in_at: ticket.checkedInAt ?? '',
-		gate: ticket.gate ?? '',
-		scanner: ticket.scannerId ?? ''
+		reissues: ticket.reissueCount ?? 0
 	}));
 }
 
@@ -211,19 +207,6 @@ function settlementRows(): Record<string, unknown>[] {
 	}));
 }
 
-function checkinRows(): Record<string, unknown>[] {
-	const ops = getCheckinOps(null);
-	return ops.feed.map((ticket: AdminTicket) => ({
-		code: ticket.code,
-		holder: ticket.holderName,
-		event: ticket.eventTitle,
-		tier: ticket.tierName,
-		gate: ticket.gate ?? '',
-		scanner: ticket.scannerId ?? '',
-		checked_in_at: ticket.checkedInAt ?? ''
-	}));
-}
-
 function dashboardRows(): Record<string, unknown>[] {
 	const dashboard = getDashboard();
 	return [
@@ -233,8 +216,7 @@ function dashboardRows(): Record<string, unknown>[] {
 		{ metric: 'live_events', value: dashboard.liveEvents },
 		{ metric: 'events_today', value: dashboard.eventsToday },
 		{ metric: 'pending_review', value: dashboard.pendingReview },
-		{ metric: 'tickets_scanned', value: dashboard.ticketsScanned },
-		{ metric: 'scan_success_pct', value: dashboard.scanSuccessRate },
+		{ metric: 'active_passes', value: dashboard.activePasses },
 		{ metric: 'refunds_pending', value: dashboard.refundsPending },
 		{ metric: 'moderation_open', value: dashboard.moderationOpen }
 	];
@@ -248,7 +230,7 @@ function overviewRows(): Record<string, unknown>[] {
 		{ section: 'treasury', metric: 'gross_gmv_ngn', value: naira(settlements.grossNgn), note: `${settlements.settledPct}% settled` },
 		{ section: 'treasury', metric: 'escrow_held_ngn', value: naira(settlements.escrowNgn), note: `${settlements.escrowEvents} events queued` },
 		{ section: 'treasury', metric: 'commission_ngn', value: naira(settlements.commissionNgn), note: `${settings.platformFeePct}% take rate` },
-		{ section: 'operations', metric: 'passes_minted', value: dashboard.passes, note: `${dashboard.ticketsScanned} scanned` },
+		{ section: 'operations', metric: 'passes_minted', value: dashboard.passes, note: `${dashboard.activePasses} active` },
 		{ section: 'operations', metric: 'live_events', value: dashboard.liveEvents, note: `${dashboard.pendingReview} awaiting review` },
 		{ section: 'risk', metric: 'refunds_pending', value: dashboard.refundsPending, note: `${settings.firmware}` },
 		{ section: 'risk', metric: 'moderation_open', value: dashboard.moderationOpen, note: settings.lastAudit }
@@ -275,7 +257,7 @@ export const REPORTS: Record<string, { label: string; filename: string; columns:
 			{ key: 'ref', label: 'Ref' }, { key: 'title', label: 'Title' }, { key: 'organizer', label: 'Organizer' },
 			{ key: 'category', label: 'Category' }, { key: 'status', label: 'Status' }, { key: 'starts_at', label: 'Starts at' },
 			{ key: 'venue', label: 'Venue' }, { key: 'city', label: 'City' }, { key: 'capacity', label: 'Capacity' },
-			{ key: 'sold', label: 'Sold' }, { key: 'checked_in', label: 'Checked in' }, { key: 'gross_ngn', label: 'Gross NGN' }
+			{ key: 'sold', label: 'Sold' }, { key: 'gross_ngn', label: 'Gross NGN' }
 		],
 		rows: eventRows
 	},
@@ -311,7 +293,7 @@ export const REPORTS: Record<string, { label: string; filename: string; columns:
 			{ key: 'event', label: 'Event' }, { key: 'tier', label: 'Tier' }, { key: 'seat', label: 'Seat' },
 			{ key: 'status', label: 'Status' }, { key: 'settlement', label: 'Settlement' }, { key: 'order_ref', label: 'Order' },
 			{ key: 'price_ngn', label: 'Price NGN' }, { key: 'purchased_at', label: 'Purchased' },
-			{ key: 'checked_in_at', label: 'Checked in' }, { key: 'gate', label: 'Gate' }, { key: 'scanner', label: 'Scanner' }
+			{ key: 'reissues', label: 'Re-issues' }
 		],
 		rows: ticketRows
 	},
@@ -383,14 +365,4 @@ export const REPORTS: Record<string, { label: string; filename: string; columns:
 		],
 		rows: settlementRows
 	},
-	checkin: {
-		label: 'Gate check-in log',
-		filename: 'owltside-checkin.csv',
-		columns: [
-			{ key: 'code', label: 'Code' }, { key: 'holder', label: 'Holder' }, { key: 'event', label: 'Event' },
-			{ key: 'tier', label: 'Tier' }, { key: 'gate', label: 'Gate' }, { key: 'scanner', label: 'Scanner' },
-			{ key: 'checked_in_at', label: 'Checked in at' }
-		],
-		rows: checkinRows
-	}
 };

@@ -48,7 +48,6 @@
 		users: 'Users',
 		tickets: 'Tickets',
 		orders: 'Orders & Txns',
-		checkin: 'Check-in Ops',
 		settlements: 'Financial Analytics',
 		refunds: 'Refunds',
 		moderation: 'Moderation',
@@ -75,8 +74,8 @@
 			tone: 'warn' as const
 		},
 		{
-			title: 'Turnstile mesh epoch rotated',
-			body: 'Node 01–04 · HMAC signature verified',
+			title: 'Paystack webhook secret rotated',
+			body: 'Dual-signature rotation recorded on the ledger',
 			href: '/settings',
 			tone: 'ok' as const
 		}

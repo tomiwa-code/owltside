@@ -58,7 +58,7 @@
 		}
 		toasts.ok(
 			decision === 'approve' ? 'Reversal executed' : 'Refund rejected',
-			decision === 'approve' ? `${target.orderRef} queued with Paystack; HMAC pass keys voided.` : `${target.orderRef} closed with a formal reason.`
+			decision === 'approve' ? `${target.orderRef} queued with Paystack; passes revoked from both wallets.` : `${target.orderRef} closed with a formal reason.`
 		);
 		note = '';
 		rejectOpen = false;
@@ -88,7 +88,7 @@
 <div class="space-y-4">
 	<PageHeader
 		title="Refunds Management"
-		subtitle="Process ticket return requests, review policy compliance, enforce HMAC key voiding, and execute Paystack automated reversals."
+		subtitle="Process ticket return requests, review policy compliance, revoke passes, and execute Paystack automated reversals."
 		crumbs={['finance', 'refunds']}
 		eyebrow="Escrow-gate OK"
 	>
@@ -234,8 +234,8 @@
 								<span class="font-code text-[8.5px] text-emerald-300">6 days left (pass)</span>
 							</div>
 							<div class="flex items-center justify-between gap-2 text-[10px]">
-								<span class="flex items-center gap-1.5 text-[#a0a0ab]"><CircleDashed size={11} class="text-[#6f6f7b]" /> Turnstile scan record</span>
-								<span class="font-code text-[8.5px] text-[#8f8f9b]">{selected.signals.some((s) => /scan/i.test(s)) ? 'Never scanned' : 'Gate 2 · 14:32'}</span>
+								<span class="flex items-center gap-1.5 text-[#a0a0ab]"><CircleDashed size={11} class="text-[#6f6f7b]" /> Pass redemption record</span>
+								<span class="font-code text-[8.5px] text-[#8f8f9b]">{selected.signals.some((s) => /scan/i.test(s)) ? 'Never redeemed' : 'Redeemed at entry'}</span>
 							</div>
 							<div class="flex items-center justify-between gap-2 text-[10px]">
 								<span class="flex items-center gap-1.5 text-[#a0a0ab]"><BadgeCheck size={11} class="text-emerald-400" /> Attendee chargeback history</span>
@@ -256,7 +256,7 @@
 						</div>
 						<label class="mt-2 flex items-start gap-2 text-[9.5px] leading-snug text-[#a0a0ab]">
 							<input type="checkbox" class="checkbox mt-0.5" checked disabled />
-							<span>Cryptographic HMAC dynamic QR pass will be immediately revoked from Apple/Google Wallet.</span>
+							<span>The digital pass will be immediately revoked from Apple/Google Wallet.</span>
 						</label>
 						<label class="mt-1.5 flex items-start gap-2 text-[9.5px] leading-snug text-[#a0a0ab]">
 							<input type="checkbox" class="checkbox mt-0.5" checked disabled />
@@ -286,7 +286,7 @@
 <Sheet open={rejectOpen} title="Reject refund request" subtitle="The attendee receives a formal policy response." onclose={() => (rejectOpen = false)} width="420px">
 	<form class="space-y-3" onsubmit={(event) => { event.preventDefault(); decide('reject'); }}>
 		<label class="field-label" for="reject-note">Formal reason</label>
-		<textarea id="reject-note" class="textarea" bind:value={note} required placeholder="e.g. Ticket was scanned at the gate and the request falls outside the 7-day window."></textarea>
+		<textarea id="reject-note" class="textarea" bind:value={note} required placeholder="e.g. The pass was redeemed and the request falls outside the 7-day window."></textarea>
 		<div class="flex justify-end gap-2">
 			<button type="button" class="btn btn-sm btn-ghost" onclick={() => (rejectOpen = false)}>Cancel</button>
 			<button type="submit" class="btn btn-sm btn-danger" disabled={busy}>Reject refund</button>

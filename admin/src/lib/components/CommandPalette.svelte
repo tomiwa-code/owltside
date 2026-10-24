@@ -12,7 +12,7 @@
 	let input: HTMLInputElement | undefined = $state();
 
 	const quickLinks: SearchHit[] = [
-		{ kind: 'Case', id: 'q1', title: 'Ticket lookup & gate verification', subtitle: 'Scan, verify and override passes', href: '/tickets' },
+		{ kind: 'Case', id: 'q1', title: 'Ticket lookup & pass verification', subtitle: 'Inspect, re-issue and revoke passes', href: '/tickets' },
 		{ kind: 'Event', id: 'q2', title: 'Pending event reviews', subtitle: '3 events awaiting moderation', href: '/events?status=pending' },
 		{ kind: 'Organizer', id: 'q3', title: 'KYB verification queue', subtitle: '14 organizers pending', href: '/organizers?status=pending' },
 		{ kind: 'Case', id: 'q4', title: 'Moderation reports', subtitle: '8 active incidents', href: '/moderation' }

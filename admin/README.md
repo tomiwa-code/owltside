@@ -32,20 +32,19 @@ FIDO2 assertion. Copy `.env.example` → `.env` and set `ADMIN_EMAIL`,
 | Route | Purpose |
 | --- | --- |
 | `/login` | Credential + WebAuthn sign-in, rate-limited, signed HttpOnly cookie |
-| `/dashboard` | GMV/settlement KPIs, revenue velocity, review queue, venue telemetry, live ledger |
+| `/dashboard` | GMV/settlement KPIs, revenue velocity, review queue, top events, live ledger |
 | `/search` | Federated Search HUD (users, passes, orders, events, organizers, incidents) |
-| `/events`, `/events/[id]` | Moderation queue, approve/publish/reject, capacity & gate compliance |
+| `/events`, `/events/[id]` | Moderation queue, approve/publish/reject, capacity & compliance |
 | `/organizers`, `/organizers/[id]` | KYB registry, dossier, Paystack subaccount binding, evidence pipeline |
 | `/users`, `/users/[id]` | Directory + attendee dossier, KYC, pass/order history, suspend/reinstate |
-| `/tickets` | HMAC QR inspector, void/re-issue, gate log, scanner mesh |
+| `/tickets` | Pass inspector, void/re-issue, wallet delivery, re-issue history |
 | `/orders` | Paystack ledger, split itemisation, webhook stream, refund initiation |
-| `/checkin` | Pass lookup, live gate feed, scanner fleet health, manual admit / undo |
 | `/settlements` | Escrow, commission, payout velocity, organizer settlement table |
 | `/refunds` | Policy-match review queue, approve/reject, batch auto-approve |
 | `/moderation` | Incident triage, forensic telemetry, warn / dismiss / freeze sales |
 | `/audit`, `/audit/[id]` | Immutable hash-chained ledger + forensic record dossier |
 | `/staff` | Administrators, permission matrix, hardware-key enrolment, telemetry |
-| `/settings` | Paystack rails, gate cryptography, integrations, emergency lockdown |
+| `/settings` | Paystack rails, credential policy, signing keys, integrations |
 
 Every list view supports `?q=`, status filters and pagination; the URL is the
 source of truth so a dossier is linkable and survives refresh.
@@ -54,9 +53,9 @@ source of truth so a dossier is linkable and survives refresh.
 
 | Tier | Role | Capabilities |
 | --- | --- | --- |
-| 0 | Super Admin | Everything: settings, lockdown, staff, refunds |
+| 0 | Super Admin | Everything: settings, staff, refunds, exports |
 | 1 | Finance & Treasury / Trust & Safety Lead | Configure rails, approve refunds, KYC decisions |
-| 2 | Gate Operations / Support | Mutations: void/reissue passes, check-in overrides, moderation actions |
+| 2 | Event Operations / Support | Mutations: void/reissue passes, moderation actions |
 | 3 | Read-only Auditor | Read + export only |
 
 Guards live in `src/lib/server/auth.ts` (`requireMutation`, `requireConfigure`,
@@ -66,8 +65,9 @@ API routes return `401` when signed out and `403` when the tier is insufficient.
 
 ## Security posture
 
-- Stateless HMAC-SHA256 session cookie (`owl_admin_session`), `HttpOnly`,
-  `SameSite=Strict`, `Secure` in production, 2h TTL (12h when remembered).
+- Stateless HMAC-signed session cookie (`owl_admin_session`) — session integrity
+  only, never attendee passes. `HttpOnly`, `SameSite=Strict`, `Secure` in
+  production, 2h TTL (12h when remembered).
 - Constant-time credential comparison; 5 failed attempts per IP per 10 minutes.
 - `hooks.server.ts` redirects unauthenticated requests, and sets
   `X-Frame-Options: DENY`, `nosniff`, strict referrer policy, `noindex`,
@@ -114,14 +114,11 @@ POST /api/users/[id]/status         active | blocked | flagged
 POST /api/cases/[id]/resolve        warn | dismiss | freeze
 POST /api/staff/invite              issue enrolment link (Super Admin)
 POST /api/staff/[id]/status         suspend / restore administrator
-POST /api/settings                  update financial & gate policy
-POST /api/lockdown                  arm / clear emergency gate lockdown
+POST /api/settings                  update financial & credential policy
 POST /api/settlements/reconcile     release cleared payout batch
-POST /api/checkin/scan              verify & admit a pass at the gate
-POST /api/checkin/toggle            manual admit / undo check-in
 GET  /api/export/[report]           dashboard, overview, events, organizers, users,
                                     tickets, orders, refunds, moderation, audit,
-                                    staff, settlements, checkin
+                                    staff, settlements
 ```
 
 ## Tests

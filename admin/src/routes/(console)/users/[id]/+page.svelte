@@ -28,7 +28,7 @@
 	let busy = $state(false);
 
 	const user = $derived<AdminUser>(data.user);
-	const checkedIn = $derived(data.tickets.filter((ticket) => ticket.status === 'checked_in').length);
+	const activePasses = $derived(data.tickets.filter((ticket) => ticket.status === 'valid').length);
 
 	async function setStatus(status: 'active' | 'blocked') {
 		busy = true;
@@ -83,9 +83,9 @@
 			<p class="mt-1.5 text-[10px] text-[#8f8f9b]">{user.ordersCount} orders · {user.ticketsCount} passes</p>
 		</div>
 		<div class="panel p-4">
-			<p class="mono-label">Gate clearance</p>
-			<p class="mt-1.5 font-display text-[clamp(16px,2.2vw,22px)] font-semibold leading-none text-[#f1f1f6]">{checkedIn} <span class="font-code text-[10px] font-normal text-[#8f8f9b]">of {data.tickets.length}</span></p>
-			<p class="mt-1.5 text-[10px] text-[#8f8f9b]">Turnstile SLA 99.8%</p>
+			<p class="mono-label">Active passes</p>
+			<p class="mt-1.5 font-display text-[clamp(16px,2.2vw,22px)] font-semibold leading-none text-[#f1f1f6]">{activePasses} <span class="font-code text-[10px] font-normal text-[#8f8f9b]">of {data.tickets.length}</span></p>
+			<p class="mt-1.5 text-[10px] text-[#8f8f9b]">Not yet redeemed</p>
 		</div>
 		<div class="panel p-4">
 			<p class="mono-label">Risk signals</p>

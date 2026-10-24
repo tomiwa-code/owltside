@@ -49,17 +49,17 @@
 				approveEvents: roleName !== 'Support Agent' && roleName !== 'Read-only Auditor',
 				refunds: roleName === 'Finance & Treasury' || roleName === 'Super Admin',
 				kyc: roleName === 'Trust & Safety Lead' || roleName === 'Super Admin',
-				lockdown: roleName === 'Super Admin',
+				exports: roleName === 'Super Admin',
 				config: roleName === 'Super Admin'
 			}
 		}))
 	);
 
 	const scopeCopy: Record<string, string> = {
-		'Super Admin': 'Unrestricted control-plane access, including emergency lockdown, key rotation, and treasury disbursements above ₦5,000,000.',
+		'Super Admin': 'Unrestricted control-plane access, including key rotation, data exports, and treasury disbursements above ₦5,000,000.',
 		'Trust & Safety Lead': 'KYC adjudication, moderation triage, sales freezes, and pass revocation on flagged events.',
 		'Finance & Treasury': 'Paystack escrow settlement authority, refund approval, and financial ledger forensic reconciliation.',
-		'Gate Operations': 'Turnstile fleet management, gate overrides, manual check-in, and scanner credential rotation.',
+		'Event Operations': 'Event-day operations, pass re-issues, venue staffing, and attendee support escalation.',
 		'Support Agent': 'Read-only attendee records with case notes; can resend passes but cannot move money.',
 		'Read-only Auditor': 'Immutable access to the ledger and audit trails. No mutations permitted at any tier.'
 	};
@@ -141,7 +141,7 @@
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Custom system roles</p><Lock size={13} class="text-[#6f6f7b]" /></div>
 			<p class="mt-2 flex items-baseline gap-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">{roles.length} <span class="font-code text-[9px] font-normal text-[#8f8f9b]">roles</span></p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Tier 0 · Gate · Finance · Trust · Support</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Tier 0 · Operations · Finance · Trust · Support</p>
 		</div>
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Elevated actions (24h)</p><ShieldAlert size={13} class="text-amber-300" /></div>
@@ -239,7 +239,7 @@
 							<p class="font-display text-[12px] font-semibold text-[#ececf1]">Zero-trust step-up authentication required</p>
 							<span class="chip !h-[17px] !text-[7.5px]">Audit WebAuthn policy</span>
 						</div>
-						<p class="mt-0.5 text-[10.5px] leading-relaxed text-[#8f8f9b]">All financial reversals and gate scanner encryption key rotations mandate physical hardware touch verification via WebAuthn.</p>
+						<p class="mt-0.5 text-[10.5px] leading-relaxed text-[#8f8f9b]">All financial reversals and signing-key rotations mandate physical hardware touch verification via WebAuthn.</p>
 					</div>
 				</section>
 
@@ -260,7 +260,7 @@
 					<header class="panel-head"><p class="mono-label">Granular permission matrix</p><span class="font-code text-[8px] uppercase text-[#6f6f7b]">ABAC + tier gating</span></header>
 					<div class="table-wrap">
 						<table class="tbl">
-							<thead><tr><th>Role</th><th>Tier</th><th>Read</th><th>Approve events</th><th>Refunds</th><th>KYB</th><th>Lockdown</th><th>Config</th></tr></thead>
+							<thead><tr><th>Role</th><th>Tier</th><th>Read</th><th>Approve events</th><th>Refunds</th><th>KYB</th><th>Exports</th><th>Config</th></tr></thead>
 							<tbody>
 								{#each matrix as row}
 									<tr>
@@ -403,7 +403,7 @@
 			<div>
 				<label class="field-label" for="staff-role">System role</label>
 				<select id="staff-role" class="select" bind:value={role}>
-					{#each ['Super Admin', 'Trust & Safety Lead', 'Finance & Treasury', 'Gate Operations', 'Support Agent', 'Read-only Auditor'] as option}
+					{#each ['Super Admin', 'Trust & Safety Lead', 'Finance & Treasury', 'Event Operations', 'Support Agent', 'Read-only Auditor'] as option}
 						<option value={option}>{option}</option>
 					{/each}
 				</select>

@@ -659,13 +659,11 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 1200,
 			sold: 950,
 			grossNgn: 61_500_000,
-			checkedIn: 842,
 			tiers: [
 				{ name: 'Early Bird', priceNgn: 15_000, capacity: 150, sold: 150 },
 				{ name: 'Regular Access', priceNgn: 25_000, capacity: 850, sold: 700 },
 				{ name: 'VIP Full Access', priceNgn: 65_000, capacity: 200, sold: 100 }
 			],
-			gates: 4,
 			coverFrom: '#1b2a4a',
 			coverTo: '#43318a',
 			coverIcon: 'cpu'
@@ -687,13 +685,11 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 800,
 			sold: 320,
 			grossNgn: 18_400_000,
-			checkedIn: 0,
 			tiers: [
 				{ name: 'Early Bird', priceNgn: 25_000, capacity: 200, sold: 160 },
 				{ name: 'General Pass', priceNgn: 45_000, capacity: 500, sold: 140 },
 				{ name: 'VIP Delegate', priceNgn: 120_000, capacity: 100, sold: 20 }
 			],
-			gates: 6,
 			coverFrom: '#142a2e',
 			coverTo: '#155e63',
 			coverIcon: 'presentation'
@@ -715,13 +711,11 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 700,
 			sold: 410,
 			grossNgn: 12_150_000,
-			checkedIn: 0,
 			tiers: [
 				{ name: 'General Pass', priceNgn: 10_000, capacity: 300, sold: 210 },
 				{ name: 'Supporter', priceNgn: 25_000, capacity: 300, sold: 150 },
 				{ name: 'Founder Table', priceNgn: 60_000, capacity: 100, sold: 50 }
 			],
-			gates: 3,
 			coverFrom: '#1f2a1c',
 			coverTo: '#2f5d3a',
 			coverIcon: 'users'
@@ -743,13 +737,11 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 500,
 			sold: 265,
 			grossNgn: 8_420_000,
-			checkedIn: 0,
 			tiers: [
 				{ name: 'Early Bird', priceNgn: 15_000, capacity: 100, sold: 80 },
 				{ name: 'Regular Access', priceNgn: 25_000, capacity: 300, sold: 165 },
 				{ name: 'VIP Full Access', priceNgn: 65_000, capacity: 100, sold: 20 }
 			],
-			gates: 4,
 			coverFrom: '#1b2a4a',
 			coverTo: '#43318a',
 			coverIcon: 'cpu'
@@ -771,13 +763,11 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 1500,
 			sold: 1180,
 			grossNgn: 42_900_000,
-			checkedIn: 0,
 			tiers: [
 				{ name: 'Regular Pass', priceNgn: 25_000, capacity: 900, sold: 820 },
 				{ name: 'Backstage', priceNgn: 35_000, capacity: 400, sold: 280 },
 				{ name: 'VIP Table', priceNgn: 80_000, capacity: 200, sold: 80 }
 			],
-			gates: 8,
 			coverFrom: '#3a1428',
 			coverTo: '#7c2246',
 			coverIcon: 'music'
@@ -799,12 +789,10 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 900,
 			sold: 420,
 			grossNgn: 21_000_000,
-			checkedIn: 190,
 			tiers: [
 				{ name: 'General Pass', priceNgn: 45_000, capacity: 600, sold: 300 },
 				{ name: 'VIP Delegate', priceNgn: 120_000, capacity: 300, sold: 120 }
 			],
-			gates: 2,
 			coverFrom: '#1b2a4a',
 			coverTo: '#43318a',
 			coverIcon: 'cpu',
@@ -828,13 +816,11 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 600,
 			sold: 380,
 			grossNgn: 9_800_000,
-			checkedIn: 0,
 			tiers: [
 				{ name: 'Entry', priceNgn: 15_000, capacity: 300, sold: 240 },
 				{ name: 'Premium', priceNgn: 40_000, capacity: 250, sold: 120 },
 				{ name: 'Table Service', priceNgn: 100_000, capacity: 50, sold: 20 }
 			],
-			gates: 3,
 			coverFrom: '#2b1733',
 			coverTo: '#5b2a7a',
 			coverIcon: 'moon-star'
@@ -856,12 +842,10 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 300,
 			sold: 0,
 			grossNgn: 0,
-			checkedIn: 0,
 			tiers: [
 				{ name: 'Workshop Pass', priceNgn: 20_000, capacity: 200, sold: 0 },
 				{ name: 'Team of 3', priceNgn: 50_000, capacity: 100, sold: 0 }
 			],
-			gates: 2,
 			coverFrom: '#2e2414',
 			coverTo: '#6b4a17',
 			coverIcon: 'wrench',
@@ -885,9 +869,7 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 250,
 			sold: 0,
 			grossNgn: 0,
-			checkedIn: 0,
 			tiers: [{ name: 'General Pass', priceNgn: 10_000, capacity: 250, sold: 0 }],
-			gates: 2,
 			coverFrom: '#1f2a1c',
 			coverTo: '#2f5d3a',
 			coverIcon: 'users',
@@ -911,12 +893,10 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 120,
 			sold: 84,
 			grossNgn: 6_300_000,
-			checkedIn: 0,
 			tiers: [
 				{ name: 'Founder Access', priceNgn: 75_000, capacity: 90, sold: 74 },
 				{ name: 'Investor Table', priceNgn: 150_000, capacity: 30, sold: 10 }
 			],
-			gates: 1,
 			coverFrom: '#2a1d16',
 			coverTo: '#6b3a1e',
 			coverIcon: 'rocket'
@@ -938,12 +918,10 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 260,
 			sold: 140,
 			grossNgn: 2_800_000,
-			checkedIn: 118,
 			tiers: [
 				{ name: 'Workshop Pass', priceNgn: 20_000, capacity: 200, sold: 140 },
 				{ name: 'Team of 3', priceNgn: 50_000, capacity: 60, sold: 0 }
 			],
-			gates: 2,
 			coverFrom: '#2e2414',
 			coverTo: '#6b4a17',
 			coverIcon: 'wrench'
@@ -965,12 +943,10 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 900,
 			sold: 610,
 			grossNgn: 15_250_000,
-			checkedIn: 542,
 			tiers: [
 				{ name: 'Early Bird', priceNgn: 25_000, capacity: 200, sold: 200 },
 				{ name: 'General Pass', priceNgn: 45_000, capacity: 700, sold: 410 }
 			],
-			gates: 5,
 			coverFrom: '#142a2e',
 			coverTo: '#155e63',
 			coverIcon: 'presentation'
@@ -992,9 +968,7 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 200,
 			sold: 60,
 			grossNgn: 1_200_000,
-			checkedIn: 0,
 			tiers: [{ name: 'Workshop Pass', priceNgn: 20_000, capacity: 200, sold: 60 }],
-			gates: 1,
 			coverFrom: '#2e2414',
 			coverTo: '#6b4a17',
 			coverIcon: 'wrench',
@@ -1017,9 +991,7 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 150,
 			sold: 0,
 			grossNgn: 0,
-			checkedIn: 0,
 			tiers: [{ name: 'Workshop Pass', priceNgn: 20_000, capacity: 150, sold: 0 }],
-			gates: 1,
 			coverFrom: '#2e2414',
 			coverTo: '#6b4a17',
 			coverIcon: 'wrench'
@@ -1041,12 +1013,10 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 2000,
 			sold: 1420,
 			grossNgn: 44_000_000,
-			checkedIn: 1310,
 			tiers: [
 				{ name: 'Founder Access', priceNgn: 75_000, capacity: 200, sold: 180 },
 				{ name: 'Investor Table', priceNgn: 150_000, capacity: 100, sold: 40 }
 			],
-			gates: 6,
 			coverFrom: '#2a1d16',
 			coverTo: '#6b3a1e',
 			coverIcon: 'rocket'
@@ -1068,12 +1038,10 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity: 400,
 			sold: 168,
 			grossNgn: 3_120_000,
-			checkedIn: 0,
 			tiers: [
 				{ name: 'General Entry', priceNgn: 10_000, capacity: 300, sold: 140 },
 				{ name: 'VIP Couple', priceNgn: 45_000, capacity: 100, sold: 28 }
 			],
-			gates: 2,
 			coverFrom: '#2a1f2b',
 			coverTo: '#6d4a67',
 			coverIcon: 'heart'
@@ -1131,9 +1099,7 @@ function makeEvents(now: Date, organizers: AdminOrganizer[]): AdminEvent[] {
 			capacity,
 			sold,
 			grossNgn: tiers.reduce((sum, t) => sum + t.sold * t.priceNgn, 0),
-			checkedIn: status === 'published' && upcoming < 0 ? Math.round(sold * (0.7 + rand() * 0.25)) : 0,
 			tiers,
-			gates: rint(1, 8),
 			coverFrom: art.from,
 			coverTo: art.to,
 			coverIcon: art.icon,
@@ -1331,15 +1297,11 @@ function makeTickets(now: Date, events: AdminEvent[], users: AdminUser[]): Admin
 			eventTitle: pulse.title,
 			tierName: 'VIP Full Access',
 			seat: 'Row A, Seat 14',
-			status: 'checked_in',
+			status: 'valid',
 			priceNgn: 65_000,
 			settlement: 'Paystack',
 			orderRef: 'ORD-9942-NG',
 			purchasedAt: daysAgo(now, 12, 14),
-			checkedInAt: minutesAgo(now, 18),
-			gate: 'Turnstile Gate 2',
-			scannerId: 'Scanner #04',
-			hmacEpoch: 14
 		},
 		{
 			id: 'tkt-0012',
@@ -1350,15 +1312,11 @@ function makeTickets(now: Date, events: AdminEvent[], users: AdminUser[]): Admin
 			eventTitle: pulse.title,
 			tierName: 'Speaker Pass',
 			seat: 'Green Room / Stage',
-			status: 'checked_in',
+			status: 'valid',
 			priceNgn: 0,
 			settlement: 'Complementary',
 			orderRef: 'ORD-9941-NG',
 			purchasedAt: daysAgo(now, 20, 9),
-			checkedInAt: minutesAgo(now, 32),
-			gate: 'VIP Arch',
-			scannerId: 'Scanner #01',
-			hmacEpoch: 14
 		},
 		{
 			id: 'tkt-4421',
@@ -1369,15 +1327,11 @@ function makeTickets(now: Date, events: AdminEvent[], users: AdminUser[]): Admin
 			eventTitle: pulse.title,
 			tierName: 'Standard Pass',
 			seat: 'Main Hall G',
-			status: 'checked_in',
+			status: 'valid',
 			priceNgn: 25_000,
 			settlement: 'Paystack',
 			orderRef: 'ORD-9939-NG',
 			purchasedAt: daysAgo(now, 18, 11),
-			checkedInAt: minutesAgo(now, 62),
-			gate: 'Gate 1 Main Entry',
-			scannerId: 'Scanner #02',
-			hmacEpoch: 14
 		},
 		{
 			id: 'tkt-8109',
@@ -1388,15 +1342,11 @@ function makeTickets(now: Date, events: AdminEvent[], users: AdminUser[]): Admin
 			eventTitle: pulse.title,
 			tierName: 'VIP Full Access',
 			seat: 'Row C, Seat 08',
-			status: 'checked_in',
+			status: 'valid',
 			priceNgn: 65_000,
 			settlement: 'Paystack',
 			orderRef: 'ORD-9936-NG',
 			purchasedAt: daysAgo(now, 9, 16),
-			checkedInAt: minutesAgo(now, 118),
-			gate: 'Gate 2 Fast-Pass',
-			scannerId: 'Scanner #04',
-			hmacEpoch: 14
 		},
 		{
 			id: 'tkt-9023',
@@ -1447,28 +1397,24 @@ function makeTickets(now: Date, events: AdminEvent[], users: AdminUser[]): Admin
 	];
 
 	const generated: AdminTicket[] = [];
-	const targets: Record<'checked_in' | 'valid' | 'void' | 'refunded' | 'transferred', number> = {
-		checked_in: 3140,
-		valid: 1642,
+	const targets: Record<'valid' | 'void' | 'refunded' | 'transferred', number> = {
+		valid: 4782,
 		void: 20,
 		refunded: 12,
 		transferred: 6
 	};
-	const current = { checked_in: 1, valid: 2, void: 1, refunded: 0, transferred: 0 };
-	const gateNames = ['Gate 1 Main Entry', 'Turnstile Gate 2', 'VIP Arch', 'Gate 2 Fast-Pass', 'North Gate', 'VIP Gate 2'];
-	const scannerNames = ['Scanner #01', 'Scanner #02', 'Scanner #03', 'Scanner #04', 'Scanner #05', 'Node 04'];
+	const current = { valid: 6, void: 1, refunded: 0, transferred: 0 };
 	const publishedEvents = events.filter((e) => e.status === 'published');
 	const purchasableEvents = publishedEvents.length ? publishedEvents : events;
 	// Ensure the most recent registrations (top of the directory) own real passes so
 	// dossiers, search, and user drill-downs always resolve to live ticket records.
 	const recentUsers = [...users].sort((a, b) => b.joinedAt.localeCompare(a.joinedAt)).slice(0, 80);
 	let holderIndex = 0;
-	for (const status of ['checked_in', 'valid', 'void', 'refunded', 'transferred'] as const) {
+	for (const status of ['valid', 'void', 'refunded', 'transferred'] as const) {
 		for (let i = current[status]; i < targets[status]; i++) {
 			const event = pick(purchasableEvents);
 			const user = holderIndex < 320 ? recentUsers[holderIndex++ % recentUsers.length] : pick(users);
 			const tier = event.tiers.length ? pick(event.tiers) : { name: 'General Pass', priceNgn: 10_000 };
-			const checkedIn = status === 'checked_in';
 			const purchasedAt = daysAgo(now, rint(1, 120), rint(8, 22));
 			generated.push({
 				id: `tkt-g-${status}-${i}`,
@@ -1484,10 +1430,6 @@ function makeTickets(now: Date, events: AdminEvent[], users: AdminUser[]): Admin
 				settlement: tier.priceNgn === 0 ? 'Complementary' : chance(0.92) ? 'Paystack' : 'USD / Card',
 				orderRef: `ORD-${String(9000 + (i % 900))}-NG`,
 				purchasedAt,
-				checkedInAt: checkedIn ? atLocal(now, rint(-2, 0), rint(8, 20), rint(0, 59)) : undefined,
-				gate: checkedIn ? pick(gateNames) : undefined,
-				scannerId: checkedIn ? pick(scannerNames) : undefined,
-				hmacEpoch: checkedIn ? rint(12, 14) : undefined
 			});
 		}
 	}
@@ -1644,7 +1586,7 @@ function makeRefunds(now: Date): AdminRefund[] {
 			slaHours: 4,
 			policyMatch: 100,
 			signals: ['Inside 7-day window', 'Never scanned', 'No prior refunds'],
-			note: 'Attendee submitted within valid 7-day window. Verified zero gate scans.'
+			note: 'Attendee submitted within valid 7-day window. Pass never redeemed.'
 		},
 		{
 			id: 'rfd-076',
@@ -1737,7 +1679,7 @@ function makeRefunds(now: Date): AdminRefund[] {
 			signals: ['Outside policy window', 'Ticket already scanned'],
 			decidedAt: hoursAgo(now, 52),
 			decidedBy: 'Damilola A.',
-			note: 'Ticket scanned at the gate on the event day; outside the 7-day window.'
+			note: 'Pass redeemed on the event day; outside the 7-day window.'
 		},
 		{
 			id: 'rfd-054',
@@ -1830,7 +1772,7 @@ function makeCases(now: Date): AdminCase[] {
 		{
 			id: 'case-8921',
 			ref: '#REP-8921',
-			title: 'Fake VIP Gate Pass Reselling',
+			title: 'Fake VIP Pass Reselling',
 			category: 'Ticket Scalping & Cryptographic Forgery',
 			severity: 'critical',
 			status: 'escalated',
@@ -1840,11 +1782,11 @@ function makeCases(now: Date): AdminCase[] {
 			createdAt: minutesAgo(now, 18),
 			slaHours: 2,
 			summary:
-				'Reporter identified unauthorized third-party site reselling duplicate static HMAC screenshots as attendee passes. Three attendees turned away at Gate 02.',
+				'Reporter identified an unauthorized third-party site reselling duplicate QR passes. Three attendees presented copies that had already been redeemed.',
 			evidence: [
-				{ at: '13:42:09 WAT', text: 'Turnstile 02 · FAIL_HMAC_EPOCH_MISMATCH · token_sig=947c…bb1f' },
-				{ at: '13:48:22 WAT', text: 'Turnstile 02 · DUP_NONCE_REPLAY · nonce_id=381944 (orig scan 12:11)' },
-				{ at: '14:02:11 WAT', text: 'Turnstile 02 · HASH_COLLISION_DETECTED · target tier #VIP-TBL-04' }
+				{ at: '13:42:09 WAT', text: 'Pass verification · DUPLICATE_PASS_PRESENTED · pass 947c…bb1f already redeemed' },
+				{ at: '13:48:22 WAT', text: 'Pass verification · SAME_PASS_TWICE · reservation 381944' },
+				{ at: '14:02:11 WAT', text: 'Pass verification · TIER_MISMATCH · target tier #VIP-TBL-04' }
 			],
 			exposureNgn: 450_000,
 			escrowNgn: 2_700_000
@@ -1932,17 +1874,17 @@ function makeCases(now: Date): AdminCase[] {
 		{
 			id: 'case-8901',
 			ref: '#REP-8901',
-			title: 'Counterfeit QR Screenshot at Gate 1',
+			title: 'Duplicate QR Pass Presentation',
 			category: 'Ticket forgery',
 			severity: 'high',
 			status: 'resolved',
-			reportedBy: 'Gate Marshal Chuka N.',
+			reportedBy: 'Field Operations · Chuka N.',
 			target: 'Ticket #OWL-2026-AI-4411',
 			targetKind: 'Ticket',
 			createdAt: hoursAgo(now, 7),
 			slaHours: 2,
-			summary: 'Static QR screenshot presented at Gate 1 — signature epoch stale by 46 minutes.',
-			evidence: [{ at: '07:12:00 WAT', text: 'HMAC epoch 11 vs required 14. Admission denied.' }],
+			summary: 'Screenshot of an already-issued QR pass presented at the venue — the pass had been redeemed 46 minutes earlier.',
+			evidence: [{ at: '07:12:00 WAT', text: 'Pass registry: already redeemed at 06:26 WAT. Pass voided.' }],
 			exposureNgn: 25_000,
 			escrowNgn: 0,
 			resolvedAt: hoursAgo(now, 6),
@@ -1993,15 +1935,15 @@ function makeStaff(now: Date): AdminStaff[] {
 	return [
 		{ id: 'adm-01', name: 'Tomiwa A.', email: 'tomiwa@owltside.com', role: 'Super Admin', tier: 0, auth: 'FIDO2 WebAuthn', status: 'active', lastActive: minutesAgo(now, 0), location: 'Victoria Island, Lagos · NG', sessions: 2 },
 		{ id: 'adm-02', name: 'Chioma N.', email: 'chioma.n@owltside.com', role: 'Trust & Safety Lead', tier: 1, auth: 'Passkey + PIN', status: 'active', lastActive: minutesAgo(now, 18), location: 'Lekki Phase 1, Lagos · NG', sessions: 1 },
-		{ id: 'adm-03', name: 'Fola D.', email: 'fola.ops@owltside.com', role: 'Gate Operations', tier: 1, auth: 'FIDO2 WebAuthn', status: 'active', lastActive: minutesAgo(now, 84), location: 'Ikeja Control Hub · NG', sessions: 1 },
-		{ id: 'adm-04', name: 'Chuka N.', email: 'chuka.marshal@owltside.com', role: 'Gate Operations', tier: 2, auth: 'Passkey + PIN', status: 'active', lastActive: minutesAgo(now, 9), location: 'Node 04 · Turnstile Mesh', sessions: 1 },
+		{ id: 'adm-03', name: 'Fola D.', email: 'fola.ops@owltside.com', role: 'Event Operations', tier: 1, auth: 'FIDO2 WebAuthn', status: 'active', lastActive: minutesAgo(now, 84), location: 'Ikeja Control Hub · NG', sessions: 1 },
+		{ id: 'adm-04', name: 'Chuka N.', email: 'chuka.ops@owltside.com', role: 'Event Operations', tier: 2, auth: 'Passkey + PIN', status: 'active', lastActive: minutesAgo(now, 9), location: 'Lagos Operations Hub · NG', sessions: 1 },
 		{ id: 'adm-05', name: 'Kemi O.', email: 'kemi.finance@owltside.com', role: 'Finance & Treasury', tier: 1, auth: 'FIDO2 WebAuthn', status: 'active', lastActive: minutesAgo(now, 260), location: 'Ikoyi Treasury Desk, Lagos · NG', sessions: 1 },
 		{ id: 'adm-06', name: 'Damilola A.', email: 'damilola@owltside.com', role: 'Support Agent', tier: 2, auth: 'TOTP fallback', status: 'active', lastActive: minutesAgo(now, 46), location: 'Yaba, Lagos · NG', sessions: 1 },
 		{ id: 'adm-07', name: 'Ibrahim S.', email: 'ibrahim.audit@owltside.com', role: 'Read-only Auditor', tier: 3, auth: 'FIDO2 WebAuthn', status: 'invited', lastActive: daysAgo(now, 1, 10), location: 'Abuja · NG', sessions: 0 },
 		{ id: 'adm-08', name: 'Zainab B.', email: 'zainab@owltside.com', role: 'Trust & Safety Lead', tier: 2, auth: 'Passkey + PIN', status: 'active', lastActive: hoursAgo(now, 2), location: 'Kano · NG', sessions: 1 },
 		{ id: 'adm-09', name: 'Nneka U.', email: 'nneka.finance@owltside.com', role: 'Finance & Treasury', tier: 2, auth: 'TOTP fallback', status: 'active', lastActive: hoursAgo(now, 4), location: 'Enugu · NG', sessions: 1 },
 		{ id: 'adm-10', name: 'Sade O.', email: 'sade.support@owltside.com', role: 'Support Agent', tier: 3, auth: 'Passkey + PIN', status: 'suspended', lastActive: daysAgo(now, 12, 14), location: 'Ibadan · NG', sessions: 0 },
-		{ id: 'adm-11', name: 'Kunle F.', email: 'kunle.ops@owltside.com', role: 'Gate Operations', tier: 3, auth: 'Passkey + PIN', status: 'active', lastActive: minutesAgo(now, 132), location: 'Landmark Hall 1 · NG', sessions: 1 },
+		{ id: 'adm-11', name: 'Kunle F.', email: 'kunle.ops@owltside.com', role: 'Event Operations', tier: 3, auth: 'Passkey + PIN', status: 'active', lastActive: minutesAgo(now, 132), location: 'Landmark Hall 1 · NG', sessions: 1 },
 		{ id: 'adm-12', name: 'Amara E.', email: 'amara@owltside.com', role: 'Super Admin', tier: 0, auth: 'FIDO2 WebAuthn', status: 'active', lastActive: minutesAgo(now, 7), location: 'Cape Town Edge · ZA', sessions: 1 }
 	];
 }
@@ -2021,15 +1963,15 @@ function makeAudit(now: Date, events: AdminEvent[], organizers: AdminOrganizer[]
 			actorRole: 'Super Admin',
 			action: 'TICKET_REISSUE_CONFIRMED',
 			target: '#OWL-2026-AI-9942',
-			reason: 'Attendee NFC damaged at gate — manual re-issue',
+			reason: 'Attendee reported a damaged pass — manual re-issue',
 			severity: 'info',
 			entityKind: 'ticket',
 			entityId: 'OWL-2026-AI-9942',
 			diff: [
-				{ field: 'ticket.hmac_epoch', before: '13', after: '14' },
-				{ field: 'turnstile_lock', before: 'CLEARED_GATE_2', after: 'CLEARED_GATE_2' },
+				{ field: 'ticket.status', before: 'void', after: 'valid' },
+				{ field: 'pass_code', before: 'OWL-2026-AI-9901', after: 'OWL-2026-AI-9942' },
 				{ field: 'reissue_count', before: '0', after: '1' },
-				{ field: 'pass_salt_hash', before: '0x8f4…691f', after: '9a4….61f' }
+				{ field: 'wallet_refresh', before: 'pending', after: 'complete' }
 			],
 			ip: '102.89.4.11',
 			hash: '0x9f4a8b7c21e63d4a08b12f69a23d8c4710bc0928e44b1d927c30a2',
@@ -2057,13 +1999,13 @@ function makeAudit(now: Date, events: AdminEvent[], organizers: AdminOrganizer[]
 			ref: 'LOG-884912',
 			at: minutesAgo(now, 47),
 			actor: 'Fola D.',
-			actorRole: 'Gate Operations',
-			action: 'TURNTILE_MESH_KEY_ROTATION',
-			target: 'Landmark Hall 1 (Node 01-04)',
-			reason: 'Routine epoch 14 cryptographic refresh',
+			actorRole: 'Event Operations',
+			action: 'WEBHOOK_SECRET_ROTATED',
+			target: 'Paystack webhook dispatcher',
+			reason: 'Routine credential refresh',
 			severity: 'info',
 			entityKind: 'settings',
-			entityId: 'mesh-node-01',
+			entityId: 'paystack-webhook',
 			ip: '105.112.28.91',
 			hash: auditHash(3),
 			prevHash: auditHash(2)
@@ -2089,10 +2031,10 @@ function makeAudit(now: Date, events: AdminEvent[], organizers: AdminOrganizer[]
 			ref: 'LOG-884896',
 			at: minutesAgo(now, 137),
 			actor: 'Chuka N.',
-			actorRole: 'Head Gate Marshal',
-			action: 'OVERRIDE_CHECKIN_DENIED',
+			actorRole: 'Field Operations Lead',
+			action: 'DUPLICATE_PASS_FLAGGED',
 			target: '#EV-9921-DUP',
-			reason: 'Duplicate QR presentation — manual override refused',
+			reason: 'Duplicate QR presentation — pass held for review',
 			severity: 'warning',
 			entityKind: 'ticket',
 			entityId: 'EV-9921-DUP',
@@ -2129,14 +2071,14 @@ function makeAudit(now: Date, events: AdminEvent[], organizers: AdminOrganizer[]
 		{ action: 'SETTLEMENT_BATCH_RELEASED', kind: 'settings' as const, severity: 'info' as const, reason: 'T+1 treasury sweep' },
 		{ action: 'PAYOUT_SUBACCOUNT_FROZEN', kind: 'organizer' as const, severity: 'critical' as const, reason: 'Beneficiary mismatch' },
 		{ action: 'MODERATION_CASE_ESCALATED', kind: 'event' as const, severity: 'warning' as const, reason: 'Severity raised to critical' },
-		{ action: 'HMAC_KEY_ROTATED', kind: 'settings' as const, severity: 'info' as const, reason: 'Scheduled rotation' }
+		{ action: 'WEBHOOK_SECRET_ROTATED', kind: 'settings' as const, severity: 'info' as const, reason: 'Scheduled rotation' }
 	];
 	const actors = [
 		{ name: 'Tomiwa A.', role: 'Super Admin' },
 		{ name: 'Chioma N.', role: 'Trust & Safety Lead' },
 		{ name: 'Kemi O.', role: 'Finance & Treasury' },
 		{ name: 'Damilola A.', role: 'Support Agent' },
-		{ name: 'Fola D.', role: 'Gate Operations' },
+		{ name: 'Fola D.', role: 'Event Operations' },
 		{ name: 'Policy Sentinel', role: 'Automated Engine' }
 	];
 	const generated: AuditRecord[] = [];
@@ -2186,16 +2128,11 @@ function makeSettings(): SettingsData {
 		disbursementWindow: 'T+1 · 02:00 WAT',
 		webhookEndpoint: 'https://api.owltside.com/v1/webhooks/paystack',
 		webhookHealthy: true,
-		hmacRotateSec: 30,
-		antiPassbackMinutes: 5,
-		reissueSafeguard: true,
-		hardwareKeyOnly: true,
-		lockdownArmed: false,
 		integrations: [
 			{ key: 'FIN-01', name: 'Paystack Rails', state: 'LIVE', tone: 'ok', detail: 'Billing pipeline & recurring webhook dispatcher', metric: '42ms latency' },
 			{ key: 'DB-REPLICA', name: 'Postgres Primary Cluster', state: 'HEALTHY', tone: 'ok', detail: 'Distributed transaction log & ticket ledger', metric: '99.99% uptime' },
-			{ key: 'SEC-HSM', name: 'AWS KMS Hardware Module', state: 'EPOCH #14', tone: 'ok', detail: 'Envelope encryption for organizer secrets & HMAC keys', metric: '90-day rotation' },
-			{ key: 'COMMS-SMS', name: 'Termii Gateway', state: '98.4% DELIV.', tone: 'warn', detail: 'High-volume transactional OTP & gate alert routing', metric: '0 queued' }
+			{ key: 'SEC-HSM', name: 'AWS KMS Hardware Module', state: 'ACTIVE', tone: 'ok', detail: 'Envelope encryption for organizer secrets & webhook credentials', metric: '90-day rotation' },
+			{ key: 'COMMS-SMS', name: 'Termii Gateway', state: '98.4% DELIV.', tone: 'warn', detail: 'High-volume transactional OTP & event alert routing', metric: '0 queued' }
 		],
 		lastHardwareSync: 'Synced 1,248 RSA keys',
 		lastAudit: 'Nov 10, 2025 · CyberGuard SOC-2 Type II',

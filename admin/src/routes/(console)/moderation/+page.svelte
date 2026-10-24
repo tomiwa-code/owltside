@@ -217,8 +217,8 @@
 							</div>
 							<div class="overflow-hidden rounded-md border border-[#2a2a32]">
 								<div class="flex items-center justify-between border-b border-[#26262e] px-2.5 py-1.5">
-									<p class="font-code text-[7.5px] uppercase tracking-[0.08em] text-[#8f8f9b]">Scanner telemetry log</p>
-									<span class="font-code text-[7.5px] text-[#6f6f7b]">{selected.evidence.length} collision events</span>
+									<p class="font-code text-[7.5px] uppercase tracking-[0.08em] text-[#8f8f9b]">Pass verification log</p>
+									<span class="font-code text-[7.5px] text-[#6f6f7b]">{selected.evidence.length} recorded events</span>
 								</div>
 								{#each selected.evidence as entry}
 									<div class="flex items-start gap-2 border-b border-[#24242c] px-2.5 py-1.5 last:border-0">
@@ -250,7 +250,7 @@
 						<textarea
 							class="textarea mt-1.5 !min-h-[64px] !text-[10.5px]"
 							bind:value={note}
-							placeholder="Provide formal justification for the audit trail... (e.g. Confirmed static barcode replay attacks at gate scanner; frozen under SecOps Protocol 4B)"
+							placeholder="Provide formal justification for the audit trail... (e.g. Confirmed duplicate pass redemption attempt by the same account; frozen under SecOps Protocol 4B)"
 						></textarea>
 						<div class="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-3">
 							<button type="button" class="btn btn-sm" disabled={busy} onclick={() => enforce('warn')}><Gavel size={11} /> Issue warning</button>

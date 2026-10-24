@@ -332,9 +332,9 @@
 							<p class="font-code text-[7.5px] uppercase text-[#6f6f7b]">zero fraud flags</p>
 						</div>
 						<div class="panel-inset p-2.5">
-							<p class="mono-label !text-[7px]">Turnstile SLA</p>
-							<p class="mt-1 font-display text-[15px] font-semibold text-[#ececf1]">99.8%</p>
-							<p class="font-code text-[7.5px] uppercase text-[#6f6f7b]">{selected.ticketsCount} checked</p>
+							<p class="mono-label !text-[7px]">Passes held</p>
+							<p class="mt-1 font-display text-[15px] font-semibold text-[#ececf1]">{selected.ticketsCount}</p>
+							<p class="font-code text-[7.5px] uppercase text-[#6f6f7b]">{selected.ordersCount} orders</p>
 						</div>
 					</div>
 
@@ -352,7 +352,7 @@
 
 					<div class="mt-3">
 						<div class="flex items-center justify-between">
-							<p class="mono-label !text-[8px]">Recent gate passes</p>
+							<p class="mono-label !text-[8px]">Recent passes</p>
 							<a href={`/tickets?q=${selected.handle}`} class="font-code text-[8px] uppercase text-[#c6bcff] hover:underline">View all →</a>
 						</div>
 						<div class="mt-1.5 space-y-1.5">
@@ -361,7 +361,7 @@
 									<span class="flex h-6 w-6 items-center justify-center rounded border border-[#33333d] bg-[#1e1e25] text-[7px] text-[#8f8f9b]">PASS</span>
 									<div class="min-w-0 flex-1">
 										<p class="truncate text-[10px] text-[#d4d4dc]">{ticket.eventTitle}</p>
-										<p class="font-code text-[7.5px] text-[#6f6f7b]">{ticket.tierName} · {ticket.status === 'checked_in' ? 'Gate checked' : 'Valid / minted'}</p>
+										<p class="font-code text-[7.5px] text-[#6f6f7b]">{ticket.tierName} · {ticket.status === 'valid' ? 'Valid / unused' : ticketStatus(ticket.status).label}</p>
 									</div>
 									<span class={chipClass(ticketStatus(ticket.status).tone)}>{ticketStatus(ticket.status).label}</span>
 								</div>

@@ -26,7 +26,7 @@
 	const event = $derived(data.event);
 	const meta = $derived(eventStatus(event.status));
 	const soldPct = $derived(event.capacity ? (event.sold / event.capacity) * 100 : 0);
-	const scanPct = $derived(event.sold ? (event.checkedIn / event.sold) * 100 : 0);
+	const remainingPct = $derived(event.capacity ? ((event.capacity - event.sold) / event.capacity) * 100 : 0);
 
 	let actionOpen = $state(false);
 	let action = $state<'published' | 'suspended' | 'draft'>('published');
@@ -100,14 +100,14 @@
 			<p class="mt-1.5 font-code text-[9px] uppercase tracking-[0.06em] text-[#6f6f7b]">Paystack settled · platform fee 6.5%</p>
 		</div>
 		<div class="panel p-4">
-			<p class="mono-label">Checked in</p>
-			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-[#f1f1f6]">{num(event.checkedIn)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{pct(scanPct, 1)} of sold passes cleared</p>
-			<div class="meter mt-2.5"><div class="meter-fill meter-ok" style={`width:${scanPct}%`}></div></div>
+			<p class="mono-label">Tickets remaining</p>
+			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-[#f1f1f6]">{num(Math.max(0, event.capacity - event.sold))}</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{pct(remainingPct, 1)} of capacity still unsold</p>
+			<div class="meter mt-2.5"><div class="meter-fill meter-ok" style={`width:${soldPct}%`}></div></div>
 		</div>
 		<div class="panel p-4">
-			<div class="flex items-center justify-between"><p class="mono-label">Gate fleet</p><StatusChip label={meta.label} tone={meta.tone} /></div>
-			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-[#f1f1f6]">{event.gates} <span class="font-code text-[10px] font-normal text-[#6f6f7b]">gates</span></p>
+			<div class="flex items-center justify-between"><p class="mono-label">Event status</p><StatusChip label={meta.label} tone={meta.tone} /></div>
+			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-[#f1f1f6]">{num(event.tiers.length)} <span class="font-code text-[10px] font-normal text-[#6f6f7b]">tiers</span></p>
 			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{event.startsAt < new Date().toISOString() ? 'Event window closed' : `Starts ${countdown(event.startsAt)}`}</p>
 		</div>
 	</div>
@@ -132,7 +132,7 @@
 				</div>
 				<div class="flex gap-1.5">
 					<span class="chip !bg-black/40 !text-[#ececf1]">{num(event.tiers.length)} tiers</span>
-					<span class="chip !bg-black/40 !text-[#ececf1]">{event.gates} gates</span>
+					<span class="chip !bg-black/40 !text-[#ececf1]">{num(event.sold)} sold</span>
 				</div>
 			</div>
 		</div>
@@ -141,8 +141,8 @@
 				<p class="mono-label">Event summary</p>
 				<p class="mt-2 text-[12px] leading-relaxed text-[#a0a0ab]">
 					A curated {event.category.toLowerCase()} experience hosted by {event.organizerName} at {event.venue},
-					{event.city}. Tickets are issued as rotating HMAC-SHA256 digital passes with offline turnstile cache
-					synchronized across {event.gates} gates.
+					{event.city}. Tickets are issued as signed digital passes, delivered straight to Apple and Google Wallet
+					and redeemable at the venue entrance.
 				</p>
 
 				<div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -155,11 +155,11 @@
 						</div>
 					</div>
 					<div class="panel-inset p-3">
-						<p class="mono-label !text-[8px]">Gate & credential security</p>
+						<p class="mono-label !text-[8px]">Pass delivery & identity</p>
 						<div class="mt-1.5 space-y-1 text-[10.5px] text-[#a0a0ab]">
-							<p class="flex justify-between"><span>HMAC epoch</span><span class="font-code text-[#dcdce4]">14 · 30s rotation</span></p>
-							<p class="flex justify-between"><span>Offline cache</span><span class="font-code text-[#dcdce4]">1,248 RSA keys</span></p>
-							<p class="flex justify-between"><span>Scanner mode</span><span class="font-code text-[#dcdce4]">Fail-closed offline</span></p>
+							<p class="flex justify-between"><span>Wallet delivery</span><span class="font-code text-[#dcdce4]">Apple + Google</span></p>
+							<p class="flex justify-between"><span>Pass re-issues</span><span class="font-code text-[#dcdce4]">Admin approved</span></p>
+							<p class="flex justify-between"><span>Refund policy</span><span class="font-code text-[#dcdce4]">7-day window</span></p>
 						</div>
 					</div>
 				</div>
@@ -200,7 +200,7 @@
 					</div>
 					<ul class="mt-2.5 space-y-1.5 border-t border-[#2a2a32] pt-2.5">
 						<li class="flex items-center gap-1.5 text-[10px] text-[#a0a0ab]"><ShieldCheck size={11} class="text-emerald-400" /> CAC registry verified</li>
-						<li class="flex items-center gap-1.5 text-[10px] text-[#a0a0ab]"><ScanLine size={11} class="text-emerald-400" /> Turnstile mesh synchronized</li>
+						<li class="flex items-center gap-1.5 text-[10px] text-[#a0a0ab]"><ScanLine size={11} class="text-emerald-400" /> Payout subaccount linked</li>
 						<li class="flex items-center gap-1.5 text-[10px] text-[#a0a0ab]"><Users size={11} class="text-emerald-400" /> Venue capacity physically verified</li>
 					</ul>
 				</div>

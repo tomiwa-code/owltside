@@ -4,7 +4,6 @@ import {
 	countUsers,
 	decideRefund,
 	getAuditEntry,
-	getCheckinOps,
 	getOrder,
 	getRefundsData,
 	getSettlements,
@@ -20,9 +19,7 @@ import {
 	resetDemoStore,
 	resolveCase,
 	searchHud,
-	setLockdown,
 	setStaffStatus,
-	setTicketCheckin,
 	setUserStatus,
 	updateSettings,
 	verifyLedger,
@@ -43,7 +40,8 @@ describe('control-plane store', () => {
 
 		expect(events.total).toBeGreaterThan(100);
 		expect(tickets.total).toBeGreaterThan(4_000);
-		expect(tickets.checkedIn).toBeGreaterThan(3_000);
+		expect(tickets.valid).toBeGreaterThan(3_000);
+		expect(tickets.valueNgn).toBeGreaterThan(0);
 		expect(tickets.revoked).toBeGreaterThan(20);
 		expect(users.total).toBe(18_420);
 	});
@@ -69,13 +67,16 @@ describe('control-plane store', () => {
 		expect(audit).not.toBeNull();
 	});
 
-	it('re-issues a voided pass with a fresh HMAC epoch', () => {
+	it('re-issues a voided pass with a fresh pass code', () => {
 		const target = listTickets({ status: 'valid' }).rows[0];
+		const originalCode = target.code;
 		voidTicket(target.id, 'Tomiwa A.', 'Lost device');
 		const reissued = reissueTicket(target.id, 'Tomiwa A.', 'Attendee collected replacement');
 
 		expect(reissued?.status).toBe('valid');
-		expect(reissued?.hmacEpoch).toBeGreaterThan(12);
+		expect(reissued?.code).not.toBe(originalCode);
+		expect(reissued?.reissueCount).toBe(1);
+		expect(reissued?.reissuedAt).toBeTruthy();
 	});
 
 	it('only initiates refunds on settled orders', () => {
@@ -98,7 +99,7 @@ describe('control-plane store', () => {
 		const openCase = listCases({ status: 'escalated' })[0];
 		expect(openCase).toBeDefined();
 
-		const resolved = resolveCase(openCase.id, 'freeze', 'Chioma N.', 'Confirmed replay attacks at gate scanner');
+		const resolved = resolveCase(openCase.id, 'freeze', 'Chioma N.', 'Confirmed replay attacks on attendee passes');
 		expect(resolved?.status).toBe('resolved');
 		expect(resolved?.resolutionNote).toContain('replay');
 	});
@@ -121,21 +122,13 @@ describe('control-plane store', () => {
 	});
 
 	it('validates money-moving settings and logs a diff', () => {
-		const settings = updateSettings({ platformFeePct: 9.5, hmacRotateSec: 45 }, 'Tomiwa A.');
+		const settings = updateSettings({ platformFeePct: 9.5, disbursementWindow: 'T+2 · 02:00 WAT' }, 'Tomiwa A.');
 		expect(settings.platformFeePct).toBe(9.5);
-		expect(settings.hmacRotateSec).toBe(45);
+		expect(settings.disbursementWindow).toBe('T+2 · 02:00 WAT');
 
 		const record = listAudit({ kind: 'settings' }).rows[0];
 		expect(record?.action).toBe('SETTINGS_POLICY_UPDATED');
 		expect(record?.diff?.some((entry) => entry.field === 'platformFeePct' && entry.after === '9.5')).toBe(true);
-	});
-
-	it('arms the emergency gate lockdown as a critical audit event', () => {
-		expect(getSettings().lockdownArmed).toBe(false);
-		const settings = setLockdown(true, 'Tomiwa A.');
-
-		expect(settings.lockdownArmed).toBe(true);
-		expect(listAudit({ severity: 'critical' }).rows[0]?.action).toBe('EMERGENCY_GATE_LOCKDOWN_ARMED');
 	});
 
 	it('keeps the audit hash chain intact', () => {
@@ -151,22 +144,6 @@ describe('control-plane store', () => {
 		expect(results.users[0]?.handle).toContain('alex');
 		expect(results.elapsedMs).toBeGreaterThanOrEqual(0);
 		expect(searchHud('a', 5).users.length).toBeGreaterThanOrEqual(0);
-	});
-
-	it('reports gate clearance and scanner fleet health', () => {
-		const ops = getCheckinOps(null);
-		expect(ops.fleet.length).toBeGreaterThan(1);
-		expect(ops.fleet.every((node) => node.health >= 0 && node.health <= 100)).toBe(true);
-		expect(ops.clearance.checkedIn).toBeGreaterThan(0);
-		expect(ops.clearance.remaining).toBeGreaterThanOrEqual(0);
-	});
-
-	it('lets a marshal reverse a check-in', () => {
-		const checked = getCheckinOps(null).feed[0];
-		expect(checked).toBeDefined();
-		const reversed = setTicketCheckin(checked.id, false, 'Fola D.');
-		expect(reversed?.status).toBe('valid');
-		expect(reversed?.checkedInAt).toBeUndefined();
 	});
 
 	it('computes settlement rows with fees and payout state', () => {

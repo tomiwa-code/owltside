@@ -148,7 +148,7 @@
 					<header class="panel-head">
 						<div class="flex items-center gap-2"><Ticket size={12} class="text-[#8f8f9b]" /><p class="mono-label">Tickets & smart passes</p></div>
 						<span class="font-code text-[8px] uppercase tracking-[0.08em] text-[#6f6f7b]">
-							{results.tickets.filter((ticket) => ticket.status === 'valid' || ticket.status === 'checked_in').length} active admission
+							{results.tickets.filter((ticket) => ticket.status === 'valid').length} active admission
 						</span>
 					</header>
 					<div class="divide-y divide-[#24242c]">
@@ -168,9 +168,9 @@
 									</p>
 								</div>
 								<div class="ml-auto flex items-center gap-5 font-code text-[8px] uppercase tracking-[0.06em] text-[#6f6f7b]">
-									<div><p>Checked in</p><p class="mt-0.5 text-[10px] normal-case tracking-normal text-[#dcdce4]">{ticket.checkedInAt ? relative(ticket.checkedInAt) : 'Not scanned'}</p></div>
-									<div class="hidden lg:block"><p>Gate</p><p class="mt-0.5 text-[10px] normal-case tracking-normal text-[#dcdce4]">{ticket.gate ?? '—'}</p></div>
-									<div class="hidden xl:block"><p>HMAC</p><p class="mt-0.5 text-[10px] normal-case tracking-normal text-[#dcdce4]">sha256:{(ticket.id + ticket.code).replace(/[^a-z0-9]/gi, '').slice(-6)}</p></div>
+									<div><p>Purchased</p><p class="mt-0.5 text-[10px] normal-case tracking-normal text-[#dcdce4]">{relative(ticket.purchasedAt)}</p></div>
+									<div class="hidden lg:block"><p>Seat</p><p class="mt-0.5 text-[10px] normal-case tracking-normal text-[#dcdce4]">{ticket.seat}</p></div>
+									<div class="hidden xl:block"><p>Order</p><p class="mt-0.5 text-[10px] normal-case tracking-normal text-[#dcdce4]">{ticket.orderRef}</p></div>
 								</div>
 								<StatusChip label={ticketStatus(ticket.status).label} tone={ticketStatus(ticket.status).tone} />
 							</a>

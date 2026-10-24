@@ -97,14 +97,14 @@
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Critical security actions</p><span class="h-1.5 w-1.5 rounded-full bg-amber-300"></span></div>
 			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">{num(data.counts.critical)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Privilege updates, key rotations, lockdown arms</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Privilege updates, key rotations, data exports</p>
 		</div>
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Cryptographic tamper-check</p><Lock size={13} class="text-emerald-400" /></div>
 			<p class="mt-2 mt-1 flex items-baseline gap-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">
 				{data.counts.verifiedPct}% <span class="font-code text-[10px] font-normal text-emerald-300">verified</span>
 			</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{lastVerified ? `Re-checked ${relative(lastVerified)}` : 'SHA-256 HMAC chain valid · 0 breaks'}</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{lastVerified ? `Re-checked ${relative(lastVerified)}` : 'SHA-256 hash chain valid · 0 breaks'}</p>
 		</div>
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Active admin sessions</p><span class="chip !h-[17px] !text-[7.5px]">FIDO2</span></div>
