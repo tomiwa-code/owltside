@@ -1,0 +1,40 @@
+{
+	"name": "@owltside/admin",
+	"version": "1.0.0",
+	"private": true,
+	"description": "Owltside Admin — internal control plane for the Owltside event & ticketing platform",
+	"type": "module",
+	"engines": {
+		"node": ">=20"
+	},
+	"scripts": {
+		"dev": "vite dev --host 0.0.0.0 --port 5174",
+		"build": "vite build",
+		"preview": "vite preview --host 0.0.0.0 --port 5174",
+		"check": "svelte-check --tsconfig ./tsconfig.json",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@fontsource/inter": "^5.0.0",
+		"@fontsource/jetbrains-mono": "^5.0.0",
+		"@fontsource/space-grotesk": "^5.0.0",
+		"@lucide/svelte": "^1.55.0",
+		"@supabase/supabase-js": "^2.49.0",
+		"qrcode": "^1.5.4",
+		"zod": "^4.6.6"
+	},
+	"devDependencies": {
+		"@sveltejs/adapter-vercel": "^6.3.4",
+		"@sveltejs/kit": "^2.0.0",
+		"@sveltejs/vite-plugin-svelte": "^5.0.0",
+		"@tailwindcss/vite": "^4.1.0",
+		"@types/node": "^22.10.0",
+		"@types/qrcode": "^1.5.5",
+		"svelte": "^5.30.0",
+		"svelte-check": "^4.1.0",
+		"tailwindcss": "^4.1.0",
+		"typescript": "^5.5.0",
+		"vite": "^6.3.0",
+		"vitest": "^3.1.0"
+	}
+}
