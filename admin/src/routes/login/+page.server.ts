@@ -12,6 +12,8 @@ import type { AdminSession } from '$admin/types';
 
 function safeNext(raw: string | null): string {
 	if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return '/dashboard';
+	// `/` is the preview/bookmark entry point and re-enters this same flow.
+	if (raw === '/' || raw.startsWith('/?') || raw.startsWith('/#')) return '/dashboard';
 	if (raw.startsWith('/login')) return '/dashboard';
 	return raw;
 }
@@ -47,6 +49,11 @@ export const actions: Actions = {
 		if (!password) return fail(400, { error: 'Enter your security passphrase.', email });
 
 		const result = authenticate({ email, password, remember, ip: getClientAddress() });
+		if (process.env.NODE_ENV !== 'production') {
+			console.log(
+				`[login] email="${email}" ok=${result.ok} status=${result.status ?? 200} https=${https} bytes=${password.length}`
+			);
+		}
 		if (!result.ok || !result.session || !result.expiresAt) {
 			return fail(result.status ?? 401, { error: result.error ?? 'Sign in failed.', email });
 		}
