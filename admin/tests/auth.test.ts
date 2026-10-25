@@ -5,6 +5,7 @@ import {
 	authenticateWithKey,
 	canConfigure,
 	canMutate,
+	DEMO_PASSPHRASE,
 	isDemoMode,
 	isSecureRequest,
 	requireAudit,
@@ -176,5 +177,31 @@ describe('HTTPS detection for session cookies', () => {
 				url('http://localhost:5174/login')
 			)
 		).toBe(true);
+	});
+});
+
+describe('demo sign-in credentials', () => {
+	it('advertises a passphrase that the demo gate actually accepts', () => {
+		expect(DEMO_PASSPHRASE.length).toBeGreaterThanOrEqual(16);
+
+		const result = authenticate({
+			email: 'admin@owltside.com',
+			password: DEMO_PASSPHRASE,
+			remember: false,
+			ip: '10.0.0.9'
+		});
+		expect(result.ok).toBe(true);
+		expect(result.session?.demo).toBe(true);
+	});
+
+	it('rejects the right passphrase paired with the wrong email', () => {
+		const result = authenticate({
+			email: 'admin@owltside.co',
+			password: DEMO_PASSPHRASE,
+			remember: false,
+			ip: '10.0.0.10'
+		});
+		expect(result.ok).toBe(false);
+		expect(result.status).toBe(401);
 	});
 });

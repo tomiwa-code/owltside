@@ -1,17 +1,263 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { ArrowRight, Eye, EyeOff, Fingerprint, Lock, Mail, ShieldAlert } from '@lucide/svelte';
+	import { onMount, untrack } from 'svelte';
+	import { ArrowRight, Eye, EyeOff, Fingerprint, KeyRound, Lock, Mail, ShieldAlert } from '@lucide/svelte';
+	import CopyButton from '$components/CopyButton.svelte';
 
 	let { data, form } = $props();
 
+	// Deliberate one-time snapshot: the boxes stay editable, and a failed POST
+	// re-renders the component with fresh props anyway.
+	let email = $state(untrack(() => form?.email ?? data.defaultEmail));
+	let password = $state(untrack(() => data.demoPassphrase));
+	let formElement = $state<HTMLFormElement | null>(null);
+	let remember = $state(true);
+	let busy = $state(false);
+	let error = $state<string | null>(null);
+	let status = $state<string | null>(null);
 	let showPassword = $state(false);
 	let blockedHint = $state(false);
 	let probeNote = $state<string | null>(null);
+	let sessionBlocked = $state(false);
+	let diagOpen = $state(false);
+	let diagBusy = $state(false);
+	let diagnostics = $state<string[]>([]);
 
-	// A failure surfaced by the action itself always wins over the guesswork below.
-	const shownError = $derived(form?.error ?? null);
+	// A failure surfaced by the action itself always wins over local validation.
+	const shownError = $derived(error ?? form?.error ?? null);
 
 	const ATTEMPT_KEY = 'owl-admin-login-attempt';
+
+	// A preview iframe can be sandboxed without `allow-same-origin`, in which
+	// case *touching* sessionStorage throws a SecurityError. Never let that
+	// abort a sign-in: the marker is a nicety, the redirect is the job.
+	function readMarker(): number {
+		try {
+			return Number(sessionStorage.getItem(ATTEMPT_KEY) ?? 0);
+		} catch {
+			return 0;
+		}
+	}
+
+	function writeMarker(): void {
+		try {
+			sessionStorage.setItem(ATTEMPT_KEY, String(Date.now()));
+		} catch {
+			/* storage blocked — the probe below simply will not find a marker */
+		}
+	}
+
+	/**
+	 * Demo convenience: put the published sandbox credentials back into the
+	 * form. Browsers happily autofill a saved work email over the defaults, and
+	 * an unknown email is the most common reason a demo sign-in is rejected.
+	 */
+	function useDemoCredentials() {
+		email = data.defaultEmail;
+		password = data.demoPassphrase;
+		showPassword = true;
+		status = null;
+		formElement?.querySelector<HTMLInputElement>('#password')?.focus();
+	}
+
+	/**
+	 * Sign in.
+	 *
+	 * The form is submitted by script rather than by the browser for three
+	 * practical reasons, all of which have bitten this screen before:
+	 *
+	 *  1. An embedded preview can block native form submission outright (an
+	 *     iframe without `allow-forms`), so a click does nothing at all.
+	 *  2. Constraint validation (`minlength`, autofilled junk) blocks the submit
+	 *     before it fires, which is invisible unless the bubble happens to be on
+	 *     screen — again, "the button does nothing".
+	 *  3. A failed POST is a full page load, so the typed password is lost.
+	 *
+	 * Every branch below ends in a visible state change, and if the fetch path
+	 * is unavailable the code falls back to a real form submission.
+	 */
+	async function signIn(event: SubmitEvent) {
+		event.preventDefault();
+		if (busy) return;
+
+		error = null;
+		status = null;
+
+		const trimmed = email.trim();
+		if (!trimmed) {
+			error = 'Enter your work email address.';
+			formElement?.querySelector<HTMLInputElement>('#email')?.focus();
+			return;
+		}
+		if (!password) {
+			error = 'Enter your security password.';
+			formElement?.querySelector<HTMLInputElement>('#password')?.focus();
+			return;
+		}
+		if (password.length < 16) {
+			error = `The security password must be at least 16 characters (yours is ${password.length}).`;
+			formElement?.querySelector<HTMLInputElement>('#password')?.focus();
+			return;
+		}
+
+		busy = true;
+		status = 'Contacting the control plane…';
+
+		const body = new FormData();
+		body.set('email', trimmed);
+		body.set('password', password);
+		body.set('remember', remember ? 'on' : 'off');
+
+		try {
+			const response = await fetch(`${window.location.pathname}?/credentials`, {
+				method: 'POST',
+				body,
+				headers: { accept: 'application/json', 'x-sveltekit-action': 'true' },
+				credentials: 'same-origin',
+				cache: 'no-store'
+			});
+
+			const payload = await response.json().catch(() => null);
+
+			if (payload?.type === 'redirect') {
+				status = 'Credentials accepted — checking the session…';
+				writeMarker();
+
+				// Verify the cookie survived the round trip before navigating.
+				// In an embedded preview a cross-site cookie is frequently
+				// discarded, and without this check the app would bounce back to
+				// this screen with no explanation — which reads as "the button
+				// does nothing".
+				const probe = await fetch('/api/session-probe', {
+					credentials: 'same-origin',
+					cache: 'no-store'
+				})
+					.then((r) => (r.ok ? r.json() : null))
+					.catch(() => null);
+
+				if (probe && probe.authed === false) {
+					sessionBlocked = true;
+					status = null;
+					return;
+				}
+
+				status = 'Signed in — opening the dashboard…';
+				// Full page load so the server re-reads the session cookie.
+				window.location.assign(sameOriginPath(payload.location ?? data.next ?? '/dashboard'));
+				return;
+			}
+
+			if (payload?.type === 'failure' || payload?.type === 'error') {
+				const message =
+					payload?.data?.error ??
+					(typeof payload?.data === 'string' ? payload.data : null) ??
+					`Sign-in was rejected (HTTP ${response.status}).`;
+				error = message;
+				status = null;
+				return;
+			}
+
+			if (!payload) {
+				// Non-JSON answer: the action endpoint is not reachable as expected.
+				error = `The control plane answered with HTTP ${response.status} instead of a sign-in result. Reloading and trying again usually clears this.`;
+				status = null;
+				return;
+			}
+
+			error = 'Unexpected sign-in response. Please try again.';
+			status = null;
+		} finally {
+			// `finally` runs before the redirect navigates away, but it also runs
+			// on failure — so the button can never stay stuck on "Signing in…".
+			busy = false;
+			if (status === 'Contacting the control plane…') status = null;
+		}
+	}
+
+	/**
+	 * Keep navigation on the origin the admin is actually using. Behind the
+	 * preview proxy the server may resolve a redirect against its internal
+	 * origin (http://localhost:5174), which would strand the browser.
+	 */
+	function sameOriginPath(target: string): string {
+		try {
+			const next = new URL(target, window.location.origin);
+			return next.origin === window.location.origin ? next.pathname + next.search + next.hash : target;
+		} catch {
+			return target;
+		}
+	}
+
+	/**
+	 * A blocked third-party cookie cannot be worked around from inside an
+	 * embedded frame: the browser simply will not send it back. A top-level tab
+	 * is a first-party context, where the same cookie is stored normally, so
+	 * hand the workspace over to one.
+	 */
+	function openInNewTab() {
+		const target = `${window.location.origin}/dashboard`;
+		const opened = window.open(target, '_blank', 'noopener');
+		if (!opened) window.location.assign(target);
+	}
+
+	/**
+	 * Browser-side self test. It answers the questions that cannot be answered
+	 * from the server log: can this tab reach the action, what does the action
+	 * reply, and does the session cookie survive the round trip.
+	 */
+	async function runDiagnostics() {
+		diagBusy = true;
+		diagnostics = [];
+		const lines: string[] = [];
+		const push = (line: string) => {
+			lines.push(line);
+			diagnostics = [...lines];
+		};
+
+		const framed = window.self !== window.top;
+		push(`context: ${framed ? 'embedded frame' : 'top-level tab'}`);
+		push(`origin: ${window.location.origin}`);
+		push(`secure context: ${window.isSecureContext ? 'yes' : 'no'}`);
+		try {
+			window.localStorage.getItem('probe');
+			push('storage: writable');
+		} catch {
+			push('storage: BLOCKED (sandboxed frame)');
+		}
+
+		const body = new FormData();
+		body.set('email', email.trim());
+		body.set('password', password);
+		body.set('remember', remember ? 'on' : 'off');
+
+		try {
+			const response = await fetch(`${window.location.pathname}?/credentials`, {
+				method: 'POST',
+				body,
+				headers: { accept: 'application/json', 'x-sveltekit-action': 'true' },
+				credentials: 'same-origin',
+				cache: 'no-store'
+			});
+			const payload = await response.json().catch(() => null);
+			push(`action POST: HTTP ${response.status} · ${payload?.type ?? 'non-JSON'}`);
+			if (payload?.type === 'failure') {
+				push(`action says: ${payload?.data?.error ?? 'rejected'}`);
+			}
+			if (payload?.location) push(`redirect target: ${payload.location}`);
+		} catch (cause) {
+			push(`action POST failed: ${(cause as Error).message}`);
+		}
+
+		try {
+			const probe = await fetch('/api/session-probe', { credentials: 'same-origin', cache: 'no-store' }).then((r) =>
+				r.json()
+			);
+			push(`session: authed=${probe.authed} · cookieSeen=${probe.cookieSeen}`);
+		} catch {
+			push('session probe: unreachable');
+		}
+
+		diagBusy = false;
+	}
 
 	/**
 	 * Landing back here right after a sign-in attempt means the redirect came
@@ -21,9 +267,13 @@
 	 *   - cookie stored        → the session was rejected or expired
 	 */
 	onMount(() => {
-		const attemptedAt = Number(sessionStorage.getItem(ATTEMPT_KEY) ?? 0);
+		const attemptedAt = readMarker();
 		if (!attemptedAt || Date.now() - attemptedAt > 45_000) return;
-		sessionStorage.removeItem(ATTEMPT_KEY);
+		try {
+			sessionStorage.removeItem(ATTEMPT_KEY);
+		} catch {
+			/* ignore */
+		}
 		blockedHint = true;
 
 		const framed = window.self !== window.top ? '1' : '0';
@@ -87,6 +337,64 @@
 					operations.
 				</p>
 
+				{#if data.demo}
+					<div class="mt-4 overflow-hidden rounded-xl border border-[#c6bcff]/25 bg-[#c6bcff]/[0.05]">
+						<div class="flex items-center justify-between gap-2 border-b border-[#c6bcff]/15 px-3 py-2">
+							<p class="flex items-center gap-1.5 font-code text-[8.5px] uppercase tracking-[0.14em] text-[#c6bcff]">
+								<KeyRound size={10} /> Demo security password
+							</p>
+							<span class="chip !h-[16px] !border-[#c6bcff]/30 !bg-[#c6bcff]/10 !text-[7px] !text-[#dcd6ff]">Sandbox only</span>
+						</div>
+						<div class="space-y-1.5 px-3 py-2.5">
+							<div class="flex items-center justify-between gap-2">
+								<span class="font-code text-[8px] uppercase tracking-[0.1em] text-[#7d7d8a]">Email</span>
+								<div class="flex min-w-0 items-center gap-1">
+									<code class="truncate font-code text-[10.5px] text-[#e6e1ff]">{data.defaultEmail}</code>
+									<CopyButton value={data.defaultEmail} label="Copy demo email" compact />
+								</div>
+							</div>
+							<div class="flex items-center justify-between gap-2">
+								<span class="font-code text-[8px] uppercase tracking-[0.1em] text-[#7d7d8a]">Password</span>
+								<div class="flex min-w-0 items-center gap-1">
+									<code class="truncate font-code text-[10.5px] text-[#e6e1ff]">{data.demoPassphrase}</code>
+									<CopyButton value={data.demoPassphrase} label="Copy demo password" compact />
+								</div>
+							</div>
+							<button
+								type="button"
+								class="mt-1 w-full rounded-md border border-[#c6bcff]/30 bg-[#c6bcff]/10 px-2 py-1.5 font-code text-[8.5px] uppercase tracking-[0.1em] text-[#dcd6ff] transition hover:bg-[#c6bcff]/20"
+								onclick={useDemoCredentials}
+							>
+								Fill demo credentials
+							</button>
+							<p class="pt-0.5 text-[9.5px] leading-relaxed text-[#8f8f9b]">
+								Any 16+ character passphrase is accepted in the sandbox. The hardware-key button simulates a
+								FIDO2 touch.
+							</p>
+						</div>
+					</div>
+				{/if}
+
+				{#if sessionBlocked}
+					<div class="mt-4 rounded-lg border border-amber-500/35 bg-amber-500/[0.08] px-3 py-2.5 text-[11.5px] leading-snug text-amber-100" role="alert">
+						<p class="flex items-center gap-1.5 font-code text-[8.5px] uppercase tracking-[0.12em] text-amber-200">
+							<ShieldAlert size={12} /> Signed in, but the session cookie was blocked
+						</p>
+						<p class="mt-1.5 text-[11px] leading-relaxed text-amber-100/85">
+							Your credentials were accepted. This embedded preview frame is a third-party context, so the
+							browser refuses to keep the session cookie — that is why it keeps returning to this screen.
+							Open the console in its own tab and sign in there; cookies are first-party there and will stick.
+						</p>
+						<button
+							type="button"
+							class="mt-2 w-full rounded-md border border-amber-400/40 bg-amber-400/15 px-2 py-1.5 font-code text-[9px] uppercase tracking-[0.1em] text-amber-50 transition hover:bg-amber-400/25"
+							onclick={openInNewTab}
+						>
+							Open the admin workspace in a new tab
+						</button>
+					</div>
+				{/if}
+
 				{#if shownError}
 					<div class="mt-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/[0.08] px-3 py-2.5 text-[11.5px] leading-snug text-red-200" role="alert">
 						<ShieldAlert size={14} class="mt-0.5 shrink-0" />
@@ -104,7 +412,14 @@
 					</div>
 				{/if}
 
-				<form method="POST" action="?/credentials" class="mt-6 space-y-4">
+				<form
+					method="POST"
+					action="?/credentials"
+					class="mt-4 space-y-4"
+					novalidate
+					bind:this={formElement}
+					onsubmit={signIn}
+				>
 					<div>
 						<label class="field-label" for="email">
 							<span>Work email address</span>
@@ -118,7 +433,7 @@
 								type="email"
 								required
 								autocomplete="username"
-								value={form?.email ?? data.defaultEmail}
+								bind:value={email}
 								class="input !h-[42px] !pl-9 !text-[13px]"
 								placeholder="admin@owltside.com"
 							/>
@@ -143,7 +458,7 @@
 								required
 								minlength="16"
 								autocomplete="current-password"
-								value={data.demoPassphrase}
+								bind:value={password}
 								class="input !h-[42px] !pl-9 !pr-10 !text-[13px]"
 								placeholder="••••••••••••••••"
 							/>
@@ -163,17 +478,27 @@
 					</div>
 
 					<label class="flex cursor-pointer items-start gap-2.5 pt-0.5">
-						<input type="checkbox" name="remember" class="checkbox mt-0.5" checked />
+						<input type="checkbox" name="remember" class="checkbox mt-0.5" bind:checked={remember} />
 						<span class="text-[11.5px] leading-snug text-[#a7a7b3]">
 							Remember device for 12 hours
 							<span class="text-[#6f6f7b]">(Enforces Hardware Key / 2FA check on subsequent sessions)</span>
 						</span>
 					</label>
 
-					<button type="submit" class="btn btn-primary mt-1 !h-[42px] w-full !rounded-lg !text-[11px] !font-semibold uppercase !tracking-[0.1em]">
-						Sign in to admin workspace
-						<ArrowRight size={14} />
+					<button
+						type="submit"
+						class="btn btn-primary mt-1 !h-[42px] w-full !rounded-lg !text-[11px] !font-semibold uppercase !tracking-[0.1em]"
+						aria-busy={busy}
+					>
+						{busy ? 'Signing in…' : 'Sign in to admin workspace'}
+						{#if !busy}<ArrowRight size={14} />{/if}
 					</button>
+
+					{#if status}
+						<p class="flex items-center justify-center gap-1.5 font-code text-[8.5px] uppercase tracking-[0.12em] text-[#c6bcff]" role="status">
+							<span class="status-dot !bg-[#c6bcff]"></span> {status}
+						</p>
+					{/if}
 				</form>
 
 				<form method="POST" action="?/hardware" class="mt-2.5">
@@ -183,17 +508,43 @@
 					</button>
 				</form>
 
-				{#if data.demo}
-					<div class="mt-4 rounded-lg border border-[#c6bcff]/20 bg-[#c6bcff]/[0.05] px-3 py-2.5">
-						<p class="font-code text-[8.5px] uppercase tracking-[0.14em] text-[#c6bcff]">Demo workspace</p>
-						<p class="mt-1 text-[11px] leading-relaxed text-[#9a9aa6]">
-							Passphrase is pre-filled — sign in as <span class="font-code text-[#dcd6ff]">admin@owltside.com</span>
-							with any 16+ characters. The hardware-key button simulates a FIDO2 touch.
-						</p>
-					</div>
-				{/if}
 
-				<div class="mt-6 border-t border-[#26262e] pt-4 text-center">
+				<div class="mt-3">
+					<button
+						type="button"
+						class="w-full text-center font-code text-[8.5px] uppercase tracking-[0.12em] text-[#6f6f7b] transition-colors hover:text-[#c6bcff]"
+						onclick={() => {
+							diagOpen = !diagOpen;
+							if (diagOpen && diagnostics.length === 0) runDiagnostics();
+						}}
+					>
+						{diagOpen ? 'Hide sign-in diagnostics' : 'Sign-in not working? Run diagnostics'}
+					</button>
+					{#if diagOpen}
+						<div class="mt-2 rounded-lg border border-[#2a2a32] bg-[#121216] p-2.5">
+							{#if diagBusy}
+								<p class="font-code text-[9px] text-[#8f8f9b]">Probing…</p>
+							{:else}
+								<ul class="space-y-0.5">
+									{#each diagnostics as line}
+										<li class="font-code text-[9px] leading-relaxed text-[#a9a9b6]">
+											<span class="text-[#5d5d69]">›</span> {line}
+										</li>
+									{/each}
+								</ul>
+								<button
+									type="button"
+									class="mt-2 font-code text-[8px] uppercase tracking-[0.1em] text-[#c6bcff] hover:underline"
+									onclick={runDiagnostics}
+								>
+									Run again
+								</button>
+							{/if}
+						</div>
+					{/if}
+				</div>
+
+				<div class="mt-5 border-t border-[#26262e] pt-4 text-center">
 					<a
 						href="/settings"
 						class="inline-flex items-center gap-1 font-code text-[9px] uppercase tracking-[0.12em] text-[#9c9ca8] transition-colors hover:text-[#c6bcff]"
