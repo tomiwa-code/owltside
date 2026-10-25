@@ -1,7 +1,17 @@
 import { fail, redirect } from '@sveltejs/kit';
-import type { Actions } from './$types';
+import type { Actions, PageServerLoad } from './$types';
 import { OPERATING_IDENTITY_COOKIE, isOperatingIdentity } from '$lib/constants/operating-identity';
 import { createSupabase } from '$lib/server/supabase';
+import { getSource } from '$lib/server/datasource';
+
+export const load: PageServerLoad = async ({ locals, cookies }) => {
+	// Verification and payout checks wait for an admin decision, so the page needs
+	// the viewer's own requests to show pending / rejected states honestly.
+	const approvals = await getSource(createSupabase(cookies))
+		.listApprovals(locals.session?.userId ?? 'demo')
+		.catch(() => []);
+	return { approvals };
+};
 
 export const actions: Actions = {
 	setIdentity: async ({ request, cookies, locals }) => {
@@ -38,6 +48,40 @@ export const actions: Actions = {
 		const returnTo = String(form.get('returnTo') ?? '');
 		// Only local, known destinations are accepted.
 		redirect(303, returnTo === '/profile' ? '/profile' : returnTo === '/settings' ? '/settings' : identity === 'organizer' ? '/organizer' : '/settings');
+	},
+	deleteAccount: async ({ request, cookies, locals }) => {
+		if (!locals.session) return fail(401, { error: 'Sign in to delete your account.' });
+		const form = await request.formData();
+		const confirmation = String(form.get('confirmation') ?? '').trim();
+		const expected = (locals.session.email ?? '').trim().toLowerCase();
+		const accepted = [expected, 'delete'].filter(Boolean);
+		if (!accepted.includes(confirmation.toLowerCase())) {
+			return fail(400, { error: 'Type your account email (or DELETE) to confirm.' });
+		}
+
+		const db = createSupabase(cookies);
+		if (!locals.session.demo && db) {
+			// `delete_own_account()` is a SECURITY DEFINER function (migration 024):
+			// it removes the caller's profile and auth user without ever exposing a
+			// service-role key to the app. Falls back to anonymising the profile when
+			// the function has not been installed yet.
+			const { error: rpcError } = await db.rpc('delete_own_account');
+			if (rpcError) {
+				const anonymised = `deleted-${locals.session.userId.slice(0, 8)}@owltside.invalid`;
+				const { error: profileError } = await db
+					.from('profiles')
+					.update({ handle: `deleted_${locals.session.userId.slice(0, 8)}`, display_name: 'Deleted account', email: anonymised, bio: '' })
+					.eq('id', locals.session.userId);
+				if (profileError) {
+					return fail(503, { error: 'Your account could not be deleted. Please try again or contact support.' });
+				}
+			}
+			await db.auth.signOut().catch(() => undefined);
+		}
+
+		cookies.delete('owltside_demo_session', { path: '/' });
+		cookies.delete(OPERATING_IDENTITY_COOKIE, { path: '/' });
+		redirect(303, '/');
 	},
 	signout: async ({ cookies }) => {
 		const db = createSupabase(cookies);

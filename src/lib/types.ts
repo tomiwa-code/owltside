@@ -35,6 +35,46 @@ export interface Profile {
 export type SpeakerInviteStatus = 'pending' | 'accepted' | 'declined';
 
 /**
+ * Things a user can ask Owltside to do that an administrator must approve.
+ * Each submission is stored as an `ApprovalRequest` and stays `pending` on the
+ * public app until the admin console publishes a decision.
+ */
+export type ApprovalKind = 'refund' | 'payout' | 'verification';
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+export interface ApprovalRequest {
+	id: string;
+	kind: ApprovalKind;
+	status: ApprovalStatus;
+	/** Requester's profile id. Public reads only ever return the viewer's own rows. */
+	requesterId: string;
+	title: string;
+	summary: string;
+	/** Naira amount for money-moving requests (refunds, payouts). */
+	amount?: number;
+	/** Ticket / event / check the request is about. */
+	subjectId?: string;
+	subjectLabel?: string;
+	/** Extra review details (never secrets: document type, masked number, etc.). */
+	payload?: Record<string, unknown>;
+	/** Admin decision note, shown back to the requester. */
+	note?: string;
+	createdAt: string;
+	decidedAt?: string;
+}
+
+export interface CreateApprovalInput {
+	kind: ApprovalKind;
+	title: string;
+	summary: string;
+	amount?: number;
+	subjectId?: string;
+	subjectLabel?: string;
+	payload?: Record<string, unknown>;
+}
+
+/**
  * Moderation state of an event. Organizer submissions start as `pending` and
  * only reach the public feeds once an admin publishes them.
  */

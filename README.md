@@ -62,12 +62,42 @@ code paths switch to the live backend — no component changes.
      (`draft | pending | published | rejected | suspended`), a public-read RLS
      policy for approved listings only, an owner guard that blocks
      self-publishing, and a ticket-sales guard for unpublished events
+   - `023_approval_requests.sql` — `public.approval_requests`: refunds, payouts
+     and identity/payout-account verification are filed as `pending`, only the
+     admin console (service role) may decide them, an approved refund flips the
+     pass to `refunded`, and the requester gets a notification with the note
+   - `024_delete_account.sql` — `delete_own_account()` (SECURITY DEFINER) so a
+     signed-in user can delete their profile and auth user without the service
+     role key ever reaching the browser
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
 Auth is email OTP (`signInWithOtp` + `verifyOtp`) via `@supabase/ssr` cookies. Google sign-in uses Supabase OAuth; enable the Google provider and add `/auth/callback` to the allowed redirect URLs.
 Chat uses **Supabase Realtime channels** on `messages` inserts (no separate
 socket server); demo mode falls back to `useQuery(refetchInterval)` polling.
+
+## Approvals (actions an admin must decide)
+
+Anything the app cannot approve by itself is *submitted*, never self-approved:
+
+| Request | Where it starts | Pending state in the app |
+| --- | --- | --- |
+| Ticket refund | Refund sheet on `/tickets/[id]` | "Refund pending" chip on the pass + sheet notice; the pass stays valid and scan-able until approved |
+| Instant payout | Organizer console (`/organizer`) | "Payout pending approval" on the payout card + settlement section |
+| Identity / payout-account verification | Settings → Verification | "Pending review" badge (never "Verified") until an admin approves |
+| Anything else | `POST /api/approvals` | Renders through `ApprovalNotice.svelte` |
+
+`GET /api/approvals` returns the viewer's own requests (their decision and note
+included), so rejected requests explain themselves on the same screen. The
+decisions are made in the admin console's **Approvals** queue — see
+`admin/README.md` and `supabase/sql/023_approval_requests.sql`.
+
+## Appearance (dark / light)
+
+The header (and the auth screens) carry a one-tap moon/sun toggle. It writes
+`accessibility.appearance` — the same preference the Settings screen edits — so
+both surfaces stay in sync, and `src/app.html` replays the stored value before
+first paint so reloads never flash the wrong theme.
 
 ## Event review workflow (moderation)
 

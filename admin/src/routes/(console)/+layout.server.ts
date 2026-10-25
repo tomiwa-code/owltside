@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
 import { countCases, countEvents, getRefundsData } from '$admin/server/store';
+import { pendingApprovalCount } from '$admin/server/approvals';
 
 export const load: LayoutServerLoad = async ({ locals, parent }) => {
 	if (!locals.admin) redirect(303, '/login');
@@ -13,6 +14,7 @@ export const load: LayoutServerLoad = async ({ locals, parent }) => {
 		counts: {
 			pendingEvents: countEvents().pending,
 			refunds: refunds.pending,
+			approvals: pendingApprovalCount(),
 			moderation: cases.open
 		},
 		serverTime: new Date().toISOString(),

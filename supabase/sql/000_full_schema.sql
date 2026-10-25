@@ -191,6 +191,38 @@ create table if not exists public.notifications (
 );
 create index if not exists notifications_user_idx on public.notifications (user_id, at desc);
 
+-- Approval requests (refunds, payouts, verification details) — see 023.
+create table if not exists public.approval_requests (
+  id uuid primary key default gen_random_uuid(),
+  requester_id uuid not null references auth.users (id) on delete cascade,
+  kind text not null,
+  status text not null default 'pending',
+  title text not null,
+  summary text not null default '',
+  amount numeric(12, 2),
+  subject_id text,
+  subject_label text,
+  payload jsonb not null default '{}'::jsonb,
+  decision_note text,
+  decided_at timestamptz,
+  decided_by text,
+  created_at timestamptz not null default now(),
+  constraint approval_requests_kind_check check (kind in ('refund', 'payout', 'verification')),
+  constraint approval_requests_status_check check (status in ('pending', 'approved', 'rejected', 'cancelled'))
+);
+create index if not exists approval_requests_requester_idx
+  on public.approval_requests (requester_id, created_at desc);
+create index if not exists approval_requests_queue_idx
+  on public.approval_requests (kind, created_at) where status = 'pending';
+create unique index if not exists approval_requests_open_subject_idx
+  on public.approval_requests (
+    requester_id,
+    kind,
+    coalesce(subject_id, ''),
+    coalesce(payload ->> 'check', '')
+  )
+  where status = 'pending' and kind in ('refund', 'verification');
+
 -- Profile Follows (Persistent relationship graph)
 create table if not exists public.profile_follows (
   follower_id uuid not null references public.profiles(id) on delete cascade,
@@ -1515,3 +1547,117 @@ $$;
 
 revoke all on function public.staff_check_in_terminal(uuid, text, text, boolean) from public;
 grant execute on function public.staff_check_in_terminal(uuid, text, text, boolean) to authenticated;
+
+-- ── Approval requests: RLS + decision side effects (migration 023) ──
+alter table public.approval_requests enable row level security;
+
+drop policy if exists approval_requests_select_own on public.approval_requests;
+create policy approval_requests_select_own on public.approval_requests for select
+  using (auth.uid() = requester_id);
+
+drop policy if exists approval_requests_insert_own on public.approval_requests;
+create policy approval_requests_insert_own on public.approval_requests for insert
+  with check (auth.uid() = requester_id and status = 'pending');
+
+create or replace function public.guard_approval_request()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is not null and new.requester_id <> auth.uid() then
+    raise exception 'You can only submit your own approval requests';
+  end if;
+  if tg_op = 'UPDATE' and new.status <> old.status and auth.uid() is not null then
+    raise exception 'Only an Owltside admin can decide an approval request';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists guard_approval_request on public.approval_requests;
+create trigger guard_approval_request
+  before insert or update on public.approval_requests
+  for each row execute function public.guard_approval_request();
+
+create or replace function public.apply_approved_refund()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.kind = 'refund' and new.status = 'approved' and new.subject_id is not null then
+    update public.tickets
+      set status = 'refunded'
+      where id::text = new.subject_id and status = 'valid';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists apply_approved_refund on public.approval_requests;
+create trigger apply_approved_refund
+  after update on public.approval_requests
+  for each row
+  when (new.status = 'approved' and old.status is distinct from 'approved')
+  execute function public.apply_approved_refund();
+
+create or replace function public.notify_approval_decision()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.status in ('approved', 'rejected') and old.status = 'pending' then
+    insert into public.notifications (user_id, kind, title, body, href)
+    values (
+      new.requester_id,
+      'system',
+      case when new.status = 'approved' then 'Approved · ' else 'Declined · ' end || new.title,
+      coalesce(nullif(new.decision_note, ''), case when new.status = 'approved'
+        then 'Your request was approved by the Owltside review team.'
+        else 'Your request was declined by the Owltside review team.' end),
+      case new.kind
+        when 'refund' then '/tickets/' || coalesce(new.subject_id, '')
+        when 'payout' then '/organizer'
+        else '/settings'
+      end
+    );
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists notify_approval_decision on public.approval_requests;
+create trigger notify_approval_decision
+  after update on public.approval_requests
+  for each row
+  when (new.status in ('approved', 'rejected') and old.status = 'pending')
+  execute function public.notify_approval_decision();
+
+-- ── Self-service account deletion (migration 024) ──
+create or replace function public.delete_own_account()
+returns void
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  uid uuid := auth.uid();
+begin
+  if uid is null then
+    raise exception 'Sign in to delete your account';
+  end if;
+
+  update public.approval_requests
+    set status = 'cancelled',
+        decision_note = 'Cancelled — the requester deleted their account.',
+        decided_at = now()
+    where requester_id = uid and status = 'pending';
+
+  delete from public.profiles where id = uid;
+  delete from auth.users where id = uid;
+end $$;
+
+revoke all on function public.delete_own_account() from public;
+grant execute on function public.delete_own_account() to authenticated;

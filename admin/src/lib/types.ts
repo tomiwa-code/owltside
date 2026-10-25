@@ -164,6 +164,39 @@ export interface AdminRefund {
 	decidedBy?: string;
 }
 
+/** Everything the public app sends to the console for a decision. */
+export type ApprovalKind = 'refund' | 'payout' | 'verification';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+export interface AdminApproval {
+	id: string;
+	kind: ApprovalKind;
+	status: ApprovalStatus;
+	requesterName: string;
+	requesterHandle: string;
+	requesterEmail: string;
+	title: string;
+	summary: string;
+	amountNgn?: number;
+	subjectId?: string;
+	subjectLabel?: string;
+	/** Straight label/value pairs rendered in the reviewer dossier. */
+	details: { label: string; value: string }[];
+	requestedAt: string;
+	slaHours: number;
+	note?: string;
+	decidedAt?: string;
+	decidedBy?: string;
+}
+
+export interface ApprovalsData {
+	pending: number;
+	approved: number;
+	rejected: number;
+	total: number;
+	rows: AdminApproval[];
+}
+
 export interface AdminUser {
 	id: string;
 	handle: string;

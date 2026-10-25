@@ -82,6 +82,7 @@
 			<span class="chip chip-ok !h-[18px] !text-[7.5px]">Paystack rails active · NGN auto-batch 02:00 UTC</span>
 		{/snippet}
 		{#snippet actions()}
+			<a class="btn btn-sm" href="/approvals"><RefreshCw size={12} /> Payout requests →</a>
 			<a class="btn btn-sm" href="/api/export/settlements" download><Download size={12} /> Export statement</a>
 			<button type="button" class="btn btn-sm" onclick={() => (configOpen = true)}><SlidersHorizontal size={12} /> Settlement config</button>
 			<button type="button" class="btn btn-sm btn-primary" disabled={busy} onclick={reconcile}>

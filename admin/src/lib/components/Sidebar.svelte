@@ -3,6 +3,7 @@
 		BarChart3,
 		Building2,
 		CalendarDays,
+		ClipboardCheck,
 		Flag,
 		LayoutDashboard,
 		LogOut,
@@ -29,7 +30,7 @@
 		publicAppUrl = 'http://localhost:5173'
 	}: {
 		admin: AdminSession;
-		counts: { pendingEvents: number; refunds: number; moderation: number };
+		counts: { pendingEvents: number; refunds: number; moderation: number; approvals?: number };
 		publicAppUrl?: string;
 	} = $props();
 
@@ -57,6 +58,7 @@
 			label: 'Platform',
 			items: [
 				{ label: 'Events', href: '/events', icon: CalendarDays, badge: counts.pendingEvents },
+				{ label: 'Approvals', href: '/approvals', icon: ClipboardCheck, badge: counts.approvals ?? 0 },
 				{ label: 'Organizers', href: '/organizers', icon: Building2 },
 				{ label: 'Users', href: '/users', icon: Users }
 			]

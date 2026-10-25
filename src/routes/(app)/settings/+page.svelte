@@ -19,6 +19,7 @@
 		ArrowLeftRight,
 		Smartphone,
 		Ticket,
+		Trash2,
 		User,
 		UserRound,
 		Wallet,
@@ -36,7 +37,23 @@
 
 	let { data } = $props();
 	const session = $derived(page.data.session);
-	const isFullyVerified = $derived(!!session && Object.values(appSettings.value.verification).every(Boolean));
+	const approvals = $derived(data.approvals ?? []);
+	// Identity and payout checks only count once an admin has approved them.
+	const approvedCheck = (check: string) =>
+		approvals.some(
+			(request) =>
+				request.kind === 'verification' &&
+				request.status === 'approved' &&
+				(request.payload as { check?: string })?.check === check
+		);
+	const isFullyVerified = $derived(
+		!!session &&
+			Object.entries({
+				...appSettings.value.verification,
+				identity: appSettings.value.verification.identity || approvedCheck('identity'),
+				payoutAccount: appSettings.value.verification.payoutAccount || approvedCheck('payoutAccount')
+			}).every(([, done]) => done)
+	);
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
@@ -53,6 +70,25 @@
 	];
 
 	let openCategory = $state<string | null>(null);
+	let deleteOpen = $state(false);
+	let deleteConfirmation = $state('');
+	let deleteAcknowledged = $state(false);
+	let deleteError = $state('');
+	let deleting = $state(false);
+	const deleteExpected = $derived((session?.email ?? 'DELETE').toLowerCase());
+	const canDelete = $derived(
+		deleteAcknowledged && deleteConfirmation.trim().toLowerCase() === deleteExpected && !deleting
+	);
+
+	let deleteForm: HTMLFormElement | null = $state(null);
+	async function submitDelete() {
+		if (!canDelete || !deleteForm) return;
+		deleteError = '';
+		deleting = true;
+		// A native submit keeps the server action (and its cookie cleanup) in charge;
+		// the redirect that follows signs the user out everywhere in this tab.
+		deleteForm.requestSubmit();
+	}
 </script>
 
 <svelte:head><title>Settings • Owltside</title></svelte:head>
@@ -330,10 +366,79 @@
 			</div>
 			{#if session}
 				<form method="POST" action="?/signout" use:enhance><button class="w-full h-10 rounded-lg bg-error/10 border border-error/30 text-error text-body-sm font-semibold flex items-center justify-center gap-2 hover:bg-error/15 transition-colors"><LogOut class="w-4 h-4" /><span>Sign out of this node</span></button></form>
+				<button
+					type="button"
+					class="w-full h-10 rounded-lg border border-error/40 text-error text-body-sm font-semibold flex items-center justify-center gap-2 hover:bg-error/10 transition-colors"
+					onclick={() => { openCategory = null; deleteOpen = true; }}
+				>
+					<Trash2 class="w-4 h-4" /><span>Delete account</span>
+				</button>
+				<p class="text-xs text-on-surface-variant text-center">Permanently removes your profile, passes and saved preferences.</p>
 			{:else}
 				<a href="/auth/login" class="w-full h-10 rounded-lg bg-on-surface text-surface-base text-body-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">Sign in</a>
 			{/if}
 		</div>
+	</Sheet>
+
+	<Sheet
+		open={deleteOpen}
+		title="Delete Account"
+		close={() => {
+			if (deleting) return;
+			deleteOpen = false;
+			deleteConfirmation = '';
+			deleteAcknowledged = false;
+			deleteError = '';
+		}}
+	>
+		<form
+			bind:this={deleteForm}
+			method="POST"
+			action="?/deleteAccount"
+			class="flex flex-col gap-3"
+			use:enhance={() => {
+				deleting = true;
+				deleteError = '';
+				return async ({ result, update }) => {
+					deleting = false;
+					if (result.type === 'failure') {
+						deleteError = typeof result.data?.error === 'string' ? result.data.error : 'Your account could not be deleted.';
+						return;
+					}
+					deleteOpen = false;
+					toast('Your account has been deleted', 'success');
+					await update();
+				};
+			}}
+		>
+			<div class="rounded-lg border border-error/30 bg-error/10 p-3 flex items-start gap-2.5">
+				<Trash2 class="w-5 h-5 text-error shrink-0 mt-0.5" />
+				<div class="min-w-0">
+					<p class="text-body-sm font-semibold text-on-surface">This cannot be undone.</p>
+					<p class="text-body-sm text-on-surface-variant mt-1">Your profile, active passes and saved preferences are removed permanently. Refund and payout requests still under review are cancelled.</p>
+				</div>
+			</div>
+			<label class="flex flex-col gap-1.5 text-body-sm text-on-surface-variant">
+				Type <span class="font-mono text-on-surface">{session?.email ?? 'DELETE'}</span> to confirm
+				<input
+					type="text"
+					autocomplete="off"
+					bind:value={deleteConfirmation}
+					class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-error"
+					placeholder={session?.email ?? 'DELETE'}
+				/>
+			</label>
+			<label class="flex items-start gap-2 text-body-sm text-on-surface-variant">
+				<input type="checkbox" bind:checked={deleteAcknowledged} class="mt-1 h-4 w-4 accent-error" />
+				<span>I understand my tickets, order history and verification progress will be deleted.</span>
+			</label>
+			{#if deleteError}<p class="text-body-sm text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2" role="alert">{deleteError}</p>{/if}
+			{#if deleting}<p class="text-xs text-on-surface-variant">Deleting your account…</p>{/if}
+			<div class="grid grid-cols-2 gap-2 pt-1">
+				<button type="button" class="h-11 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface font-semibold" onclick={() => (deleteOpen = false)}>Keep my account</button>
+				<button type="button" class="h-11 rounded-full bg-error text-white font-semibold disabled:opacity-40" disabled={!canDelete} onclick={submitDelete}>Delete account</button>
+			</div>
+		</form>
 	</Sheet>
 
 	<Sheet open={openCategory === 'sessions'} title="Active Session Nodes" close={() => (openCategory = null)}>
@@ -366,7 +471,7 @@
 	</Sheet>
 
 	<Sheet open={openCategory === 'verification'} title="Verification" close={() => (openCategory = null)}>
-		<SettingsDetails category="verification" />
+		<SettingsDetails category="verification" {approvals} />
 	</Sheet>
 	<Sheet open={openCategory === 'notifications'} title="Notifications" close={() => (openCategory = null)}>
 		<SettingsDetails category="notifications" />
@@ -378,7 +483,7 @@
 		<SettingsDetails category="security" />
 	</Sheet>
 	<Sheet open={openCategory === 'accessibility'} title="Accessibility" close={() => (openCategory = null)}>
-		<SettingsDetails category="accessibility" />
+		<SettingsDetails category="accessibility" {approvals} />
 	</Sheet>
 	<Sheet open={openCategory === 'offline'} title="Offline & Storage" close={() => (openCategory = null)}>
 		<SettingsDetails category="offline" />

@@ -40,6 +40,7 @@ FIDO2 assertion. Copy `.env.example` → `.env` and set `ADMIN_EMAIL`,
 | `/tickets` | Pass inspector, void/re-issue, wallet delivery, re-issue history |
 | `/orders` | Paystack ledger, split itemisation, webhook stream, refund initiation |
 | `/settlements` | Escrow, commission, payout velocity, organizer settlement table |
+| `/approvals` | Queue for everything the public app submits: refunds, instant payouts, identity & payout-account verification |
 | `/refunds` | Policy-match review queue, approve/reject, batch auto-approve |
 | `/moderation` | Incident triage, forensic telemetry, warn / dismiss / freeze sales |
 | `/audit`, `/audit/[id]` | Immutable hash-chained ledger + forensic record dossier |
@@ -48,6 +49,28 @@ FIDO2 assertion. Copy `.env.example` → `.env` and set `ADMIN_EMAIL`,
 
 Every list view supports `?q=`, status filters and pagination; the URL is the
 source of truth so a dossier is linkable and survives refresh.
+
+## Approval queue (public app → console)
+
+The customer app never approves itself. Refund requests, instant payouts and
+verification details are written to `public.approval_requests` as `pending` and
+show up on `/approvals` as **Pending review** on the public web until an admin
+decides them.
+
+```bash
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service role key>   # decides approval_requests
+```
+
+- **Approve** (refund) → the pass flips to `refunded` and the attendee is
+  notified; **Approve** (payout) → the payout is released; **Approve**
+  (verification) → the public app shows "Verified".
+- **Reject** requires a reason, which the requester sees on the same screen.
+- Without Supabase credentials the console reviews its deterministic demo queue
+  (`seed.ts` → `makeApprovals`) so the workflow is still demonstrable, and the
+  page shows a **Demo dataset** chip.
+- Apply `supabase/sql/023_approval_requests.sql` from the customer app first;
+  the page surfaces a clear error if the table is missing.
 
 ## Organizer submission queue
 
@@ -137,6 +160,7 @@ POST /api/events/[id]/status        approve / reject / suspend / publish
 POST /api/organizers/[id]/status    verify / reject / freeze KYB
 POST /api/tickets/[id]/actions      void | reissue
 POST /api/orders/[id]/refund        initiate refund (settled only)
+POST /api/approvals/[id]/decision   approve | reject (refund, payout, verification)
 POST /api/refunds/[id]/decision     approve | reject
 POST /api/refunds/batch             auto-approve eligible queue
 POST /api/users/[id]/status         active | blocked | flagged
@@ -161,7 +185,9 @@ npm test
 void/re-issue epoch handling, audit chain integrity, pagination clamping);
 `tests/auth.test.ts` covers demo/live auth, lockout, cookie signing/expiry and
 the tier ladder; `tests/export.test.ts` locks the CSV contract and every export
-link referenced in the UI.
+link referenced in the UI; `tests/approvals.test.ts` locks the approval queue
+(reason required to reject, approve-refund settles the pass, no double
+decisions).
 
 ## Deploy
 

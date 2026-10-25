@@ -1,4 +1,5 @@
 import type {
+	AdminApproval,
 	AdminCase,
 	AdminDashboard,
 	AdminEvent,
@@ -10,6 +11,7 @@ import type {
 	AdminUser,
 	AuditRecord,
 	PlatformStatus,
+	ApprovalsData,
 	RefundsData,
 	SettingsData,
 	SettlementsData
@@ -527,6 +529,70 @@ export function initiateRefund(orderId: string, actor: string, reason: string): 
 	});
 	touch();
 	return refund;
+}
+
+// ── Approval requests ───────────────────────────────────────────────────────
+
+/**
+ * Requests the public app routes to the console: ticket refunds, instant
+ * payouts and identity / payout-account verification. A request keeps its
+ * `pending` state — and the public app keeps showing "pending" — until an
+ * admin decides it here.
+ */
+export function getApprovalsData(): ApprovalsData {
+	const rows = [...store().approvals].sort(
+		(a, b) => +new Date(b.requestedAt) - +new Date(a.requestedAt)
+	);
+	return {
+		pending: rows.filter((row) => row.status === 'pending').length,
+		approved: rows.filter((row) => row.status === 'approved').length,
+		rejected: rows.filter((row) => row.status === 'rejected').length,
+		total: rows.length,
+		rows
+	};
+}
+
+export function countApprovals(): number {
+	return store().approvals.filter((row) => row.status === 'pending').length;
+}
+
+export function getApproval(id: string): AdminApproval | null {
+	return store().approvals.find((row) => row.id === id) ?? null;
+}
+
+export function decideApproval(
+	id: string,
+	decision: 'approve' | 'reject',
+	actor: string,
+	note: string
+): AdminApproval | null {
+	const approval = getApproval(id);
+	if (!approval || approval.status !== 'pending') return null;
+
+	approval.status = decision === 'approve' ? 'approved' : 'rejected';
+	approval.note = note || approval.note;
+	approval.decidedAt = new Date().toISOString();
+	approval.decidedBy = actor;
+
+	// Approving a refund settles the pass itself; the public app then shows it
+	// as refunded instead of "pending".
+	if (decision === 'approve' && approval.kind === 'refund' && approval.subjectId) {
+		const ticket = store().tickets.find((row) => row.id === approval.subjectId);
+		if (ticket) ticket.status = 'refunded';
+	}
+
+	logAudit({
+		actor,
+		action: decision === 'approve' ? 'APPROVAL_GRANTED' : 'APPROVAL_REJECTED',
+		kind:
+			approval.kind === 'refund' ? 'order' : approval.kind === 'payout' ? 'settings' : 'user',
+		entityId: approval.id,
+		target: `${approval.title} · @${approval.requesterHandle}`,
+		reason: note || (decision === 'approve' ? 'Approved by admin' : 'Rejected by admin'),
+		severity: decision === 'approve' ? 'info' : 'warning'
+	});
+	touch();
+	return approval;
 }
 
 // ── Users ───────────────────────────────────────────────────────────────────

@@ -1,8 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
+	ApprovalKind,
+	ApprovalRequest,
 	Checkin,
 	CheckoutItem,
 	Conversation,
+	CreateApprovalInput,
 	EventFilters,
 	EventItem,
 	EventPromo,
@@ -55,6 +58,132 @@ const demoGateTokens = new Map<string, { code: string; expiresAt: string }>();
 /** Standalone terminal PINs, keyed by organizer — the scanner arms with one even before any event exists. */
 const demoScannerTokens = new Map<string, { code: string; expiresAt: string }>();
 const gateTokenHash = (code: string) => createHash('sha256').update(code).digest('hex');
+
+/*
+ * Approval queue (demo). Every action that needs an administrator decision —
+ * ticket refunds, organizer payouts, verification submissions — is written here
+ * as `pending` and only changes when the admin console decides it. In live mode
+ * the same rows live in `public.approval_requests` (supabase/sql/023).
+ */
+const demoApprovals: ApprovalRequest[] = [
+	{
+		id: 'ap-refund-ada',
+		kind: 'refund',
+		status: 'pending',
+		requesterId: demoMeId,
+		title: 'Refund · Afrobeats & Sound Sunset',
+		summary: 'General pass · reason: Schedule Conflict',
+		amount: 15_000,
+		subjectId: 't-afrobeats-ada',
+		subjectLabel: 'EV-7QK2-4M8P-9XRT',
+		payload: { reason: 'Schedule Conflict', details: 'Clashes with a work trip.' },
+		createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
+	},
+	{
+		id: 'ap-payout-ada',
+		kind: 'payout',
+		status: 'pending',
+		requesterId: demoMeId,
+		title: 'Instant payout · Yaba Rooftop Sessions',
+		summary: 'Cleared settlement balance requested to GTBank ••••6789',
+		amount: 1_240_000,
+		subjectId: 'e-rooftop',
+		subjectLabel: 'Yaba Rooftop Sessions',
+		payload: { eventId: 'e-rooftop', destination: 'GTBank ••••6789' },
+		createdAt: new Date(Date.now() - 95 * 60 * 1000).toISOString()
+	},
+	{
+		id: 'ap-verify-ada',
+		kind: 'verification',
+		status: 'approved',
+		requesterId: demoMeId,
+		title: 'Identity verification',
+		summary: 'NIN · approved by the trust & safety team',
+		subjectLabel: 'identity',
+		payload: { check: 'identity', document: 'NIN' },
+		note: 'Document and selfie matched.',
+		createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
+		decidedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+	}
+];
+
+const approvalHref = (kind: ApprovalRequest['kind'], subjectId?: string): string =>
+	kind === 'refund' && subjectId
+		? `/tickets/${subjectId}`
+		: kind === 'payout'
+			? '/organizer'
+			: '/settings';
+
+/** Inbox entry announcing receipt of a request (and, later, the decision). */
+function pushDemoNotification(
+	userId: string,
+	notification: { kind: 'ticket' | 'event' | 'social' | 'system' | 'promo'; title: string; body: string; href?: string }
+) {
+	const list = demoPrivateNotifications.get(userId) ?? [];
+	list.unshift({
+		id: `n-${Math.random().toString(36).slice(2, 10)}`,
+		at: new Date().toISOString(),
+		read: false,
+		...notification
+	});
+	demoPrivateNotifications.set(userId, list);
+}
+
+/**
+ * Persist a demo approval request. Duplicate pending requests of the same kind
+ * for the same subject are rejected so a reviewer cannot queue the same action
+ * twice — the live path relies on a partial unique index (migration 023).
+ */
+function createDemoApproval(userId: string, input: CreateApprovalInput): ApprovalRequest {
+	const check = typeof input.payload?.check === 'string' ? input.payload.check : undefined;
+	const duplicate = demoApprovals.find(
+		(request) =>
+			request.requesterId === userId &&
+			request.kind === input.kind &&
+			request.status === 'pending' &&
+			(input.kind === 'payout'
+				? (request.subjectId ?? undefined) === (input.subjectId ?? undefined)
+				: (request.payload?.check ?? undefined) === check &&
+					(request.subjectId ?? undefined) === (input.subjectId ?? undefined))
+	);
+	if (duplicate) {
+		throw new Error(
+			describeDuplicate(input.kind, check) + ' is already awaiting approval. We will let you know as soon as it is reviewed.'
+		);
+	}
+
+	const approval: ApprovalRequest = {
+		id: `ap-${Math.random().toString(36).slice(2, 10)}`,
+		kind: input.kind,
+		status: 'pending',
+		requesterId: userId,
+		title: input.title,
+		summary: input.summary,
+		amount: input.amount,
+		subjectId: input.subjectId,
+		subjectLabel: input.subjectLabel,
+		payload: input.payload,
+		createdAt: new Date().toISOString()
+	};
+	demoApprovals.unshift(approval);
+	pushDemoNotification(userId, {
+		kind: 'system',
+		title: `Pending approval · ${input.title}`,
+		body: `${input.summary} — submitted to the Owltside review team.`,
+		href: approvalHref(input.kind, input.subjectId)
+	});
+	return approval;
+}
+
+const describeDuplicate = (kind: ApprovalKind, check?: string): string =>
+	kind === 'payout'
+		? 'A payout request'
+		: kind === 'refund'
+			? 'A refund request for this pass'
+			: check === 'payoutAccount'
+				? 'Your payout account verification'
+				: 'Your identity verification';
+
 
 const CANNED: Record<string, string[]> = {
 	'u-amina': [
@@ -161,7 +290,21 @@ export interface DataSource {
 	deleteEvent(userId: string, eventId: string): Promise<void>;
 	broadcastEvent(userId: string, eventId: string, message: string): Promise<number>;
 	transferTicket(userId: string, ticketId: string, recipientHandle: string): Promise<Ticket>;
-	refundTicket(userId: string, ticketId: string, request?: { reason: string; details?: string }): Promise<Ticket>;
+	/* ── approvals (everything that needs an administrator decision) ── */
+	/** The caller's own approval requests, newest first. */
+	listApprovals(userId: string): Promise<ApprovalRequest[]>;
+	/** Submit a payout, verification or other request for admin review. */
+	createApproval(userId: string, input: CreateApprovalInput): Promise<ApprovalRequest>;
+	/**
+	 * Ask for a ticket refund. The ticket is NOT cancelled here: it stays valid
+	 * and the request waits for an admin decision, so the pass remains usable
+	 * until the refund is approved.
+	 */
+	requestTicketRefund(
+		userId: string,
+		ticketId: string,
+		request?: { reason: string; details?: string }
+	): Promise<ApprovalRequest>;
 }
 
 /* ────────────────────────────── demo mode ────────────────────────────── */
@@ -904,24 +1047,35 @@ export const demoSource: DataSource = {
 
 		return ticket;
 	},
-	async refundTicket(userId, ticketId, request) {
-		const ticket = demo.tickets.find((t) => t.id === ticketId);
-		if (!ticket) throw new Error('Ticket not found');
-		if (ticket.status !== 'valid') throw new Error('Only active tickets can be refunded');
-		ticket.status = 'refunded';
+	async listApprovals(userId) {
 		const uid = userId === 'demo' ? demoMeId : userId;
-		const notifications = demoPrivateNotifications.get(uid) ?? [];
-		notifications.unshift({
-			id: `n-${Math.random().toString(36).slice(2, 10)}`,
-			kind: 'ticket',
-			title: `Refund Requested · ${ticket.eventTitle}`,
-			body: `Your ${ticket.tierName} pass refund was submitted. Reason: ${request?.reason ?? 'Not specified'}.${request?.details ? ` Details: ${request.details}` : ''}`,
-			href: `/tickets/${ticket.id}`,
-			at: new Date().toISOString(),
-			read: false
+		return demoApprovals
+			.filter((request) => request.requesterId === uid)
+			.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+			.map((request) => ({ ...request }));
+	},
+	async createApproval(userId, input) {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		return createDemoApproval(uid, input);
+	},
+	async requestTicketRefund(userId, ticketId, request) {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		const owned = demoUserTickets.get(uid) ?? [];
+		const ticket =
+			owned.find((item) => item.id === ticketId) ??
+			(uid === demoMeId ? allDemoTickets().find((item) => item.id === ticketId) : undefined);
+		if (!ticket) throw new Error('Ticket not found');
+		// The pass stays valid (and scan-able) until an admin approves the refund.
+		if (ticket.status !== 'valid') throw new Error('Only active tickets can be refunded');
+		return createDemoApproval(uid, {
+			kind: 'refund',
+			title: `Refund · ${ticket.eventTitle}`,
+			summary: `${ticket.tierName} pass · reason: ${request?.reason ?? 'Not specified'}`,
+			amount: ticket.price,
+			subjectId: ticket.id,
+			subjectLabel: ticket.code,
+			payload: { reason: request?.reason ?? '', details: request?.details ?? '', code: ticket.code }
 		});
-		demoPrivateNotifications.set(uid, notifications);
-		return ticket;
 	}
 };
 
@@ -1063,6 +1217,36 @@ const isMissingEventStatusError = (error: { code?: string; message?: string } | 
 	if (error.code === '42703' || error.code === 'PGRST204') return mentionsColumn;
 	return /column .*\.(status|submitted_at|moderation_note|moderated_at) does not exist/i.test(error.message ?? '');
 };
+
+const isMissingApprovalStorageError = (error: { code?: string; message?: string } | null): boolean => {
+	if (!error) return false;
+	if (error.code === '42P01' || error.code === 'PGRST205') return true;
+	return /approval_requests.*(?:does not exist|not found)|could not find the table .*approval_requests/i.test(
+		error.message ?? ''
+	);
+};
+
+const approvalStorageError = () =>
+	new Error('The approval queue is not installed. Apply supabase/sql/023_approval_requests.sql, then try again.');
+
+const isDuplicateApprovalError = (error: { code?: string; message?: string } | null): boolean =>
+	Boolean(error) && (error!.code === '23505' || /duplicate key value/i.test(error!.message ?? ''));
+
+const toApproval = (r: Row): ApprovalRequest => ({
+	id: r.id,
+	kind: r.kind,
+	status: r.status,
+	requesterId: r.requester_id,
+	title: r.title,
+	summary: r.summary ?? '',
+	amount: r.amount === null || r.amount === undefined ? undefined : Number(r.amount),
+	subjectId: r.subject_id ?? undefined,
+	subjectLabel: r.subject_label ?? undefined,
+	payload: (r.payload ?? {}) as Record<string, unknown>,
+	note: r.decision_note ?? undefined,
+	createdAt: r.created_at,
+	decidedAt: r.decided_at ?? undefined
+});
 
 const toEventPromo = (r: Row): EventPromo => ({
 	code: normalizePromoCode(String(r.code ?? '')),
@@ -2117,27 +2301,74 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				status: 'transferred'
 			});
 		},
-		async refundTicket(userId, ticketId, request) {
-			if (!isUuid(userId) || !isUuid(ticketId)) throw new Error('Invalid ticket or user ID');
+		async listApprovals(userId) {
+			if (!isUuid(userId)) return [];
 			const { data, error } = await db
-				.from('tickets')
-				.update({ status: 'refunded' })
-				.eq('id', ticketId)
-				.eq('owner_id', userId)
-				// A gate-verified (`used`) pass can no longer be refunded.
-				.eq('status', 'valid')
+				.from('approval_requests')
 				.select('*')
-				.maybeSingle();
-			if (error) throw error;
-			if (!data) throw new Error('Only active tickets can be refunded');
+				.eq('requester_id', userId)
+				.order('created_at', { ascending: false })
+				.limit(100);
+			if (error) {
+				if (isMissingApprovalStorageError(error)) return [];
+				throw error;
+			}
+			return ((data ?? []) as Row[]).map(toApproval);
+		},
+		async createApproval(userId, input) {
+			if (!isUuid(userId)) throw new Error('Sign in to submit a request for approval.');
+			const { data, error } = await db
+				.from('approval_requests')
+				.insert({
+					requester_id: userId,
+					kind: input.kind,
+					title: input.title,
+					summary: input.summary,
+					amount: input.amount ?? null,
+					subject_id: input.subjectId ?? null,
+					subject_label: input.subjectLabel ?? null,
+					payload: input.payload ?? {}
+				})
+				.select('*')
+				.single();
+			if (error) {
+				if (isMissingApprovalStorageError(error)) throw approvalStorageError();
+				if (isDuplicateApprovalError(error)) {
+					throw new Error('This request is already awaiting approval. We will let you know once it is reviewed.');
+				}
+				throw error;
+			}
 			await db.from('notifications').insert({
 				user_id: userId,
-				kind: 'ticket',
-				title: `Refund Requested · ${data.event_title}`,
-				body: `Your ${data.tier_name} pass refund was submitted. Reason: ${request?.reason ?? 'Not specified'}.${request?.details ? ` Details: ${request.details}` : ''}`,
-				href: `/tickets/${data.id}`
+				kind: 'system',
+				title: `Pending approval · ${input.title}`,
+				body: `${input.summary} — submitted to the Owltside review team.`,
+				href: '/settings'
 			});
-			return toTicket(data);
+			return toApproval(data);
+		},
+		async requestTicketRefund(userId, ticketId, request) {
+			if (!isUuid(userId) || !isUuid(ticketId)) throw new Error('Invalid ticket or user ID');
+			const { data: ticket, error: ticketError } = await db
+				.from('tickets')
+				.select('id,code,event_title,tier_name,price,status')
+				.eq('id', ticketId)
+				.eq('owner_id', userId)
+				.maybeSingle();
+			if (ticketError) throw ticketError;
+			if (!ticket) throw new Error('Ticket not found');
+			// A gate-verified (`used`) pass can no longer be refunded. The pass is
+			// not touched here: it stays valid until an admin approves the refund.
+			if (ticket.status !== 'valid') throw new Error('Only active tickets can be refunded');
+			return this.createApproval(userId, {
+				kind: 'refund',
+				title: `Refund · ${ticket.event_title}`,
+				summary: `${ticket.tier_name} pass · reason: ${request?.reason ?? 'Not specified'}`,
+				amount: Number(ticket.price ?? 0),
+				subjectId: ticket.id,
+				subjectLabel: ticket.code,
+				payload: { reason: request?.reason ?? '', details: request?.details ?? '', code: ticket.code }
+			});
 		}
 	};
 }
