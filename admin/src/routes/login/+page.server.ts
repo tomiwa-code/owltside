@@ -4,6 +4,7 @@ import {
 	adminIdentity,
 	authenticate,
 	authenticateWithKey,
+	DEMO_PASSPHRASE,
 	isDemoMode,
 	isSecureRequest,
 	writeSessionCookie
@@ -24,7 +25,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
 	return {
 		demo: isDemoMode(),
 		defaultEmail: identity.email,
-		demoPassphrase: isDemoMode() ? 'owltside-admin-2026' : '',
+		demoPassphrase: isDemoMode() ? DEMO_PASSPHRASE : '',
 		next: safeNext(url.searchParams.get('next')),
 		year: new Date().getFullYear()
 	};

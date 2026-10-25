@@ -1,9 +1,15 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { ArrowRight, Eye, EyeOff, Fingerprint, Lock, Mail, ShieldAlert } from '@lucide/svelte';
+	import { onMount, untrack } from 'svelte';
+	import { ArrowRight, Eye, EyeOff, Fingerprint, KeyRound, Lock, Mail, ShieldAlert } from '@lucide/svelte';
+	import CopyButton from '$components/CopyButton.svelte';
 
 	let { data, form } = $props();
 
+	// Deliberate one-time snapshot: the boxes stay editable, and a failed POST
+	// re-renders the component with fresh props anyway.
+	let email = $state(untrack(() => form?.email ?? data.defaultEmail));
+	let password = $state(untrack(() => data.demoPassphrase));
+	let formElement = $state<HTMLFormElement | null>(null);
 	let showPassword = $state(false);
 	let blockedHint = $state(false);
 	let probeNote = $state<string | null>(null);
@@ -12,6 +18,18 @@
 	const shownError = $derived(form?.error ?? null);
 
 	const ATTEMPT_KEY = 'owl-admin-login-attempt';
+
+	/**
+	 * Demo convenience: put the published sandbox credentials back into the
+	 * form. Browsers happily autofill a saved work email over the defaults, and
+	 * an unknown email is the most common reason a demo sign-in is rejected.
+	 */
+	function useDemoCredentials() {
+		email = data.defaultEmail;
+		password = data.demoPassphrase;
+		showPassword = true;
+		formElement?.querySelector<HTMLInputElement>('#password')?.focus();
+	}
 
 	/**
 	 * Landing back here right after a sign-in attempt means the redirect came
@@ -87,6 +105,44 @@
 					operations.
 				</p>
 
+				{#if data.demo}
+					<div class="mt-4 overflow-hidden rounded-xl border border-[#c6bcff]/25 bg-[#c6bcff]/[0.05]">
+						<div class="flex items-center justify-between gap-2 border-b border-[#c6bcff]/15 px-3 py-2">
+							<p class="flex items-center gap-1.5 font-code text-[8.5px] uppercase tracking-[0.14em] text-[#c6bcff]">
+								<KeyRound size={10} /> Demo security password
+							</p>
+							<span class="chip !h-[16px] !border-[#c6bcff]/30 !bg-[#c6bcff]/10 !text-[7px] !text-[#dcd6ff]">Sandbox only</span>
+						</div>
+						<div class="space-y-1.5 px-3 py-2.5">
+							<div class="flex items-center justify-between gap-2">
+								<span class="font-code text-[8px] uppercase tracking-[0.1em] text-[#7d7d8a]">Email</span>
+								<div class="flex min-w-0 items-center gap-1">
+									<code class="truncate font-code text-[10.5px] text-[#e6e1ff]">{data.defaultEmail}</code>
+									<CopyButton value={data.defaultEmail} label="Copy demo email" compact />
+								</div>
+							</div>
+							<div class="flex items-center justify-between gap-2">
+								<span class="font-code text-[8px] uppercase tracking-[0.1em] text-[#7d7d8a]">Password</span>
+								<div class="flex min-w-0 items-center gap-1">
+									<code class="truncate font-code text-[10.5px] text-[#e6e1ff]">{data.demoPassphrase}</code>
+									<CopyButton value={data.demoPassphrase} label="Copy demo password" compact />
+								</div>
+							</div>
+							<button
+								type="button"
+								class="mt-1 w-full rounded-md border border-[#c6bcff]/30 bg-[#c6bcff]/10 px-2 py-1.5 font-code text-[8.5px] uppercase tracking-[0.1em] text-[#dcd6ff] transition hover:bg-[#c6bcff]/20"
+								onclick={useDemoCredentials}
+							>
+								Fill demo credentials
+							</button>
+							<p class="pt-0.5 text-[9.5px] leading-relaxed text-[#8f8f9b]">
+								Any 16+ character passphrase is accepted in the sandbox. The hardware-key button simulates a
+								FIDO2 touch.
+							</p>
+						</div>
+					</div>
+				{/if}
+
 				{#if shownError}
 					<div class="mt-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/[0.08] px-3 py-2.5 text-[11.5px] leading-snug text-red-200" role="alert">
 						<ShieldAlert size={14} class="mt-0.5 shrink-0" />
@@ -104,7 +160,7 @@
 					</div>
 				{/if}
 
-				<form method="POST" action="?/credentials" class="mt-6 space-y-4">
+				<form method="POST" action="?/credentials" class="mt-4 space-y-4" bind:this={formElement}>
 					<div>
 						<label class="field-label" for="email">
 							<span>Work email address</span>
@@ -118,7 +174,7 @@
 								type="email"
 								required
 								autocomplete="username"
-								value={form?.email ?? data.defaultEmail}
+								bind:value={email}
 								class="input !h-[42px] !pl-9 !text-[13px]"
 								placeholder="admin@owltside.com"
 							/>
@@ -143,7 +199,7 @@
 								required
 								minlength="16"
 								autocomplete="current-password"
-								value={data.demoPassphrase}
+								bind:value={password}
 								class="input !h-[42px] !pl-9 !pr-10 !text-[13px]"
 								placeholder="••••••••••••••••"
 							/>
@@ -183,15 +239,6 @@
 					</button>
 				</form>
 
-				{#if data.demo}
-					<div class="mt-4 rounded-lg border border-[#c6bcff]/20 bg-[#c6bcff]/[0.05] px-3 py-2.5">
-						<p class="font-code text-[8.5px] uppercase tracking-[0.14em] text-[#c6bcff]">Demo workspace</p>
-						<p class="mt-1 text-[11px] leading-relaxed text-[#9a9aa6]">
-							Passphrase is pre-filled — sign in as <span class="font-code text-[#dcd6ff]">admin@owltside.com</span>
-							with any 16+ characters. The hardware-key button simulates a FIDO2 touch.
-						</p>
-					</div>
-				{/if}
 
 				<div class="mt-6 border-t border-[#26262e] pt-4 text-center">
 					<a

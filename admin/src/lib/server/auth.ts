@@ -83,6 +83,13 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 const DEMO_EMAIL = 'admin@owltside.com';
+
+/**
+ * Suggested sandbox passphrase, surfaced on the sign-in screen so a demo can be
+ * started without hunting through docs. Demo mode accepts any 16+ characters;
+ * this is only the advertised one.
+ */
+export const DEMO_PASSPHRASE = 'owltside-admin-2026';
 const DEMO_ROLE: AdminRole = 'Super Admin';
 const DEMO_TIER: AdminTier = 0;
 
