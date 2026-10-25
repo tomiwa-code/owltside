@@ -1,87 +1,48 @@
 <script lang="ts">
-	import { applyAction } from '$app/forms';
 	import { onMount } from 'svelte';
 	import { ArrowRight, Eye, EyeOff, Fingerprint, Lock, Mail, ShieldAlert } from '@lucide/svelte';
 
 	let { data, form } = $props();
 
 	let showPassword = $state(false);
-	let busy = $state<'credentials' | 'hardware' | null>(null);
-	let error = $state<string | null>(null);
 	let blockedHint = $state(false);
+	let probeNote = $state<string | null>(null);
 
-	const shownError = $derived(error ?? form?.error ?? null);
+	// A failure surfaced by the action itself always wins over the guesswork below.
+	const shownError = $derived(form?.error ?? null);
 
 	const ATTEMPT_KEY = 'owl-admin-login-attempt';
 
+	/**
+	 * Landing back here right after a sign-in attempt means the redirect came
+	 * back instead of sticking. Ask the server what it can see so the copy can
+	 * say which of the two failure modes actually happened:
+	 *   - cookie never stored  → the browser dropped it (embedded frame, cookie policy)
+	 *   - cookie stored        → the session was rejected or expired
+	 */
 	onMount(() => {
-		// If we land back on /login right after a sign-in attempt, the session
-		// cookie never stuck (third-party cookie blocking in an embedded preview)
-		// or the action was rejected. Say so instead of silently doing nothing.
 		const attemptedAt = Number(sessionStorage.getItem(ATTEMPT_KEY) ?? 0);
-		if (attemptedAt && Date.now() - attemptedAt < 45_000) {
-			blockedHint = true;
-			sessionStorage.removeItem(ATTEMPT_KEY);
-		}
+		if (!attemptedAt || Date.now() - attemptedAt > 45_000) return;
+		sessionStorage.removeItem(ATTEMPT_KEY);
+		blockedHint = true;
+
+		const framed = window.self !== window.top ? '1' : '0';
+		fetch(`/api/session-probe?framed=${framed}`, { credentials: 'same-origin', cache: 'no-store' })
+			.then((response) => (response.ok ? response.json() : null))
+			.then((probe) => {
+				if (!probe) return;
+				if (probe.authed) {
+					window.location.assign(data.next ?? '/dashboard');
+					return;
+				}
+				probeNote = probe.cookieSeen
+					? 'The session cookie reached the server but was rejected — it may have expired. Try signing in again.'
+					: framed === '1'
+						? 'Your browser blocked the session cookie for this embedded preview. Open the preview in its own tab, or use the hardware-key button.'
+						: 'Your browser did not store the session cookie. Check that cookies are enabled for this site, then try again.';
+			})
+			.catch(() => undefined);
 	});
-
-	/**
-	 * Keep navigation on the origin the admin is actually using. Behind the
-	 * preview proxy the server may resolve a redirect against its internal
-	 * origin (http://localhost:5174), which would strand the browser.
-	 */
-	function sameOriginPath(target: string): string {
-		try {
-			const next = new URL(target, window.location.origin);
-			return next.origin === window.location.origin ? next.pathname + next.search + next.hash : target;
-		} catch {
-			return target;
-		}
-	}
-
-	/**
-	 * Submit through the action endpoint ourselves, then navigate with a full
-	 * page load. `use:enhance` routes the redirect through the client router,
-	 * which fails silently (and leaves the button disabled) if anything in the
-	 * chain hiccups. Without JS the form still posts natively.
-	 */
-	async function submit(event: SubmitEvent, kind: 'credentials' | 'hardware') {
-		const element = event.currentTarget as HTMLFormElement;
-		if (!element.reportValidity()) return;
-		event.preventDefault();
-		if (busy) return;
-		busy = kind;
-		error = null;
-		try {
-			const response = await fetch(element.action, {
-				method: 'POST',
-				body: new FormData(element),
-				headers: { accept: 'application/json', 'x-sveltekit-action': 'true' },
-				credentials: 'same-origin',
-				cache: 'no-store'
-			});
-			const payload = await response.json().catch(() => null);
-			if (payload?.type === 'redirect') {
-				sessionStorage.setItem(ATTEMPT_KEY, String(Date.now()));
-				// Full page load: the session must be re-read by the server, and it
-				// keeps working even if the client router is in a bad state.
-				window.location.assign(sameOriginPath(payload.location ?? data.next ?? '/dashboard'));
-				return;
-			}
-			// Failures and errors are devalue-encoded; applyAction renders them into
-			// `form`, which the banner above already displays.
-			if (payload?.type === 'failure' || payload?.type === 'error') {
-				await applyAction(payload);
-				error = null;
-				return;
-			}
-			error = `Sign in failed (HTTP ${response.status}). Retry, or contact the security team.`;
-		} catch {
-			error = 'Could not reach the control plane. Check your connection and try again.';
-		} finally {
-			busy = null;
-		}
-	}
 </script>
 
 <svelte:head>
@@ -137,19 +98,13 @@
 					<div class="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-3 py-2.5 text-[11.5px] leading-snug text-amber-100" role="alert">
 						<ShieldAlert size={14} class="mt-0.5 shrink-0" />
 						<span>
-							The session cookie was not stored — this usually means the console is loading inside an
-							embedded frame that blocks third-party cookies. Open the preview in its own browser tab and
-							sign in there.
+							{probeNote ??
+								'The sign-in was accepted but the session did not stick. Checking why…'}
 						</span>
 					</div>
 				{/if}
 
-				<form
-					method="POST"
-					action="?/credentials"
-					class="mt-6 space-y-4"
-					onsubmit={(event) => submit(event, 'credentials')}
-				>
+				<form method="POST" action="?/credentials" class="mt-6 space-y-4">
 					<div>
 						<label class="field-label" for="email">
 							<span>Work email address</span>
@@ -215,25 +170,16 @@
 						</span>
 					</label>
 
-					<button type="submit" class="btn btn-primary mt-1 !h-[42px] w-full !rounded-lg !text-[11px] !font-semibold uppercase !tracking-[0.1em]" disabled={busy !== null}>
-						{busy === 'credentials' ? 'Verifying credentials…' : 'Sign in to admin workspace'}
-						{#if busy !== 'credentials'}<ArrowRight size={14} />{/if}
+					<button type="submit" class="btn btn-primary mt-1 !h-[42px] w-full !rounded-lg !text-[11px] !font-semibold uppercase !tracking-[0.1em]">
+						Sign in to admin workspace
+						<ArrowRight size={14} />
 					</button>
 				</form>
 
-				<form
-					method="POST"
-					action="?/hardware"
-					class="mt-2.5"
-					onsubmit={(event) => submit(event, 'hardware')}
-				>
-					<button
-						type="submit"
-						class="btn btn-secondary w-full !h-[40px] !text-[12px]"
-						disabled={busy !== null}
-					>
+				<form method="POST" action="?/hardware" class="mt-2.5">
+					<button type="submit" class="btn btn-secondary w-full !h-[40px] !text-[12px]">
 						<Fingerprint size={14} />
-						{busy === 'hardware' ? 'Waiting for hardware key…' : 'Hardware Security Key (WebAuthn / YubiKey)'}
+						Hardware Security Key (WebAuthn / YubiKey)
 					</button>
 				</form>
 
