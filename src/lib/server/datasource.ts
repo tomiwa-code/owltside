@@ -28,6 +28,7 @@ import {
 	promoDiscount
 } from '$lib/utils/promo';
 import { globalPromoForCode } from './promos';
+import { isPubliclyVisible, normalizedEventStatus } from '$lib/utils/event-status';
 
 const demoMeId = 'u-ada';
 const demoFollows = new Map<string, Set<string>>();
@@ -256,12 +257,15 @@ export const demoSource: DataSource = {
 	mode: 'demo',
 	async listEvents(filters = {}) {
 		return sortEvents(
-			demo.events.filter((e) => matches(e, filters)).map(publicEvent),
+			demo.events
+				// Pending submissions are only visible to their organizer (dashboard).
+				.filter((e) => isPubliclyVisible(e) && matches(e, filters))
+				.map(publicEvent),
 			filters.sort
 		);
 	},
 	async getEvent(slug) {
-		const event = demo.events.find((e) => e.slug === slug);
+		const event = demo.events.find((e) => e.slug === slug && isPubliclyVisible(e));
 		return event ? publicEvent(event) : undefined;
 	},
 	async getTickets(userId = 'demo') {
@@ -341,11 +345,11 @@ export const demoSource: DataSource = {
 	async getProfileEvents(profileId) {
 		return demo.events
 			.filter(
-				(event) => event.organizer?.id === profileId || event.speakers?.some((speaker) =>
+				(event) => isPubliclyVisible(event) && (event.organizer?.id === profileId || event.speakers?.some((speaker) =>
 					speaker?.id === profileId &&
 					!speaker.displayOnly &&
 					(speaker.invited ? speaker.inviteStatus === 'accepted' : speaker.inviteStatus !== 'declined')
-				)
+				))
 			)
 			.map(publicEvent);
 	},
@@ -628,6 +632,9 @@ export const demoSource: DataSource = {
 		const event: EventItem = {
 			id: `e-${Math.random().toString(36).slice(2, 8)}`,
 			slug,
+			// Organizer submissions wait for admin approval before going public.
+			status: 'pending',
+			submittedAt: new Date().toISOString(),
 			title: payload.title,
 			category: payload.category,
 			tags: payload.tags,
@@ -768,6 +775,12 @@ export const demoSource: DataSource = {
 		const uid = userId === 'demo' ? demoMeId : userId;
 		const event = demo.events.find((e) => e.id === eventId && e.organizer.id === uid);
 		if (!event) throw new Error('Event not found');
+		// Editing a rejected listing resubmits it for review.
+		if (event.status === 'rejected') {
+			event.status = 'pending';
+			event.submittedAt = new Date().toISOString();
+			event.moderationNote = undefined;
+		}
 		if (updates.title) event.title = updates.title;
 		if (updates.venue) event.venue = updates.venue;
 		if (updates.city) event.city = updates.city;
@@ -1039,6 +1052,18 @@ const isMissingPromoStorageError = (error: { code?: string; message?: string } |
 const promoStorageError = () =>
 	new Error('Event promo storage is not installed. Apply supabase/sql/020_event_promos.sql, then try again.');
 
+/**
+ * The event review columns arrive with migration 022. Until it is applied the
+ * app keeps working (treating the catalogue as published) instead of failing
+ * every feed with "column events.status does not exist".
+ */
+const isMissingEventStatusError = (error: { code?: string; message?: string } | null): boolean => {
+	if (!error) return false;
+	const mentionsColumn = /\b(status|submitted_at|moderation_note|moderated_at)\b/i.test(error.message ?? '');
+	if (error.code === '42703' || error.code === 'PGRST204') return mentionsColumn;
+	return /column .*\.(status|submitted_at|moderation_note|moderated_at) does not exist/i.test(error.message ?? '');
+};
+
 const toEventPromo = (r: Row): EventPromo => ({
 	code: normalizePromoCode(String(r.code ?? '')),
 	percent: Number(r.percent ?? 0),
@@ -1285,6 +1310,9 @@ const toEvent = (r: Row, organizer: Profile): EventItem => ({
 	trendingRank: r.trending_rank,
 	viewsToday: r.views_today ?? 0,
 	attendees: r.attendees ?? 0,
+	status: normalizedEventStatus({ status: r.status }),
+	submittedAt: r.submitted_at ?? undefined,
+	moderationNote: r.moderation_note ?? undefined,
 	live: !!r.live
 });
 
@@ -1308,20 +1336,31 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 	return {
 		mode: 'supabase',
 		async listEvents(filters = {}) {
-			let q = db.from('events').select('*, organizer:profiles(*)').order('starts_at');
-			if (filters.category && filters.category !== 'all') q = q.eq('category', filters.category);
-			// Apply the same text, venue, date, and price semantics as demo mode below.
-			if (filters.dateFrom) q = q.gte('starts_at', filters.dateFrom);
-			const { data, error } = await q;
+			// Public feeds only ever show approved events. Organizer dashboards use
+			// getOrganizer(), which deliberately keeps every status visible.
+			const query = () => {
+				let q = db.from('events').select('*, organizer:profiles(*)').order('starts_at');
+				if (filters.category && filters.category !== 'all') q = q.eq('category', filters.category);
+				// Apply the same text, venue, date, and price semantics as demo mode below.
+				if (filters.dateFrom) q = q.gte('starts_at', filters.dateFrom);
+				return q;
+			};
+			let { data, error } = await query().eq('status', 'published');
+			if (error && isMissingEventStatusError(error)) {
+				// Database predates migration 022: treat the catalogue as published.
+				({ data, error } = await query());
+			}
 			if (error) throw error;
 			return sortEvents((data ?? []).map((r) => toEvent(r, toProfile(r.organizer))).filter((event) => matches(event, filters)), filters.sort);
 		},
 		async getEvent(slug) {
-			const { data, error } = await db
-				.from('events')
-				.select('*, organizer:profiles(*)')
-				.eq('slug', slug)
-				.maybeSingle();
+			const load = (approvedOnly: boolean) => {
+				let q = db.from('events').select('*, organizer:profiles(*)').eq('slug', slug);
+				if (approvedOnly) q = q.eq('status', 'published');
+				return q.maybeSingle();
+			};
+			let { data, error } = await load(true);
+			if (error && isMissingEventStatusError(error)) ({ data, error } = await load(false));
 			if (error) throw error;
 			return data ? toEvent(data, toProfile(data.organizer)) : undefined;
 		},
@@ -1446,10 +1485,13 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 
 		async getProfileEvents(profileId) {
 			if (!isUuid(profileId)) return [];
-			const { data, error } = await db
-				.from('events')
-				.select('*, organizer:profiles(*)')
-				.order('starts_at');
+			const load = (approvedOnly: boolean) => {
+				let q = db.from('events').select('*, organizer:profiles(*)').order('starts_at');
+				if (approvedOnly) q = q.eq('status', 'published');
+				return q;
+			};
+			let { data, error } = await load(true);
+			if (error && isMissingEventStatusError(error)) ({ data, error } = await load(false));
 			if (error) throw error;
 			return (data ?? [])
 				.map((row) => toEvent(row, toProfile(row.organizer)))
@@ -1740,31 +1782,45 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				.toLowerCase()
 				.replace(/[^a-z0-9]+/g, '-')
 				.replace(/(^-|-$)/g, '') + '-' + crypto.randomUUID().slice(0, 8);
-			const { data, error } = await db
+			const submission = {
+				organizer_id: userId,
+				slug,
+				// Submissions wait in the admin review queue; only approval publishes.
+				status: 'pending',
+				submitted_at: new Date().toISOString(),
+				title: payload.title,
+				category: payload.category,
+				tags: payload.tags,
+				starts_at: payload.startsAt,
+				ends_at: payload.endsAt ?? null,
+				venue: payload.venue,
+				city: payload.city,
+				cover: payload.cover,
+				description: payload.description,
+				speakers: payload.speakers.map((speaker) => ({
+					...speaker,
+					inviteStatus: speaker.invited ? 'pending' : undefined
+				})),
+				agenda: payload.agenda.map((a, i) => ({ id: `ag-${i}`, ...a })),
+				tiers: payload.tiers.map((t, i) => ({ id: `tier-${i}`, sold: 0, ...t })),
+				gates: payload.gates,
+				live: payload.live ?? true
+			};
+			let result = await db
 				.from('events')
-				.insert({
-					organizer_id: userId,
-					slug,
-					title: payload.title,
-					category: payload.category,
-					tags: payload.tags,
-					starts_at: payload.startsAt,
-					ends_at: payload.endsAt ?? null,
-					venue: payload.venue,
-					city: payload.city,
-					cover: payload.cover,
-					description: payload.description,
-					speakers: payload.speakers.map((speaker) => ({
-						...speaker,
-						inviteStatus: speaker.invited ? 'pending' : undefined
-					})),
-					agenda: payload.agenda.map((a, i) => ({ id: `ag-${i}`, ...a })),
-					tiers: payload.tiers.map((t, i) => ({ id: `tier-${i}`, sold: 0, ...t })),
-					gates: payload.gates,
-					live: payload.live ?? true
-				})
+				.insert(submission)
 				.select('*, organizer:profiles(*)')
 				.single();
+			if (result.error && isMissingEventStatusError(result.error)) {
+				// Pre-022 database: no review columns, organizer submissions go live.
+				const { status: _status, submitted_at: _submittedAt, ...legacySubmission } = submission;
+				result = await db
+					.from('events')
+					.insert(legacySubmission)
+					.select('*, organizer:profiles(*)')
+					.single();
+			}
+			const { data, error } = result;
 			if (error) throw error;
 			const event = toEvent(data, toProfile(data.organizer));
 			try {
@@ -1884,6 +1940,19 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			}
 			if (updates.gates !== undefined) patch.gates = updates.gates;
 			if (updates.live !== undefined) patch.live = updates.live;
+			// A rejected listing re-enters the review queue as soon as it is edited.
+			// Published and pending events keep their current review state.
+			const { data: currentReview } = await db
+				.from('events')
+				.select('status')
+				.eq('id', eventId)
+				.eq('organizer_id', userId)
+				.maybeSingle();
+			if (currentReview?.status === 'rejected') {
+				patch.status = 'pending';
+				patch.submitted_at = new Date().toISOString();
+				patch.moderation_note = null;
+			}
 			const { data, error } = await db
 				.from('events')
 				.update(patch)

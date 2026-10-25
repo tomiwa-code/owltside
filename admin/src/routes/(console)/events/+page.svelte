@@ -26,6 +26,7 @@
 	import Sheet from '$components/Sheet.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
 	import SearchField from '$components/SearchField.svelte';
+	import SubmissionQueue from '$components/SubmissionQueue.svelte';
 
 	let { data } = $props();
 
@@ -184,6 +185,8 @@
 			<a href="/events" class="btn btn-sm btn-ghost xl:ml-auto">Reset</a>
 		</form>
 	</div>
+
+	<SubmissionQueue rows={data.submissions} mode={data.submissionMode} error={data.submissionError} />
 
 	<div class="grid grid-cols-1 gap-2.5 min-[1400px]:grid-cols-[1.68fr_1fr]">
 		<section class="panel min-w-0 overflow-hidden">

@@ -37,6 +37,7 @@
 		Zap
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
+	import EventStatusBadge from '$components/EventStatusBadge.svelte';
 	import Sheet from '$components/Sheet.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
@@ -61,7 +62,13 @@
 	);
 	const payload = $derived(org.data);
 	const stats = $derived(payload?.stats);
+	// Every event the organizer owns, including submissions still awaiting review.
+	// The public feeds only show the published ones; here they are all visible.
+	const myEvents = $derived(payload?.events ?? []);
+	const pendingReviews = $derived(myEvents.filter((event) => event.status === 'pending').length);
 	const mainEvent = $derived(payload?.events[0]);
+	const minTierPrice = (event: { tiers: { price: number }[] }) =>
+		event.tiers.length ? Math.min(...event.tiers.map((tier) => tier.price)) : 0;
 
 	let broadcastOpen = $state(false);
 	let staffOpen = $state(false);
@@ -295,6 +302,47 @@
 		</div>
 	{/if}
 
+	{#if myEvents.length}
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-5">
+			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5">
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<span class="flex items-center gap-2.5">
+						<span class="font-display text-headline-md text-on-surface">My Events</span>
+						<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-high border border-surface-glass-border text-on-surface-variant">{myEvents.length} total</span>
+						{#if pendingReviews}
+							<span class="{MONO} px-2 py-0.5 rounded bg-accent-amber/10 border border-accent-amber/25 text-accent-amber">{pendingReviews} pending approval</span>
+						{/if}
+					</span>
+					<a href="/organizer/create" class="h-9 px-3.5 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors">
+						<Plus class="w-4 h-4" /><span>Create New Event</span>
+					</a>
+				</div>
+				<div class="mt-4 grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+					{#each myEvents as event (event.id)}
+						<a
+							href="/organizer/events/{event.id}"
+							class="group rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-3.5 flex flex-col gap-2 hover:bg-surface-container-highest transition-colors"
+						>
+							<span class="flex items-start justify-between gap-2">
+								<span class="min-w-0">
+									<span class="block text-body-md font-semibold text-on-surface truncate group-hover:text-primary transition-colors">{event.title}</span>
+									<span class="block text-body-sm text-on-surface-variant truncate mt-0.5">{fmtDate(event.startsAt)} • {event.venue}, {event.city}</span>
+								</span>
+								<EventStatusBadge status={event.status} />
+							</span>
+							<span class="{MONO} text-on-surface-variant flex items-center gap-1.5">
+								{event.tiers.length} tier{event.tiers.length === 1 ? '' : 's'} · {minTierPrice(event) === 0 ? 'Free' : formatMoney(minTierPrice(event))}
+								{#if event.submittedAt && event.status === 'pending'}
+									<span class="text-outline-variant">· submitted {fmtRelative(event.submittedAt)}</span>
+								{/if}
+							</span>
+						</a>
+					{/each}
+				</div>
+			</section>
+		</div>
+	{/if}
+
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 grid xl:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
 		<div class="flex flex-col gap-6 min-w-0">
 			{#if mainEvent}
@@ -306,6 +354,9 @@
 									<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>
 									{mainEvent.gates?.length ? `${mainEvent.gates.length} Gates Configured` : mainEvent.live ? 'Live' : 'Scheduled'}
 								</span>
+								{#if mainEvent.status !== 'published'}
+									<EventStatusBadge status={mainEvent.status} size="md" />
+								{/if}
 								<span class="{MONO} text-outline-variant">EVT-{mainEvent.id.replace(/^e-/, '').toUpperCase()}</span>
 							</span>
 							<h1 class="font-display text-[28px] leading-9 font-bold tracking-tight text-on-surface mt-3">{mainEvent.title}</h1>
@@ -704,9 +755,40 @@
 
 		{#if mainEvent}
 			<section class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm flex flex-col gap-space-sm">
-				<div class="flex items-start justify-between gap-3"><div class="min-w-0"><span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Primary event</span><h2 class="font-display text-headline-md text-on-surface pt-1 truncate">{mainEvent.title}</h2><p class="text-body-sm text-on-surface-variant pt-1">{dateLabel} · {mainEvent.venue}, {mainEvent.city}</p></div><span class="shrink-0 rounded-full px-2.5 py-1 text-label-badge {mainEvent.live ? 'bg-accent-emerald/10 text-accent-emerald' : 'bg-surface-container-highest text-on-surface-variant'}">{mainEvent.live ? 'Live' : 'Scheduled'}</span></div>
+				<div class="flex items-start justify-between gap-3"><div class="min-w-0"><span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Primary event</span><h2 class="font-display text-headline-md text-on-surface pt-1 truncate">{mainEvent.title}</h2><p class="text-body-sm text-on-surface-variant pt-1">{dateLabel} · {mainEvent.venue}, {mainEvent.city}</p></div>{#if mainEvent.status !== 'published'}
+					<span class="shrink-0"><EventStatusBadge status={mainEvent.status} size="md" /></span>
+				{:else}
+					<span class="shrink-0 rounded-full px-2.5 py-1 text-label-badge {mainEvent.live ? 'bg-accent-emerald/10 text-accent-emerald' : 'bg-surface-container-highest text-on-surface-variant'}">{mainEvent.live ? 'Live' : 'Scheduled'}</span>
+				{/if}</div>
 				<div class="grid grid-cols-2 gap-2 pt-1"><a href="/organizer/events/{mainEvent.id}" class="h-10 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center gap-1.5"><LayoutGrid class="w-4 h-4" />Manage event</a><a href="/organizer/create?edit={mainEvent.id}" class="h-10 rounded-lg bg-surface-container-high border border-outline-variant/30 text-on-surface text-body-sm font-semibold flex items-center justify-center gap-1.5"><PenLine class="w-4 h-4" />Edit wizard</a></div>
 				<div class="grid grid-cols-2 gap-2 border-t border-outline-variant/20 pt-3"><div><span class="text-label-badge text-on-surface-variant block">Rejected scans</span><span class="text-body-sm font-semibold text-on-surface">{rejected} blocked</span></div><div><span class="text-label-badge text-on-surface-variant block">Offline cache sync</span><span class="text-body-sm font-semibold text-on-surface">100% up to date</span></div></div>
+			</section>
+		{/if}
+
+		<!-- my events: every owned event, with its review state -->
+		{#if myEvents.length}
+			<section class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm flex flex-col gap-space-sm">
+				<div class="flex items-center justify-between gap-2">
+					<h2 class="font-display text-headline-md text-on-surface">My Events</h2>
+					<span class="text-label-badge uppercase tracking-wider text-on-surface-variant">{myEvents.length} total{pendingReviews ? ` • ${pendingReviews} pending` : ''}</span>
+				</div>
+				<div class="flex flex-col gap-2">
+					{#each myEvents as event (event.id)}
+						<a
+							href="/organizer/events/{event.id}"
+							class="rounded-lg border border-outline-variant/25 bg-surface-container-low px-3 py-2.5 flex items-center justify-between gap-3 hover:bg-surface-container-high transition-colors"
+						>
+							<span class="min-w-0 flex flex-col">
+								<span class="text-body-sm font-semibold text-on-surface truncate">{event.title}</span>
+								<span class="text-label-badge text-on-surface-variant truncate pt-0.5">{fmtDate(event.startsAt)} • {event.venue}</span>
+							</span>
+							<EventStatusBadge status={event.status} />
+						</a>
+					{/each}
+				</div>
+				{#if pendingReviews}
+					<p class="text-label-badge text-on-surface-variant">Pending events stay private until an Owltside admin approves them for the home and explore feeds.</p>
+				{/if}
 			</section>
 		{/if}
 

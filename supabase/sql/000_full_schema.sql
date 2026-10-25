@@ -53,10 +53,19 @@ create table if not exists public.events (
   views_today integer not null default 0,
   attendees integer not null default 0,
   live boolean not null default false,
+  -- Moderation: organizer submissions start pending and only become public
+  -- once an admin publishes them (see 022_event_moderation.sql).
+  status text not null default 'pending'
+    check (status in ('draft', 'pending', 'published', 'rejected', 'suspended')),
+  submitted_at timestamptz,
+  moderation_note text,
+  moderated_at timestamptz,
+  moderated_by text,
   created_at timestamptz not null default now()
 );
 create index if not exists events_starts_at_idx on public.events (starts_at);
 create index if not exists events_category_idx on public.events (category);
+create index if not exists events_status_idx on public.events (status, starts_at);
 
 -- Event-specific organizer promo codes (kept private from public event rows)
 create table if not exists public.event_promos (
@@ -230,12 +239,53 @@ create policy follows_delete on public.profile_follows for delete to authenticat
 grant select on public.profile_follows to anon, authenticated;
 grant insert, delete on public.profile_follows to authenticated;
 
--- Events: public read, organizers manage their own
+-- Events: only approved listings are public; organizers also see their own
+-- pending/submitted events on the organizer dashboard.
 drop policy if exists events_select on public.events;
-create policy events_select on public.events for select using (true);
+create policy events_select on public.events for select
+  using (status = 'published' or organizer_id = auth.uid());
 
 drop policy if exists events_write on public.events;
 create policy events_write on public.events for all using (auth.uid() = organizer_id) with check (auth.uid() = organizer_id);
+
+-- Organizers can submit events for review but never publish them themselves.
+create or replace function public.guard_event_moderation() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if auth.uid() is not null and auth.uid() = new.organizer_id then
+    if tg_op = 'INSERT' then
+      if new.status not in ('draft', 'pending') then
+        raise exception 'Events are published after Owltside review. Submit the event and wait for approval.'
+          using errcode = '42501';
+      end if;
+    elsif new.status is distinct from old.status and new.status not in ('draft', 'pending') then
+      raise exception 'Only an Owltside admin can publish, reject or suspend an event.'
+        using errcode = '42501';
+    end if;
+  end if;
+  if tg_op = 'INSERT' then
+    if new.status = 'pending' and new.submitted_at is null then new.submitted_at := now(); end if;
+  elsif new.status = 'pending' and old.status is distinct from 'pending' then
+    new.submitted_at := coalesce(new.submitted_at, now());
+  end if;
+  return new;
+end $$;
+drop trigger if exists guard_event_moderation on public.events;
+create trigger guard_event_moderation before insert or update on public.events
+for each row execute function public.guard_event_moderation();
+
+-- Ticket sales are only possible for approved (published) events.
+create or replace function public.require_published_event_for_order() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.events e where e.id = new.event_id and e.status = 'published') then
+    raise exception 'This event has not been approved for sale yet' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+drop trigger if exists require_published_event_for_order on public.orders;
+create trigger require_published_event_for_order before insert on public.orders
+for each row execute function public.require_published_event_for_order();
 
 -- Event promos: only the organizer who owns the event can read/manage them.
 drop policy if exists event_promos_select on public.event_promos;
@@ -1068,7 +1118,7 @@ on conflict (id) do update set
   bio = excluded.bio,
   city = excluded.city;
 
-insert into public.events (slug, title, category, tags, starts_at, venue, city, cover, description, organizer_id, tiers, featured, trending_rank, views_today, attendees)
+insert into public.events (slug, title, category, tags, starts_at, venue, city, cover, description, organizer_id, tiers, featured, trending_rank, views_today, attendees, status)
 values
   (
     'pulse-ai-summit-lagos', 'Pulse AI Summit Lagos', 'tech', '{AI,Summit,Networking}',
@@ -1077,7 +1127,7 @@ values
     'A full day of applied-AI talks, live build sessions and investor office hours.',
     '11111111-1111-4111-8111-111111111111',
     '[{"id":"tier-regular","name":"Regular","price":45000,"sold":788,"capacity":800},{"id":"tier-vip","name":"VIP","price":120000,"sold":140,"capacity":200}]',
-    true, null, 2310, 928
+    true, null, 2310, 928, 'published'
   ),
   (
     'afrobeats-sound-sunset', 'Afrobeats & Sound Sunset', 'music', '{Afrobeats,Beach}',
@@ -1086,7 +1136,7 @@ values
     'Golden-hour sets from Lagos'' finest selectors.',
     '22222222-2222-4222-8222-222222222222',
     '[{"id":"tier-general","name":"General","price":15000,"sold":1140,"capacity":1300},{"id":"tier-vip","name":"VIP Deck","price":40000,"sold":190,"capacity":200}]',
-    false, 4, 1870, 1330
+    false, 4, 1870, 1330, 'published'
   )
 on conflict (slug) do nothing;
 

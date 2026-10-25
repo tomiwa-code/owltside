@@ -143,6 +143,7 @@ describe('payout account verification in settings', () => {
 describe('settlement surfaces read the verified account', () => {
 	const event = {
 		id: 'e1',
+		status: 'published' as const,
 		slug: 'test-event',
 		title: 'Test Event',
 		category: 'music',

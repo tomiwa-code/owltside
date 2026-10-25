@@ -58,12 +58,45 @@ code paths switch to the live backend — no component changes.
      discounted order totals, and atomic max-purchase redemption
    - `021_participant_read_state.sql` — per-participant chat read state, so
      opening a thread only clears the reader's own unread count
+   - `022_event_moderation.sql` — event review workflow: `events.status`
+     (`draft | pending | published | rejected | suspended`), a public-read RLS
+     policy for approved listings only, an owner guard that blocks
+     self-publishing, and a ticket-sales guard for unpublished events
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
 Auth is email OTP (`signInWithOtp` + `verifyOtp`) via `@supabase/ssr` cookies. Google sign-in uses Supabase OAuth; enable the Google provider and add `/auth/callback` to the allowed redirect URLs.
 Chat uses **Supabase Realtime channels** on `messages` inserts (no separate
 socket server); demo mode falls back to `useQuery(refetchInterval)` polling.
+
+## Event review workflow (moderation)
+
+Organizer submissions are never public on creation:
+
+1. **Organizer submits** — the wizard (`/organizer/create`) writes the event with
+   `status = 'pending'` and a `submitted_at` timestamp. The event shows up
+   immediately on `/organizer` and `/organizer/events/[id]` with a
+   **“Pending Approval”** badge, but it is filtered out of `/home`, `/explore`,
+   search, public profiles and checkout (the API and DB agree on this).
+2. **Admin reviews** — the admin console (`admin/`, `/events`) lists pending
+   submissions with title, organizer, date, venue, description and ticket
+   tiers, plus **Approve & Publish** and **Reject** (reason required) actions.
+3. **Approve & Publish** — the admin app writes `status = 'published'`
+   server-side with the Supabase service-role key. The event is on the home and
+   explore feeds on the next request, and the organizer badge flips to
+   **“Published”**. Rejections store the reason in `moderation_note`; editing a
+   rejected event resubmits it as `pending`.
+
+Admin connectivity (server-side only, `admin/.env`):
+
+```bash
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service role key>
+```
+
+Without those values both apps run in demo mode: the public app seeds one
+“Pending Approval” event for the demo organizer, and the admin console moderates
+its seeded pending queue. See `admin/README.md` for details.
 
 ## Payments
 

@@ -8,10 +8,12 @@
 		UserCheck,
 		Megaphone,
 		ScanBarcode,
+		Info,
 		Receipt,
 		Users
 	} from '@lucide/svelte';
 	import Sheet from '$components/Sheet.svelte';
+	import EventStatusBadge from '$components/EventStatusBadge.svelte';
 	import { formatMoney } from '$lib/utils/money';
 	import { fmtDateTime, fmtRelative } from '$lib/utils/dates';
 	import { downloadCsv, ticketsToCsv } from '$lib/utils/csv';
@@ -56,7 +58,10 @@
 			</a>
 			<div class="flex flex-col flex-1 min-w-0">
 				<h1 class="font-display text-headline-md text-on-surface truncate leading-tight">{data.event.title}</h1>
-				<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Event management</span>
+				<span class="flex items-center gap-2 min-w-0">
+					<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Event management</span>
+					<EventStatusBadge status={data.event.status} />
+				</span>
 			</div>
 			<button onclick={openEditEvent} aria-label="Edit event" class="w-11 h-11 flex items-center justify-center rounded-full bg-surface-container-high border border-outline-variant/30 text-on-surface hover:bg-surface-bright transition-colors">
 				<Edit class="w-4.5 h-4.5" />
@@ -68,6 +73,36 @@
 	</section>
 
 	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md pt-space-sm">
+		<!-- review state: pending submissions are private until an admin approves them -->
+		{#if data.event.status !== 'published'}
+			<div
+				class="rounded-xl border p-4 flex items-start gap-3 {data.event.status === 'pending'
+					? 'border-accent-amber/30 bg-accent-amber/10'
+					: 'border-error/30 bg-error/10'}"
+			>
+				<Info class="w-4 h-4 shrink-0 mt-0.5 {data.event.status === 'pending' ? 'text-accent-amber' : 'text-error'}" />
+				<div class="min-w-0">
+					<p class="text-body-sm font-semibold text-on-surface flex items-center gap-2">
+						<EventStatusBadge status={data.event.status} />
+					</p>
+					<p class="text-body-sm text-on-surface-variant pt-1.5">
+						{#if data.event.status === 'pending'}
+							Your event is in the Owltside review queue. It appears on the home and explore feeds as soon as an admin approves it — no tickets can be sold before then.
+						{:else if data.event.status === 'rejected'}
+							The review team sent this event back. Edit it to resubmit it for approval.
+						{:else if data.event.status === 'suspended'}
+							This event was removed from the public feeds by the review team.
+						{:else}
+							This event is still a draft. Submit it from the wizard to send it for review.
+						{/if}
+					</p>
+					{#if data.event.moderationNote}
+						<p class="text-body-sm text-on-surface pt-1.5"><span class="text-on-surface-variant">Review note:</span> {data.event.moderationNote}</p>
+					{/if}
+				</div>
+			</div>
+		{/if}
+
 		<!-- mini stats -->
 		<div class="grid grid-cols-3 gap-2">
 			<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-3 text-center">

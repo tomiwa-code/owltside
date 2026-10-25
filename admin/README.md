@@ -34,7 +34,7 @@ FIDO2 assertion. Copy `.env.example` → `.env` and set `ADMIN_EMAIL`,
 | `/login` | Credential + WebAuthn sign-in, rate-limited, signed HttpOnly cookie |
 | `/dashboard` | GMV/settlement KPIs, revenue velocity, review queue, top events, live ledger |
 | `/search` | Federated Search HUD (users, passes, orders, events, organizers, incidents) |
-| `/events`, `/events/[id]` | Moderation queue, approve/publish/reject, capacity & compliance |
+| `/events`, `/events/[id]` | Organizer submission queue (live Supabase), approve/publish/reject, capacity & compliance |
 | `/organizers`, `/organizers/[id]` | KYB registry, dossier, Paystack subaccount binding, evidence pipeline |
 | `/users`, `/users/[id]` | Directory + attendee dossier, KYC, pass/order history, suspend/reinstate |
 | `/tickets` | Pass inspector, void/re-issue, wallet delivery, re-issue history |
@@ -48,6 +48,35 @@ FIDO2 assertion. Copy `.env.example` → `.env` and set `ADMIN_EMAIL`,
 
 Every list view supports `?q=`, status filters and pagination; the URL is the
 source of truth so a dossier is linkable and survives refresh.
+
+## Organizer submission queue
+
+Every event an organizer submits in the customer app is created with
+`status = 'pending'` and is **not** visible on the public home/explore feeds.
+The `/events` console renders those submissions at the top of the page
+("Organizer submission queue") with title, organizer, date, venue, description,
+ticket tiers and the submission timestamp.
+
+- **Approve & Publish** writes `status = 'published'` (plus `moderated_at`,
+  `moderated_by`, and a note when one is supplied). The customer app filters its
+  feeds on that exact value, so the event appears on the next request, and the
+  organizer's dashboard badge flips to “Published”.
+- **Reject** requires a reason, writes `status = 'rejected'` and stores the note
+  in `moderation_note`. The organizer can edit the event to resubmit it, which
+  puts it back in the queue as `pending`.
+
+The queue is Supabase-backed whenever both are set (server-side only):
+
+```bash
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service role key>   # bypasses RLS on events
+```
+
+Without them the console moderates its seeded demo dataset, so the workflow
+still works with zero configuration. The service-role key is required because
+RLS deliberately forbids organizers (and every other client) from setting
+`status = 'published'` — see `supabase/sql/022_event_moderation.sql` in the
+customer app.
 
 ## Authorisation ladder
 

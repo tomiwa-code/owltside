@@ -34,6 +34,12 @@ export interface Profile {
 
 export type SpeakerInviteStatus = 'pending' | 'accepted' | 'declined';
 
+/**
+ * Moderation state of an event. Organizer submissions start as `pending` and
+ * only reach the public feeds once an admin publishes them.
+ */
+export type EventStatus = 'draft' | 'pending' | 'published' | 'rejected' | 'suspended';
+
 export interface EventSpeaker extends Profile {
 	role?: string;
 	invited?: boolean;
@@ -116,6 +122,12 @@ export interface EventItem {
 	trendingRank?: number;
 	viewsToday: number;
 	attendees: number;
+	/** Review state. Only `published` events appear in the public home/explore feeds. */
+	status: EventStatus;
+	/** When the organizer submitted the event for review (ISO). */
+	submittedAt?: string;
+	/** Admin note explaining a rejection or suspension. */
+	moderationNote?: string;
 	live?: boolean;
 	online?: boolean;
 	gates?: GateConfig[];

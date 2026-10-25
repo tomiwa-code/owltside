@@ -190,7 +190,13 @@ export function setEventStatus(
 	if (!event) return null;
 	const before = event.status;
 	event.status = status;
-	if (status === 'published' && before === 'pending') event.submittedAt = undefined;
+	if (status === 'published') {
+		event.submittedAt = before === 'pending' ? undefined : event.submittedAt;
+		event.moderationNote = undefined;
+	} else if (status === 'suspended' || status === 'draft') {
+		// The organizer sees this note next to the event on their dashboard.
+		event.moderationNote = reason || event.moderationNote;
+	}
 	logAudit({
 		actor,
 		action:
