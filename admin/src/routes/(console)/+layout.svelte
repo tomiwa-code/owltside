@@ -4,6 +4,7 @@
 	import Sidebar from '$components/Sidebar.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import CommandPalette from '$components/CommandPalette.svelte';
+	import { ShieldAlert } from '@lucide/svelte';
 	import type { AdminSession } from '$admin/types';
 
 	let { children, data }: { children: Snippet; data: { admin: AdminSession | null; counts: { pendingEvents: number; refunds: number; moderation: number }; serverTime: string; publicAppUrl: string } } =
@@ -12,7 +13,13 @@
 	onMount(() => {
 		// Reaching the console means the session cookie stuck — clear the marker the
 		// login screen uses to detect an embedded-preview cookie block.
-		sessionStorage.removeItem('owl-admin-login-attempt');
+		// A sandboxed frame throws on any storage access, so never let cleanup
+		// take the whole console down with it.
+		try {
+			sessionStorage.removeItem('owl-admin-login-attempt');
+		} catch {
+			/* storage unavailable in this context — nothing to clean up */
+		}
 	});
 </script>
 
@@ -35,4 +42,38 @@
 		</footer>
 	</div>
 	<CommandPalette />
+{:else}
+	<!--
+		No session on this render. Previously this branch did not exist and the
+		layout produced an empty document: a blank screen with no error, no
+		redirect and nothing to click. Always render something actionable.
+	-->
+	<main class="flex min-h-dvh items-center justify-center bg-[#0f0f13] px-4 py-10">
+		<div class="w-full max-w-[460px]">
+			<section class="panel overflow-hidden">
+				<div class="flex items-start gap-3 border-b border-[#26262e] bg-[#1d1d24] px-5 py-4">
+					<span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-amber-400/30 bg-amber-400/10 text-amber-300">
+						<ShieldAlert size={16} />
+					</span>
+					<div class="min-w-0">
+						<p class="font-code text-[8.5px] uppercase tracking-[0.14em] text-[#8f8f9b]">Session not available</p>
+						<h1 class="mt-1 font-display text-[19px] font-semibold leading-tight text-[#f1f1f6]">
+							The console could not read your session
+						</h1>
+					</div>
+				</div>
+				<div class="px-5 py-4">
+					<p class="text-[12px] leading-relaxed text-[#a0a0ab]">
+						This usually means the session cookie was not sent with the request — common inside an
+						embedded preview frame, where browsers treat the cookie as third-party and drop it. Sign in
+						again from a top-level tab and the console will load normally.
+					</p>
+				</div>
+				<div class="flex flex-wrap items-center gap-2 border-t border-[#26262e] px-5 py-3">
+					<a href="/login" class="btn btn-sm btn-primary">Go to sign in</a>
+					<button type="button" class="btn btn-sm" onclick={() => window.location.reload()}>Reload</button>
+				</div>
+			</section>
+		</div>
+	</main>
 {/if}
