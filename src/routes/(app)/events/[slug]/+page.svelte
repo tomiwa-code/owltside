@@ -12,6 +12,7 @@
 		ChevronDown,
 		CircleCheck,
 		Flame,
+		Flag,
 		Lock,
 		MapPin,
 		MessageSquare,
@@ -29,6 +30,7 @@
 	import Cover from '$components/Cover.svelte';
 	import Stepper from '$components/Stepper.svelte';
 	import SpeakerInviteNotice from '$components/SpeakerInviteNotice.svelte';
+	import ReportSheet from '$components/ReportSheet.svelte';
 	import { bookmarks, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { countdownLabel, fmtDate, fmtDateFull, fmtTime } from '$lib/utils/dates';
@@ -46,6 +48,8 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 	);
 	const session = $derived(page.data.session);
 	const isOrganizer = $derived(session?.userId === event.organizer.id);
+	// Reporting is for everyone except the organizer of this listing.
+	let reportOpen = $state(false);
 	const visibleSpeakers = $derived(event.speakers.filter((speaker) => !speaker.invited || speaker.inviteStatus === 'accepted'));
 	const currentSpeakerInvite = $derived(
 		event.speakers.find((speaker) => speaker.id === session?.userId && speaker.invited && !speaker.displayOnly) ?? null
@@ -282,6 +286,18 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 						<button type="button" aria-label="Share event" onclick={share} class="w-10 h-10 rounded-lg bg-surface-container border border-surface-glass-border text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors">
 							<Share2 class="w-4 h-4" />
 						</button>
+						{#if !isOrganizer}
+							<button
+								type="button"
+								aria-label="Report this event listing"
+								title="Report this event listing"
+								data-report-target="event"
+								onclick={() => (reportOpen = true)}
+								class="w-10 h-10 rounded-lg bg-surface-container border border-surface-glass-border text-on-surface-variant hover:text-error flex items-center justify-center transition-colors"
+							>
+								<Flag class="w-4 h-4" />
+							</button>
+						{/if}
 					</span>
 				</div>
 			</div>
@@ -667,6 +683,11 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 				<button aria-label="Share" onclick={share} class="w-10 h-10 rounded-full bg-surface-raised/80 backdrop-blur-md text-on-surface flex items-center justify-center shadow-md active:scale-90 transition-transform">
 					<Share2 class="w-5 h-5" />
 				</button>
+				{#if !isOrganizer}
+					<button aria-label="Report this event listing" title="Report listing" data-report-target="event" onclick={() => (reportOpen = true)} class="w-10 h-10 rounded-full bg-surface-raised/80 backdrop-blur-md text-on-surface flex items-center justify-center shadow-md active:scale-90 transition-transform">
+						<Flag class="w-5 h-5" />
+					</button>
+				{/if}
 			</div>
 			<div class="absolute bottom-4 left-4 right-4 flex flex-wrap items-center gap-space-xs">
 				<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high text-on-surface text-label-badge border border-outline-variant/40 shadow-sm">
@@ -1021,3 +1042,12 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 		</div>
 	</div>
 {/if}
+
+<!-- Report listing: the submission is reviewed by the trust & safety team in the admin console -->
+<ReportSheet
+	open={reportOpen}
+	targetType="event"
+	targetId={event.id}
+	targetLabel={event.title}
+	close={() => (reportOpen = false)}
+/>

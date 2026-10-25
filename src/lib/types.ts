@@ -75,6 +75,42 @@ export interface CreateApprovalInput {
 }
 
 /**
+ * A user-submitted report about an event listing or a public profile. Reports
+ * are reviewed in the admin console; nothing here is auto-actioned.
+ */
+export type ReportTargetType = 'event' | 'profile';
+
+export type ReportStatus = 'open' | 'actioned' | 'dismissed';
+
+export interface ContentReport {
+	id: string;
+	targetType: ReportTargetType;
+	/** Event id or profile id being reported. */
+	targetId: string;
+	/** Human-readable label captured at submission time (title / @handle). */
+	targetLabel: string;
+	category: string;
+	categoryLabel: string;
+	details: string;
+	/** Null for guests who reported without signing in. */
+	reporterId?: string;
+	reporterHandle?: string;
+	status: ReportStatus;
+	createdAt: string;
+	reviewedAt?: string;
+	reviewerName?: string;
+	reviewNote?: string;
+}
+
+export interface CreateReportInput {
+	targetType: ReportTargetType;
+	targetId: string;
+	targetLabel: string;
+	category: string;
+	details: string;
+}
+
+/**
  * Moderation state of an event. Organizer submissions start as `pending` and
  * only reach the public feeds once an admin publishes them.
  */

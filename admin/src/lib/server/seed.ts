@@ -1,6 +1,7 @@
 import type {
 	AdminApproval,
 	AdminCase,
+	AdminReport,
 	AdminEvent,
 	AdminOrder,
 	AdminOrganizer,
@@ -32,6 +33,7 @@ export interface StoreState {
 	users: AdminUser[];
 	refunds: AdminRefund[];
 	approvals: AdminApproval[];
+	reports: AdminReport[];
 	cases: AdminCase[];
 	staff: AdminStaff[];
 	audit: AuditRecord[];
@@ -1691,6 +1693,107 @@ function makeApprovals(now: Date): AdminApproval[] {
 	];
 }
 
+/**
+ * Reports attendees filed from the public app against an event listing or a
+ * profile. They arrive `open` and stay in the queue until someone here reviews
+ * them — the public app can never resolve its own report.
+ */
+function makeReports(now: Date): AdminReport[] {
+	return [
+		{
+			id: 'rep-2041',
+			targetType: 'event',
+			targetId: 'evt-warehouse-midnight',
+			targetLabel: 'Underground Warehouse 04',
+			category: 'misleading',
+			categoryLabel: 'Misleading or false information',
+			details:
+				'The lineup on the poster does not match the event page — the headliner listed here never confirmed, and the price changed after I paid.',
+			reporterName: 'Tunde Bakare',
+			reporterHandle: 'tundeb',
+			reporterEmail: 'tunde@owltside.com',
+			status: 'open',
+			createdAt: minutesAgo(now, 55),
+			slaHours: 24,
+			context: [
+				{ label: 'Listing', value: 'Underground Warehouse 04 · Apapa Rd, Lagos' },
+				{ label: 'Organizer', value: '@nightfreight' },
+				{ label: 'Status', value: 'Published' },
+				{ label: 'Tickets sold', value: '812' }
+			]
+		},
+		{
+			id: 'rep-2038',
+			targetType: 'profile',
+			targetId: 'usr-kemi-live',
+			targetLabel: '@kemilive',
+			category: 'impersonation',
+			categoryLabel: 'Impersonation or fake identity',
+			details:
+				'This account is pretending to be the official Kemi Live page. It is DMing people asking for transfers for tickets that do not exist.',
+			reporterName: 'Ada Obi',
+			reporterHandle: 'ada',
+			reporterEmail: 'ada@owltside.com',
+			status: 'open',
+			createdAt: minutesAgo(now, 190),
+			slaHours: 12,
+			context: [
+				{ label: 'Profile', value: '@kemilive · Kemi Adeyemi' },
+				{ label: 'Account age', value: '3 days' },
+				{ label: 'Followers', value: '41' },
+				{ label: 'KYC', value: 'Tier 0 · unverified' }
+			]
+		},
+		{
+			id: 'rep-2032',
+			targetType: 'event',
+			targetId: 'evt-afterhours',
+			targetLabel: 'Afterhours Boat Party',
+			category: 'safety',
+			categoryLabel: 'Safety or security concern',
+			details:
+				'The venue address on the listing is a private jetty with no licensed capacity, and no safety plan is published for a boat event.',
+			reporterName: 'Chiamaka Eze',
+			reporterHandle: 'chiamaka',
+			reporterEmail: 'chiamaka@owltside.com',
+			status: 'actioned',
+			createdAt: minutesAgo(now, 2_880),
+			slaHours: 24,
+			context: [
+				{ label: 'Listing', value: 'Afterhours Boat Party · Lekki' },
+				{ label: 'Organizer', value: '@afterhoursng' },
+				{ label: 'Action', value: 'Listing suspended pending permits' }
+			],
+			reviewerName: 'Amara Okonkwo',
+			reviewNote: 'Suspended the listing until the organizer uploads a marine safety plan.',
+			reviewedAt: minutesAgo(now, 2_400)
+		},
+		{
+			id: 'rep-2021',
+			targetType: 'profile',
+			targetId: 'usr-noise',
+			targetLabel: '@loudloud',
+			category: 'spam',
+			categoryLabel: 'Spam or fake account',
+			details: 'Account only posts referral links and adds everyone it can find to group chats.',
+			reporterName: 'Femi Adeyemi',
+			reporterHandle: 'femiade',
+			reporterEmail: 'femi@owltside.com',
+			status: 'dismissed',
+			createdAt: minutesAgo(now, 5_760),
+			slaHours: 12,
+			context: [
+				{ label: 'Profile', value: '@loudloud · Loud Loud' },
+				{ label: 'Account age', value: '14 months' },
+				{ label: 'Followers', value: '1,204' }
+			],
+			reviewerName: 'Amara Okonkwo',
+			reviewNote: 'Checked the last 30 posts — promotional, but within the guidelines.',
+			reviewedAt: minutesAgo(now, 5_400)
+		}
+	];
+}
+
 function makeRefunds(now: Date): AdminRefund[] {
 	return [
 		{
@@ -2290,6 +2393,7 @@ export function buildSeed(now: Date = new Date()): StoreState {
 		users,
 		refunds: makeRefunds(now),
 		approvals: makeApprovals(now),
+		reports: makeReports(now),
 		cases: makeCases(now),
 		staff: makeStaff(now),
 		audit: makeAudit(now, events, organizers),

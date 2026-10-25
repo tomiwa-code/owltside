@@ -42,6 +42,7 @@ FIDO2 assertion. Copy `.env.example` → `.env` and set `ADMIN_EMAIL`,
 | `/settlements` | Escrow, commission, payout velocity, organizer settlement table |
 | `/approvals` | Queue for everything the public app submits: refunds, instant payouts, identity & payout-account verification |
 | `/refunds` | Policy-match review queue, approve/reject, batch auto-approve |
+| `/reports` | Content reports from the public app: event listings and public profiles, action/dismiss with a note |
 | `/moderation` | Incident triage, forensic telemetry, warn / dismiss / freeze sales |
 | `/audit`, `/audit/[id]` | Immutable hash-chained ledger + forensic record dossier |
 | `/staff` | Administrators, permission matrix, hardware-key enrolment, telemetry |
@@ -49,6 +50,25 @@ FIDO2 assertion. Copy `.env.example` → `.env` and set `ADMIN_EMAIL`,
 
 Every list view supports `?q=`, status filters and pagination; the URL is the
 source of truth so a dossier is linkable and survives refresh.
+
+## Content reports (public app → console)
+
+Attendees can flag an event listing or a public profile from the customer app.
+Each report names a violation category (dropdown) and carries the details they
+typed, and it arrives **open** in `public.content_reports`. The `/reports` queue
+shows the target label, category, reporter, a snapshot of the live content and a
+deep link into the public app.
+
+- **Action** — the team acted on the content (suspend the listing from Events,
+  restrict the account from Users, …). A note is mandatory and is written to the
+  audit trail.
+- **Dismiss** — reviewed, no action needed; also requires a note.
+- Without Supabase credentials the page reviews the seeded queue
+  (`seed.ts` → `makeReports`) and shows a **Demo dataset** chip.
+- Apply `supabase/sql/025_content_reports.sql` from the customer app first; the
+  page surfaces a clear error if the table is missing.
+- Clients get no read or update access to the table: only the service role can
+  list or resolve reports.
 
 ## Approval queue (public app → console)
 
@@ -161,6 +181,7 @@ POST /api/organizers/[id]/status    verify / reject / freeze KYB
 POST /api/tickets/[id]/actions      void | reissue
 POST /api/orders/[id]/refund        initiate refund (settled only)
 POST /api/approvals/[id]/decision   approve | reject (refund, payout, verification)
+POST /api/reports/[id]/decision     action | dismiss (event listing / profile report)
 POST /api/refunds/[id]/decision     approve | reject
 POST /api/refunds/batch             auto-approve eligible queue
 POST /api/users/[id]/status         active | blocked | flagged
@@ -187,7 +208,8 @@ void/re-issue epoch handling, audit chain integrity, pagination clamping);
 the tier ladder; `tests/export.test.ts` locks the CSV contract and every export
 link referenced in the UI; `tests/approvals.test.ts` locks the approval queue
 (reason required to reject, approve-refund settles the pass, no double
-decisions).
+decisions); `tests/reports.test.ts` locks the content report queue (both target
+types, mandatory review note, no double reviews).
 
 ## Deploy
 

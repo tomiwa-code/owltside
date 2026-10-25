@@ -1548,6 +1548,93 @@ $$;
 revoke all on function public.staff_check_in_terminal(uuid, text, text, boolean) from public;
 grant execute on function public.staff_check_in_terminal(uuid, text, text, boolean) to authenticated;
 
+-- ── Content reports (event listings & public profiles, migration 025) ──
+create table if not exists public.content_reports (
+  id uuid primary key default gen_random_uuid(),
+  target_type text not null,
+  target_id text not null,
+  target_label text not null default '',
+  category text not null,
+  details text not null,
+  reporter_id uuid references auth.users (id) on delete set null,
+  status text not null default 'open',
+  reviewer_name text,
+  review_note text,
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now(),
+  constraint content_reports_target_type_check check (target_type in ('event', 'profile')),
+  constraint content_reports_status_check check (status in ('open', 'actioned', 'dismissed')),
+  constraint content_reports_details_check check (char_length(details) between 10 and 1000)
+);
+create index if not exists content_reports_queue_idx
+  on public.content_reports (status, created_at desc);
+create index if not exists content_reports_target_idx
+  on public.content_reports (target_type, target_id);
+create unique index if not exists content_reports_open_unique_idx
+  on public.content_reports (reporter_id, target_type, target_id, category)
+  where status = 'open' and reporter_id is not null;
+
+alter table public.content_reports enable row level security;
+
+drop policy if exists content_reports_select_own on public.content_reports;
+create policy content_reports_select_own on public.content_reports for select
+  using (reporter_id is not null and auth.uid() = reporter_id);
+
+drop policy if exists content_reports_insert_any on public.content_reports;
+create policy content_reports_insert_any on public.content_reports for insert
+  with check (
+    status = 'open'
+    and reviewer_name is null
+    and review_note is null
+    and reviewed_at is null
+    and (reporter_id is null or auth.uid() = reporter_id)
+  );
+
+create or replace function public.guard_content_report()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is not null and new.reporter_id is not null and new.reporter_id <> auth.uid() then
+    raise exception 'You can only submit a report as yourself';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists guard_content_report on public.content_reports;
+create trigger guard_content_report
+  before insert on public.content_reports
+  for each row execute function public.guard_content_report();
+
+create or replace function public.notify_report_received()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.reporter_id is not null then
+    insert into public.notifications (user_id, kind, title, body, href)
+    values (
+      new.reporter_id,
+      'system',
+      'Report received',
+      'Thanks — our trust & safety team is reviewing the reported '
+        || case new.target_type when 'event' then 'event listing' else 'user profile' end
+        || '.',
+      case new.target_type when 'event' then '/explore' else '/home' end
+    );
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists notify_report_received on public.content_reports;
+create trigger notify_report_received
+  after insert on public.content_reports
+  for each row execute function public.notify_report_received();
+
 -- ── Approval requests: RLS + decision side effects (migration 023) ──
 alter table public.approval_requests enable row level security;
 

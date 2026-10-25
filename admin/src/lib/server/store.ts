@@ -1,6 +1,7 @@
 import type {
 	AdminApproval,
 	AdminCase,
+	AdminReport,
 	AdminDashboard,
 	AdminEvent,
 	AdminOrder,
@@ -13,6 +14,7 @@ import type {
 	PlatformStatus,
 	ApprovalsData,
 	RefundsData,
+	ReportsData,
 	SettingsData,
 	SettlementsData
 } from '$admin/types';
@@ -593,6 +595,61 @@ export function decideApproval(
 	});
 	touch();
 	return approval;
+}
+
+// ── Content reports ─────────────────────────────────────────────────────────
+
+/**
+ * Reports filed from the public app against an event listing or a profile.
+ * They stay `open` (and the reporter sees no outcome) until an admin reviews
+ * them here.
+ */
+export function getReportsData(): ReportsData {
+	const rows = [...store().reports].sort(
+		(a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)
+	);
+	return {
+		open: rows.filter((row) => row.status === 'open').length,
+		actioned: rows.filter((row) => row.status === 'actioned').length,
+		dismissed: rows.filter((row) => row.status === 'dismissed').length,
+		total: rows.length,
+		rows
+	};
+}
+
+export function countReports(): number {
+	return store().reports.filter((row) => row.status === 'open').length;
+}
+
+export function getReport(id: string): AdminReport | null {
+	return store().reports.find((row) => row.id === id) ?? null;
+}
+
+export function decideReport(
+	id: string,
+	decision: 'action' | 'dismiss',
+	actor: string,
+	note: string
+): AdminReport | null {
+	const report = getReport(id);
+	if (!report || report.status !== 'open') return null;
+
+	report.status = decision === 'action' ? 'actioned' : 'dismissed';
+	report.reviewerName = actor;
+	report.reviewNote = note;
+	report.reviewedAt = new Date().toISOString();
+
+	logAudit({
+		actor,
+		action: decision === 'action' ? 'REPORT_ACTIONED' : 'REPORT_DISMISSED',
+		kind: report.targetType === 'event' ? 'event' : 'user',
+		entityId: report.targetId,
+		target: `${report.targetLabel} · ${report.categoryLabel}`,
+		reason: note || (decision === 'action' ? 'Action taken on report' : 'Report dismissed'),
+		severity: decision === 'action' ? 'warning' : 'info'
+	});
+	touch();
+	return report;
 }
 
 // ── Users ───────────────────────────────────────────────────────────────────

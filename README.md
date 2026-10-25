@@ -69,6 +69,10 @@ code paths switch to the live backend — no component changes.
    - `024_delete_account.sql` — `delete_own_account()` (SECURITY DEFINER) so a
      signed-in user can delete their profile and auth user without the service
      role key ever reaching the browser
+   - `025_content_reports.sql` — `public.content_reports`: reports about event
+     listings and public profiles land as `open`, insert-only RLS (guests may
+     report, clients can never read the queue or resolve a report), a duplicate
+     guard and a "report received" notification
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
@@ -91,6 +95,24 @@ Anything the app cannot approve by itself is *submitted*, never self-approved:
 included), so rejected requests explain themselves on the same screen. The
 decisions are made in the admin console's **Approvals** queue — see
 `admin/README.md` and `supabase/sql/023_approval_requests.sql`.
+
+## Reporting a listing or a profile
+
+Every event page and public profile carries a flag button that opens a report
+modal (`ReportSheet.svelte`):
+
+1. **Violation category** — a dropdown of the relevant violations. Listings and
+   profiles get different lists (misleading listing, scam/fake tickets, safety
+   concern… versus impersonation, harassment, spam, underage…). The list lives in
+   `src/lib/constants/report-categories.ts`, shared by the form and the API.
+2. **Additional details** — a textarea (10–1000 characters) that is required, so
+   a report never reaches the queue without context.
+
+`POST /api/reports` stores it with `status = 'open'` and returns the report id;
+the reporter gets a "Report received" notification and the item shows up in the
+admin console's **Reports** queue. Reports are private (the target is never told
+who filed one), the organizer of a listing cannot report their own event, and a
+profile cannot report itself. Nothing is actioned until a reviewer decides it.
 
 ## Appearance (dark / light)
 

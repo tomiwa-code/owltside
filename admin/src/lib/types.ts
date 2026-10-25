@@ -197,6 +197,39 @@ export interface ApprovalsData {
 	rows: AdminApproval[];
 }
 
+/** User-submitted report about an event listing or a public profile. */
+export type ReportTargetType = 'event' | 'profile';
+export type ReportStatus = 'open' | 'actioned' | 'dismissed';
+
+export interface AdminReport {
+	id: string;
+	targetType: ReportTargetType;
+	targetId: string;
+	targetLabel: string;
+	category: string;
+	categoryLabel: string;
+	details: string;
+	reporterName: string;
+	reporterHandle: string;
+	reporterEmail: string;
+	status: ReportStatus;
+	createdAt: string;
+	slaHours: number;
+	/** Existing content snapshot so a reviewer can judge without leaving. */
+	context: { label: string; value: string }[];
+	reviewerName?: string;
+	reviewNote?: string;
+	reviewedAt?: string;
+}
+
+export interface ReportsData {
+	open: number;
+	actioned: number;
+	dismissed: number;
+	total: number;
+	rows: AdminReport[];
+}
+
 export interface AdminUser {
 	id: string;
 	handle: string;

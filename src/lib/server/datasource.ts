@@ -3,6 +3,8 @@ import type {
 	ApprovalKind,
 	ApprovalRequest,
 	Checkin,
+	ContentReport,
+	CreateReportInput,
 	CheckoutItem,
 	Conversation,
 	CreateApprovalInput,
@@ -23,6 +25,11 @@ import type {
 } from '$lib/types';
 import * as demo from './demo/seed';
 import { isOperatingIdentity, type OperatingIdentity } from '$lib/constants/operating-identity';
+import {
+	isValidReportCategory,
+	reportCategoryLabel,
+	REPORT_TARGET_LABELS
+} from '$lib/constants/report-categories';
 import { createHash, randomInt } from 'node:crypto';
 import { newTicketCode } from '$lib/utils/qr';
 import {
@@ -104,6 +111,39 @@ const demoApprovals: ApprovalRequest[] = [
 		note: 'Document and selfie matched.',
 		createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
 		decidedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+	}
+];
+
+/**
+ * Demo-mode report queue. Reports only ever surface in the admin console, so
+ * the public app keeps them solely to de-duplicate repeat submissions.
+ */
+const demoReports: ContentReport[] = [
+	{
+		id: 'rep-demo-spam',
+		targetType: 'event',
+		targetId: 'e-warehouse',
+		targetLabel: 'Underground Warehouse 04',
+		category: 'misleading',
+		categoryLabel: 'Misleading or false information',
+		details: 'The lineup on the poster does not match the event page at all.',
+		reporterId: 'u-tunde',
+		reporterHandle: 'tundeb',
+		status: 'open',
+		createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
+	},
+	{
+		id: 'rep-demo-impersonation',
+		targetType: 'profile',
+		targetId: 'u-amina',
+		targetLabel: '@drbello',
+		category: 'impersonation',
+		categoryLabel: 'Impersonation or fake identity',
+		details: 'This account is pretending to be the official Kemi Live page.',
+		reporterId: 'u-femi',
+		reporterHandle: 'femiade',
+		status: 'open',
+		createdAt: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString()
 	}
 ];
 
@@ -305,6 +345,12 @@ export interface DataSource {
 		ticketId: string,
 		request?: { reason: string; details?: string }
 	): Promise<ApprovalRequest>;
+	/* ── content reports (event listings & public profiles) ── */
+	/**
+	 * File a report for the trust & safety team. Reports always land as `open`
+	 * and are only ever reviewed in the admin console.
+	 */
+	reportContent(userId: string | null, input: CreateReportInput): Promise<ContentReport>;
 }
 
 /* ────────────────────────────── demo mode ────────────────────────────── */
@@ -1076,6 +1122,51 @@ export const demoSource: DataSource = {
 			subjectLabel: ticket.code,
 			payload: { reason: request?.reason ?? '', details: request?.details ?? '', code: ticket.code }
 		});
+	},
+	async reportContent(userId, input) {
+		const uid = userId ? (userId === 'demo' ? demoMeId : userId) : undefined;
+		if (!isValidReportCategory(input.targetType, input.category)) {
+			throw new Error('Choose the violation that best describes the problem.');
+		}
+		const details = input.details.trim();
+		if (details.length < 10) {
+			throw new Error('Add a little more detail so the review team can act on it.');
+		}
+		if (!input.targetId.trim()) throw new Error('That target could not be identified.');
+		// One open report per person per target and category — repeated taps or a
+		// page refresh cannot flood the queue.
+		const duplicate = demoReports.find(
+			(report) =>
+				report.status === 'open' &&
+				report.targetType === input.targetType &&
+				report.targetId === input.targetId &&
+				report.category === input.category &&
+				(report.reporterId ?? undefined) === uid
+		);
+		if (duplicate) throw new Error('You already reported this — the review team is on it.');
+		const report: ContentReport = {
+			id: `rep-${Math.random().toString(36).slice(2, 10)}`,
+			targetType: input.targetType,
+			targetId: input.targetId,
+			targetLabel: input.targetLabel,
+			category: input.category,
+			categoryLabel: reportCategoryLabel(input.targetType, input.category),
+			details,
+			reporterId: uid,
+			reporterHandle: uid === demoMeId ? demo.people.ada.handle : undefined,
+			status: 'open',
+			createdAt: new Date().toISOString()
+		};
+		demoReports.unshift(report);
+		if (uid) {
+			pushDemoNotification(uid, {
+				kind: 'system',
+				title: 'Report received',
+				body: `Thanks — our trust & safety team is reviewing the reported ${REPORT_TARGET_LABELS[input.targetType]}.`,
+				href: input.targetType === 'event' ? '/explore' : '/home'
+			});
+		}
+		return { ...report };
 	}
 };
 
@@ -1246,6 +1337,23 @@ const toApproval = (r: Row): ApprovalRequest => ({
 	note: r.decision_note ?? undefined,
 	createdAt: r.created_at,
 	decidedAt: r.decided_at ?? undefined
+});
+
+const toReport = (r: Row): ContentReport => ({
+	id: r.id,
+	targetType: r.target_type,
+	targetId: r.target_id,
+	targetLabel: r.target_label ?? '',
+	category: r.category,
+	categoryLabel: reportCategoryLabel(r.target_type, r.category),
+	details: r.details ?? '',
+	reporterId: r.reporter_id ?? undefined,
+	reporterHandle: r.reporter?.handle ?? undefined,
+	status: r.status,
+	createdAt: r.created_at,
+	reviewedAt: r.reviewed_at ?? undefined,
+	reviewerName: r.reviewer_name ?? undefined,
+	reviewNote: r.review_note ?? undefined
 });
 
 const toEventPromo = (r: Row): EventPromo => ({
@@ -2346,6 +2454,37 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				href: '/settings'
 			});
 			return toApproval(data);
+		},
+		async reportContent(userId, input) {
+			if (!isValidReportCategory(input.targetType, input.category)) {
+				throw new Error('Choose the violation that best describes the problem.');
+			}
+			const details = input.details.trim();
+			if (details.length < 10) {
+				throw new Error('Add a little more detail so the review team can act on it.');
+			}
+			const { data, error } = await db
+				.from('content_reports')
+				.insert({
+					target_type: input.targetType,
+					target_id: input.targetId,
+					target_label: input.targetLabel,
+					category: input.category,
+					details,
+					reporter_id: userId && isUuid(userId) ? userId : null
+				})
+				.select('*')
+				.single();
+			if (error) {
+				if (error.code === '42P01' || error.code === 'PGRST205') {
+					throw new Error('Reports are not installed yet. Apply supabase/sql/025_content_reports.sql.');
+				}
+				if (error.code === '23505') {
+					throw new Error('You already reported this — the review team is on it.');
+				}
+				throw error;
+			}
+			return toReport(data);
 		},
 		async requestTicketRefund(userId, ticketId, request) {
 			if (!isUuid(userId) || !isUuid(ticketId)) throw new Error('Invalid ticket or user ID');

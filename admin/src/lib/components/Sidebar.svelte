@@ -30,7 +30,13 @@
 		publicAppUrl = 'http://localhost:5173'
 	}: {
 		admin: AdminSession;
-		counts: { pendingEvents: number; refunds: number; moderation: number; approvals?: number };
+		counts: {
+			pendingEvents: number;
+			refunds: number;
+			moderation: number;
+			approvals?: number;
+			reports?: number;
+		};
 		publicAppUrl?: string;
 	} = $props();
 
@@ -81,6 +87,7 @@
 			label: 'Trust & System',
 			items: [
 				{ label: 'Moderation', href: '/moderation', icon: Flag, badge: counts.moderation },
+				{ label: 'Reports', href: '/reports', icon: Flag, badge: counts.reports ?? 0 },
 				{ label: 'Audit Logs', href: '/audit', icon: ScrollText },
 				{ label: 'Roles & Admins', href: '/staff', icon: ShieldCheck },
 				{ label: 'Settings', href: '/settings', icon: Settings }
