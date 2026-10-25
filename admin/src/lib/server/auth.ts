@@ -118,10 +118,9 @@ export function authenticate({ email, password, remember, ip }: LoginInput): Log
 		return {
 			ok: false,
 			status: 401,
-			error:
-				isDemoMode()
-					? `Invalid credentials. Demo passphrase must be at least 16 characters. ${remaining} attempt${remaining === 1 ? '' : 's'} left.`
-					: `Invalid credentials. ${remaining} attempt${remaining === 1 ? '' : 's'} left.`
+			error: isDemoMode()
+				? `Email or passphrase is incorrect. Demo sign-in: admin@owltside.com with any 16+ character passphrase. ${remaining} attempt${remaining === 1 ? '' : 's'} left.`
+				: `Email or passphrase is incorrect. ${remaining} attempt${remaining === 1 ? '' : 's'} left.`
 		};
 	}
 
@@ -198,6 +197,34 @@ export function verifySession(token: string | undefined): AdminSession | null {
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Whether the browser is on HTTPS.
+ *
+ * The dev server is routinely viewed through an HTTPS preview proxy that may
+ * append to (`https,http`), rewrite, or strip the forwarded headers entirely.
+ * Any affirmative signal wins; absence of a signal means plain HTTP, which is
+ * only correct for loopback/LAN development. Getting this wrong is expensive:
+ * a `SameSite=Lax` cookie is dropped inside an embedded cross-site preview
+ * iframe, so sign-in appears to succeed and then silently bounce back.
+ */
+export function isSecureRequest(request: Request, url: URL): boolean {
+	if (url.protocol === 'https:') return true;
+
+	const proto = request.headers.get('x-forwarded-proto') ?? '';
+	if (proto.split(',').some((part) => part.trim().toLowerCase() === 'https')) return true;
+
+	if ((request.headers.get('x-forwarded-ssl') ?? '').toLowerCase() === 'on') return true;
+	if (/proto\s*=\s*"?https/i.test(request.headers.get('forwarded') ?? '')) return true;
+
+	// The browser's own view of the page, when the proxy forwards it.
+	for (const header of ['origin', 'referer']) {
+		const value = request.headers.get(header);
+		if (value && value.toLowerCase().startsWith('https://')) return true;
+	}
+
+	return false;
 }
 
 export function writeSessionCookie(

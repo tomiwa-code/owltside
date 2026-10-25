@@ -5,6 +5,7 @@ import {
 	authenticate,
 	authenticateWithKey,
 	isDemoMode,
+	isSecureRequest,
 	writeSessionCookie
 } from '$admin/server/auth';
 import type { AdminSession } from '$admin/types';
@@ -36,7 +37,7 @@ function buildSession(
 
 export const actions: Actions = {
 	credentials: async ({ request, cookies, getClientAddress, url }) => {
-		const https = request.headers.get('x-forwarded-proto') === 'https' || url.protocol === 'https:';
+		const https = isSecureRequest(request, url);
 		const form = await request.formData();
 		const email = String(form.get('email') ?? '').trim();
 		const password = String(form.get('password') ?? '');
@@ -55,7 +56,7 @@ export const actions: Actions = {
 	},
 
 	hardware: async ({ request, cookies, getClientAddress, url }) => {
-		const https = request.headers.get('x-forwarded-proto') === 'https' || url.protocol === 'https:';
+		const https = isSecureRequest(request, url);
 		if (!isDemoMode()) {
 			return fail(400, {
 				error: 'Hardware-key sign-in requires a registered WebAuthn credential for this deployment.'
