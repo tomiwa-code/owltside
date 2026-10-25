@@ -26,6 +26,20 @@
 	});
 
 	/**
+	 * Keep navigation on the origin the admin is actually using. Behind the
+	 * preview proxy the server may resolve a redirect against its internal
+	 * origin (http://localhost:5174), which would strand the browser.
+	 */
+	function sameOriginPath(target: string): string {
+		try {
+			const next = new URL(target, window.location.origin);
+			return next.origin === window.location.origin ? next.pathname + next.search + next.hash : target;
+		} catch {
+			return target;
+		}
+	}
+
+	/**
 	 * Submit through the action endpoint ourselves, then navigate with a full
 	 * page load. `use:enhance` routes the redirect through the client router,
 	 * which fails silently (and leaves the button disabled) if anything in the
@@ -51,7 +65,7 @@
 				sessionStorage.setItem(ATTEMPT_KEY, String(Date.now()));
 				// Full page load: the session must be re-read by the server, and it
 				// keeps working even if the client router is in a bad state.
-				window.location.assign(payload.location ?? data.next ?? '/dashboard');
+				window.location.assign(sameOriginPath(payload.location ?? data.next ?? '/dashboard'));
 				return;
 			}
 			// Failures and errors are devalue-encoded; applyAction renders them into
