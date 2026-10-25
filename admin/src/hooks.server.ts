@@ -2,7 +2,7 @@ import { error, json, redirect, type Handle, type ServerInit } from '@sveltejs/k
 import { randomUUID } from 'node:crypto';
 import { AuthzError, readSession } from '$admin/server/auth';
 
-const PUBLIC_PATHS = ['/login', '/api/health', '/api/session-probe'];
+const PUBLIC_PATHS = ['/login', '/api/health', '/api/session-probe', '/api/client-log'];
 
 function decorate(response: Response, pathname: string, signedIn: boolean): Response {
 	response.headers.set('X-Frame-Options', 'DENY');
