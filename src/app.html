@@ -7,6 +7,25 @@
 			content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
 		/>
 		<meta name="theme-color" content="#0B1120" />
+		<!-- Apply the saved appearance before first paint so the toggle never flashes. -->
+		<script>
+			(function () {
+				try {
+					var raw = localStorage.getItem('owltside.settings.v1');
+					var theme = localStorage.getItem('owltside.theme');
+					if (!theme && raw) {
+						var saved = JSON.parse(raw);
+						theme = saved && saved.accessibility && saved.accessibility.appearance;
+					}
+					if (theme === 'light' || theme === 'dark') {
+						document.documentElement.dataset.theme = theme;
+						document.documentElement.classList.toggle('dark', theme === 'dark');
+					}
+				} catch (error) {
+					/* first visit or blocked storage — the dark default stands */
+				}
+			})();
+		</script>
 		<meta name="mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 		<meta name="description" content="Owltside — event discovery, instant ticketing and live gate check-in." />

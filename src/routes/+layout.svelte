@@ -10,6 +10,14 @@
 	$effect(() => {
 		const preferences = appSettings.value.accessibility;
 		document.documentElement.dataset.theme = preferences.appearance;
+		// Keep the `dark` class and the pre-paint cache in step with the preference
+		// so a reload never paints the wrong theme first.
+		document.documentElement.classList.toggle('dark', preferences.appearance !== 'light');
+		try {
+			localStorage.setItem('owltside.theme', preferences.appearance);
+		} catch {
+			/* storage unavailable — the in-memory preference still applies */
+		}
 		document.documentElement.style.zoom = `${Math.min(150, Math.max(25, preferences.pageSize || 100))}%`;
 		document.documentElement.dataset.reduceMotion = String(preferences.reduceMotion);
 		document.documentElement.dataset.screenReaderLabels = String(preferences.screenReaderLabels);

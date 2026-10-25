@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { Bell, MessageSquare, Search, Settings2 } from '@lucide/svelte';
 	import Avatar from './Avatar.svelte';
+	import ThemeToggle from './ThemeToggle.svelte';
 	import { profileAppearance } from '$lib/state/profile.svelte';
 	import { queryClient, useQuery } from '$lib/state/query.svelte';
 	import { UNREAD_BADGE_CLASS, formatCount } from '$lib/utils/badges';
@@ -111,6 +112,7 @@
 				</span>
 			{/if}
 		</a>
+		<ThemeToggle size="sm" class="shrink-0" />
 		<a href="/settings" aria-label="Settings" class="hidden sm:block text-on-surface-variant"><Settings2 class="w-5 h-5" /></a>
 		<a href="/profile" aria-label="Your profile"><Avatar name={profile?.name ?? session?.name ?? 'Guest'} src={photo} size="sm" /></a>
 	</div>

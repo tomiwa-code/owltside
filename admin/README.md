@@ -34,13 +34,15 @@ FIDO2 assertion. Copy `.env.example` → `.env` and set `ADMIN_EMAIL`,
 | `/login` | Credential + WebAuthn sign-in, rate-limited, signed HttpOnly cookie |
 | `/dashboard` | GMV/settlement KPIs, revenue velocity, review queue, top events, live ledger |
 | `/search` | Federated Search HUD (users, passes, orders, events, organizers, incidents) |
-| `/events`, `/events/[id]` | Moderation queue, approve/publish/reject, capacity & compliance |
+| `/events`, `/events/[id]` | Organizer submission queue (live Supabase), approve/publish/reject, capacity & compliance |
 | `/organizers`, `/organizers/[id]` | KYB registry, dossier, Paystack subaccount binding, evidence pipeline |
 | `/users`, `/users/[id]` | Directory + attendee dossier, KYC, pass/order history, suspend/reinstate |
 | `/tickets` | Pass inspector, void/re-issue, wallet delivery, re-issue history |
 | `/orders` | Paystack ledger, split itemisation, webhook stream, refund initiation |
 | `/settlements` | Escrow, commission, payout velocity, organizer settlement table |
+| `/approvals` | Queue for everything the public app submits: refunds, instant payouts, identity & payout-account verification |
 | `/refunds` | Policy-match review queue, approve/reject, batch auto-approve |
+| `/reports` | Content reports from the public app: event listings and public profiles, action/dismiss with a note |
 | `/moderation` | Incident triage, forensic telemetry, warn / dismiss / freeze sales |
 | `/audit`, `/audit/[id]` | Immutable hash-chained ledger + forensic record dossier |
 | `/staff` | Administrators, permission matrix, hardware-key enrolment, telemetry |
@@ -48,6 +50,76 @@ FIDO2 assertion. Copy `.env.example` → `.env` and set `ADMIN_EMAIL`,
 
 Every list view supports `?q=`, status filters and pagination; the URL is the
 source of truth so a dossier is linkable and survives refresh.
+
+## Content reports (public app → console)
+
+Attendees can flag an event listing or a public profile from the customer app.
+Each report names a violation category (dropdown) and carries the details they
+typed, and it arrives **open** in `public.content_reports`. The `/reports` queue
+shows the target label, category, reporter, a snapshot of the live content and a
+deep link into the public app.
+
+- **Action** — the team acted on the content (suspend the listing from Events,
+  restrict the account from Users, …). A note is mandatory and is written to the
+  audit trail.
+- **Dismiss** — reviewed, no action needed; also requires a note.
+- Without Supabase credentials the page reviews the seeded queue
+  (`seed.ts` → `makeReports`) and shows a **Demo dataset** chip.
+- Apply `supabase/sql/025_content_reports.sql` from the customer app first; the
+  page surfaces a clear error if the table is missing.
+- Clients get no read or update access to the table: only the service role can
+  list or resolve reports.
+
+## Approval queue (public app → console)
+
+The customer app never approves itself. Refund requests, instant payouts and
+verification details are written to `public.approval_requests` as `pending` and
+show up on `/approvals` as **Pending review** on the public web until an admin
+decides them.
+
+```bash
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service role key>   # decides approval_requests
+```
+
+- **Approve** (refund) → the pass flips to `refunded` and the attendee is
+  notified; **Approve** (payout) → the payout is released; **Approve**
+  (verification) → the public app shows "Verified".
+- **Reject** requires a reason, which the requester sees on the same screen.
+- Without Supabase credentials the console reviews its deterministic demo queue
+  (`seed.ts` → `makeApprovals`) so the workflow is still demonstrable, and the
+  page shows a **Demo dataset** chip.
+- Apply `supabase/sql/023_approval_requests.sql` from the customer app first;
+  the page surfaces a clear error if the table is missing.
+
+## Organizer submission queue
+
+Every event an organizer submits in the customer app is created with
+`status = 'pending'` and is **not** visible on the public home/explore feeds.
+The `/events` console renders those submissions at the top of the page
+("Organizer submission queue") with title, organizer, date, venue, description,
+ticket tiers and the submission timestamp.
+
+- **Approve & Publish** writes `status = 'published'` (plus `moderated_at`,
+  `moderated_by`, and a note when one is supplied). The customer app filters its
+  feeds on that exact value, so the event appears on the next request, and the
+  organizer's dashboard badge flips to “Published”.
+- **Reject** requires a reason, writes `status = 'rejected'` and stores the note
+  in `moderation_note`. The organizer can edit the event to resubmit it, which
+  puts it back in the queue as `pending`.
+
+The queue is Supabase-backed whenever both are set (server-side only):
+
+```bash
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service role key>   # bypasses RLS on events
+```
+
+Without them the console moderates its seeded demo dataset, so the workflow
+still works with zero configuration. The service-role key is required because
+RLS deliberately forbids organizers (and every other client) from setting
+`status = 'published'` — see `supabase/sql/022_event_moderation.sql` in the
+customer app.
 
 ## Authorisation ladder
 
@@ -108,6 +180,8 @@ POST /api/events/[id]/status        approve / reject / suspend / publish
 POST /api/organizers/[id]/status    verify / reject / freeze KYB
 POST /api/tickets/[id]/actions      void | reissue
 POST /api/orders/[id]/refund        initiate refund (settled only)
+POST /api/approvals/[id]/decision   approve | reject (refund, payout, verification)
+POST /api/reports/[id]/decision     action | dismiss (event listing / profile report)
 POST /api/refunds/[id]/decision     approve | reject
 POST /api/refunds/batch             auto-approve eligible queue
 POST /api/users/[id]/status         active | blocked | flagged
@@ -132,7 +206,10 @@ npm test
 void/re-issue epoch handling, audit chain integrity, pagination clamping);
 `tests/auth.test.ts` covers demo/live auth, lockout, cookie signing/expiry and
 the tier ladder; `tests/export.test.ts` locks the CSV contract and every export
-link referenced in the UI.
+link referenced in the UI; `tests/approvals.test.ts` locks the approval queue
+(reason required to reject, approve-refund settles the pass, no double
+decisions); `tests/reports.test.ts` locks the content report queue (both target
+types, mandatory review note, no double reviews).
 
 ## Deploy
 

@@ -56,6 +56,16 @@ import {
 	let tab = $state<'upcoming' | 'past' | 'archived'>('upcoming');
 
 	const all = $derived(tickets.data ?? []);
+	// Passes with a refund under review: the pass still works, it just cannot be
+	// refunded twice while the review team decides.
+	const refundPendingIds = $derived(
+		new Set(
+			(data.approvals ?? [])
+				.filter((request) => request.kind === 'refund' && request.status === 'pending')
+				.map((request) => request.subjectId)
+				.filter((id): id is string => Boolean(id))
+		)
+	);
 	const upcoming = $derived(all.filter((t) => t.status === 'valid' && new Date(t.eventStartsAt) > new Date()));
 	const past = $derived(all.filter((t) => !upcoming.includes(t)));
 	const pastDesk = $derived(past.filter((t) => t.status === 'used'));
@@ -221,6 +231,9 @@ import {
 								{isSel ? 'Selected Pass' : ticketStatusChip(t.status)}
 							</span>
 							<span class="{MONO} text-outline-variant truncate">{refOf(t)}</span>
+							{#if refundPendingIds.has(t.id)}
+								<span class="text-label-badge px-2 py-0.5 rounded-full border border-accent-amber/30 bg-accent-amber/10 text-accent-amber shrink-0">Refund pending</span>
+							{/if}
 						</span>
 						{#if isSel && t.status === 'valid'}
 							<span class="flex items-center gap-1.5 {MONO} text-on-surface shrink-0">
@@ -423,8 +436,8 @@ import {
 							<button class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => toast('Offline PDF cached for gate mode', 'success')}>
 								<Download class="w-4 h-4" /><span>Download Offline PDF</span>
 							</button>
-							<button disabled={selectedActionsDisabled} title={selectedVerified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors disabled:cursor-not-allowed disabled:opacity-40" onclick={() => goto(`/tickets/${selected.id}?refund=1`)}>
-								<History class="w-4 h-4" /><span>Request Refund</span>
+							<button disabled={selectedActionsDisabled || refundPendingIds.has(selected.id)} title={refundPendingIds.has(selected.id) ? 'Your refund request is awaiting admin approval' : selectedVerified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors disabled:cursor-not-allowed disabled:opacity-40" onclick={() => goto(`/tickets/${selected.id}?refund=1`)}>
+								<History class="w-4 h-4" /><span>{refundPendingIds.has(selected.id) ? 'Refund pending approval' : 'Request Refund'}</span>
 							</button>
 						</div>
 					</div>

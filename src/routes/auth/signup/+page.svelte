@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
+	import ThemeToggle from '$components/ThemeToggle.svelte';
 	import {
 		ArrowLeft,
 		AtSign,
@@ -256,7 +257,10 @@
 			</a>
 			<h1 class="font-display text-headline-md font-semibold text-on-surface truncate">Create account</h1>
 		</div>
-		<img src="/owl-icon.png" alt="Owltside logo" class="h-7 w-7 object-contain opacity-90" />
+		<div class="flex items-center gap-2">
+			<ThemeToggle size="sm" />
+			<img src="/owl-icon.png" alt="Owltside logo" class="h-7 w-7 object-contain opacity-90" />
+		</div>
 	</div>
 </header>
 

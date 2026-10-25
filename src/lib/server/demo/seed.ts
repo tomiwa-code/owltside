@@ -122,6 +122,7 @@ export const people: Record<string, Profile> = {
 export const events: EventItem[] = [
 	{
 		id: 'e-pulse-ai',
+		status: 'published',
 		slug: 'pulse-ai-summit-lagos',
 		title: 'Pulse AI Summit Lagos',
 		category: 'tech',
@@ -156,6 +157,7 @@ export const events: EventItem[] = [
 	},
 	{
 		id: 'e-afrobeats',
+		status: 'published',
 		slug: 'afrobeats-sound-sunset',
 		title: 'Afrobeats & Sound Sunset',
 		category: 'music',
@@ -186,6 +188,7 @@ export const events: EventItem[] = [
 	},
 	{
 		id: 'e-hackathon',
+		status: 'published',
 		slug: 'deep-tech-hackathon-2026',
 		title: 'Deep Tech Hackathon 2026',
 		category: 'workshops',
@@ -208,6 +211,7 @@ export const events: EventItem[] = [
 	},
 	{
 		id: 'e-gastro',
+		status: 'published',
 		slug: 'fusion-gastro-beer-fair',
 		title: 'Fusion Gastro & Beer Fair',
 		category: 'food',
@@ -230,6 +234,7 @@ export const events: EventItem[] = [
 	},
 	{
 		id: 'e-fintech',
+		status: 'published',
 		slug: 'africa-fintech-forum-26',
 		title: "Africa FinTech Forum '26",
 		category: 'conferences',
@@ -255,6 +260,7 @@ export const events: EventItem[] = [
 	},
 	{
 		id: 'e-subbase',
+		status: 'published',
 		slug: 'sub-bass-electronic-festival',
 		title: 'Sub-Bass Electronic Festival',
 		category: 'nightlife',
@@ -281,6 +287,7 @@ export const events: EventItem[] = [
 	},
 	{
 		id: 'e-craft',
+		status: 'published',
 		slug: 'product-craft-masterclass',
 		title: 'Product Craft Masterclass',
 		category: 'design',
@@ -302,6 +309,7 @@ export const events: EventItem[] = [
 	},
 	{
 		id: 'e-warehouse',
+		status: 'published',
 		slug: 'underground-warehouse-04',
 		title: 'Underground Warehouse 04',
 		category: 'nightlife',
@@ -324,6 +332,7 @@ export const events: EventItem[] = [
 	},
 	{
 		id: 'e-artwalk',
+		status: 'published',
 		slug: 'surulere-street-art-walk',
 		title: 'Surulere Street Art Walk',
 		category: 'design',
@@ -366,6 +375,7 @@ export const attendeePool = [
 
 export const rooftopEvent: EventItem = {
 	id: 'e-rooftop',
+	status: 'published',
 	slug: 'yaba-rooftop-sessions',
 	title: 'Yaba Rooftop Sessions',
 	category: 'music',
@@ -398,6 +408,41 @@ export const rooftopEvent: EventItem = {
 	attendees: 404
 };
 events.push(rooftopEvent);
+
+/**
+ * Ada's second listing is still in review, so the organizer console can show
+ * the "Pending Approval" badge out of the box. It stays out of the public
+ * home/explore feeds until an admin publishes it.
+ */
+export const pendingReviewEvent: EventItem = {
+	id: 'e-ada-listening-room',
+	status: 'pending',
+	slug: 'ada-listening-room-sessions',
+	title: 'Listening Room Sessions (In Review)',
+	category: 'music',
+	tags: ['Listening room', 'Soul', 'Intimate'],
+	startsAt: at(21, 19),
+	endsAt: at(21, 22),
+	venue: 'The Listening Room, Ikoyi',
+	city: 'Ikoyi, Lagos',
+	cover: { from: '#1e1b4b', to: '#0b1326', icon: 'disc-3' },
+	description:
+		'An intimate 60-seat listening session: vinyl only, no phones on the floor, and a live string quartet closing the night.',
+	organizer: people.ada,
+	speakers: [],
+	agenda: [{ id: 'lr1', start: at(21, 19), title: 'Doors & first side', location: 'Main Room' }],
+	tiers: [
+		{ id: 'tier-floor', name: 'Floor Seat', price: 18_000, sold: 0, capacity: 60, benefits: 'Seat + welcome drink' }
+	],
+	faqs: [],
+	policies: ['No phones on the listening floor'],
+	gates: [{ id: 'gate-main', name: 'Main Door', modes: ['QR', 'Manual'], staff: [] }],
+	submittedAt: new Date(now - 45 * 60 * 1000).toISOString(),
+	live: false,
+	viewsToday: 0,
+	attendees: 0
+};
+events.push(pendingReviewEvent);
 
 const rooftopCodes = [
 	'EV-RT41-AAAA-0001',

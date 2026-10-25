@@ -28,7 +28,7 @@
 	import { queryClient } from '$lib/state/query.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { downloadIcs } from '$lib/utils/ics';
-	import { fmtDateFull, fmtTime } from '$lib/utils/dates';
+	import { fmtDateFull, fmtRelative, fmtTime } from '$lib/utils/dates';
 	import { addFee, formatMoney } from '$lib/utils/money';
 import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/utils/tickets';
 	import { page } from '$app/state';
@@ -47,6 +47,11 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 	const verified = $derived(isVerifiedTicket(ticket));
 	const ticketActionsDisabled = $derived(!canUseTicketActions(ticket));
 	const statusLabel = $derived(ticketStatusLabel(ticket.status));
+	// Refund requests wait for an admin decision, so the pass stays usable and we
+	// show the outstanding request instead of a false "refunded" state.
+	const refundRequest = $derived(data.refundRequest ?? null);
+	const refundPending = $derived(refundRequest?.status === 'pending');
+	const refundRejected = $derived(refundRequest?.status === 'rejected');
 
 	let transferOpen = $state(page.url.searchParams.get('transfer') === '1' && data.ticket.status === 'valid');
 	let refundOpen = $state(page.url.searchParams.get('refund') === '1' && data.ticket.status === 'valid');
@@ -210,7 +215,7 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 					queryClient.invalidate('tickets');
 					queryClient.invalidate('notifications');
 					await invalidateAll();
-					toast('Refund request submitted — allow 3–5 working days', 'success');
+					toast('Refund request sent for admin approval', 'success');
 				} else if (result.type === 'failure') {
 					refundError = typeof result.data?.error === 'string' ? result.data.error : 'Could not submit your refund request.';
 				}
@@ -331,7 +336,7 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 				<div class="grid grid-cols-3 gap-2">
 					<button class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5" onclick={() => downloadIcs({ title: ticket.eventTitle, venue: ticket.venue, startsAt: ticket.eventStartsAt })}><CalendarPlus class="w-4 h-4" /> Calendar</button>
 					<button disabled={ticketActionsDisabled} title={verified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40" onclick={openTransferSheet}><Send class="w-4 h-4" /> Transfer</button>
-					<button disabled={ticketActionsDisabled} title={verified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-full bg-surface-container-high hover:bg-error-container text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40" onclick={openRefundSheet}><Undo2 class="w-4 h-4" /> Refund</button>
+					<button disabled={ticketActionsDisabled || refundPending} title={refundPending ? 'Your refund request is awaiting admin approval' : verified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-full bg-surface-container-high hover:bg-error-container text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40" onclick={openRefundSheet}><Undo2 class="w-4 h-4" /> {refundPending ? 'Refund pending' : 'Refund'}</button>
 				</div>
 				<div class="grid grid-cols-2 gap-2">
 					<button disabled={ticketActionsDisabled} title={verified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-xl bg-surface-container-high border border-surface-glass-border text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40" onclick={addToWallet}><Wallet class="w-4 h-4" /> Apple / Google</button>
@@ -470,8 +475,8 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 			<button disabled={ticketActionsDisabled} title={verified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40" onclick={openTransferSheet}>
 				<Send class="w-4 h-4" /> Transfer
 			</button>
-			<button disabled={ticketActionsDisabled} title={verified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-full bg-surface-container-high hover:bg-error-container text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40" onclick={openRefundSheet}>
-				<Undo2 class="w-4 h-4" /> Refund
+			<button disabled={ticketActionsDisabled || refundPending} title={refundPending ? 'Your refund request is awaiting admin approval' : verified ? 'Unavailable after gate verification' : undefined} class="h-11 rounded-full bg-surface-container-high hover:bg-error-container text-on-surface text-label-badge flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40" onclick={openRefundSheet}>
+				<Undo2 class="w-4 h-4" /> {refundPending ? 'Refund pending' : 'Refund'}
 			</button>
 		</div>
 
@@ -626,13 +631,13 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 			<button
 				type="submit"
 				form="ticket-refund-form"
-				disabled={!refundReason || !refundConfirmed || refunding || ticketActionsDisabled}
+				disabled={!refundReason || !refundConfirmed || refunding || ticketActionsDisabled || refundPending}
 				class="w-full h-12 rounded-xl bg-error-container text-on-error-container font-semibold text-body-md flex items-center justify-center gap-2 disabled:opacity-40"
 			>
 				{#if refunding}
 					<span>Submitting refund…</span>
 				{:else}
-					<span>Confirm & Submit Refund ({formatMoney(refundAmount)})</span>
+					<span>{refundPending ? 'Awaiting admin approval' : `Request Refund (${formatMoney(refundAmount)})`}</span>
 				{/if}
 			</button>
 			<button type="button" onclick={() => (refundOpen = false)} class="h-10 text-body-sm font-medium text-on-surface-variant hover:text-on-surface">Keep My Ticket</button>
@@ -642,6 +647,15 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 	<form id="ticket-refund-form" method="POST" action="?/refund" use:enhance={handleRefundEnhance} class="flex flex-col gap-3">
 		{#if refundError}
 			<p class="rounded-lg bg-error/10 border border-error/30 px-3 py-2 text-body-sm text-error" role="alert">{refundError}</p>
+		{/if}
+		{#if refundPending}
+			<p class="rounded-lg bg-accent-amber/10 border border-accent-amber/30 px-3 py-2 text-body-sm text-on-surface" role="status">
+				<span class="font-semibold">Pending approval.</span> Your refund request was submitted {refundRequest ? fmtRelative(refundRequest.createdAt) : 'just now'} and is with the Owltside review team. Your pass stays usable until it is approved.
+			</p>
+		{:else if refundRejected}
+			<p class="rounded-lg bg-error/10 border border-error/30 px-3 py-2 text-body-sm text-on-surface" role="status">
+				<span class="font-semibold">Refund declined.</span> {refundRequest?.note || 'The review team declined this request.'}
+			</p>
 		{/if}
 		{#if verified}
 			<p class="rounded-lg bg-accent-emerald/10 border border-accent-emerald/30 px-3 py-2 text-body-sm text-on-surface" role="alert">This ticket has been verified at the gate, so it can no longer be refunded.</p>

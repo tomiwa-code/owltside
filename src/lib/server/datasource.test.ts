@@ -123,11 +123,14 @@ describe('demo datasource', () => {
 		await expect(demoSource.respondToSpeakerInvite('u-ada', event.slug, true)).rejects.toThrow('Speaker invitation not found');
 
 		expect(await demoSource.respondToSpeakerInvite('u-segun', event.slug, true)).toBe('accepted');
-		const profileEvent = (await demoSource.getProfileEvents('u-segun')).find((item) => item.id === event.id);
-		expect(profileEvent?.speakers.find((speaker) => speaker.id === 'u-segun')).toMatchObject({
+		// The acceptance is stored on the event, but a freshly created submission
+		// is still pending, so it stays off public profiles until approval.
+		const organizerView = (await demoSource.getOrganizerEvent(event.id))!;
+		expect(organizerView.speakers.find((speaker) => speaker.id === 'u-segun')).toMatchObject({
 			role: 'Panel moderator',
 			inviteStatus: 'accepted'
 		});
+		expect((await demoSource.getProfileEvents('u-segun')).some((item) => item.id === event.id)).toBe(false);
 		await expect(demoSource.respondToSpeakerInvite('u-segun', event.slug, false)).rejects.toThrow('already been answered');
 	});
 	it('issues gate PINs only for configured organizer-owned event gates', async () => {

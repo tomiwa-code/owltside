@@ -168,7 +168,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 		2: { title: 'Tickets & Pricing', sub: 'Set capacity, multi-currency display, and door access parameters' },
 		3: { title: 'Schedule & Lineup', sub: 'Timeline sessions across days and stages' },
 		4: { title: 'Gate Ops & Verification', sub: 'Configure lanes, staff and offline verification' },
-		5: { title: 'Review & Launch', sub: 'Final checks before going live' }
+		5: { title: 'Review & Submit', sub: 'Final checks before the Owltside review team approves it' }
 	};
 	const categoryLabel = $derived(
 		selectedCategory === 'custom'
@@ -1810,8 +1810,8 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 					<div class="flex flex-col gap-2 border-t border-surface-glass-border pt-4">
 						<span class="{MONO} text-on-surface-variant">Launch Timeline</span>
 						{#each [
-							{ id: 'now', icon: true, title: 'Publish Now', badge: 'Instant', sub: 'Smart contracts deploy immediately; live on explore under 30 seconds.' },
-							{ id: 'staged', icon: false, title: 'Schedule Staged Drop', badge: '', sub: 'Specify exact embargo date, countdown page, and queue opening.' }
+							{ id: 'now', icon: true, title: 'Submit for review', badge: 'Recommended', sub: 'Goes to the Owltside review queue. The event appears on home and explore once an admin approves it.' },
+							{ id: 'staged', icon: false, title: 'Schedule Staged Drop', badge: '', sub: 'Review first, then hold ticket sales until an embargo date.' }
 						] as row (row.id)}
 							<label class="rounded-lg border border-surface-glass-border bg-surface-container-low px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors {launchMode === row.id ? 'border-primary/50' : ''}">
 								<input type="radio" name="launchMode" class="accent-[#c0c1ff] w-4 h-4 mt-0.5" checked={launchMode === row.id} onchange={() => (launchMode = row.id as 'now' | 'staged')} />
@@ -1842,20 +1842,21 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 						</span>
 					</div>
 					<p class="text-body-sm text-on-surface-variant leading-relaxed">
-						By executing this launch, ticket pools will be written to the ledger, and your organizer
-						account will become liable for venue capacity limits under OWLTSIDE Protocol terms.
+						Submitting sends this event to Owltside review. It stays visible on your organizer
+						dashboard as <span class="text-accent-amber font-semibold">Pending Approval</span> and only appears on
+						home and explore once an admin publishes it. Ticket pools are written to the ledger at that point.
 					</p>
 					<div class="flex items-center gap-3 pt-1">
 						<button type="button" onclick={saveDraft} class="h-12 px-5 rounded-lg bg-surface-container border border-surface-glass-border text-body-sm font-semibold text-on-surface hover:border-primary/40 transition-colors shrink-0">
 							Save Draft
 						</button>
 						<button type="submit" disabled={!canContinue} class="flex-1 h-12 rounded-lg bg-primary text-on-primary text-body-md font-semibold flex items-center justify-center gap-2 hover:bg-primary-container transition-colors glow-primary disabled:opacity-40">
-							<span>{editingEvent ? 'Save Event Changes' : 'Launch &amp; Publish Event'}</span>
+							<span>{editingEvent ? 'Save Event Changes' : 'Submit for Approval'}</span>
 							<Rocket class="w-4 h-4" />
 						</button>
 					</div>
 					<span class="flex items-center justify-center gap-1.5 font-code text-[11px] tracking-[0.08em] text-on-surface-variant">
-						<Clock class="w-3.5 h-3.5" /> Draft stays on this page until published
+						<Clock class="w-3.5 h-3.5" /> Review usually lands within a few hours
 					</span>
 				</form>
 			</aside>
@@ -2290,8 +2291,8 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 					<label class="flex items-start gap-3 rounded-xl border border-surface-glass-border bg-surface-container-low p-3"><input type="checkbox" bind:checked={publishExplore} class="mt-0.5 w-4 h-4 accent-[#c0c1ff]" /><span><span class="block text-body-sm font-semibold text-on-surface">Publish to OWLTSIDE Explore</span><span class="block text-label-badge text-on-surface-variant pt-1">Feature on event discovery and location heatmaps.</span></span></label>
 					<label class="flex items-start gap-3 rounded-xl border border-surface-glass-border bg-surface-container-low p-3"><input type="checkbox" bind:checked={broadcast} class="mt-0.5 w-4 h-4 accent-[#c0c1ff]" /><span><span class="block text-body-sm font-semibold text-on-surface">Instant organizer broadcast</span><span class="block text-label-badge text-on-surface-variant pt-1">Notify followers as soon as the event launches.</span></span></label>
 					<div class="border-t border-surface-glass-border pt-3 flex flex-col gap-2"><span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Launch timeline</span>
-						<label class="rounded-xl border border-surface-glass-border bg-surface-container-low p-3 flex items-start gap-3"><input type="radio" name="launchModeMobile" checked={launchMode === 'now'} onchange={() => (launchMode = 'now')} class="mt-0.5 w-4 h-4 accent-[#c0c1ff]" /><span><span class="block text-body-sm font-semibold text-on-surface">Publish now · Instant</span><span class="block text-label-badge text-on-surface-variant pt-1">Contracts deploy immediately; visible in under 30 seconds.</span></span></label>
-						<label class="rounded-xl border border-surface-glass-border bg-surface-container-low p-3 flex items-start gap-3"><input type="radio" name="launchModeMobile" checked={launchMode === 'staged'} onchange={() => (launchMode = 'staged')} class="mt-0.5 w-4 h-4 accent-[#c0c1ff]" /><span><span class="block text-body-sm font-semibold text-on-surface">Schedule staged drop</span><span class="block text-label-badge text-on-surface-variant pt-1">Set an embargo date, countdown page, and queue opening.</span></span></label>
+						<label class="rounded-xl border border-surface-glass-border bg-surface-container-low p-3 flex items-start gap-3"><input type="radio" name="launchModeMobile" checked={launchMode === 'now'} onchange={() => (launchMode = 'now')} class="mt-0.5 w-4 h-4 accent-[#c0c1ff]" /><span><span class="block text-body-sm font-semibold text-on-surface">Submit for review</span><span class="block text-label-badge text-on-surface-variant pt-1">Goes live on home and explore once an Owltside admin approves it.</span></span></label>
+						<label class="rounded-xl border border-surface-glass-border bg-surface-container-low p-3 flex items-start gap-3"><input type="radio" name="launchModeMobile" checked={launchMode === 'staged'} onchange={() => (launchMode = 'staged')} class="mt-0.5 w-4 h-4 accent-[#c0c1ff]" /><span><span class="block text-body-sm font-semibold text-on-surface">Schedule staged drop</span><span class="block text-label-badge text-on-surface-variant pt-1">Review first, then hold sales until an embargo date.</span></span></label>
 					</div>
 				</section>
 
@@ -2305,7 +2306,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 				</section>
 
 				<button type="submit" class="h-12 rounded-full bg-primary text-on-primary text-body-md font-semibold flex items-center justify-center gap-2 glow-primary" disabled={!canContinue || tiers.length === 0}>
-					<TrendingUp class="w-4 h-4" /> {editingEvent ? 'Save event changes' : 'Publish event'}
+					<TrendingUp class="w-4 h-4" /> {editingEvent ? 'Save event changes' : 'Submit for approval'}
 				</button>
 			</form>
 		{/if}
@@ -2323,7 +2324,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 				</button>
 			{:else}
 				<span class="flex-1 h-12 rounded-full bg-surface-container-high border border-outline-variant/30 text-on-surface-variant text-body-md flex items-center justify-center">
-					Publish below ↑
+					Submit below ↑
 				</span>
 			{/if}
 		</div>

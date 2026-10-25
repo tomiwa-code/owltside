@@ -1,5 +1,7 @@
 import type {
+	AdminApproval,
 	AdminCase,
+	AdminReport,
 	AdminEvent,
 	AdminOrder,
 	AdminOrganizer,
@@ -30,6 +32,8 @@ export interface StoreState {
 	orders: AdminOrder[];
 	users: AdminUser[];
 	refunds: AdminRefund[];
+	approvals: AdminApproval[];
+	reports: AdminReport[];
 	cases: AdminCase[];
 	staff: AdminStaff[];
 	audit: AuditRecord[];
@@ -1571,6 +1575,225 @@ function makeOrders(now: Date, events: AdminEvent[], users: AdminUser[]): AdminO
 
 // ── Refunds ─────────────────────────────────────────────────────────────────
 
+/**
+ * Requests the public app sends to the console: ticket refunds, instant payouts
+ * and identity / payout-account verification. Each one is `pending` until an
+ * admin decides it, which is exactly the state the public web displays.
+ */
+function makeApprovals(now: Date): AdminApproval[] {
+	return [
+		{
+			id: 'ap-refund-ada',
+			kind: 'refund',
+			status: 'pending',
+			requesterName: 'Ada Obi',
+			requesterHandle: 'ada',
+			requesterEmail: 'ada@owltside.com',
+			title: 'Refund · Afrobeats & Sound Sunset',
+			summary: 'General pass · reason: Schedule Conflict',
+			amountNgn: 15_000,
+			subjectId: 't-afrobeats-ada',
+			subjectLabel: 'EV-7QK2-4M8P-9XRT',
+			details: [
+				{ label: 'Ticket', value: 'EV-7QK2-4M8P-9XRT' },
+				{ label: 'Reason', value: 'Schedule Conflict' },
+				{ label: 'Context', value: 'Clashes with a work trip.' },
+				{ label: 'Gate status', value: 'Never scanned' }
+			],
+			requestedAt: minutesAgo(now, 185),
+			slaHours: 8,
+			note: ''
+		},
+		{
+			id: 'ap-payout-ada',
+			kind: 'payout',
+			status: 'pending',
+			requesterName: 'Ada Obi',
+			requesterHandle: 'ada',
+			requesterEmail: 'ada@owltside.com',
+			title: 'Instant payout · Yaba Rooftop Sessions',
+			summary: 'Cleared settlement balance requested to GTBank ••••6789',
+			amountNgn: 1_240_000,
+			subjectId: 'evt-rooftop-yaba',
+			subjectLabel: 'Yaba Rooftop Sessions',
+			details: [
+				{ label: 'Event', value: 'Yaba Rooftop Sessions' },
+				{ label: 'Destination', value: 'GTBank ••••6789' },
+				{ label: 'Cleared balance', value: '₦1,240,000' },
+				{ label: 'KYC tier', value: 'Tier 2 · payout account verified' }
+			],
+			requestedAt: minutesAgo(now, 95),
+			slaHours: 4,
+			note: ''
+		},
+		{
+			id: 'ap-verify-tobi',
+			kind: 'verification',
+			status: 'pending',
+			requesterName: 'Tobi Adeyemi',
+			requesterHandle: 'tobiade',
+			requesterEmail: 'tobi@owltside.com',
+			title: 'Identity verification',
+			summary: 'NIN document submitted for review • ending 4421',
+			subjectLabel: 'identity',
+			details: [
+				{ label: 'Check', value: 'Identity (NIN)' },
+				{ label: 'Document', value: 'NIN slip + selfie' },
+				{ label: 'Reference', value: '••••••••4421' },
+				{ label: 'Attachment', value: 'front+back' }
+			],
+			requestedAt: minutesAgo(now, 62),
+			slaHours: 24,
+			note: ''
+		},
+		{
+			id: 'ap-verify-ada',
+			kind: 'verification',
+			status: 'approved',
+			requesterName: 'Ada Obi',
+			requesterHandle: 'ada',
+			requesterEmail: 'ada@owltside.com',
+			title: 'Identity verification',
+			summary: 'NIN · approved by the trust & safety team',
+			subjectLabel: 'identity',
+			details: [
+				{ label: 'Check', value: 'Identity (NIN)' },
+				{ label: 'Document', value: 'NIN' },
+				{ label: 'Reviewed by', value: 'Trust & Safety' }
+			],
+			requestedAt: minutesAgo(now, 8_640),
+			slaHours: 24,
+			note: 'Document and selfie matched.',
+			decidedAt: minutesAgo(now, 7_200),
+			decidedBy: 'Amara Okonkwo'
+		},
+		{
+			id: 'ap-payout-declined',
+			kind: 'payout',
+			status: 'rejected',
+			requesterName: 'Tobi Adeyemi',
+			requesterHandle: 'tobiade',
+			requesterEmail: 'tobi@owltside.com',
+			title: 'Instant payout · Lekki Sunset Rooftop',
+			summary: 'Cleared settlement balance requested to Access Bank ••••1024',
+			amountNgn: 480_000,
+			subjectId: 'evt-lekki-sunset',
+			subjectLabel: 'Lekki Sunset Rooftop',
+			details: [
+				{ label: 'Event', value: 'Lekki Sunset Rooftop' },
+				{ label: 'Destination', value: 'Access Bank ••••1024' },
+				{ label: 'Cleared balance', value: '₦480,000' }
+			],
+			requestedAt: minutesAgo(now, 2_880),
+			slaHours: 4,
+			note: 'Payout account name did not match the verified identity.',
+			decidedAt: minutesAgo(now, 2_700),
+			decidedBy: 'Amara Okonkwo'
+		}
+	];
+}
+
+/**
+ * Reports attendees filed from the public app against an event listing or a
+ * profile. They arrive `open` and stay in the queue until someone here reviews
+ * them — the public app can never resolve its own report.
+ */
+function makeReports(now: Date): AdminReport[] {
+	return [
+		{
+			id: 'rep-2041',
+			targetType: 'event',
+			targetId: 'evt-warehouse-midnight',
+			targetLabel: 'Underground Warehouse 04',
+			category: 'misleading',
+			categoryLabel: 'Misleading or false information',
+			details:
+				'The lineup on the poster does not match the event page — the headliner listed here never confirmed, and the price changed after I paid.',
+			reporterName: 'Tunde Bakare',
+			reporterHandle: 'tundeb',
+			reporterEmail: 'tunde@owltside.com',
+			status: 'open',
+			createdAt: minutesAgo(now, 55),
+			slaHours: 24,
+			context: [
+				{ label: 'Listing', value: 'Underground Warehouse 04 · Apapa Rd, Lagos' },
+				{ label: 'Organizer', value: '@nightfreight' },
+				{ label: 'Status', value: 'Published' },
+				{ label: 'Tickets sold', value: '812' }
+			]
+		},
+		{
+			id: 'rep-2038',
+			targetType: 'profile',
+			targetId: 'usr-kemi-live',
+			targetLabel: '@kemilive',
+			category: 'impersonation',
+			categoryLabel: 'Impersonation or fake identity',
+			details:
+				'This account is pretending to be the official Kemi Live page. It is DMing people asking for transfers for tickets that do not exist.',
+			reporterName: 'Ada Obi',
+			reporterHandle: 'ada',
+			reporterEmail: 'ada@owltside.com',
+			status: 'open',
+			createdAt: minutesAgo(now, 190),
+			slaHours: 12,
+			context: [
+				{ label: 'Profile', value: '@kemilive · Kemi Adeyemi' },
+				{ label: 'Account age', value: '3 days' },
+				{ label: 'Followers', value: '41' },
+				{ label: 'KYC', value: 'Tier 0 · unverified' }
+			]
+		},
+		{
+			id: 'rep-2032',
+			targetType: 'event',
+			targetId: 'evt-afterhours',
+			targetLabel: 'Afterhours Boat Party',
+			category: 'safety',
+			categoryLabel: 'Safety or security concern',
+			details:
+				'The venue address on the listing is a private jetty with no licensed capacity, and no safety plan is published for a boat event.',
+			reporterName: 'Chiamaka Eze',
+			reporterHandle: 'chiamaka',
+			reporterEmail: 'chiamaka@owltside.com',
+			status: 'actioned',
+			createdAt: minutesAgo(now, 2_880),
+			slaHours: 24,
+			context: [
+				{ label: 'Listing', value: 'Afterhours Boat Party · Lekki' },
+				{ label: 'Organizer', value: '@afterhoursng' },
+				{ label: 'Action', value: 'Listing suspended pending permits' }
+			],
+			reviewerName: 'Amara Okonkwo',
+			reviewNote: 'Suspended the listing until the organizer uploads a marine safety plan.',
+			reviewedAt: minutesAgo(now, 2_400)
+		},
+		{
+			id: 'rep-2021',
+			targetType: 'profile',
+			targetId: 'usr-noise',
+			targetLabel: '@loudloud',
+			category: 'spam',
+			categoryLabel: 'Spam or fake account',
+			details: 'Account only posts referral links and adds everyone it can find to group chats.',
+			reporterName: 'Femi Adeyemi',
+			reporterHandle: 'femiade',
+			reporterEmail: 'femi@owltside.com',
+			status: 'dismissed',
+			createdAt: minutesAgo(now, 5_760),
+			slaHours: 12,
+			context: [
+				{ label: 'Profile', value: '@loudloud · Loud Loud' },
+				{ label: 'Account age', value: '14 months' },
+				{ label: 'Followers', value: '1,204' }
+			],
+			reviewerName: 'Amara Okonkwo',
+			reviewNote: 'Checked the last 30 posts — promotional, but within the guidelines.',
+			reviewedAt: minutesAgo(now, 5_400)
+		}
+	];
+}
+
 function makeRefunds(now: Date): AdminRefund[] {
 	return [
 		{
@@ -2169,6 +2392,8 @@ export function buildSeed(now: Date = new Date()): StoreState {
 		orders,
 		users,
 		refunds: makeRefunds(now),
+		approvals: makeApprovals(now),
+		reports: makeReports(now),
 		cases: makeCases(now),
 		staff: makeStaff(now),
 		audit: makeAudit(now, events, organizers),

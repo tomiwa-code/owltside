@@ -191,7 +191,7 @@ export const actions: Actions = {
 			const event = editId ? await source.updateEvent(organizerId, editId, payload) : await source.createEvent(organizerId, payload);
 			eventId = event.id;
 		} catch {
-			return fail(503, { error: 'Your event could not be published. Your draft is still here. Please try again.' });
+			return fail(503, { error: 'Your event could not be submitted for review. Your draft is still here. Please try again.' });
 		}
 		redirect(303, `/organizer/events/${eventId}`);
 	}

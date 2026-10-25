@@ -1,5 +1,7 @@
 import type {
+	AdminApproval,
 	AdminCase,
+	AdminReport,
 	AdminDashboard,
 	AdminEvent,
 	AdminOrder,
@@ -10,7 +12,9 @@ import type {
 	AdminUser,
 	AuditRecord,
 	PlatformStatus,
+	ApprovalsData,
 	RefundsData,
+	ReportsData,
 	SettingsData,
 	SettlementsData
 } from '$admin/types';
@@ -190,7 +194,13 @@ export function setEventStatus(
 	if (!event) return null;
 	const before = event.status;
 	event.status = status;
-	if (status === 'published' && before === 'pending') event.submittedAt = undefined;
+	if (status === 'published') {
+		event.submittedAt = before === 'pending' ? undefined : event.submittedAt;
+		event.moderationNote = undefined;
+	} else if (status === 'suspended' || status === 'draft') {
+		// The organizer sees this note next to the event on their dashboard.
+		event.moderationNote = reason || event.moderationNote;
+	}
 	logAudit({
 		actor,
 		action:
@@ -521,6 +531,125 @@ export function initiateRefund(orderId: string, actor: string, reason: string): 
 	});
 	touch();
 	return refund;
+}
+
+// ── Approval requests ───────────────────────────────────────────────────────
+
+/**
+ * Requests the public app routes to the console: ticket refunds, instant
+ * payouts and identity / payout-account verification. A request keeps its
+ * `pending` state — and the public app keeps showing "pending" — until an
+ * admin decides it here.
+ */
+export function getApprovalsData(): ApprovalsData {
+	const rows = [...store().approvals].sort(
+		(a, b) => +new Date(b.requestedAt) - +new Date(a.requestedAt)
+	);
+	return {
+		pending: rows.filter((row) => row.status === 'pending').length,
+		approved: rows.filter((row) => row.status === 'approved').length,
+		rejected: rows.filter((row) => row.status === 'rejected').length,
+		total: rows.length,
+		rows
+	};
+}
+
+export function countApprovals(): number {
+	return store().approvals.filter((row) => row.status === 'pending').length;
+}
+
+export function getApproval(id: string): AdminApproval | null {
+	return store().approvals.find((row) => row.id === id) ?? null;
+}
+
+export function decideApproval(
+	id: string,
+	decision: 'approve' | 'reject',
+	actor: string,
+	note: string
+): AdminApproval | null {
+	const approval = getApproval(id);
+	if (!approval || approval.status !== 'pending') return null;
+
+	approval.status = decision === 'approve' ? 'approved' : 'rejected';
+	approval.note = note || approval.note;
+	approval.decidedAt = new Date().toISOString();
+	approval.decidedBy = actor;
+
+	// Approving a refund settles the pass itself; the public app then shows it
+	// as refunded instead of "pending".
+	if (decision === 'approve' && approval.kind === 'refund' && approval.subjectId) {
+		const ticket = store().tickets.find((row) => row.id === approval.subjectId);
+		if (ticket) ticket.status = 'refunded';
+	}
+
+	logAudit({
+		actor,
+		action: decision === 'approve' ? 'APPROVAL_GRANTED' : 'APPROVAL_REJECTED',
+		kind:
+			approval.kind === 'refund' ? 'order' : approval.kind === 'payout' ? 'settings' : 'user',
+		entityId: approval.id,
+		target: `${approval.title} · @${approval.requesterHandle}`,
+		reason: note || (decision === 'approve' ? 'Approved by admin' : 'Rejected by admin'),
+		severity: decision === 'approve' ? 'info' : 'warning'
+	});
+	touch();
+	return approval;
+}
+
+// ── Content reports ─────────────────────────────────────────────────────────
+
+/**
+ * Reports filed from the public app against an event listing or a profile.
+ * They stay `open` (and the reporter sees no outcome) until an admin reviews
+ * them here.
+ */
+export function getReportsData(): ReportsData {
+	const rows = [...store().reports].sort(
+		(a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)
+	);
+	return {
+		open: rows.filter((row) => row.status === 'open').length,
+		actioned: rows.filter((row) => row.status === 'actioned').length,
+		dismissed: rows.filter((row) => row.status === 'dismissed').length,
+		total: rows.length,
+		rows
+	};
+}
+
+export function countReports(): number {
+	return store().reports.filter((row) => row.status === 'open').length;
+}
+
+export function getReport(id: string): AdminReport | null {
+	return store().reports.find((row) => row.id === id) ?? null;
+}
+
+export function decideReport(
+	id: string,
+	decision: 'action' | 'dismiss',
+	actor: string,
+	note: string
+): AdminReport | null {
+	const report = getReport(id);
+	if (!report || report.status !== 'open') return null;
+
+	report.status = decision === 'action' ? 'actioned' : 'dismissed';
+	report.reviewerName = actor;
+	report.reviewNote = note;
+	report.reviewedAt = new Date().toISOString();
+
+	logAudit({
+		actor,
+		action: decision === 'action' ? 'REPORT_ACTIONED' : 'REPORT_DISMISSED',
+		kind: report.targetType === 'event' ? 'event' : 'user',
+		entityId: report.targetId,
+		target: `${report.targetLabel} · ${report.categoryLabel}`,
+		reason: note || (decision === 'action' ? 'Action taken on report' : 'Report dismissed'),
+		severity: decision === 'action' ? 'warning' : 'info'
+	});
+	touch();
+	return report;
 }
 
 // ── Users ───────────────────────────────────────────────────────────────────

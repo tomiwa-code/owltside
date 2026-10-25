@@ -164,6 +164,72 @@ export interface AdminRefund {
 	decidedBy?: string;
 }
 
+/** Everything the public app sends to the console for a decision. */
+export type ApprovalKind = 'refund' | 'payout' | 'verification';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+export interface AdminApproval {
+	id: string;
+	kind: ApprovalKind;
+	status: ApprovalStatus;
+	requesterName: string;
+	requesterHandle: string;
+	requesterEmail: string;
+	title: string;
+	summary: string;
+	amountNgn?: number;
+	subjectId?: string;
+	subjectLabel?: string;
+	/** Straight label/value pairs rendered in the reviewer dossier. */
+	details: { label: string; value: string }[];
+	requestedAt: string;
+	slaHours: number;
+	note?: string;
+	decidedAt?: string;
+	decidedBy?: string;
+}
+
+export interface ApprovalsData {
+	pending: number;
+	approved: number;
+	rejected: number;
+	total: number;
+	rows: AdminApproval[];
+}
+
+/** User-submitted report about an event listing or a public profile. */
+export type ReportTargetType = 'event' | 'profile';
+export type ReportStatus = 'open' | 'actioned' | 'dismissed';
+
+export interface AdminReport {
+	id: string;
+	targetType: ReportTargetType;
+	targetId: string;
+	targetLabel: string;
+	category: string;
+	categoryLabel: string;
+	details: string;
+	reporterName: string;
+	reporterHandle: string;
+	reporterEmail: string;
+	status: ReportStatus;
+	createdAt: string;
+	slaHours: number;
+	/** Existing content snapshot so a reviewer can judge without leaving. */
+	context: { label: string; value: string }[];
+	reviewerName?: string;
+	reviewNote?: string;
+	reviewedAt?: string;
+}
+
+export interface ReportsData {
+	open: number;
+	actioned: number;
+	dismissed: number;
+	total: number;
+	rows: AdminReport[];
+}
+
 export interface AdminUser {
 	id: string;
 	handle: string;
