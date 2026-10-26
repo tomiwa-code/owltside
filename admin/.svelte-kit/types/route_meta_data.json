@@ -1,0 +1,152 @@
+{
+	"/(console)": [
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/": [
+		"src/routes/+layout.server.ts"
+	],
+	"/api/audit/verify": [
+		"src/routes/api/audit/verify/+server.ts"
+	],
+	"/api/cases/[id]/resolve": [
+		"src/routes/api/cases/[id]/resolve/+server.ts"
+	],
+	"/api/events": [
+		"src/routes/api/events/+server.ts"
+	],
+	"/api/events/[id]/status": [
+		"src/routes/api/events/[id]/status/+server.ts"
+	],
+	"/api/export/[report]": [
+		"src/routes/api/export/[report]/+server.ts"
+	],
+	"/api/health": [
+		"src/routes/api/health/+server.ts"
+	],
+	"/api/orders/[id]/refund": [
+		"src/routes/api/orders/[id]/refund/+server.ts"
+	],
+	"/api/organizers/[id]/status": [
+		"src/routes/api/organizers/[id]/status/+server.ts"
+	],
+	"/api/refunds/batch": [
+		"src/routes/api/refunds/batch/+server.ts"
+	],
+	"/api/refunds/[id]/decision": [
+		"src/routes/api/refunds/[id]/decision/+server.ts"
+	],
+	"/api/search": [
+		"src/routes/api/search/+server.ts"
+	],
+	"/api/settings": [
+		"src/routes/api/settings/+server.ts"
+	],
+	"/api/settlements/reconcile": [
+		"src/routes/api/settlements/reconcile/+server.ts"
+	],
+	"/api/staff/invite": [
+		"src/routes/api/staff/invite/+server.ts"
+	],
+	"/api/staff/[id]/status": [
+		"src/routes/api/staff/[id]/status/+server.ts"
+	],
+	"/api/tickets/[id]/actions": [
+		"src/routes/api/tickets/[id]/actions/+server.ts"
+	],
+	"/api/users/[id]/status": [
+		"src/routes/api/users/[id]/status/+server.ts"
+	],
+	"/(console)/audit": [
+		"src/routes/(console)/audit/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/audit/[id]": [
+		"src/routes/(console)/audit/[id]/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/dashboard": [
+		"src/routes/(console)/dashboard/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/events": [
+		"src/routes/(console)/events/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/events/[id]": [
+		"src/routes/(console)/events/[id]/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/login": [
+		"src/routes/login/+page.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/logout": [
+		"src/routes/logout/+server.ts"
+	],
+	"/(console)/moderation": [
+		"src/routes/(console)/moderation/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/orders": [
+		"src/routes/(console)/orders/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/organizers": [
+		"src/routes/(console)/organizers/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/organizers/[id]": [
+		"src/routes/(console)/organizers/[id]/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/refunds": [
+		"src/routes/(console)/refunds/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/search": [
+		"src/routes/(console)/search/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/settings": [
+		"src/routes/(console)/settings/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/settlements": [
+		"src/routes/(console)/settlements/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/staff": [
+		"src/routes/(console)/staff/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/tickets": [
+		"src/routes/(console)/tickets/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/users": [
+		"src/routes/(console)/users/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/users/[id]": [
+		"src/routes/(console)/users/[id]/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	]
+}
