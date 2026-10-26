@@ -2,7 +2,8 @@
 import { redirect } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
 import { countCases, countEvents, getRefundsData } from '$admin/server/store';
-import { adminDataSource } from '$admin/server/supabase-data';
+import { pendingApprovalCount } from '$admin/server/approvals';
+import { countReports } from '$admin/server/store';
 
 export const load = async ({ locals, parent }: Parameters<LayoutServerLoad>[0]) => {
 	if (!locals.admin) redirect(303, '/login');
@@ -15,10 +16,11 @@ export const load = async ({ locals, parent }: Parameters<LayoutServerLoad>[0]) 
 		admin,
 		mode,
 		counts: {
-			// The customer app's public.events schema has no moderation status column.
-			pendingEvents: source === 'supabase' ? 0 : countEvents().pending,
-			refunds: refunds?.pending ?? 0,
-			moderation: cases?.open ?? 0
+			pendingEvents: countEvents().pending,
+			refunds: refunds.pending,
+			approvals: pendingApprovalCount(),
+			reports: countReports(),
+			moderation: cases.open
 		},
 		serverTime: new Date().toISOString(),
 		// The admin console is a separate deployment; this is the link back to the

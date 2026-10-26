@@ -4,13 +4,21 @@
 		"src/routes/+layout.server.ts"
 	],
 	"/": [
+		"src/routes/+page.server.ts",
+		"src/routes/+layout.server.ts",
 		"src/routes/+layout.server.ts"
+	],
+	"/api/approvals/[id]/decision": [
+		"src/routes/api/approvals/[id]/decision/+server.ts"
 	],
 	"/api/audit/verify": [
 		"src/routes/api/audit/verify/+server.ts"
 	],
 	"/api/cases/[id]/resolve": [
 		"src/routes/api/cases/[id]/resolve/+server.ts"
+	],
+	"/api/client-log": [
+		"src/routes/api/client-log/+server.ts"
 	],
 	"/api/events": [
 		"src/routes/api/events/+server.ts"
@@ -24,6 +32,9 @@
 	"/api/health": [
 		"src/routes/api/health/+server.ts"
 	],
+	"/api/moderation/[id]/decision": [
+		"src/routes/api/moderation/[id]/decision/+server.ts"
+	],
 	"/api/orders/[id]/refund": [
 		"src/routes/api/orders/[id]/refund/+server.ts"
 	],
@@ -36,8 +47,14 @@
 	"/api/refunds/[id]/decision": [
 		"src/routes/api/refunds/[id]/decision/+server.ts"
 	],
+	"/api/reports/[id]/decision": [
+		"src/routes/api/reports/[id]/decision/+server.ts"
+	],
 	"/api/search": [
 		"src/routes/api/search/+server.ts"
+	],
+	"/api/session-probe": [
+		"src/routes/api/session-probe/+server.ts"
 	],
 	"/api/settings": [
 		"src/routes/api/settings/+server.ts"
@@ -56,6 +73,11 @@
 	],
 	"/api/users/[id]/status": [
 		"src/routes/api/users/[id]/status/+server.ts"
+	],
+	"/(console)/approvals": [
+		"src/routes/(console)/approvals/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
 	],
 	"/(console)/audit": [
 		"src/routes/(console)/audit/+page.server.ts",
@@ -111,6 +133,11 @@
 	],
 	"/(console)/refunds": [
 		"src/routes/(console)/refunds/+page.server.ts",
+		"src/routes/(console)/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/(console)/reports": [
+		"src/routes/(console)/reports/+page.server.ts",
 		"src/routes/(console)/+layout.server.ts",
 		"src/routes/+layout.server.ts"
 	],

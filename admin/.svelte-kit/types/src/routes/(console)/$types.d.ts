@@ -10,7 +10,7 @@ type OutputDataShape<T> = MaybeWithVoid<Omit<App.PageData, RequiredKeys<T>> & Pa
 type EnsureDefined<T> = T extends null | undefined ? {} : T;
 type OptionalUnion<U extends Record<string, any>, A extends keyof U = U extends U ? keyof U : never> = U extends unknown ? { [P in Exclude<A, keyof U>]?: never } & U : never;
 export type Snapshot<T = any> = Kit.Snapshot<T>;
-type LayoutRouteId = RouteId | "/(console)/audit" | "/(console)/audit/[id]" | "/(console)/dashboard" | "/(console)/events" | "/(console)/events/[id]" | "/(console)/moderation" | "/(console)/orders" | "/(console)/organizers" | "/(console)/organizers/[id]" | "/(console)/refunds" | "/(console)/search" | "/(console)/settings" | "/(console)/settlements" | "/(console)/staff" | "/(console)/tickets" | "/(console)/users" | "/(console)/users/[id]"
+type LayoutRouteId = RouteId | "/(console)/approvals" | "/(console)/audit" | "/(console)/audit/[id]" | "/(console)/dashboard" | "/(console)/events" | "/(console)/events/[id]" | "/(console)/moderation" | "/(console)/orders" | "/(console)/organizers" | "/(console)/organizers/[id]" | "/(console)/refunds" | "/(console)/reports" | "/(console)/search" | "/(console)/settings" | "/(console)/settlements" | "/(console)/staff" | "/(console)/tickets" | "/(console)/users" | "/(console)/users/[id]"
 type LayoutParams = RouteParams & { id?: string | undefined }
 type LayoutServerParentData = EnsureDefined<import('../$types.js').LayoutServerData>;
 type LayoutParentData = EnsureDefined<import('../$types.js').LayoutData>;

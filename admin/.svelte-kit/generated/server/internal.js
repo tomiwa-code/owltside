@@ -26,7 +26,7 @@ export const options = {
 		app: ({ head, body, assets, nonce, env }) => "<!doctype html>\r\n<html lang=\"en\" class=\"dark\">\r\n\t<head>\r\n\t\t<meta charset=\"utf-8\" />\r\n\t\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, viewport-fit=cover\" />\r\n\t\t<meta name=\"theme-color\" content=\"#101014\" />\r\n\t\t<meta name=\"robots\" content=\"noindex, nofollow, noarchive\" />\r\n\t\t<meta name=\"referrer\" content=\"strict-origin-when-cross-origin\" />\r\n\t\t<meta\r\n\t\t\tname=\"description\"\r\n\t\t\tcontent=\"Owltside Admin — restricted internal control plane for events, ticketing, settlements and trust & safety.\"\r\n\t\t/>\r\n\t\t<link rel=\"icon\" type=\"image/png\" href=\"" + assets + "/icons/icon-192.png\" />\r\n\t\t<link rel=\"apple-touch-icon\" href=\"" + assets + "/icons/icon-192.png\" />\r\n\t\t" + head + "\r\n\t</head>\r\n\t<body data-sveltekit-preload-data=\"hover\" class=\"bg-ink\">\r\n\t\t<div style=\"display: contents\">" + body + "</div>\r\n\t</body>\r\n</html>\r\n",
 		error
 	},
-	version_hash: "1vi3q1q"
+	version_hash: "vf1d2s"
 };
 
 export async function get_hooks() {

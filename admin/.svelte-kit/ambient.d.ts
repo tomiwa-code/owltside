@@ -111,7 +111,6 @@ declare module '$env/static/private' {
 	export const PROMPT: string;
 	export const PSModulePath: string;
 	export const PUBLIC: string;
-	export const QR_SIGNING_SECRET: string;
 	export const SESSIONNAME: string;
 	export const SystemDrive: string;
 	export const SystemRoot: string;
@@ -170,7 +169,6 @@ declare module '$env/static/public' {
 	export const PUBLIC_APP_URL: string;
 	export const PUBLIC_SUPABASE_URL: string;
 	export const PUBLIC_PAYSTACK_PUBLIC_KEY: string;
-	export const PUBLIC_SUPABASE_ANON_KEY: string;
 }
 
 /**
@@ -293,7 +291,6 @@ declare module '$env/dynamic/private' {
 		PROMPT: string;
 		PSModulePath: string;
 		PUBLIC: string;
-		QR_SIGNING_SECRET: string;
 		SESSIONNAME: string;
 		SystemDrive: string;
 		SystemRoot: string;
@@ -371,7 +368,6 @@ declare module '$env/dynamic/public' {
 		PUBLIC_APP_URL: string;
 		PUBLIC_SUPABASE_URL: string;
 		PUBLIC_PAYSTACK_PUBLIC_KEY: string;
-		PUBLIC_SUPABASE_ANON_KEY: string;
 		[key: `PUBLIC_${string}`]: string | undefined;
 	}
 }
