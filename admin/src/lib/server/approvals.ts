@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { AdminApproval, ApprovalKind } from '$admin/types';
 import { countApprovals, decideApproval as decideDemoApproval, getApprovalsData } from './store';
+import { supabaseConfigured, supabaseServiceRoleKey, supabaseUrl } from './supabase-env';
 
 /**
  * Approval queue driver.
@@ -19,23 +20,15 @@ import { countApprovals, decideApproval as decideDemoApproval, getApprovalsData 
 
 export type ApprovalMode = 'supabase' | 'demo';
 
-function supabaseUrl(): string {
-	return (process.env.SUPABASE_URL ?? process.env.PUBLIC_SUPABASE_URL ?? '').trim();
-}
-
-function serviceRoleKey(): string {
-	return (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
-}
-
 export function approvalMode(): ApprovalMode {
-	return supabaseUrl() && serviceRoleKey() ? 'supabase' : 'demo';
+	return supabaseConfigured() ? 'supabase' : 'demo';
 }
 
 let cached: { key: string; client: SupabaseClient } | null = null;
 
 function liveClient(): SupabaseClient {
 	const url = supabaseUrl();
-	const key = serviceRoleKey();
+	const key = supabaseServiceRoleKey();
 	if (!url || !key) throw new Error('Supabase approvals are not configured.');
 	const cacheKey = `${url}:${key.slice(-8)}`;
 	if (!cached || cached.key !== cacheKey) {

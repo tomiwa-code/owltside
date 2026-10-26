@@ -61,4 +61,28 @@ describe('Supabase admin event mapping', () => {
 		const event = mapSupabaseEvent({ id: 'event-old', starts_at: '2026-10-25T12:00:00.000Z' });
 		expect(event.status).toBe('completed');
 	});
+
+	it('uses the stored moderation status when 022 has been applied', () => {
+		Date.now = () => Date.parse('2026-10-26T12:00:00.000Z');
+		const base = { id: 'event-1', starts_at: '2026-11-20T10:00:00.000Z' };
+		expect(mapSupabaseEvent({ ...base, status: 'pending' }).status).toBe('pending');
+		expect(mapSupabaseEvent({ ...base, status: 'draft' }).status).toBe('draft');
+		expect(mapSupabaseEvent({ ...base, status: 'suspended' }).status).toBe('suspended');
+		// Rejected listings go back to the organizer to edit and resubmit.
+		expect(mapSupabaseEvent({ ...base, status: 'rejected' }).status).toBe('draft');
+		expect(mapSupabaseEvent({ ...base, status: 'published' }).status).toBe('published');
+	});
+
+	it('carries the moderation note and submission time into the dossier', () => {
+		Date.now = () => Date.parse('2026-10-26T12:00:00.000Z');
+		const event = mapSupabaseEvent({
+			id: 'event-2',
+			starts_at: '2026-11-20T10:00:00.000Z',
+			status: 'pending',
+			submitted_at: '2026-10-20T08:00:00.000Z',
+			moderation_note: 'Awaiting venue confirmation'
+		});
+		expect(event.submittedAt).toBe('2026-10-20T08:00:00.000Z');
+		expect(event.moderationNote).toBe('Awaiting venue confirmation');
+	});
 });

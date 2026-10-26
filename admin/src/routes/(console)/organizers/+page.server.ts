@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { countOrganizers, eventsForOrganizer, getOrganizer, listOrganizers } from '$admin/server/store';
 import type { AdminOrganizer } from '$admin/types';
-import { adminDataSource, listSupabaseOrganizers } from '$admin/server/supabase-data';
+import { adminDataSource, listSupabaseOrganizers, liveFailure } from '$admin/server/supabase-data';
 
 export const load: PageServerLoad = async ({ url }) => {
 	const q = url.searchParams.get('q') ?? '';
@@ -11,7 +11,12 @@ export const load: PageServerLoad = async ({ url }) => {
 	const source = adminDataSource();
 	const requested = url.searchParams.get('org');
 	if (source === 'supabase') {
-		const live = await listSupabaseOrganizers({ q, status, tier, page, perPage: 9 }, requested ?? undefined);
+		let live: Awaited<ReturnType<typeof listSupabaseOrganizers>>;
+		try {
+			live = await listSupabaseOrganizers({ q, status, tier, page, perPage: 9 }, requested ?? undefined);
+		} catch (cause) {
+			liveFailure('organizer directory', cause);
+		}
 		return {
 			table: { rows: live.page.rows, total: live.page.total, page: live.page.page, pages: live.page.pages, perPage: live.page.perPage },
 			filters: { q, status, tier },

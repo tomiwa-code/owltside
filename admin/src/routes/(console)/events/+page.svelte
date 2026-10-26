@@ -111,7 +111,7 @@
 <div class="space-y-4">
 	<PageHeader
 		title="Events Management"
-		subtitle={data.source === 'supabase' ? 'Events loaded from public.events in Supabase. The current schema does not store admin moderation status.' : 'Review, moderate, monitor capacity, and manage all events across Owltside.'}
+		subtitle={data.source === 'supabase' ? 'Events loaded live from public.events. Approve or reject organizer submissions in the queue above to publish or return a listing.' : 'Review, moderate, monitor capacity, and manage all events across Owltside.'}
 		crumbs={['platform', 'events']}
 		eyebrow={data.source === 'supabase' ? 'Supabase · live data' : 'Demo registry'}
 	>
@@ -143,7 +143,7 @@
 		<div class="panel border-amber-400/25 bg-amber-400/[0.03] p-4">
 			<div class="flex items-center justify-between"><p class="mono-label !text-amber-200/80">Pending review</p><span class="chip chip-warn !h-[17px] !text-[8px]">Needs action</span></div>
 			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-amber-100">{String(data.counts.pending).padStart(2, '0')}</p>
-			<p class="mt-1.5 font-code text-[9px] uppercase tracking-[0.06em] text-[#8f8f9b]">{data.source === 'supabase' ? 'No moderation field in schema' : 'Queue SLA · 2h'}</p>
+			<p class="mt-1.5 font-code text-[9px] uppercase tracking-[0.06em] text-[#8f8f9b]">{data.source === 'supabase' ? 'Live submission queue' : 'Queue SLA · 2h'}</p>
 		</div>
 		<div class="panel p-4">
 			<p class="mono-label">Drafts</p>

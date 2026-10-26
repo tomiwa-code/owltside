@@ -1,12 +1,17 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { eventsForOrganizer, getOrganizer, relatedOrders, auditFor } from '$admin/server/store';
-import { adminDataSource, getSupabaseOrganizer } from '$admin/server/supabase-data';
+import { adminDataSource, getSupabaseOrganizer, liveFailure } from '$admin/server/supabase-data';
 
 export const load: PageServerLoad = async ({ params }) => {
 	const source = adminDataSource();
 	if (source === 'supabase') {
-		const live = await getSupabaseOrganizer(params.id);
+		let live: Awaited<ReturnType<typeof getSupabaseOrganizer>>;
+		try {
+			live = await getSupabaseOrganizer(params.id);
+		} catch (cause) {
+			liveFailure('organizer profile', cause);
+		}
 		if (!live) error(404, 'Organizer profile not found.');
 		return { organizer: live.organizer, events: live.events, orders: [], audit: [], source };
 	}

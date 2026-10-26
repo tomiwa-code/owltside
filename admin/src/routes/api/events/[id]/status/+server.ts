@@ -8,7 +8,11 @@ import { adminDataSource } from '$admin/server/supabase-data';
 const ALLOWED: PlatformStatus[] = ['published', 'pending', 'draft', 'suspended'];
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
-	if (adminDataSource() === 'supabase') error(501, 'Event moderation is unavailable: public.events has no admin status field.');
+	// Live moderation runs through the organizer submission queue, which writes
+	// events.status (022_event_moderation.sql) with the service-role key.
+	if (adminDataSource() === 'supabase') {
+		error(501, 'Live events are moderated from the organizer submission queue (Approve & Publish / Reject).');
+	}
 	const admin = requireMutation(locals.admin);
 	const body = (await request.json().catch(() => ({}))) as { status?: string; reason?: string };
 	if (!body.status || !ALLOWED.includes(body.status as PlatformStatus)) {

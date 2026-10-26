@@ -1,32 +1,18 @@
+import { error } from '@sveltejs/kit';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { config as loadDotenv } from 'dotenv';
-import { resolve } from 'node:path';
-import type { AdminDashboard, AdminEvent, AdminOrder, AdminOrganizer, AdminTicket, AdminUser, EventTier } from '$admin/types';
+import type { AdminDashboard, AdminEvent, AdminOrder, AdminOrganizer, AdminTicket, AdminUser, EventTier, PlatformStatus } from '$admin/types';
 import type { EventQuery, OrganizerQuery, Page, UserQuery } from './store';
+import { supabaseConfig, supabaseUrl, supabaseServiceRoleKey } from './supabase-env';
 
 export type AdminDataSource = 'supabase' | 'demo';
 
-let localEnvLoaded = false;
-function loadLocalEnvFiles(): void {
-	if (localEnvLoaded || process.env.NODE_ENV === 'production') return;
-	// The public app reads the repository-root .env, while the admin is a nested
-	// SvelteKit project. Load both locations (admin-specific files first) so its
-	// process sees the same Supabase credentials without duplicating local secrets.
-	const cwd = process.cwd();
-	const mode = process.env.NODE_ENV || 'development';
-	const envFiles = [`.env.${mode}.local`, '.env.local', `.env.${mode}`, '.env'];
-	for (const file of envFiles) loadDotenv({ path: resolve(cwd, file), override: false });
-	for (const file of envFiles) loadDotenv({ path: resolve(cwd, '..', file), override: false });
-	localEnvLoaded = true;
-}
+export { supabaseUrl, supabaseServiceRoleKey };
 
 function createAdminClient(): SupabaseClient | null {
-	loadLocalEnvFiles();
-	const url = (process.env.PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
 	// The public app's RLS policies are organizer/attendee scoped. Admin reads
 	// must use a server-only key; never fall back to an anon key here.
-	const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '').trim();
-	if (!url || !key) return null;
+	const { url, key, configured } = supabaseConfig();
+	if (!configured) return null;
 	return createClient(url, key, {
 		auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
 	});
@@ -36,13 +22,43 @@ export function adminDataSource(): AdminDataSource {
 	return createAdminClient() ? 'supabase' : 'demo';
 }
 
+/**
+ * Misconfiguration (bad URL, anon key, missing key) as a banner message, or an
+ * empty string when the console is either correctly configured or deliberately
+ * running on the demo dataset.
+ */
+export function supabaseNotice(): string {
+	return supabaseConfig().notice;
+}
+
 function assertNoError(error: { message: string } | null, resource: string): void {
 	if (error) throw new Error(`Supabase admin ${resource} query failed: ${error.message}`);
 }
 
+/**
+ * Turn a failed live query into a readable 503 instead of SvelteKit's generic
+ * "Internal Error" page, which hides the PostgREST message (a missing table or
+ * column from a skipped migration, a rejected service key, an unreachable
+ * project). The detail is what makes the console debuggable in production.
+ */
+export function liveFailure(resource: string, cause: unknown): never {
+	const detail =
+		cause instanceof Error
+			? cause.message
+			: typeof cause === 'string' && cause
+				? cause
+				: 'Unknown Supabase error.';
+	const hint = /relation|column|schema cache|does not exist|Could not find/i.test(detail)
+		? 'Apply every file in supabase/sql in order (001 … 025) so the table or column exists.'
+		: 'Check that the project URL and the service-role key belong to the same Supabase project and that it is reachable.';
+	error(503, `Supabase ${resource} could not be loaded: ${detail}. ${hint}`);
+}
+
+type AdminTable = 'events' | 'profiles' | 'orders' | 'tickets';
+
 async function rowsFrom(
 	client: SupabaseClient,
-	table: 'events' | 'profiles' | 'orders' | 'tickets',
+	table: AdminTable,
 	columns: string,
 	configure?: (query: any) => any
 ): Promise<Record<string, any>[]> {
@@ -60,6 +76,51 @@ async function rowsFrom(
 	return rows;
 }
 
+/** PostgREST names the offending column when a migration was never applied. */
+function missingColumn(cause: unknown): string | null {
+	if (!(cause instanceof Error)) return null;
+	const qualified = cause.message.match(/column\s+["']?(?:\w+["']?\.)?["']?(\w+)["']?\s+does not exist/i);
+	if (qualified) return qualified[1];
+	const cache = cause.message.match(/Could not find the ['"](\w+)['"] column/i);
+	return cache ? cache[1] : null;
+}
+
+/**
+ * Older/partially migrated projects are missing optional columns (`status`,
+ * `submitted_at`, `operating_identity`, `cover`, …). Dropping just the missing
+ * field and retrying keeps the console usable instead of failing the whole page
+ * with a 42703 — the columns are all optional for display purposes.
+ */
+const resolvedColumns = new Map<string, string>();
+
+async function selectRows(
+	client: SupabaseClient,
+	table: AdminTable,
+	columns: string,
+	configure?: (query: any) => any
+): Promise<Record<string, any>[]> {
+	const cacheKey = `${table}:${columns}`;
+	const cached = resolvedColumns.get(cacheKey);
+	if (cached) return rowsFrom(client, table, cached, configure);
+
+	let current = columns;
+	const attempted = new Set<string>();
+	for (;;) {
+		try {
+			const rows = await rowsFrom(client, table, current, configure);
+			resolvedColumns.set(cacheKey, current);
+			return rows;
+		} catch (cause) {
+			const missing = missingColumn(cause);
+			if (!missing || attempted.has(missing)) throw cause;
+			const list = current.split(',').map((column) => column.trim());
+			if (!list.includes(missing)) throw cause;
+			attempted.add(missing);
+			current = list.filter((column) => column !== missing).join(',');
+		}
+	}
+}
+
 function numberValue(value: unknown): number {
 	const number = typeof value === 'number' ? value : Number(value ?? 0);
 	return Number.isFinite(number) ? number : 0;
@@ -75,6 +136,23 @@ function parseTiers(value: unknown): EventTier[] {
 	}));
 }
 
+/** `events.status` values from 022_event_moderation.sql → console statuses. */
+const EVENT_STATUS: Record<string, PlatformStatus> = {
+	published: 'published',
+	pending: 'pending',
+	draft: 'draft',
+	suspended: 'suspended',
+	// A rejected listing is sent back to the organizer to edit and resubmit.
+	rejected: 'draft'
+};
+
+function eventStatusOf(row: Record<string, any>, endsAt: string): PlatformStatus {
+	const stored = typeof row.status === 'string' ? EVENT_STATUS[row.status.toLowerCase()] : undefined;
+	const finished = new Date(endsAt).getTime() < Date.now();
+	if (finished && (!stored || stored === 'published')) return 'completed';
+	return stored ?? 'published';
+}
+
 export function mapSupabaseEvent(row: Record<string, any>, organizerName = 'Organizer'): AdminEvent {
 	const tiers = parseTiers(row.tiers);
 	const startsAt = String(row.starts_at ?? new Date(0).toISOString());
@@ -84,8 +162,7 @@ export function mapSupabaseEvent(row: Record<string, any>, organizerName = 'Orga
 	const grossNgn = tiers.reduce((sum, tier) => sum + tier.sold * tier.priceNgn, 0);
 	const cover = row.cover && typeof row.cover === 'object' ? row.cover as Record<string, unknown> : {};
 	const endsAt = String(row.ends_at ?? startsAt);
-	const now = Date.now();
-	const status = new Date(endsAt).getTime() < now ? 'completed' : 'published';
+	const status = eventStatusOf(row, endsAt);
 	return {
 		id: String(row.id),
 		ref: `EVT-${String(row.id).slice(0, 8).toUpperCase()}`,
@@ -106,15 +183,19 @@ export function mapSupabaseEvent(row: Record<string, any>, organizerName = 'Orga
 		tiers,
 		coverFrom: String(cover.from ?? '#1b2a4a'),
 		coverTo: String(cover.to ?? '#43318a'),
-		coverIcon: String(cover.icon ?? 'calendar-days')
+		coverIcon: String(cover.icon ?? 'calendar-days'),
+		moderationNote: typeof row.moderation_note === 'string' && row.moderation_note ? row.moderation_note : undefined,
+		submittedAt: typeof row.submitted_at === 'string' ? row.submitted_at : undefined
 	};
 }
 
 async function loadEvents(client: SupabaseClient): Promise<AdminEvent[]> {
-	const records = await rowsFrom(
+	// `status`, `submitted_at` and the moderation fields come from
+	// 022_event_moderation.sql; selectRows drops them if that migration is absent.
+	const records = await selectRows(
 		client,
 		'events',
-		'id,slug,title,category,starts_at,ends_at,venue,city,cover,organizer_id,tiers,attendees,live,created_at'
+		'id,slug,title,category,starts_at,ends_at,venue,city,cover,organizer_id,tiers,attendees,live,created_at,status,submitted_at,moderated_at,moderated_by,moderation_note'
 	);
 	const organizerIds = [...new Set(records.map((row) => String(row.organizer_id ?? '')).filter(Boolean))];
 	const organizers = new Map<string, string>();
@@ -166,9 +247,9 @@ export async function listSupabaseEvents(query: EventQuery = {}): Promise<Page<A
 		counts: {
 			total: events.length,
 			published: events.filter((event) => event.status === 'published').length,
-			pending: 0,
-			draft: 0,
-			suspended: 0
+			pending: events.filter((event) => event.status === 'pending').length,
+			draft: events.filter((event) => event.status === 'draft').length,
+			suspended: events.filter((event) => event.status === 'suspended').length
 		}
 	};
 }
@@ -189,10 +270,10 @@ type PeopleBundle = {
 
 async function loadPeopleBundle(client: SupabaseClient): Promise<PeopleBundle> {
 	const [profiles, events, orders, tickets] = await Promise.all([
-		rowsFrom(client, 'profiles', 'id,handle,name,city,verified,operating_identity,created_at,avatar_url', (query) => query.order('created_at', { ascending: false }).order('id')),
+		selectRows(client, 'profiles', 'id,handle,name,city,verified,operating_identity,created_at,avatar_url', (query) => query.order('created_at', { ascending: false }).order('id')),
 		loadEvents(client),
-		rowsFrom(client, 'orders', 'id,owner_id,event_id,reference,total,status,gateway,created_at', (query) => query.order('created_at', { ascending: false }).order('id')),
-		rowsFrom(client, 'tickets', 'id,owner_id,event_id,code,event_title,tier_name,holder_name,status,purchased_at,price,cover', (query) => query.order('purchased_at', { ascending: false }).order('id'))
+		selectRows(client, 'orders', 'id,owner_id,event_id,reference,total,status,gateway,created_at', (query) => query.order('created_at', { ascending: false }).order('id')),
+		selectRows(client, 'tickets', 'id,owner_id,event_id,code,event_title,tier_name,holder_name,status,purchased_at,price,cover', (query) => query.order('purchased_at', { ascending: false }).order('id'))
 	]);
 	const authUsers = new Map<string, DataAuthUser>();
 	const perPage = 1000;
@@ -439,8 +520,8 @@ export async function getSupabaseDashboard(): Promise<AdminDashboard> {
 	const sixtyDaysAgo = new Date(thirtyDaysAgo.getTime() - 30 * 86_400_000);
 	const [events, orders, tickets] = await Promise.all([
 		loadEvents(client),
-		rowsFrom(client, 'orders', 'total,status,created_at', (query) => query.gte('created_at', sixtyDaysAgo.toISOString()).order('created_at')),
-		rowsFrom(client, 'tickets', 'status,purchased_at,price,tier_name', (query) => query.order('purchased_at'))
+		selectRows(client, 'orders', 'total,status,created_at', (query) => query.gte('created_at', sixtyDaysAgo.toISOString()).order('created_at')),
+		selectRows(client, 'tickets', 'status,purchased_at,price,tier_name', (query) => query.order('purchased_at'))
 	]);
 
 	const paidOrPending = (order: Record<string, any>) => order.status === 'paid' || order.status === 'pending';
@@ -522,15 +603,18 @@ export async function getSupabaseDashboard(): Promise<AdminDashboard> {
 export async function getSupabaseEvent(id: string): Promise<AdminEvent | null> {
 	const client = createAdminClient();
 	if (!client) return null;
-	const baseQuery = client.from('events').select('id,slug,title,category,starts_at,ends_at,venue,city,cover,organizer_id,tiers,attendees,live,created_at');
-	const eventQuery = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
-		? await baseQuery.eq('id', id).maybeSingle()
-		: await baseQuery.eq('slug', id).maybeSingle();
-	assertNoError(eventQuery.error, 'events');
-	if (!eventQuery.data) return null;
-	const profileQuery = eventQuery.data.organizer_id
-		? await client.from('profiles').select('name,handle').eq('id', eventQuery.data.organizer_id).maybeSingle()
+	const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+	const rows = await selectRows(
+		client,
+		'events',
+		'id,slug,title,category,starts_at,ends_at,venue,city,cover,organizer_id,tiers,attendees,live,created_at,status,submitted_at,moderated_at,moderated_by,moderation_note',
+		(query) => (isUuid ? query.eq('id', id) : query.eq('slug', id))
+	);
+	const record = rows[0];
+	if (!record) return null;
+	const profileQuery = record.organizer_id
+		? await client.from('profiles').select('name,handle').eq('id', record.organizer_id).maybeSingle()
 		: { data: null, error: null };
 	assertNoError(profileQuery.error, 'profiles');
-	return mapSupabaseEvent(eventQuery.data, profileQuery.data?.name ?? profileQuery.data?.handle ?? 'Organizer');
+	return mapSupabaseEvent(record, profileQuery.data?.name ?? profileQuery.data?.handle ?? 'Organizer');
 }

@@ -6,7 +6,23 @@ import {
 	type EventSubmission,
 	type ModerationMode
 } from '$admin/server/moderation';
+import { adminDataSource, listSupabaseEvents, liveFailure } from '$admin/server/supabase-data';
 import type { PlatformStatus } from '$admin/types';
+
+function submissionError(cause: unknown): string {
+	return cause instanceof Error
+		? `The live submission queue could not be loaded: ${cause.message}`
+		: 'The live submission queue could not be loaded.';
+}
+
+/** Live queue failures are a banner, not a page-level 500. */
+async function loadSubmissions(): Promise<{ rows: EventSubmission[]; error: string }> {
+	try {
+		return { rows: await listSubmissions(), error: '' };
+	} catch (cause) {
+		return { rows: [], error: submissionError(cause) };
+	}
+}
 
 export const load: PageServerLoad = async ({ url }) => {
 	const q = url.searchParams.get('q') ?? '';
@@ -16,9 +32,16 @@ export const load: PageServerLoad = async ({ url }) => {
 	const sort = (url.searchParams.get('sort') ?? 'date') as 'date' | 'newest' | 'gmv';
 	const page = Number(url.searchParams.get('page') ?? '1') || 1;
 	const source = adminDataSource();
+	const mode: ModerationMode = moderationMode();
+	const submissions = await loadSubmissions();
 
 	if (source === 'supabase') {
-		const listed = await listSupabaseEvents({ q, status, category, organizer, sort, page, perPage: 7 });
+		let listed: Awaited<ReturnType<typeof listSupabaseEvents>>;
+		try {
+			listed = await listSupabaseEvents({ q, status, category, organizer, sort, page, perPage: 7 });
+		} catch (cause) {
+			liveFailure('events', cause);
+		}
 		return {
 			table: { rows: listed.rows, total: listed.total, page: listed.page, pages: listed.pages, perPage: listed.perPage },
 			filters: { q, status, category, organizer, sort },
@@ -26,6 +49,10 @@ export const load: PageServerLoad = async ({ url }) => {
 			counts: listed.counts,
 			pending: [],
 			selectedId: listed.rows[0]?.id ?? null,
+			// The queue renders in both modes: these keys are what the page reads.
+			submissions: submissions.rows,
+			submissionMode: mode,
+			submissionError: submissions.error,
 			source
 		};
 	}
@@ -35,20 +62,6 @@ export const load: PageServerLoad = async ({ url }) => {
 	const requested = url.searchParams.get('event');
 	const selected = pending.find((event) => event.id === requested) ?? pending[0] ?? listed.rows[0] ?? null;
 
-	// Organizer submissions (live Supabase queue when configured). A broken
-	// credential surfaces as a readable banner instead of a crashed console.
-	const mode: ModerationMode = moderationMode();
-	let submissions: EventSubmission[] = [];
-	let submissionError = '';
-	try {
-		submissions = await listSubmissions();
-	} catch (cause) {
-		submissionError =
-			cause instanceof Error
-				? `The live submission queue could not be loaded: ${cause.message}`
-				: 'The live submission queue could not be loaded.';
-	}
-
 	return {
 		table: { rows: listed.rows, total: listed.total, page: listed.page, pages: listed.pages, perPage: listed.perPage },
 		filters: { q, status, category, organizer, sort },
@@ -56,8 +69,9 @@ export const load: PageServerLoad = async ({ url }) => {
 		counts: countEvents(),
 		pending,
 		selectedId: selected?.id ?? null,
-		submissions,
+		submissions: submissions.rows,
 		submissionMode: mode,
-		submissionError
+		submissionError: submissions.error,
+		source
 	};
 };

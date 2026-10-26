@@ -174,20 +174,45 @@ the server to bypass attendee/organizer-scoped RLS; do not expose it as a
 `PUBLIC_` variable or in browser code. The console shows a prominent demo-mode
 banner when a URL/service-key pair is not detected.
 
-The current schema in `../supabase/sql/000_full_schema.sql` has `events`,
-`profiles`, `tickets`, and `orders`, but does not store event moderation status,
-admin audit records, or settlement records. Accordingly, the live events view
-is read-only; pending/draft/suspended counts are not reported as real, and event
-creation/moderation actions are disabled rather than silently changing demo
-state. Dashboard gross volume is calculated from paid + pending orders over the
-last 30 days; paid order total, ticket counts/status, event counts, and event
-capacity/sales come from database rows. Metrics that the schema cannot support
-(such as settlement fees and moderation queues) are omitted/zeroed in live mode.
+Live mode reads `public.events`, `public.profiles`, `public.tickets`,
+`public.orders`, `public.approval_requests` (023) and `public.content_reports`
+(025). Event status comes from `public.events.status` (022), so the registry
+shows real pending/draft/suspended values and the submission queue can publish
+or reject a listing. Sidebar badges count the live queues; a queue whose table
+has not been created yet simply shows no badge instead of failing the page.
 
-Other admin modules (users, organizers, refunds, moderation, staff, settings,
-exports, and their mutations) still use the in-memory demo store. The `subscribe()`/
-`touch()` hooks apply to that demo store only; Supabase reads currently refresh
-when a page is loaded or revalidated.
+Optional columns are resolved at runtime: if a project is missing `status`,
+`submitted_at`, `operating_identity` or `cover` because a migration was skipped,
+that single column is dropped from the query and the page still renders. A hard
+failure (missing table, rejected key, unreachable project) becomes a 503 whose
+message carries the PostgREST error and what to do about it, rather than
+SvelteKit's opaque "Internal Error".
+
+Dashboard gross volume is calculated from paid + pending orders over the last 30
+days; paid order total, ticket counts/status, event counts, and event
+capacity/sales come from database rows. Metrics the schema cannot support
+(settlement fees, admin audit records, moderation cases) are zeroed in live mode.
+
+Admin modules without a live table (refunds, settlements, moderation cases,
+staff, settings, audit exports) still read the in-memory demo store; their
+mutations are demonstrated against the seed. The `subscribe()`/`touch()` hooks
+apply to that demo store only; Supabase reads refresh when a page is loaded or
+revalidated.
+
+### If the console shows an error after adding Supabase credentials
+
+The console deliberately refuses to use an anon/public key, and says so in a red
+banner above the page. In order of likelihood:
+
+1. **`SUPABASE_SERVICE_ROLE_KEY` holds the anon key** (or only
+   `PUBLIC_SUPABASE_ANON_KEY` was shared). Use the `service_role` key, server
+   side only.
+2. **The schema is only partly applied.** Paste every file in `../supabase/sql`
+   in order (001 … 025). A missing table shows up as a 503 naming it.
+3. **The URL is the API endpoint rather than the project URL** — use
+   `https://<project>.supabase.co`, not `…/rest/v1`.
+4. **The `.env` values are empty placeholders.** Empty keys fall through to the
+   repository-root `.env`, but a wrong non-empty value wins.
 
 ## API surface
 

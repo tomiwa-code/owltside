@@ -1,12 +1,17 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { auditFor, getUser, ordersForEmail, ticketsForHandle } from '$admin/server/store';
-import { adminDataSource, getSupabaseUser } from '$admin/server/supabase-data';
+import { adminDataSource, getSupabaseUser, liveFailure } from '$admin/server/supabase-data';
 
 export const load: PageServerLoad = async ({ params }) => {
 	const source = adminDataSource();
 	if (source === 'supabase') {
-		const live = await getSupabaseUser(params.id);
+		let live: Awaited<ReturnType<typeof getSupabaseUser>>;
+		try {
+			live = await getSupabaseUser(params.id);
+		} catch (cause) {
+			liveFailure('user record', cause);
+		}
 		if (!live) error(404, 'User not found.');
 		return { ...live, audit: [], source };
 	}

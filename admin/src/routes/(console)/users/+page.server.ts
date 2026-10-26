@@ -7,7 +7,7 @@ import {
 	ticketsForHandle
 } from '$admin/server/store';
 import type { AdminUser } from '$admin/types';
-import { adminDataSource, listSupabaseUsers } from '$admin/server/supabase-data';
+import { adminDataSource, listSupabaseUsers, liveFailure } from '$admin/server/supabase-data';
 
 export const load: PageServerLoad = async ({ url }) => {
 	const q = url.searchParams.get('q') ?? '';
@@ -18,7 +18,12 @@ export const load: PageServerLoad = async ({ url }) => {
 	const requested = url.searchParams.get('user');
 	const source = adminDataSource();
 	if (source === 'supabase') {
-		const live = await listSupabaseUsers({ q, status, role, kyc, page, perPage: 10 }, requested ?? undefined);
+		let live: Awaited<ReturnType<typeof listSupabaseUsers>>;
+		try {
+			live = await listSupabaseUsers({ q, status, role, kyc, page, perPage: 10 }, requested ?? undefined);
+		} catch (cause) {
+			liveFailure('user directory', cause);
+		}
 		return {
 			table: { rows: live.page.rows, total: live.page.total, page: live.page.page, pages: live.page.pages, perPage: live.page.perPage },
 			filters: { q, status, role, kyc },

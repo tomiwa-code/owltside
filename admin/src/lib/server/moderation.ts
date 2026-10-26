@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getEvent, listEvents, setEventStatus } from './store';
+import { supabaseConfigured, supabaseServiceRoleKey, supabaseUrl } from './supabase-env';
 
 /**
  * Organizer submission queue.
@@ -39,28 +40,20 @@ export interface EventSubmission {
 
 export type ModerationMode = 'supabase' | 'demo';
 
-function supabaseUrl(): string {
-	return (
-		process.env.SUPABASE_URL ??
-		process.env.PUBLIC_SUPABASE_URL ??
-		''
-	).trim();
-}
-
-function serviceRoleKey(): string {
-	return (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
-}
-
-/** Live moderation needs a URL plus the service-role key (never the anon key). */
+/**
+ * Live moderation needs a URL plus a usable service-role key (never the anon
+ * key). Shared with the read paths so the queue and the registry can never
+ * disagree about which backend they are on.
+ */
 export function moderationMode(): ModerationMode {
-	return supabaseUrl() && serviceRoleKey() ? 'supabase' : 'demo';
+	return supabaseConfigured() ? 'supabase' : 'demo';
 }
 
 let cached: { key: string; client: SupabaseClient } | null = null;
 
 function liveClient(): SupabaseClient {
 	const url = supabaseUrl();
-	const key = serviceRoleKey();
+	const key = supabaseServiceRoleKey();
 	if (!url || !key) throw new Error('Supabase moderation is not configured.');
 	const cacheKey = `${url}:${key.slice(-8)}`;
 	if (!cached || cached.key !== cacheKey) {
