@@ -20,20 +20,19 @@
 		Phone,
 		Upload
 	} from '@lucide/svelte';
-	import { onDestroy } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
 	import { appSettings, type AppSettings } from '$lib/state/settings.svelte';
-	import {
-		PAYOUT_BANKS,
-		PAYOUT_SAVE_MS,
-		isValidNuban,
-		maskAccountNumber,
-		normaliseNuban
-	} from '$lib/utils/payout';
+	import { PAYOUT_BANKS, isValidNuban, maskAccountNumber, normaliseNuban } from '$lib/utils/payout';
 	import { toast } from '$lib/state/toast.svelte';
+	import type { ApprovalRequest } from '$lib/types';
+	import ApprovalNotice from '$components/ApprovalNotice.svelte';
 	import Sheet from '$components/Sheet.svelte';
 	import ImageCropSheet from '$components/ImageCropSheet.svelte';
 
-	let { category }: { category?: string } = $props();
+	let {
+		category,
+		approvals = []
+	}: { category?: string; approvals?: ApprovalRequest[] } = $props();
 
 	type NotificationToggle = 'pushEnabled' | 'emailEnabled' | 'smsEnabled' | 'eventReminders' | 'eventUpdates' | 'messages' | 'marketing' | 'quietHours';
 	type PrivacyToggle = keyof AppSettings['privacy'];
@@ -54,8 +53,31 @@
 		{ key: 'marketing', label: 'News and offers', description: 'Product news and occasional promotions' }
 	];
 
-	const isFullyVerified = $derived(Object.values(appSettings.value.verification).every(Boolean));
-	const verifiedCount = $derived(Object.values(appSettings.value.verification).filter(Boolean).length);
+	/**
+	 * Identity and payout-account checks are decided by an administrator, so the
+	 * stored `verification` flags are only half the story: an approved request
+	 * counts as verified, and a pending one must read as "pending", never "done".
+	 */
+	const latestRequest = (check: string): ApprovalRequest | null =>
+		approvals.find(
+			(request) =>
+				request.kind === 'verification' && (request.payload as { check?: string })?.check === check
+		) ?? null;
+	const identityRequest = $derived(latestRequest('identity'));
+	const payoutRequest = $derived(latestRequest('payoutAccount'));
+	const identityPending = $derived(
+		identityRequest?.status === 'pending' && !appSettings.value.verification.identity
+	);
+	const payoutPending = $derived(
+		payoutRequest?.status === 'pending' && !appSettings.value.verification.payoutAccount
+	);
+	const verification = $derived({
+		...appSettings.value.verification,
+		identity: appSettings.value.verification.identity || identityRequest?.status === 'approved',
+		payoutAccount: appSettings.value.verification.payoutAccount || payoutRequest?.status === 'approved'
+	});
+	const isFullyVerified = $derived(Object.values(verification).every(Boolean));
+	const verifiedCount = $derived(Object.values(verification).filter(Boolean).length);
 
 	// --- verification flows ---
 	let phoneOpen = $state(false);
@@ -80,12 +102,29 @@
 	let payoutAccount = $state('');
 	let payoutError = $state('');
 	let payoutVerifying = $state(false);
-	let payoutSaveTimer: ReturnType<typeof setTimeout> | undefined;
-	onDestroy(() => {
-		if (payoutSaveTimer) clearTimeout(payoutSaveTimer);
-	});
+	let identitySubmitting = $state(false);
+
+	/**
+	 * Submit a request for administrator review. Nothing is marked verified here:
+	 * the public app only ever displays what the admin console has decided.
+	 */
+	async function submitForReview(body: Record<string, unknown>): Promise<string | null> {
+		try {
+			const response = await fetch('/api/approvals', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+			const payload = (await response.json().catch(() => ({}))) as { error?: string };
+			if (!response.ok) return payload.error ?? 'Your request could not be submitted. Please try again.';
+			await invalidateAll();
+			return null;
+		} catch {
+			return 'Your request could not be submitted. Check your connection and try again.';
+		}
+	}
 	const payoutVerifiedSummary = $derived(
-		appSettings.value.verification.payoutAccount && appSettings.value.payout.bank
+		verification.payoutAccount && appSettings.value.payout.bank
 			? `${appSettings.value.payout.bank} ${maskAccountNumber(appSettings.value.payout.accountNumber)} verified`
 			: ''
 	);
@@ -184,15 +223,31 @@
 		}
 		identityStep = 2;
 	}
-	function submitIdentity() {
+	async function submitIdentity() {
 		identityError = '';
 		if (!identityFront) {
 			identityError = 'Upload a clear photo/scan of your ID (front).';
 			return;
 		}
-		appSettings.value.verification.identity = true;
+		if (identitySubmitting) return;
+		identitySubmitting = true;
+		const error = await submitForReview({
+			kind: 'verification',
+			check: 'identity',
+			details: {
+				document: identityDoc,
+				reference: identityNumber,
+				// Never send or store the document image itself in the request.
+				attachment: identityBack ? 'front+back' : 'front'
+			}
+		});
+		identitySubmitting = false;
+		if (error) {
+			identityError = error;
+			return;
+		}
 		identityOpen = false;
-		toast('Identity verified', 'success');
+		toast('Identity submitted — pending admin review', 'success');
 	}
 
 	function openPayout() {
@@ -218,7 +273,7 @@
 		payoutError = '';
 	}
 
-	function verifyPayout() {
+	async function verifyPayout() {
 		payoutError = '';
 		if (!payoutBank) {
 			payoutError = 'Select your bank.';
@@ -230,15 +285,21 @@
 		}
 		payoutVerifying = true;
 		const account = { bank: payoutBank, accountNumber: payoutAccount };
-		// Simulated gateway save: the account is persisted exactly as entered.
-		payoutSaveTimer = setTimeout(() => {
-			payoutSaveTimer = undefined;
-			payoutVerifying = false;
-			appSettings.value.verification.payoutAccount = true;
-			appSettings.value.payout = account;
-			toast(`Payout account verified — ${account.bank} ${maskAccountNumber(account.accountNumber)}`, 'success');
-			payoutOpen = false;
-		}, PAYOUT_SAVE_MS);
+		// Kept on the device so the settlement card can show where payouts go, but
+		// the check only flips to verified once the admin console approves it.
+		appSettings.value.payout = account;
+		const error = await submitForReview({
+			kind: 'verification',
+			check: 'payoutAccount',
+			details: { bank: account.bank, accountNumber: account.accountNumber }
+		});
+		payoutVerifying = false;
+		if (error) {
+			payoutError = error;
+			return;
+		}
+		toast(`Payout account submitted — pending admin review (${account.bank} ${maskAccountNumber(account.accountNumber)})`, 'success');
+		payoutOpen = false;
 	}
 
 	function toggleNotification(key: NotificationToggle) {
@@ -333,16 +394,21 @@
 					<div class="flex items-start gap-3">
 						<span class="w-9 h-9 rounded-lg bg-surface-container-highest flex items-center justify-center shrink-0 mt-0.5"><IdCard class="w-4 h-4 text-primary" /></span>
 						<div>
-							<h3 class="text-body-md font-semibold text-on-surface flex items-center gap-2 flex-wrap">2. Identity <span class="text-label-badge px-2 py-0.5 rounded-full border {appSettings.value.verification.identity ? 'bg-accent-emerald/10 text-accent-emerald border-accent-emerald/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'}">{appSettings.value.verification.identity ? 'Verified' : 'Not Verified'}</span></h3>
+							<h3 class="text-body-md font-semibold text-on-surface flex items-center gap-2 flex-wrap">2. Identity <span class="text-label-badge px-2 py-0.5 rounded-full border {verification.identity ? 'bg-accent-emerald/10 text-accent-emerald border-accent-emerald/20' : identityPending ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'}">{verification.identity ? 'Verified' : identityPending ? 'Pending review' : 'Not Verified'}</span></h3>
 							<p class="text-body-sm text-on-surface-variant mt-1"><span class="font-semibold text-on-surface">Requirement:</span> Official government-issued photo ID and matching personal details.</p>
 						</div>
 					</div>
-					{#if !appSettings.value.verification.identity}
-						<button type="button" class="h-9 px-4 rounded-full bg-primary text-on-primary text-body-sm font-semibold shrink-0 hover:opacity-90" onclick={openIdentity}>Start</button>
+					{#if !verification.identity}
+						<button type="button" class="h-9 px-4 rounded-full bg-primary text-on-primary text-body-sm font-semibold shrink-0 hover:opacity-90 disabled:opacity-50" disabled={identityPending} onclick={openIdentity}>{identityPending ? 'In review' : 'Start'}</button>
 					{:else}
 						<button type="button" class="h-9 px-4 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface text-body-sm font-semibold shrink-0" onclick={openIdentity}>Re-verify</button>
 					{/if}
 				</div>
+				{#if !verification.identity && identityRequest}
+					<div class="mt-3">
+						<ApprovalNotice request={identityRequest} pendingLabel="Identity pending admin review" pendingBody="Your ID details were submitted and are waiting for the trust & safety team. Verification completes only when they approve." />
+					</div>
+				{/if}
 				<div class="mt-3 rounded-lg bg-surface-base border border-surface-glass-border p-3">
 					<p class="text-label-badge uppercase tracking-wider text-on-surface-variant mb-2">Accepted Documents in Nigeria:</p>
 					<div class="flex flex-wrap gap-1.5">
@@ -361,19 +427,24 @@
 					<div class="flex items-start gap-3">
 						<span class="w-9 h-9 rounded-lg bg-surface-container-highest flex items-center justify-center shrink-0 mt-0.5"><Building2 class="w-4 h-4 text-primary" /></span>
 						<div>
-							<h3 class="text-body-md font-semibold text-on-surface flex items-center gap-2">3. Payout Account <span class="text-label-badge px-2 py-0.5 rounded-full border {appSettings.value.verification.payoutAccount ? 'bg-accent-emerald/10 text-accent-emerald border-accent-emerald/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'}">{appSettings.value.verification.payoutAccount ? 'Verified' : 'Not Verified'}</span></h3>
+							<h3 class="text-body-md font-semibold text-on-surface flex items-center gap-2">3. Payout Account <span class="text-label-badge px-2 py-0.5 rounded-full border {verification.payoutAccount ? 'bg-accent-emerald/10 text-accent-emerald border-accent-emerald/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'}">{verification.payoutAccount ? 'Verified' : payoutPending ? 'Pending review' : 'Not Verified'}</span></h3>
 							<p class="text-body-sm text-on-surface-variant mt-1"><span class="font-semibold text-on-surface">Requirement:</span> A valid, active Nigerian bank account or payment processor account that matches your verified identity name.</p>
 							{#if payoutVerifiedSummary}
 								<p class="text-xs text-accent-emerald mt-1 flex items-center gap-1"><CheckCheck class="w-3 h-3" /> {payoutVerifiedSummary}</p>
 							{/if}
 						</div>
 					</div>
-					{#if !appSettings.value.verification.payoutAccount}
-						<button type="button" aria-label="Add payout account" class="h-9 px-4 rounded-full bg-primary text-on-primary text-body-sm font-semibold shrink-0 hover:opacity-90" onclick={openPayout}>Start</button>
+					{#if !verification.payoutAccount}
+						<button type="button" aria-label="Add payout account" class="h-9 px-4 rounded-full bg-primary text-on-primary text-body-sm font-semibold shrink-0 hover:opacity-90 disabled:opacity-50" disabled={payoutPending} onclick={openPayout}>{payoutPending ? 'In review' : 'Start'}</button>
 					{:else}
 						<button type="button" aria-label="Re-verify payout account" class="h-9 px-4 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface text-body-sm font-semibold shrink-0" onclick={openPayout}>Re-verify</button>
 					{/if}
 				</div>
+				{#if !verification.payoutAccount && payoutRequest}
+					<div class="mt-3">
+						<ApprovalNotice request={payoutRequest} pendingLabel="Payout account pending admin review" pendingBody="Settlements stay on hold until the review team matches this account to your verified identity." />
+					</div>
+				{/if}
 			</div>
 		</div>
 
@@ -502,7 +573,7 @@
 					{#if identityError}<p class="text-body-sm text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">{identityError}</p>{/if}
 					<div class="grid grid-cols-2 gap-2">
 						<button type="button" class="h-11 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface font-semibold" onclick={() => (identityStep = 1)}>Back</button>
-						<button type="button" class="h-11 rounded-full bg-primary text-on-primary font-semibold" onclick={submitIdentity}>Submit for verification</button>
+						<button type="button" class="h-11 rounded-full bg-primary text-on-primary font-semibold disabled:opacity-50" disabled={identitySubmitting} onclick={submitIdentity}>{identitySubmitting ? 'Submitting for review…' : 'Submit for review'}</button>
 					</div>
 				</div>
 			{/if}
@@ -575,7 +646,7 @@
 				disabled={payoutVerifying}
 				onclick={verifyPayout}
 			>
-				{#if payoutVerifying}Saving payout account…{:else}Verify &amp; save payout account{/if}
+				{#if payoutVerifying}Submitting for review…{:else}Submit payout account for review{/if}
 			</button>
 		</div>
 	</Sheet>

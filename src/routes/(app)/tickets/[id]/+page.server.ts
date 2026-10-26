@@ -4,10 +4,17 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals, cookies }) => {
-	const tickets = await getSource(createSupabase(cookies)).getTickets(locals.session?.userId ?? 'demo');
+	const source = getSource(createSupabase(cookies));
+	const userId = locals.session?.userId ?? 'demo';
+	const tickets = await source.getTickets(userId);
 	const ticket = tickets.find((t) => t.id === params.id);
 	if (!ticket) error(404, 'Ticket not found');
-	return { ticket };
+	// Refunds need an admin decision, so surface the outstanding request (if any)
+	// rather than pretending the pass was already cancelled.
+	const approvals = await source.listApprovals(userId).catch(() => []);
+	const refundRequest =
+		approvals.find((request) => request.kind === 'refund' && request.subjectId === ticket.id) ?? null;
+	return { ticket, refundRequest };
 };
 
 export const actions: Actions = {
@@ -57,11 +64,12 @@ export const actions: Actions = {
 		if (details.length > 500) return fail(400, { error: 'Additional context must be 500 characters or fewer.' });
 		if (form.get('confirmed') !== 'yes') return fail(400, { error: 'Confirm that you understand the ticket will be cancelled.' });
 
+		// Cancelling the pass is an admin decision: this only opens a pending request.
 		try {
-			await source.refundTicket(locals.session?.userId ?? 'demo', params.id, { reason, details });
+			await source.requestTicketRefund(locals.session?.userId ?? 'demo', params.id, { reason, details });
 		} catch (err) {
 			return fail(400, { error: err instanceof Error ? err.message : 'Could not submit your refund request.' });
 		}
-		return { refunded: true };
+		return { refundRequested: true };
 	}
 };

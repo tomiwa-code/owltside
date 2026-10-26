@@ -22,7 +22,11 @@
 	});
 
 	const area = $derived(points ? `${points} ${width},${height} 0,${height}` : '');
-	const id = $derived(`spark-${Math.random().toString(36).slice(2, 8)}`);
+	// Unique per instance and identical between the server render and hydration.
+	// A random id here would differ across the two passes and break the gradient
+	// reference (and trip Svelte's hydration checks).
+	const rawId = $props.id();
+	const id = $derived(`spark-${rawId}`);
 </script>
 
 <svg viewBox={`0 0 ${width} ${height}`} class="h-full w-full overflow-visible" preserveAspectRatio="none" aria-hidden="true">

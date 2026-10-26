@@ -4,7 +4,6 @@ import { tick } from 'svelte';
 import SettingsDetails from '$components/SettingsDetails.svelte';
 import { appSettings } from '$lib/state/settings.svelte';
 import {
-	PAYOUT_SAVE_MS,
 	isValidNuban,
 	maskAccountNumber,
 	normaliseNuban,
@@ -67,7 +66,14 @@ describe('payout account verification in settings', () => {
 		return input;
 	}
 
-	it('verifies and saves from just the bank name and account number', async () => {
+	it('submits the account for admin review instead of self-verifying it', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify({ id: 'ap-verify-1', status: 'pending' }), {
+				status: 201,
+				headers: { 'content-type': 'application/json' }
+			})
+		);
+		vi.stubGlobal('fetch', fetchMock);
 		await fillPayout();
 
 		const save = screen.getByRole('button', { name: 'Verify and save payout account' });
@@ -76,14 +82,21 @@ describe('payout account verification in settings', () => {
 		expect(appSettings.value.payout).toEqual(EMPTY_PAYOUT);
 
 		await fireEvent.click(save);
-		expect(screen.getByText(/Saving payout account/)).toBeInTheDocument();
-		await vi.advanceTimersByTimeAsync(PAYOUT_SAVE_MS + 10);
+		await vi.advanceTimersByTimeAsync(0);
 
+		// The request goes to the admin console; the public app never self-approves.
+		expect(fetchMock).toHaveBeenCalledWith('/api/approvals', expect.objectContaining({ method: 'POST' }));
+		const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+		expect(body).toMatchObject({
+			kind: 'verification',
+			check: 'payoutAccount',
+			details: { bank: 'GTBank', accountNumber: '0123456789' }
+		});
 		expect(appSettings.value.payout).toEqual({ bank: 'GTBank', accountNumber: '0123456789' });
-		expect(appSettings.value.verification.payoutAccount).toBe(true);
-		// The sheet closes and the card above shows the saved account.
+		// Still unverified: only an admin decision flips this.
+		expect(appSettings.value.verification.payoutAccount).toBe(false);
 		expect(screen.queryByText('Verify Payout Account')).not.toBeInTheDocument();
-		expect(document.body.textContent).toContain('GTBank ••••6789 verified');
+		vi.unstubAllGlobals();
 	});
 
 	it('does not show or ask for an account name anywhere in the sheet', async () => {
@@ -143,6 +156,7 @@ describe('payout account verification in settings', () => {
 describe('settlement surfaces read the verified account', () => {
 	const event = {
 		id: 'e1',
+		status: 'published' as const,
 		slug: 'test-event',
 		title: 'Test Event',
 		category: 'music',

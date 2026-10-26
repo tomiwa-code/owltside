@@ -2,7 +2,7 @@ import { error, json, redirect, type Handle, type ServerInit } from '@sveltejs/k
 import { randomUUID } from 'node:crypto';
 import { AuthzError, readSession } from '$admin/server/auth';
 
-const PUBLIC_PATHS = ['/login', '/api/health'];
+const PUBLIC_PATHS = ['/login', '/api/health', '/api/session-probe', '/api/client-log'];
 
 function decorate(response: Response, pathname: string, signedIn: boolean): Response {
 	response.headers.set('X-Frame-Options', 'DENY');
@@ -35,8 +35,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 		if (pathname.startsWith('/api/')) {
 			return decorate(json({ error: 'Sign in required.' }, { status: 401 }), pathname, false);
 		}
-		const next = `${pathname}${search}`;
-		redirect(303, `/login?next=${encodeURIComponent(next)}`);
+		const target = `${pathname}${search}`;
+		// `/` is the default landing spot; no need to remember it as a return path.
+		redirect(303, target === '/' ? '/login' : `/login?next=${encodeURIComponent(target)}`);
 	}
 
 	try {

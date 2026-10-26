@@ -7,7 +7,8 @@ const source = vi.hoisted(() => ({
 	getEvent: vi.fn(),
 	resolvePromoCode: vi.fn(),
 	createOrder: vi.fn(),
-	getTickets: vi.fn()
+	getTickets: vi.fn(),
+	listApprovals: vi.fn()
 }));
 
 vi.mock('$lib/server/supabase', () => ({ createSupabase: () => null, supabaseConfigured: () => false }));
@@ -45,6 +46,7 @@ beforeEach(() => {
 	source.resolvePromoCode.mockResolvedValue(null);
 	source.createOrder.mockResolvedValue({ orderId: 'order-1', tickets: [{ id: 'ticket-1' }] });
 	source.getTickets.mockResolvedValue([]);
+	source.listApprovals.mockResolvedValue([]);
 	Object.assign(page.data, layoutData);
 });
 
@@ -115,7 +117,7 @@ describe('guest purchase gates (server)', () => {
 describe('guest tickets gates (server)', () => {
 	it('returns no tickets and a null session for guests without touching the demo account', async () => {
 		const result = await ticketsLoad({ locals: { session: null, demoMode: true }, cookies } as never);
-		expect(result).toEqual({ tickets: [], session: null });
+		expect(result).toEqual({ tickets: [], approvals: [], session: null });
 		expect(source.getTickets).not.toHaveBeenCalled();
 	});
 
@@ -124,6 +126,7 @@ describe('guest tickets gates (server)', () => {
 			session: typeof session;
 		};
 		expect(source.getTickets).toHaveBeenCalledWith(userId);
+		expect(source.listApprovals).toHaveBeenCalledWith(userId);
 		expect(result.session.userId).toBe(userId);
 	});
 
@@ -209,7 +212,7 @@ describe('guest sign-in prompts (UI)', () => {
 	it('asks guests to sign in on the Tickets tab and fetches nothing', async () => {
 		const fetcher = vi.fn().mockResolvedValue(new Response('[]'));
 		vi.stubGlobal('fetch', fetcher);
-		render(TicketsPage, { props: { data: { ...layoutData, tickets: [], session: null } } });
+		render(TicketsPage, { props: { data: { ...layoutData, tickets: [], approvals: [], session: null } } });
 
 		expect(screen.getByText('Sign in to view your tickets')).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: 'Sign In' })).toHaveAttribute('href', '/auth/login?next=/tickets');
@@ -221,7 +224,7 @@ describe('guest sign-in prompts (UI)', () => {
 	it('opens the wallet for signed-in holders', async () => {
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('[]')));
 		Object.assign(page.data, { ...layoutData, session });
-		render(TicketsPage, { props: { data: { ...layoutData, tickets: [], session } } });
+		render(TicketsPage, { props: { data: { ...layoutData, tickets: [], approvals: [], session } } });
 
 		expect(screen.queryByText('Sign in to view your tickets')).not.toBeInTheDocument();
 		expect(screen.getByText('Ticket Wallet & Dynamic Passes')).toBeInTheDocument();

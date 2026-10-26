@@ -7,6 +7,7 @@ import type { EventItem } from '$lib/types';
 
 const event: EventItem = {
 	id: 'e1',
+	status: 'published',
 	slug: 'test-event',
 	title: 'Test Event',
 	category: 'music',

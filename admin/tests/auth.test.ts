@@ -5,7 +5,9 @@ import {
 	authenticateWithKey,
 	canConfigure,
 	canMutate,
+	DEMO_PASSPHRASE,
 	isDemoMode,
+	isSecureRequest,
 	requireAudit,
 	requireConfigure,
 	requireMutation,
@@ -130,5 +132,76 @@ describe('admin authentication', () => {
 		expect(requireAudit(auditor).tier).toBe(3);
 		expect(() => requireAudit(null)).toThrow(AuthzError);
 		expect(() => requireMutation(null)).toThrow(/Sign in required/);
+	});
+});
+
+describe('HTTPS detection for session cookies', () => {
+	const url = (value: string) => new URL(value);
+
+	it('treats a direct https request as secure', () => {
+		expect(isSecureRequest(new Request('https://admin.example.com/login'), url('https://admin.example.com/login'))).toBe(true);
+	});
+
+	it('treats loopback and LAN http as insecure so dev cookies still stick', () => {
+		expect(isSecureRequest(new Request('http://localhost:5174/login'), url('http://localhost:5174/login'))).toBe(false);
+		expect(isSecureRequest(new Request('http://192.168.1.20:5174/login'), url('http://192.168.1.20:5174/login'))).toBe(false);
+	});
+
+	it('honours a forwarded https proto even when the proxy appends to it', () => {
+		const request = new Request('http://localhost:5174/login', { headers: { 'x-forwarded-proto': 'https,http' } });
+		expect(isSecureRequest(request, url('http://localhost:5174/login'))).toBe(true);
+	});
+
+	it('falls back to browser-facing headers when the proxy strips forwarded protos', () => {
+		const viaOrigin = new Request('http://localhost:5174/login', {
+			headers: { origin: 'https://5174-abc.e2b.app', host: '5174-abc.e2b.app' }
+		});
+		expect(isSecureRequest(viaOrigin, url('http://localhost:5174/login'))).toBe(true);
+
+		const viaReferer = new Request('http://localhost:5174/login', {
+			headers: { referer: 'https://5174-abc.e2b.app/login' }
+		});
+		expect(isSecureRequest(viaReferer, url('http://localhost:5174/login'))).toBe(true);
+	});
+
+	it('reads the standard Forwarded and X-Forwarded-Ssl headers', () => {
+		expect(
+			isSecureRequest(
+				new Request('http://localhost:5174/login', { headers: { forwarded: 'for=1.2.3.4;proto=https' } }),
+				url('http://localhost:5174/login')
+			)
+		).toBe(true);
+		expect(
+			isSecureRequest(
+				new Request('http://localhost:5174/login', { headers: { 'x-forwarded-ssl': 'on' } }),
+				url('http://localhost:5174/login')
+			)
+		).toBe(true);
+	});
+});
+
+describe('demo sign-in credentials', () => {
+	it('advertises a passphrase that the demo gate actually accepts', () => {
+		expect(DEMO_PASSPHRASE.length).toBeGreaterThanOrEqual(16);
+
+		const result = authenticate({
+			email: 'admin@owltside.com',
+			password: DEMO_PASSPHRASE,
+			remember: false,
+			ip: '10.0.0.9'
+		});
+		expect(result.ok).toBe(true);
+		expect(result.session?.demo).toBe(true);
+	});
+
+	it('rejects the right passphrase paired with the wrong email', () => {
+		const result = authenticate({
+			email: 'admin@owltside.co',
+			password: DEMO_PASSPHRASE,
+			remember: false,
+			ip: '10.0.0.10'
+		});
+		expect(result.ok).toBe(false);
+		expect(result.status).toBe(401);
 	});
 });

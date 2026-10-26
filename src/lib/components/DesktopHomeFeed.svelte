@@ -130,13 +130,13 @@
 						curatedPage = 0;
 					}}
 					aria-pressed={category === cat.id}
-					class="px-4 py-2 rounded-full text-label-badge tracking-wide transition-colors
+					class="flex flex-col items-center justify-center gap-1.5 min-w-[96px] px-5 py-2.5 rounded-full text-label-badge tracking-wide leading-none transition-colors
 						{category === cat.id
 							? 'bg-primary text-on-primary font-semibold shadow-sm glow-primary'
 							: 'bg-surface-container text-on-surface-variant hover:text-on-surface border border-surface-glass-border'}"
 				>
-					<CategoryIcon class="w-4 h-4 shrink-0" />
-					{cat.label}
+					<CategoryIcon class="w-5 h-5 shrink-0" strokeWidth={1.9} />
+					<span class="text-center">{cat.label}</span>
 				</button>
 			{/each}
 		</div>

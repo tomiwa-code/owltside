@@ -60,6 +60,7 @@ describe('verified ticket holder state', () => {
 					unread: 0,
 					inboxUnread: 0,
 					followLoadError: false,
+					refundRequest: null,
 					ticket: verifiedTicket
 				}
 			}
@@ -80,15 +81,18 @@ describe('verified ticket holder state', () => {
 		expect(screen.queryByText(/Reason for Cancellation/i)).toBeNull();
 	});
 
-	it('refuses to refund a Supabase ticket unless it is still valid', async () => {
+	it('refuses to open a refund request for a Supabase ticket that is no longer valid', async () => {
 		const ownerId = '11111111-1111-4111-8111-111111111111';
 		const ticketId = '22222222-2222-4222-8222-222222222222';
 		const eq = vi.fn().mockReturnThis();
 		const ticketsChain = {
-			update: vi.fn().mockReturnThis(),
 			eq,
 			select: vi.fn().mockReturnThis(),
-			maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null })
+			// A verified (used) pass: readable, but not refundable.
+			maybeSingle: vi.fn().mockResolvedValue({
+				data: { id: ticketId, code: 'EV-1', event_title: 'Gone', tier_name: 'VIP', price: 1000, status: 'used' },
+				error: null
+			})
 		};
 		const from = vi.fn((table: string) => {
 			if (table === 'tickets') return ticketsChain;
@@ -96,9 +100,9 @@ describe('verified ticket holder state', () => {
 		});
 		const source = supabaseSource({ from } as unknown as SupabaseClient);
 
-		await expect(source.refundTicket(ownerId, ticketId, { reason: 'Emergency' })).rejects.toThrow(
+		await expect(source.requestTicketRefund(ownerId, ticketId, { reason: 'Emergency' })).rejects.toThrow(
 			'Only active tickets can be refunded'
 		);
-		expect(eq).toHaveBeenCalledWith('status', 'valid');
+		expect(eq).toHaveBeenCalledWith('owner_id', ownerId);
 	});
 });

@@ -93,12 +93,17 @@
 		eyebrow="Escrow-gate OK"
 	>
 		{#snippet actions()}
+			<a class="btn btn-sm" href="/approvals"><RotateCcw size={12} /> Attendee requests →</a>
 			<a class="btn btn-sm" href="/api/export/refunds" download><Download size={12} /> Export Ledger (CSV)</a>
 			<button type="button" class="btn btn-sm btn-primary" disabled={busy || data.eligible === 0} onclick={batchApprove}>
 				<RotateCcw size={12} /> Batch Approve Eligible ({data.eligible})
 			</button>
 		{/snippet}
 	</PageHeader>
+
+	<p class="rounded-lg border border-[#2b2b33] bg-[#15151a] px-3 py-2 font-code text-[8.5px] uppercase tracking-[0.08em] text-[#8f8f9b]">
+		Refunds submitted from the public app wait in <a class="text-[#c6bcff] underline" href="/approvals">Approvals</a> — a pass stays valid and scan-able until that decision is made.
+	</p>
 
 	<div class="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
 		<div class="panel p-4">

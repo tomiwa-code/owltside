@@ -5,6 +5,7 @@
 	Bell,
 	CalendarDays,
 	Crown,
+	Flag,
 	Globe,
 	Link2,
 	Mic,
@@ -21,6 +22,7 @@
 	import TopBar from '$components/TopBar.svelte';
 	import { page } from '$app/state';
 	import ConnectionsSheet from '$components/ConnectionsSheet.svelte';
+	import ReportSheet from '$components/ReportSheet.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 import type { EventItem } from '$lib/types';
 
@@ -32,6 +34,9 @@ import type { EventItem } from '$lib/types';
 	let category = $state('all' as ProfileCategory);
 	let followersOpen = $state(false);
 	let followingOpen = $state(false);
+	// You cannot report your own profile.
+	const isOwnProfile = $derived(page.data.session?.userId === profile.id);
+	let reportOpen = $state(false);
 
 	const organizedEvents = $derived(data.events.filter((event) => event.organizer?.id === profile.id));
 	const roleEvents = $derived(
@@ -94,6 +99,18 @@ import type { EventItem } from '$lib/types';
 		</div>
 		<div class="flex items-center gap-3">
 			<FollowButton profileId={profile.id} />
+			{#if !isOwnProfile}
+				<button
+					type="button"
+					data-report-target="profile"
+					onclick={() => (reportOpen = true)}
+					aria-label="Report this profile"
+					title="Report this profile"
+					class="h-10 px-4 rounded-full border border-surface-glass-border bg-surface-container text-on-surface-variant hover:text-error text-body-sm font-semibold flex items-center gap-2 transition-colors"
+				>
+					<Flag class="w-4 h-4" /> Report profile
+				</button>
+			{/if}
 		</div>
 	</div>
 
@@ -256,7 +273,14 @@ import type { EventItem } from '$lib/types';
 						<Avatar name={profile.name} color={profile.avatarColor} src={profile.avatarUrl} size="xl" />
 					</div>
 				</a>
-				<FollowButton profileId={profile.id} />
+				<div class="flex items-center gap-2">
+					{#if !isOwnProfile}
+						<button type="button" data-report-target="profile" aria-label="Report this profile" onclick={() => (reportOpen = true)} class="w-10 h-10 rounded-full bg-surface-container border border-surface-glass-border text-on-surface-variant flex items-center justify-center active:scale-90 transition-transform">
+							<Flag class="w-4 h-4" />
+						</button>
+					{/if}
+					<FollowButton profileId={profile.id} />
+				</div>
 			</div>
 
 			<div>
@@ -365,3 +389,14 @@ import type { EventItem } from '$lib/types';
 
 <ConnectionsSheet open={followersOpen} profileId={profile.id} kind="followers" close={() => (followersOpen = false)} />
 <ConnectionsSheet open={followingOpen} profileId={profile.id} kind="following" close={() => (followingOpen = false)} />
+
+<!-- Report profile: goes to the trust & safety review queue in the admin console -->
+{#if !isOwnProfile}
+	<ReportSheet
+		open={reportOpen}
+		targetType="profile"
+		targetId={profile.id}
+		targetLabel={`@${profile.handle}`}
+		close={() => (reportOpen = false)}
+	/>
+{/if}

@@ -37,9 +37,11 @@
 		Zap
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
+	import EventStatusBadge from '$components/EventStatusBadge.svelte';
 	import Sheet from '$components/Sheet.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
+	import ApprovalNotice from '$components/ApprovalNotice.svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
@@ -49,7 +51,7 @@
 	import { toast } from '$lib/state/toast.svelte';
 	import { formatMoney } from '$lib/utils/money';
 	import { fmtDate, fmtRelative } from '$lib/utils/dates';
-	import type { OrganizerPayload } from '$lib/types';
+	import type { ApprovalRequest, OrganizerPayload } from '$lib/types';
 
 	let { data } = $props();
 
@@ -60,8 +62,69 @@
 		data.payload
 	);
 	const payload = $derived(org.data);
+	// Payout requests and payout-account checks wait for the admin console, so the
+	// console surfaces their state instead of promising money is on its way.
+	const approvalsQuery = useQuery<ApprovalRequest[]>(
+		'approvals:mine',
+		async () => {
+			const response = await fetch('/api/approvals');
+			return response.ok ? await response.json() : [];
+		},
+		{ staleTime: 10_000, refetchInterval: 25_000, enabled: !!page.data.session },
+		undefined
+	);
+	const approvals = $derived(Array.isArray(approvalsQuery.data) ? approvalsQuery.data : []);
+	const latestRequest = (kind: ApprovalRequest['kind'], check?: string) =>
+		approvals.find(
+			(request) =>
+				request.kind === kind &&
+				(check === undefined || (request.payload as { check?: string })?.check === check)
+		) ?? null;
+	const payoutAccountRequest = $derived(latestRequest('verification', 'payoutAccount'));
+	const payoutAccountPending = $derived(payoutAccountRequest?.status === 'pending');
+	const payoutRequest = $derived(latestRequest('payout'));
+	const payoutPending = $derived(payoutRequest?.status === 'pending');
+	let payoutSubmitting = $state(false);
+	async function requestInstantPayout(eventId?: string, eventTitle?: string) {
+		if (!payoutLinked) {
+			toast('Verify your payout account in Settings → Verification to receive payouts', 'info');
+			return;
+		}
+		if (payoutPending || payoutSubmitting || !stats) return;
+		payoutSubmitting = true;
+		try {
+			const response = await fetch('/api/approvals', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					kind: 'payout',
+					amount: stats.payout,
+					subjectId: eventId ?? mainEvent?.id ?? '',
+					subjectLabel: eventTitle ?? mainEvent?.title ?? 'Settlement balance',
+					destination: payoutDestination
+				})
+			});
+			const body = (await response.json().catch(() => ({}))) as { error?: string };
+			if (!response.ok) {
+				toast(body.error ?? 'Your payout request could not be submitted.', 'error');
+				return;
+			}
+			toast('Payout request sent for admin approval', 'success');
+			await approvalsQuery.refetch();
+		} catch {
+			toast('Your payout request could not be submitted. Check your connection.', 'error');
+		} finally {
+			payoutSubmitting = false;
+		}
+	}
 	const stats = $derived(payload?.stats);
+	// Every event the organizer owns, including submissions still awaiting review.
+	// The public feeds only show the published ones; here they are all visible.
+	const myEvents = $derived(payload?.events ?? []);
+	const pendingReviews = $derived(myEvents.filter((event) => event.status === 'pending').length);
 	const mainEvent = $derived(payload?.events[0]);
+	const minTierPrice = (event: { tiers: { price: number }[] }) =>
+		event.tiers.length ? Math.min(...event.tiers.map((tier) => tier.price)) : 0;
 
 	let broadcastOpen = $state(false);
 	let staffOpen = $state(false);
@@ -93,7 +156,10 @@
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 	// One source of truth: the payout account verified in Settings.
 	const payout = $derived(appSettings.value.payout);
-	const payoutLinked = $derived(appSettings.value.verification.payoutAccount && !!payout.bank);
+	const payoutAccountApproved = $derived(
+		appSettings.value.verification.payoutAccount || payoutAccountRequest?.status === 'approved'
+	);
+	const payoutLinked = $derived(payoutAccountApproved && !!payout.bank);
 	const payoutDestination = $derived(payoutLinked ? payoutAccountLabel(payout) : '');
 	const isFullyVerified = $derived(!!page.data.session && Object.values(appSettings.value.verification).every(Boolean));
 	let deskPin = $state('');
@@ -288,9 +354,55 @@
 				<span class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-4">{formatMoney(stats.payout)}</span>
 				<span class="text-body-sm text-on-surface-variant mt-1.5">Cleared settlement balance</span>
 				<div class="flex-1"></div>
-				<button class="w-full h-9 mt-4 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => payoutLinked ? toast(`Payout of ${formatMoney(stats.payout)} on its way to ${payoutDestination}`, 'success') : toast('Verify your payout account in Settings → Verification to receive payouts', 'info')}>
-					<Zap class="w-4 h-4 text-accent-amber" /><span>Request Instant Payout</span>
+				<button class="w-full h-9 mt-4 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => requestInstantPayout()} disabled={payoutPending || payoutSubmitting} title={payoutPending ? 'Your payout request is awaiting admin approval' : undefined}>
+					<Zap class="w-4 h-4 text-accent-amber" /><span>{payoutPending ? 'Payout pending approval' : payoutSubmitting ? 'Submitting…' : 'Request Instant Payout'}</span>
 				</button>
+				{#if payoutRequest}
+					<div class="mt-3"><ApprovalNotice request={payoutRequest} pendingLabel="Payout pending admin approval" pendingBody="Your instant payout is queued for the finance team. Funds move once it is approved." /></div>
+				{:else if payoutAccountRequest && !payoutLinked}
+					<div class="mt-3"><ApprovalNotice request={payoutAccountRequest} pendingLabel="Payout account pending review" pendingBody="Settlements are on hold until the review team approves this account." /></div>
+				{/if}
+			</section>
+		</div>
+	{/if}
+
+	{#if myEvents.length}
+		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-5">
+			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5">
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<span class="flex items-center gap-2.5">
+						<span class="font-display text-headline-md text-on-surface">My Events</span>
+						<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-high border border-surface-glass-border text-on-surface-variant">{myEvents.length} total</span>
+						{#if pendingReviews}
+							<span class="{MONO} px-2 py-0.5 rounded bg-accent-amber/10 border border-accent-amber/25 text-accent-amber">{pendingReviews} pending approval</span>
+						{/if}
+					</span>
+					<a href="/organizer/create" class="h-9 px-3.5 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors">
+						<Plus class="w-4 h-4" /><span>Create New Event</span>
+					</a>
+				</div>
+				<div class="mt-4 grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+					{#each myEvents as event (event.id)}
+						<a
+							href="/organizer/events/{event.id}"
+							class="group rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-3.5 flex flex-col gap-2 hover:bg-surface-container-highest transition-colors"
+						>
+							<span class="flex items-start justify-between gap-2">
+								<span class="min-w-0">
+									<span class="block text-body-md font-semibold text-on-surface truncate group-hover:text-primary transition-colors">{event.title}</span>
+									<span class="block text-body-sm text-on-surface-variant truncate mt-0.5">{fmtDate(event.startsAt)} • {event.venue}, {event.city}</span>
+								</span>
+								<EventStatusBadge status={event.status} />
+							</span>
+							<span class="{MONO} text-on-surface-variant flex items-center gap-1.5">
+								{event.tiers.length} tier{event.tiers.length === 1 ? '' : 's'} · {minTierPrice(event) === 0 ? 'Free' : formatMoney(minTierPrice(event))}
+								{#if event.submittedAt && event.status === 'pending'}
+									<span class="text-outline-variant">· submitted {fmtRelative(event.submittedAt)}</span>
+								{/if}
+							</span>
+						</a>
+					{/each}
+				</div>
 			</section>
 		</div>
 	{/if}
@@ -306,6 +418,9 @@
 									<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>
 									{mainEvent.gates?.length ? `${mainEvent.gates.length} Gates Configured` : mainEvent.live ? 'Live' : 'Scheduled'}
 								</span>
+								{#if mainEvent.status !== 'published'}
+									<EventStatusBadge status={mainEvent.status} size="md" />
+								{/if}
 								<span class="{MONO} text-outline-variant">EVT-{mainEvent.id.replace(/^e-/, '').toUpperCase()}</span>
 							</span>
 							<h1 class="font-display text-[28px] leading-9 font-bold tracking-tight text-on-surface mt-3">{mainEvent.title}</h1>
@@ -606,7 +721,11 @@
 						</div>
 					</div>
 					{#if !payoutLinked}
-					<p class="text-xs text-on-surface-variant mt-3">Verify your payout account in Settings → Verification to enable settlements.</p>
+					{#if payoutAccountRequest}
+						<div class="mt-3"><ApprovalNotice request={payoutAccountRequest} pendingLabel="Payout account pending admin review" pendingBody="Settlements stay on hold until the review team matches this account to your verified identity." /></div>
+					{:else}
+						<p class="text-xs text-on-surface-variant mt-3">Verify your payout account in Settings → Verification to enable settlements.</p>
+					{/if}
 					{/if}
 				</div>
 			</section>
@@ -704,9 +823,40 @@
 
 		{#if mainEvent}
 			<section class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm flex flex-col gap-space-sm">
-				<div class="flex items-start justify-between gap-3"><div class="min-w-0"><span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Primary event</span><h2 class="font-display text-headline-md text-on-surface pt-1 truncate">{mainEvent.title}</h2><p class="text-body-sm text-on-surface-variant pt-1">{dateLabel} · {mainEvent.venue}, {mainEvent.city}</p></div><span class="shrink-0 rounded-full px-2.5 py-1 text-label-badge {mainEvent.live ? 'bg-accent-emerald/10 text-accent-emerald' : 'bg-surface-container-highest text-on-surface-variant'}">{mainEvent.live ? 'Live' : 'Scheduled'}</span></div>
+				<div class="flex items-start justify-between gap-3"><div class="min-w-0"><span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Primary event</span><h2 class="font-display text-headline-md text-on-surface pt-1 truncate">{mainEvent.title}</h2><p class="text-body-sm text-on-surface-variant pt-1">{dateLabel} · {mainEvent.venue}, {mainEvent.city}</p></div>{#if mainEvent.status !== 'published'}
+					<span class="shrink-0"><EventStatusBadge status={mainEvent.status} size="md" /></span>
+				{:else}
+					<span class="shrink-0 rounded-full px-2.5 py-1 text-label-badge {mainEvent.live ? 'bg-accent-emerald/10 text-accent-emerald' : 'bg-surface-container-highest text-on-surface-variant'}">{mainEvent.live ? 'Live' : 'Scheduled'}</span>
+				{/if}</div>
 				<div class="grid grid-cols-2 gap-2 pt-1"><a href="/organizer/events/{mainEvent.id}" class="h-10 rounded-lg bg-primary text-on-primary text-body-sm font-semibold flex items-center justify-center gap-1.5"><LayoutGrid class="w-4 h-4" />Manage event</a><a href="/organizer/create?edit={mainEvent.id}" class="h-10 rounded-lg bg-surface-container-high border border-outline-variant/30 text-on-surface text-body-sm font-semibold flex items-center justify-center gap-1.5"><PenLine class="w-4 h-4" />Edit wizard</a></div>
 				<div class="grid grid-cols-2 gap-2 border-t border-outline-variant/20 pt-3"><div><span class="text-label-badge text-on-surface-variant block">Rejected scans</span><span class="text-body-sm font-semibold text-on-surface">{rejected} blocked</span></div><div><span class="text-label-badge text-on-surface-variant block">Offline cache sync</span><span class="text-body-sm font-semibold text-on-surface">100% up to date</span></div></div>
+			</section>
+		{/if}
+
+		<!-- my events: every owned event, with its review state -->
+		{#if myEvents.length}
+			<section class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm flex flex-col gap-space-sm">
+				<div class="flex items-center justify-between gap-2">
+					<h2 class="font-display text-headline-md text-on-surface">My Events</h2>
+					<span class="text-label-badge uppercase tracking-wider text-on-surface-variant">{myEvents.length} total{pendingReviews ? ` • ${pendingReviews} pending` : ''}</span>
+				</div>
+				<div class="flex flex-col gap-2">
+					{#each myEvents as event (event.id)}
+						<a
+							href="/organizer/events/{event.id}"
+							class="rounded-lg border border-outline-variant/25 bg-surface-container-low px-3 py-2.5 flex items-center justify-between gap-3 hover:bg-surface-container-high transition-colors"
+						>
+							<span class="min-w-0 flex flex-col">
+								<span class="text-body-sm font-semibold text-on-surface truncate">{event.title}</span>
+								<span class="text-label-badge text-on-surface-variant truncate pt-0.5">{fmtDate(event.startsAt)} • {event.venue}</span>
+							</span>
+							<EventStatusBadge status={event.status} />
+						</a>
+					{/each}
+				</div>
+				{#if pendingReviews}
+					<p class="text-label-badge text-on-surface-variant">Pending events stay private until an Owltside admin approves them for the home and explore feeds.</p>
+				{/if}
 			</section>
 		{/if}
 
@@ -768,9 +918,12 @@
 						<span class="font-display text-headline-lg-mobile text-on-surface block tracking-tight">{formatMoney(stats?.payout ?? 0)}</span>
 						<span class="text-label-badge text-on-surface-variant block mt-1">Ready for transfer</span>
 					</div>
-					<button class="w-full h-8 mt-1 rounded-full bg-primary-fixed text-surface font-medium flex items-center justify-center gap-1 transition-all active:scale-95 shadow-sm" onclick={() => payoutLinked ? toast(`Payout of ${formatMoney(stats?.payout ?? 0)} on its way to ${payoutDestination}`, 'success') : toast('Verify your payout account in Settings → Verification to receive payouts', 'info')}>
-						<Send class="w-3.5 h-3.5" /><span class="text-label-badge font-semibold">Instant Payout</span>
+					<button class="w-full h-8 mt-1 rounded-full bg-primary-fixed text-surface font-medium flex items-center justify-center gap-1 transition-all active:scale-95 shadow-sm" onclick={() => requestInstantPayout()} disabled={payoutPending || payoutSubmitting} title={payoutPending ? 'Your payout request is awaiting admin approval' : undefined}>
+						<Send class="w-3.5 h-3.5" /><span class="text-label-badge font-semibold">{payoutPending ? 'Payout pending' : 'Instant Payout'}</span>
 					</button>
+					{#if payoutRequest}
+						<div class="mt-2"><ApprovalNotice request={payoutRequest} pendingLabel="Payout pending admin approval" pendingBody="Queued for the finance team — funds move once approved." /></div>
+					{/if}
 				</div>
 			</div>
 
@@ -857,7 +1010,7 @@
 
 		<!-- Settlement Account - always visible, pulled from verified payout settings -->
 		<section class="flex flex-col gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
-			<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Settlement Account</h2><span class="inline-flex items-center gap-1 text-label-badge {payoutLinked ? 'text-accent-emerald' : 'text-on-surface-variant'}"><ShieldCheck class="w-3.5 h-3.5 {payoutLinked ? 'text-accent-emerald' : 'text-outline-variant'}" />{payoutLinked ? 'KYC active' : 'Not verified'}</span></div>
+			<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Settlement Account</h2><span class="inline-flex items-center gap-1 text-label-badge {payoutLinked ? 'text-accent-emerald' : 'text-on-surface-variant'}"><ShieldCheck class="w-3.5 h-3.5 {payoutLinked ? 'text-accent-emerald' : 'text-outline-variant'}" />{payoutLinked ? 'KYC active' : payoutAccountPending ? 'KYC pending' : 'Not verified'}</span></div>
 			{#if payoutLinked}
 				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3"><div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">{payout.bank}</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div><span class="block font-code text-label-badge text-on-surface-variant pt-1">Account: {maskAccountNumber(payout.accountNumber)}</span><div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">Paystack Split Active</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Protocol processing fee</span><span class="text-on-surface">0.00% (Genesis Tier)</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">Tonight at 23:59 WAT</span></div></div></div>
 			{:else}

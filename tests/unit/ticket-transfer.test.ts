@@ -122,7 +122,8 @@ describe('ticket transfer user search & 1-to-1 transfer', () => {
 					unread: 0,
 					inboxUnread: 0,
 					followLoadError: false,
-					ticket: { ...sampleTicket }
+					ticket: { ...sampleTicket },
+					refundRequest: null
 				}
 			}
 		});
