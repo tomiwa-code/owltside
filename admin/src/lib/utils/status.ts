@@ -54,6 +54,8 @@ export function ticketStatus(status: string): StatusMeta {
 	switch (status) {
 		case 'valid':
 			return { label: 'Valid · unused', tone: 'accent' };
+		case 'used':
+			return { label: 'Used · redeemed', tone: 'info' };
 		case 'void':
 			return { label: 'Void', tone: 'danger' };
 		case 'refunded':

@@ -93,12 +93,14 @@ identifier, amount and status always stay visible without clipping.
 The console has two data modes. Without a server-side Supabase URL and service
 key, it uses the deterministic demo seed in `src/lib/server/seed.ts`. With
 `PUBLIC_SUPABASE_URL` (or `SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY` set in
-`admin/.env`, the event registry, event dossier, dashboard order/ticket metrics,
-and event counts read from the configured Supabase project. The service key is
-used only on the server to bypass attendee/organizer-scoped RLS; do not expose it
-as a `PUBLIC_` variable or in browser code. Copy these values from the main
-app's local environment into `admin/.env` (the nested admin app does not inherit
-the root `.env` automatically).
+`admin/.env` or the repository-root `.env`, the event registry, organizer and
+user directories, detail records, dashboard order/ticket metrics, and event
+counts read from the configured Supabase project. In development the admin
+loads both local env locations, so the main app's project URL and service key
+can be shared without duplicating credentials. The service key is used only on
+the server to bypass attendee/organizer-scoped RLS; do not expose it as a
+`PUBLIC_` variable or in browser code. The console shows a prominent demo-mode
+banner when a URL/service-key pair is not detected.
 
 The current schema in `../supabase/sql/000_full_schema.sql` has `events`,
 `profiles`, `tickets`, and `orders`, but does not store event moderation status,

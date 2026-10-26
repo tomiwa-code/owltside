@@ -1,5 +1,19 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mapSupabaseEvent } from '$admin/server/supabase-data';
+import { adminDataSource, mapSupabaseEvent } from '$admin/server/supabase-data';
+
+describe('Supabase admin data source', () => {
+	it('selects Supabase when server URL and service key are configured', () => {
+		const oldUrl = process.env.PUBLIC_SUPABASE_URL;
+		const oldKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+		process.env.PUBLIC_SUPABASE_URL = 'https://owltside-test.supabase.co';
+		process.env.SUPABASE_SERVICE_ROLE_KEY = 'local-test-service-key';
+		expect(adminDataSource()).toBe('supabase');
+		if (oldUrl === undefined) delete process.env.PUBLIC_SUPABASE_URL;
+		else process.env.PUBLIC_SUPABASE_URL = oldUrl;
+		if (oldKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+		else process.env.SUPABASE_SERVICE_ROLE_KEY = oldKey;
+	});
+});
 
 describe('Supabase admin event mapping', () => {
 	const originalNow = Date.now;

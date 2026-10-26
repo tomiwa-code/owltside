@@ -34,17 +34,40 @@
 <div class="space-y-4">
 	<PageHeader
 		title={org.name}
-		subtitle={`${org.legalName} — CAC ${org.cacRegNumber}${org.tin ? ` · TIN ${org.tin}` : ''}`}
+		subtitle={data.source === 'supabase' ? `@${org.slug} · ${org.city} · profile ${org.id}` : `${org.legalName} — CAC ${org.cacRegNumber}${org.tin ? ` · TIN ${org.tin}` : ''}`}
 		crumbs={['platform', 'organizers', org.slug]}
-		eyebrow={`Tier ${org.tier} ${status.label}`}
+		eyebrow={data.source === 'supabase' ? `Supabase profile · verified ${org.status === 'verified' ? 'yes' : 'no'}` : `Tier ${org.tier} ${status.label}`}
 	>
 		{#snippet actions()}
 			<a href="/organizers" class="btn btn-sm"><ArrowLeft size={12} /> Back to registry</a>
-			<button type="button" class="btn btn-sm" onclick={exportDossier}><Download size={12} /> Export KYB dossier</button>
-			<a class="btn btn-sm btn-primary" href={`/organizers?organizer=${org.id}`}><ShieldCheck size={12} /> Review compliance <ArrowUpRight size={11} /></a>
+			{#if data.source === 'demo'}
+				<button type="button" class="btn btn-sm" onclick={exportDossier}><Download size={12} /> Export KYB dossier</button>
+				<a class="btn btn-sm btn-primary" href={`/organizers?organizer=${org.id}`}><ShieldCheck size={12} /> Review compliance <ArrowUpRight size={11} /></a>
+			{/if}
 		{/snippet}
 	</PageHeader>
 
+	{#if data.source === 'supabase'}
+		<div class="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+			<div class="panel p-4"><p class="mono-label">Profile verified</p><p class="mt-2 font-display text-xl text-[#f1f1f6]">{org.status === 'verified' ? 'Yes' : 'No'}</p><p class="mt-1 text-[10px] text-[#8f8f9b]">profiles.verified only · not KYB</p></div>
+			<div class="panel p-4"><p class="mono-label">Events</p><p class="mt-2 font-display text-xl text-[#f1f1f6]">{org.eventsCount}</p><p class="mt-1 text-[10px] text-[#8f8f9b]">public.events rows</p></div>
+			<div class="panel p-4"><p class="mono-label">Tickets</p><p class="mt-2 font-display text-xl text-[#f1f1f6]">{org.ticketsSold}</p><p class="mt-1 text-[10px] text-[#8f8f9b]">public.tickets rows</p></div>
+			<div class="panel p-4"><p class="mono-label">Paid order total</p><p class="mt-2 font-display text-xl text-[#f1f1f6]">{moneyCompact(org.grossVolumeNgn)}</p><p class="mt-1 text-[10px] text-[#8f8f9b]">paid orders for linked events</p></div>
+		</div>
+		<section class="panel overflow-hidden">
+			<header class="panel-head"><p class="mono-label">Linked Supabase events</p><span class="font-code text-[8px] text-[#6f6f7b]">{data.events.length} rows</span></header>
+			<div class="divide-y divide-[#24242c]">
+				{#each data.events as event (event.id)}
+					<a href={`/events/${event.id}`} class="flex items-center gap-3 px-3.5 py-3 hover:bg-[#1b1b22]">
+						<CoverArt from={event.coverFrom} to={event.coverTo} icon={event.coverIcon} compact class="!h-9 !w-9" />
+						<div class="min-w-0 flex-1"><p class="truncate text-[11px] text-[#e8e8ee]">{event.title}</p><p class="font-code text-[8px] text-[#6f6f7b]">{event.category} · {event.venue} · {shortDate(event.startsAt)}</p></div>
+						<div class="text-right"><p class="font-code text-[9px] text-[#dcdce4]">{num(event.sold)} tickets</p><p class="font-code text-[8px] text-[#6f6f7b]">estimated tier gross {money(event.grossNgn)}</p></div>
+					</a>
+				{:else}<p class="px-4 py-6 text-center text-[11px] text-[#6f6f7b]">No events linked to this profile.</p>{/each}
+			</div>
+		</section>
+		<div class="panel p-4 text-[10.5px] leading-relaxed text-[#8f8f9b]">The current Supabase schema has public profiles, events, orders, and tickets, but no organizer KYB, settlement, payout, or compliance-audit tables. Those values are intentionally not shown as live data.</div>
+	{:else}
 	{#if org.flagReason || org.beneficiaryMismatch}
 		<div class="panel flex items-start gap-3 border-red-500/25 bg-red-500/[0.05] p-3.5">
 			<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-red-500/30 bg-red-500/10 text-red-300"><TriangleAlert size={15} /></span>
@@ -175,5 +198,6 @@
 			<p class="mt-1 font-code text-[10px] text-[#dcdce4]">{org.ticketsSold ? money(Math.round(org.grossVolumeNgn / org.ticketsSold)) : '—'} <span class="text-[#6f6f7b]">· {org.ticketsSold} sold</span></p>
 		</div>
 	</div>
+	{/if}
 
 </div>

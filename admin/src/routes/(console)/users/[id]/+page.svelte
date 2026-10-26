@@ -56,15 +56,17 @@
 		title={user.name}
 		subtitle={`@${user.handle} · ${user.email}`}
 		crumbs={['platform', 'users', user.handle]}
-		eyebrow={`KYC Tier ${user.kycTier}`}
+		eyebrow={data.source === 'supabase' ? `Supabase profile · verified ${user.kycTier === 1 ? 'yes' : 'no'}` : `KYC Tier ${user.kycTier}`}
 	>
 		{#snippet actions()}
 			<a href="/users" class="btn btn-sm"><ArrowLeft size={12} /> Back to directory</a>
-			<a class="btn btn-sm" href={`/tickets?q=${encodeURIComponent(user.handle)}`}><Ticket size={12} /> All passes</a>
-			{#if user.status === 'active'}
-				<button type="button" class="btn btn-sm btn-danger-soft" onclick={() => (blockOpen = true)}><Ban size={12} /> Suspend account</button>
-			{:else}
-				<button type="button" class="btn btn-sm btn-primary" disabled={busy} onclick={() => setStatus('active')}>Reinstate account</button>
+			{#if data.source === 'demo'}
+				<a class="btn btn-sm" href={`/tickets?q=${encodeURIComponent(user.handle)}`}><Ticket size={12} /> All passes</a>
+				{#if user.status === 'active'}
+					<button type="button" class="btn btn-sm btn-danger-soft" onclick={() => (blockOpen = true)}><Ban size={12} /> Suspend account</button>
+				{:else}
+					<button type="button" class="btn btn-sm btn-primary" disabled={busy} onclick={() => setStatus('active')}>Reinstate account</button>
+				{/if}
 			{/if}
 		{/snippet}
 	</PageHeader>
@@ -88,9 +90,9 @@
 			<p class="mt-1.5 text-[10px] text-[#8f8f9b]">Not yet redeemed</p>
 		</div>
 		<div class="panel p-4">
-			<p class="mono-label">Risk signals</p>
-			<p class="mt-1.5 font-display text-[clamp(16px,2.2vw,22px)] font-semibold leading-none text-[#f1f1f6]">{user.flags?.length ?? 0}</p>
-			<p class="mt-1.5 text-[10px] text-[#8f8f9b]">Chargebacks 0.0%</p>
+			<p class="mono-label">{data.source === 'supabase' ? 'Risk signals' : 'Risk signals'}</p>
+			<p class="mt-1.5 font-display text-[clamp(16px,2.2vw,22px)] font-semibold leading-none text-[#f1f1f6]">{data.source === 'supabase' ? 'N/A' : user.flags?.length ?? 0}</p>
+			<p class="mt-1.5 text-[10px] text-[#8f8f9b]">{data.source === 'supabase' ? 'Not stored in the current schema' : 'Chargebacks 0.0%'}</p>
 		</div>
 	</div>
 
@@ -153,10 +155,15 @@
 			<section class="panel overflow-hidden">
 				<header class="panel-head"><p class="mono-label">Compliance &amp; identity</p><Fingerprint size={12} class="text-[#8f8f9b]" /></header>
 				<div class="space-y-1.5 p-3.5 text-[10px]">
-					<p class="flex items-center justify-between gap-2"><span class="flex items-center gap-1.5 text-[#6f6f7b]"><ShieldCheck size={9} class="text-emerald-400" /> NIN identity</span><span class="font-code text-[#dcdce4]">9048-••••-319</span></p>
-					<p class="flex items-center justify-between gap-2"><span class="flex items-center gap-1.5 text-[#6f6f7b]"><Fingerprint size={9} class="text-emerald-400" /> Passkey enclave</span><span class="font-code text-[#dcdce4]">FIDO2 active</span></p>
-					<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">KYC tier</span><span class="font-code text-[#dcdce4]">Tier {user.kycTier} verified</span></p>
-					<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">Payment anchor</span><span class="font-code text-[#dcdce4]">Paystack CUS_{user.id.slice(-6)}</span></p>
+					{#if data.source === 'supabase'}
+						<p class="text-[#8f8f9b]">NIN, KYC, passkey enrollment, and payment-customer records are not in the current profile schema.</p>
+						<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">Profile verified</span><span class="font-code text-[#dcdce4]">{user.kycTier === 1 ? 'true' : 'false'}</span></p>
+					{:else}
+						<p class="flex items-center justify-between gap-2"><span class="flex items-center gap-1.5 text-[#6f6f7b]"><ShieldCheck size={9} class="text-emerald-400" /> NIN identity</span><span class="font-code text-[#dcdce4]">9048-••••-319</span></p>
+						<p class="flex items-center justify-between gap-2"><span class="flex items-center gap-1.5 text-[#6f6f7b]"><Fingerprint size={9} class="text-emerald-400" /> Passkey enclave</span><span class="font-code text-[#dcdce4]">FIDO2 active</span></p>
+						<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">KYC tier</span><span class="font-code text-[#dcdce4]">Tier {user.kycTier} verified</span></p>
+						<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">Payment anchor</span><span class="font-code text-[#dcdce4]">Paystack CUS_{user.id.slice(-6)}</span></p>
+					{/if}
 				</div>
 				{#if user.flags?.length}
 					<div class="flex flex-wrap gap-1 border-t border-[#26262e] px-3.5 py-2">
@@ -174,13 +181,13 @@
 							<p class="text-[9px] text-[#6f6f7b]">{record.actor} · {relative(record.at)}</p>
 						</div>
 					{:else}
-						<p class="text-[10.5px] text-[#6f6f7b]">No admin actions on this account.</p>
+						<p class="text-[10.5px] text-[#6f6f7b]">{data.source === 'supabase' ? 'Admin audit records are not stored in the current schema.' : 'No admin actions on this account.'}</p>
 					{/each}
 				</div>
 			</section>
 
 			<div class="panel p-3.5 text-[9.5px] leading-relaxed text-[#6f6f7b]">
-				Account actions are append-only and require a written justification. Suspensions revoke wallet passes and chat access within 30 seconds. {num(user.ticketsCount)} passes · {money(user.spendNgn)} lifetime.
+				{data.source === 'supabase' ? 'User profile, ticket, and order records loaded from Supabase. Admin action history is not in the schema.' : 'Account actions are append-only and require a written justification. Suspensions revoke wallet passes and chat access within 30 seconds.'} {num(user.ticketsCount)} passes · {money(user.spendNgn)} lifetime.
 			</div>
 		</div>
 	</div>

@@ -6,7 +6,7 @@
 	import CommandPalette from '$components/CommandPalette.svelte';
 	import type { AdminSession } from '$admin/types';
 
-	let { children, data }: { children: Snippet; data: { admin: AdminSession | null; counts: { pendingEvents: number; refunds: number; moderation: number }; serverTime: string; publicAppUrl: string } } =
+	let { children, data }: { children: Snippet; data: { admin: AdminSession | null; mode: 'live' | 'demo'; counts: { pendingEvents: number; refunds: number; moderation: number }; serverTime: string; publicAppUrl: string } } =
 		$props();
 
 	onMount(() => {
@@ -20,6 +20,11 @@
 	<Sidebar admin={data.admin} counts={data.counts} publicAppUrl={data.publicAppUrl} />
 	<div class="flex min-h-dvh flex-col lg:pl-[252px]">
 		<TopBar admin={data.admin} serverTime={data.serverTime} alerts={data.counts.moderation + data.counts.refunds} />
+		{#if data.mode === 'demo'}
+			<div class="border-b border-amber-400/25 bg-amber-400/[0.06] px-4 py-2 font-code text-[9px] uppercase tracking-[0.08em] text-amber-200 sm:px-6">
+				Demo seed data active · Supabase URL and server service key were not found in the repository-root or admin .env files.
+			</div>
+		{/if}
 		<main class="mx-auto w-full max-w-[1580px] flex-1 px-3.5 pb-10 pt-4 sm:px-5 lg:px-7 lg:pb-14 lg:pt-5">
 			{@render children()}
 		</main>

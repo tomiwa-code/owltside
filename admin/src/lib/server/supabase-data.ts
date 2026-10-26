@@ -1,10 +1,27 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { AdminDashboard, AdminEvent, EventTier } from '$admin/types';
-import type { EventQuery, Page } from './store';
+import { config as loadDotenv } from 'dotenv';
+import { resolve } from 'node:path';
+import type { AdminDashboard, AdminEvent, AdminOrder, AdminOrganizer, AdminTicket, AdminUser, EventTier } from '$admin/types';
+import type { EventQuery, OrganizerQuery, Page, UserQuery } from './store';
 
 export type AdminDataSource = 'supabase' | 'demo';
 
+let localEnvLoaded = false;
+function loadLocalEnvFiles(): void {
+	if (localEnvLoaded || process.env.NODE_ENV === 'production') return;
+	// The public app reads the repository-root .env, while the admin is a nested
+	// SvelteKit project. Load both locations (admin-specific files first) so its
+	// process sees the same Supabase credentials without duplicating local secrets.
+	const cwd = process.cwd();
+	const mode = process.env.NODE_ENV || 'development';
+	const envFiles = [`.env.${mode}.local`, '.env.local', `.env.${mode}`, '.env'];
+	for (const file of envFiles) loadDotenv({ path: resolve(cwd, file), override: false });
+	for (const file of envFiles) loadDotenv({ path: resolve(cwd, '..', file), override: false });
+	localEnvLoaded = true;
+}
+
 function createAdminClient(): SupabaseClient | null {
+	loadLocalEnvFiles();
 	const url = (process.env.PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
 	// The public app's RLS policies are organizer/attendee scoped. Admin reads
 	// must use a server-only key; never fall back to an anon key here.
@@ -153,6 +170,258 @@ export async function listSupabaseEvents(query: EventQuery = {}): Promise<Page<A
 			draft: 0,
 			suspended: 0
 		}
+	};
+}
+
+type DataProfile = Record<string, any> & { id: string; name: string; handle: string };
+type DataAuthUser = Record<string, any> & { id: string; email?: string; phone?: string };
+type PeopleBundle = {
+	profiles: DataProfile[];
+	authUsers: Map<string, DataAuthUser>;
+	events: AdminEvent[];
+	orders: Record<string, any>[];
+	tickets: Record<string, any>[];
+	ordersByOwner: Map<string, Record<string, any>[]>;
+	ticketsByOwner: Map<string, Record<string, any>[]>;
+	ticketsByEvent: Map<string, number>;
+	paidGrossByEvent: Map<string, number>;
+};
+
+async function loadPeopleBundle(client: SupabaseClient): Promise<PeopleBundle> {
+	const [profiles, events, orders, tickets] = await Promise.all([
+		rowsFrom(client, 'profiles', 'id,handle,name,city,verified,operating_identity,created_at,avatar_url', (query) => query.order('created_at', { ascending: false }).order('id')),
+		loadEvents(client),
+		rowsFrom(client, 'orders', 'id,owner_id,event_id,reference,total,status,gateway,created_at', (query) => query.order('created_at', { ascending: false }).order('id')),
+		rowsFrom(client, 'tickets', 'id,owner_id,event_id,code,event_title,tier_name,holder_name,status,purchased_at,price,cover', (query) => query.order('purchased_at', { ascending: false }).order('id'))
+	]);
+	const authUsers = new Map<string, DataAuthUser>();
+	const perPage = 1000;
+	for (let page = 1; ; page += 1) {
+		const { data, error } = await client.auth.admin.listUsers({ page, perPage });
+		assertNoError(error, 'auth.users');
+		for (const user of data.users as DataAuthUser[]) authUsers.set(user.id, user);
+		if (data.users.length < perPage) break;
+	}
+	const ordersByOwner = new Map<string, Record<string, any>[]>();
+	const ticketsByOwner = new Map<string, Record<string, any>[]>();
+	const ticketsByEvent = new Map<string, number>();
+	const paidGrossByEvent = new Map<string, number>();
+	for (const order of orders) {
+		const ownerId = String(order.owner_id ?? '');
+		ordersByOwner.set(ownerId, [...(ordersByOwner.get(ownerId) ?? []), order]);
+		if (order.status === 'paid') {
+			const eventId = String(order.event_id ?? '');
+			paidGrossByEvent.set(eventId, (paidGrossByEvent.get(eventId) ?? 0) + numberValue(order.total));
+		}
+	}
+	for (const ticket of tickets) {
+		const ownerId = String(ticket.owner_id ?? '');
+		ticketsByOwner.set(ownerId, [...(ticketsByOwner.get(ownerId) ?? []), ticket]);
+		const eventId = String(ticket.event_id ?? '');
+		ticketsByEvent.set(eventId, (ticketsByEvent.get(eventId) ?? 0) + 1);
+	}
+	return { profiles: profiles as DataProfile[], authUsers, events, orders, tickets, ordersByOwner, ticketsByOwner, ticketsByEvent, paidGrossByEvent };
+}
+
+function mapDataUser(profile: DataProfile, auth: DataAuthUser | undefined, bundle: PeopleBundle): AdminUser {
+	const ownedOrders = bundle.ordersByOwner.get(profile.id) ?? [];
+	const ownedTickets = bundle.ticketsByOwner.get(profile.id) ?? [];
+	const now = Date.now();
+	const isBlocked = auth?.banned_until && new Date(auth.banned_until).getTime() > now;
+	const isOrganizer = profile.operating_identity === 'organizer' || bundle.events.some((event) => event.organizerId === profile.id);
+	const role = isOrganizer ? 'Organizer' : 'Attendee';
+	return {
+		id: profile.id,
+		handle: String(profile.handle ?? profile.id.slice(0, 8)),
+		name: String(profile.name ?? 'Owltside user'),
+		email: String(auth?.email ?? ''),
+		phone: String(auth?.phone ?? ''),
+		role,
+		kycTier: profile.verified ? 1 : 0,
+		spendNgn: ownedOrders.filter((order) => order.status === 'paid').reduce((sum, order) => sum + numberValue(order.total), 0),
+		ticketsCount: ownedTickets.length,
+		ordersCount: ownedOrders.length,
+		status: isBlocked ? 'blocked' : 'active',
+		city: String(profile.city ?? '—'),
+		joinedAt: String(profile.created_at ?? auth?.created_at ?? new Date(0).toISOString()),
+		lastSeenAt: String(auth?.last_sign_in_at ?? auth?.created_at ?? profile.created_at ?? new Date(0).toISOString())
+	};
+}
+
+function mapDataTicket(ticket: Record<string, any>, profileById: Map<string, DataProfile>): AdminTicket {
+	const profile = profileById.get(String(ticket.owner_id));
+	const status = ['valid', 'used', 'refunded', 'transferred'].includes(ticket.status) ? ticket.status : 'void';
+	return {
+		id: String(ticket.id),
+		code: String(ticket.code ?? ''),
+		holderName: String(ticket.holder_name ?? profile?.name ?? 'Attendee'),
+		holderHandle: String(profile?.handle ?? ''),
+		eventId: String(ticket.event_id ?? ''),
+		eventTitle: String(ticket.event_title ?? 'Event'),
+		tierName: String(ticket.tier_name ?? 'Ticket'),
+		status,
+		priceNgn: numberValue(ticket.price),
+		settlement: 'Paystack',
+		orderRef: '',
+		purchasedAt: String(ticket.purchased_at ?? new Date(0).toISOString())
+	};
+}
+
+function mapDataOrder(order: Record<string, any>, profileById: Map<string, DataProfile>, eventById: Map<string, AdminEvent>): AdminOrder {
+	const profile = profileById.get(String(order.owner_id));
+	const event = eventById.get(String(order.event_id));
+	const status = order.status === 'paid' ? 'settled' : order.status === 'failed' || order.status === 'refunded' ? order.status : 'pending';
+	return {
+		id: String(order.id),
+		reference: String(order.reference ?? order.id),
+		customerName: String(profile?.name ?? 'Attendee'),
+		customerEmail: '',
+		customerPhone: '',
+		eventId: String(order.event_id ?? ''),
+		eventTitle: event?.title ?? 'Event',
+		tierLabel: 'Ticket',
+		qty: 1,
+		subtotalNgn: numberValue(order.total),
+		feeNgn: 0,
+		totalNgn: numberValue(order.total),
+		gateway: order.gateway === 'paystack' ? 'paystack' : 'usd',
+		method: String(order.gateway ?? 'paystack'),
+		status,
+		createdAt: String(order.created_at ?? new Date(0).toISOString()),
+		items: []
+	};
+}
+
+export async function listSupabaseUsers(query: UserQuery = {}, selectedId?: string): Promise<{
+	page: Page<AdminUser>;
+	counts: { total: number; active: number; flagged: number; blocked: number; verifiedOrganizers: number };
+	selected: AdminUser | null;
+	related: { tickets: AdminTicket[]; orders: AdminOrder[]; audit: [] };
+}> {
+	const client = createAdminClient();
+	if (!client) throw new Error('Supabase admin client is not configured.');
+	const bundle = await loadPeopleBundle(client);
+	const profileById = new Map(bundle.profiles.map((profile) => [profile.id, profile]));
+	const users = bundle.profiles.map((profile) => mapDataUser(profile, bundle.authUsers.get(profile.id), bundle));
+	const roleMatches = (user: AdminUser) => query.role === 'all' || !query.role || user.role === query.role;
+	const filtered = users
+		.filter((user) => !query.status || query.status === 'all' || user.status === query.status)
+		.filter(roleMatches)
+		.filter((user) => !query.kyc || query.kyc === 'all' || String(user.kycTier) === query.kyc)
+		.filter((user) => {
+			const q = (query.q ?? '').trim().toLowerCase();
+			return !q || [user.name, user.handle, user.email, user.phone, user.id].some((v) => v.toLowerCase().includes(q));
+		})
+		.sort((a, b) => b.joinedAt.localeCompare(a.joinedAt));
+	const page = paginate(filtered, query.page, query.perPage ?? 10);
+	const selected = users.find((user) => user.id === selectedId) ?? page.rows[0] ?? null;
+	const eventById = new Map(bundle.events.map((event) => [event.id, event]));
+	const relatedTickets = selected ? (bundle.ticketsByOwner.get(selected.id) ?? []).slice(0, 8).map((ticket) => mapDataTicket(ticket, profileById)) : [];
+	const relatedOrders = selected ? (bundle.ordersByOwner.get(selected.id) ?? []).slice(0, 8).map((order) => mapDataOrder(order, profileById, eventById)) : [];
+	return {
+		page,
+		counts: {
+			total: users.length,
+			active: users.filter((user) => user.status === 'active').length,
+			flagged: 0,
+			blocked: users.filter((user) => user.status === 'blocked').length,
+			verifiedOrganizers: bundle.profiles.filter((profile) => profile.operating_identity === 'organizer' || bundle.events.some((event) => event.organizerId === profile.id)).length
+		},
+		selected,
+		related: { tickets: relatedTickets, orders: relatedOrders, audit: [] }
+	};
+}
+
+export async function getSupabaseUser(id: string): Promise<{ user: AdminUser; tickets: AdminTicket[]; orders: AdminOrder[] } | null> {
+	const result = await listSupabaseUsers({ page: 1, perPage: 1 }, id);
+	if (!result.selected) return null;
+	return { user: result.selected, tickets: result.related.tickets, orders: result.related.orders };
+}
+
+function mapDataOrganizer(profile: DataProfile, auth: DataAuthUser | undefined, bundle: PeopleBundle): AdminOrganizer {
+	const ownEvents = bundle.events.filter((event) => event.organizerId === profile.id);
+	const ticketsSold = ownEvents.reduce((sum, event) => sum + (bundle.ticketsByEvent.get(event.id) ?? 0), 0);
+	const grossVolumeNgn = ownEvents.reduce((sum, event) => sum + (bundle.paidGrossByEvent.get(event.id) ?? 0), 0);
+	return {
+		id: profile.id,
+		name: String(profile.name ?? 'Organizer'),
+		legalName: String(profile.name ?? 'Organizer'),
+		slug: String(profile.handle ?? profile.id.slice(0, 8)),
+		cacRegNumber: '',
+		tier: 1,
+		status: profile.verified ? 'verified' : 'pending',
+		city: String(profile.city ?? '—'),
+		state: '',
+		contactName: String(profile.name ?? ''),
+		contactEmail: String(auth?.email ?? ''),
+		contactPhone: String(auth?.phone ?? ''),
+		eventsCount: ownEvents.length,
+		ticketsSold,
+		grossVolumeNgn,
+		escrowHeldNgn: 0,
+		settlementBank: '',
+		settlementAccountLast4: '',
+		settlementState: 'pending',
+		risk: 'low',
+		verifiedDocs: 0,
+		requiredDocs: 0,
+		createdAt: String(profile.created_at ?? new Date(0).toISOString())
+	};
+}
+
+export async function listSupabaseOrganizers(query: OrganizerQuery = {}, selectedId?: string): Promise<{
+	page: Page<AdminOrganizer>;
+	counts: { total: number; pending: number; verified: number; flagged: number; tier1: number; payoutVolumeNgn: number };
+	selected: AdminOrganizer | null;
+	pipelines: Record<string, { id: string; title: string; sold: number }[]>;
+}> {
+	const client = createAdminClient();
+	if (!client) throw new Error('Supabase admin client is not configured.');
+	const bundle = await loadPeopleBundle(client);
+	const authProfiles = new Set(bundle.events.map((event) => event.organizerId));
+	const profiles = bundle.profiles.filter((profile) => profile.operating_identity === 'organizer' || authProfiles.has(profile.id));
+	const organizers = profiles.map((profile) => mapDataOrganizer(profile, bundle.authUsers.get(profile.id), bundle));
+	const profileById = new Map(bundle.profiles.map((profile) => [profile.id, profile]));
+	const filtered = organizers
+		.filter((org) => !query.status || query.status === 'all' || org.status === query.status)
+		.filter((org) => !query.tier || query.tier === 'all')
+		.filter((org) => {
+			const q = (query.q ?? '').trim().toLowerCase();
+			return !q || [org.name, org.legalName, org.contactName, org.contactEmail, org.cacRegNumber].some((v) => v.toLowerCase().includes(q));
+		})
+		.sort((a, b) => b.grossVolumeNgn - a.grossVolumeNgn);
+	const page = paginate(filtered, query.page, query.perPage ?? 10);
+	const selected = organizers.find((org) => org.id === selectedId) ?? page.rows[0] ?? null;
+	const pipelines = Object.fromEntries([...new Set([...page.rows.map((org) => org.id), selected?.id].filter(Boolean) as string[])].map((id) => [
+		id,
+		bundle.events.filter((event) => event.organizerId === id).slice(0, 3).map((event) => ({ id: event.id, title: event.title, sold: event.sold }))
+	]));
+	return {
+		page,
+		counts: {
+			total: organizers.length,
+			pending: organizers.filter((org) => org.status === 'pending').length,
+			verified: organizers.filter((org) => org.status === 'verified').length,
+			flagged: 0,
+			tier1: 0,
+			payoutVolumeNgn: organizers.reduce((sum, org) => sum + org.grossVolumeNgn, 0)
+		},
+		selected,
+		pipelines
+	};
+}
+
+export async function getSupabaseOrganizer(id: string): Promise<{ organizer: AdminOrganizer; events: AdminEvent[] } | null> {
+	const client = createAdminClient();
+	if (!client) throw new Error('Supabase admin client is not configured.');
+	const bundle = await loadPeopleBundle(client);
+	const profileById = new Map(bundle.profiles.map((profile) => [profile.id, profile]));
+	const eventOrganizerIds = new Set(bundle.events.map((event) => event.organizerId));
+	const profile = bundle.profiles.find((item) => item.id === id || item.handle === id);
+	if (!profile || (profile.operating_identity !== 'organizer' && !eventOrganizerIds.has(profile.id))) return null;
+	return {
+		organizer: mapDataOrganizer(profile, bundle.authUsers.get(profile.id), bundle),
+		events: bundle.events.filter((event) => event.organizerId === profile.id)
 	};
 }
 

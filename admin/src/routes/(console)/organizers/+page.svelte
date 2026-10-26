@@ -81,13 +81,10 @@
 		eyebrow="Compliance & KYB engine v2.45.0"
 	>
 		{#snippet actions()}
-			<a class="btn btn-sm" href="/api/export/organizers" download><Download size={12} /> Export KYB Compliance CSV</a>
-			<a
-				class="btn btn-sm btn-primary"
-				href="/organizers?status=pending"
-			>
-				<BadgeCheck size={13} /> Verify Manual KYB
-			</a>
+			{#if data.source === 'demo'}
+				<a class="btn btn-sm" href="/api/export/organizers" download><Download size={12} /> Export KYB Compliance CSV</a>
+				<a class="btn btn-sm btn-primary" href="/organizers?status=pending"><BadgeCheck size={13} /> Verify Manual KYB</a>
+			{/if}
 		{/snippet}
 	</PageHeader>
 
@@ -95,22 +92,22 @@
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Total organizers</p><Building2 size={13} class="text-[#6f6f7b]" /></div>
 			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">{num(data.counts.total)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">All registered orgs <span class="text-emerald-300">+18 this month</span></p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{data.source === 'supabase' ? 'Organizer profiles and event owners' : 'All registered orgs +18 this month'}</p>
 		</div>
 		<div class="panel border-amber-400/25 bg-amber-400/[0.03] p-4">
-			<div class="flex items-center justify-between"><p class="mono-label !text-amber-200/80">Pending KYB</p><span class="status-dot !bg-amber-400"></span></div>
+			<div class="flex items-center justify-between"><p class="mono-label !text-amber-200/80">{data.source === 'supabase' ? 'Unverified profiles' : 'Pending KYB'}</p><span class="status-dot !bg-amber-400"></span></div>
 			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-amber-100">{String(data.counts.pending).padStart(2, '0')}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Needs review SLA &lt; 4h · {data.counts.flagged} critical</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{data.source === 'supabase' ? 'profiles.verified = false · not a KYB review state' : `Needs review SLA < 4h · ${data.counts.flagged} critical`}</p>
 		</div>
 		<div class="panel p-4">
-			<div class="flex items-center justify-between"><p class="mono-label">Tier-1 verified (CAC)</p><ShieldCheck size={13} class="text-[#6f6f7b]" /></div>
-			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">{num(data.counts.tier1)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">CAC validated · {Math.round((data.counts.tier1 / Math.max(1, data.counts.total)) * 100)}% of base</p>
+			<div class="flex items-center justify-between"><p class="mono-label">{data.source === 'supabase' ? 'Verified profiles' : 'Tier-1 verified (CAC)'}</p><ShieldCheck size={13} class="text-[#6f6f7b]" /></div>
+			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">{num(data.source === 'supabase' ? data.counts.verified : data.counts.tier1)}</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{data.source === 'supabase' ? 'profiles.verified = true · not CAC/KYB' : `CAC validated · ${Math.round((data.counts.tier1 / Math.max(1, data.counts.total)) * 100)}% of base`}</p>
 		</div>
 		<div class="panel p-4">
-			<div class="flex items-center justify-between"><p class="mono-label">Active payout volume</p><Landmark size={13} class="text-[#6f6f7b]" /></div>
+			<div class="flex items-center justify-between"><p class="mono-label">{data.source === 'supabase' ? 'Paid order volume' : 'Active payout volume'}</p><Landmark size={13} class="text-[#6f6f7b]" /></div>
 			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">{moneyCompact(data.counts.payoutVolumeNgn)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">30D escrow & settled <span class="text-emerald-300">+12.4% MoM</span></p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{data.source === 'supabase' ? 'Paid orders associated with organizer events' : '30D escrow & settled · +12.4% MoM'}</p>
 		</div>
 	</div>
 
@@ -120,17 +117,24 @@
 			<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
 				<select name="status" class="select !h-[34px] !text-[11.5px]" onchange={change} aria-label="Filter by status">
 					<option value="all" selected={data.filters.status === 'all'}>Status: All ({data.counts.total})</option>
-					<option value="verified" selected={data.filters.status === 'verified'}>Verified</option>
-					<option value="pending" selected={data.filters.status === 'pending'}>Pending KYB</option>
-					<option value="flagged" selected={data.filters.status === 'flagged'}>Flagged</option>
-					<option value="suspended" selected={data.filters.status === 'suspended'}>Suspended</option>
+					{#if data.source === 'supabase'}
+						<option value="verified" selected={data.filters.status === 'verified'}>Profile verified</option>
+						<option value="pending" selected={data.filters.status === 'pending'}>Profile unverified</option>
+					{:else}
+						<option value="verified" selected={data.filters.status === 'verified'}>Verified</option>
+						<option value="pending" selected={data.filters.status === 'pending'}>Pending KYB</option>
+						<option value="flagged" selected={data.filters.status === 'flagged'}>Flagged</option>
+						<option value="suspended" selected={data.filters.status === 'suspended'}>Suspended</option>
+					{/if}
 				</select>
-				<select name="tier" class="select !h-[34px] !text-[11.5px]" onchange={change} aria-label="Filter by tier">
-					<option value="all" selected={data.filters.tier === 'all'}>Tier: All entities</option>
-					<option value="1" selected={data.filters.tier === '1'}>Tier 1</option>
-					<option value="2" selected={data.filters.tier === '2'}>Tier 2</option>
-					<option value="3" selected={data.filters.tier === '3'}>Tier 3</option>
-				</select>
+				{#if data.source === 'demo'}
+					<select name="tier" class="select !h-[34px] !text-[11.5px]" onchange={change} aria-label="Filter by tier">
+						<option value="all" selected={data.filters.tier === 'all'}>Tier: All entities</option>
+						<option value="1" selected={data.filters.tier === '1'}>Tier 1</option>
+						<option value="2" selected={data.filters.tier === '2'}>Tier 2</option>
+						<option value="3" selected={data.filters.tier === '3'}>Tier 3</option>
+					</select>
+				{/if}
 				<span class="chip !h-[34px] justify-center !text-[9px]">Sort: Volume desc</span>
 			</div>
 			<a href="/organizers" class="btn btn-sm btn-ghost xl:ml-auto">Reset</a>
@@ -140,8 +144,8 @@
 	<div class="grid grid-cols-1 gap-2.5 min-[1400px]:grid-cols-[1.62fr_1fr]">
 		<section class="panel min-w-0 overflow-hidden">
 			<div class="flex items-center justify-between border-b border-[#26262e] px-4 py-2.5">
-				<p class="font-code text-[9px] uppercase tracking-[0.1em] text-[#8f8f9b]">Verified registry <span class="text-[#54545f]">· {data.table.rows.length} of {data.table.total}</span></p>
-				<span class="chip chip-ok !h-[18px] !text-[8px]"><span class="status-dot !h-1 !w-1"></span> Real-time sync active</span>
+				<p class="font-code text-[9px] uppercase tracking-[0.1em] text-[#8f8f9b]">{data.source === 'supabase' ? 'Organizer profiles' : 'Verified registry'} <span class="text-[#54545f]">· {data.table.rows.length} of {data.table.total}</span></p>
+				<span class="chip {data.source === 'supabase' ? 'chip-accent' : 'chip-ok'} !h-[18px] !text-[8px]"><span class="status-dot !h-1 !w-1"></span> {data.source === 'supabase' ? 'Supabase' : 'Demo seed'}</span>
 			</div>
 			{#if data.table.rows.length === 0}
 				<EmptyState title="No organizers found" message="Try a different status or search term." />
@@ -165,7 +169,7 @@
 													<span class="truncate">{org.name}</span>
 													{#if org.risk === 'high'}<span class="chip chip-danger !h-[15px] !px-1 !text-[7px]">Flag</span>{/if}
 												</button>
-												<p class="mt-0.5 max-w-[112px] truncate font-code text-[8.5px] uppercase tracking-[0.06em] text-[#6f6f7b] sm:max-w-none">{org.cacRegNumber} · {org.city}, {org.state}</p>
+												<p class="mt-0.5 max-w-[112px] truncate font-code text-[8.5px] uppercase tracking-[0.06em] text-[#6f6f7b] sm:max-w-none">{data.source === 'supabase' ? `Profile ${org.id.slice(0, 8)} · ${org.city}` : `${org.cacRegNumber} · ${org.city}, ${org.state}`}</p>
 											</div>
 										</div>
 									</td>
@@ -175,17 +179,14 @@
 									</td>
 									<td>
 										<div class="flex flex-col items-start gap-1">
-											<span class="chip !h-[16px] !text-[7.5px]">Tier {org.tier} · {org.tier === 1 ? 'Verified' : org.status === 'pending' ? 'Pending' : 'Verified'}</span>
-											<StatusChip label={meta.label} tone={meta.tone} />
+											<span class="chip !h-[16px] !text-[7.5px]">{data.source === 'supabase' ? 'Organizer profile' : `Tier ${org.tier} · ${org.tier === 1 ? 'Verified' : org.status === 'pending' ? 'Pending' : 'Verified'}`}</span>
+											<StatusChip label={data.source === 'supabase' ? (org.status === 'verified' ? 'Profile verified' : 'Profile unverified') : meta.label} tone={data.source === 'supabase' ? (org.status === 'verified' ? 'ok' : 'neutral') : meta.tone} />
 										</div>
 									</td>
 									<td class="num">
 										<span class="whitespace-nowrap">{moneyCompact(org.grossVolumeNgn)}</span>
 										<p class="truncate text-[8.5px] font-normal text-[#6f6f7b]">{org.eventsCount} events · {org.ticketsSold.toLocaleString('en-US')} sold</p>
-										<p class="mt-0.5 flex items-center justify-end gap-1 truncate font-code text-[8px] font-normal text-[#6f6f7b]">
-											<span class="h-1 w-1 shrink-0 rounded-full {org.settlementState === 'linked' ? 'bg-emerald-400' : org.settlementState === 'pending' ? 'bg-amber-400' : 'bg-red-400'}"></span>
-											<span class="truncate">{org.settlementBank} ····{org.settlementAccountLast4}</span>
-										</p>
+										<p class="mt-0.5 truncate font-code text-[8px] font-normal text-[#6f6f7b]">{data.source === 'supabase' ? 'Settlement profile not in schema' : `${org.settlementBank} ····${org.settlementAccountLast4}`}</p>
 									</td>
 									<td>
 										<div class="flex justify-end gap-1">
@@ -205,7 +206,37 @@
 		</section>
 
 		<aside class="min-w-0">
-			{#if selected}
+			{#if selected && data.source === 'supabase'}
+				<div class="panel sticky top-[76px] overflow-hidden">
+					<div class="border-b border-[#26262e] px-4 py-3">
+						<p class="mono-label">Supabase organizer profile</p>
+						<p class="mt-1 font-code text-[8.5px] text-[#6f6f7b]">profiles.id · {selected.id}</p>
+					</div>
+					<div class="space-y-4 p-4">
+						<div>
+							<h3 class="font-display text-[16px] font-semibold text-[#f0f0f5]">{selected.name}</h3>
+							<p class="mt-1 text-[10.5px] text-[#8f8f9b]">@{selected.slug} · {selected.city}</p>
+							<p class="mt-2 text-[10.5px] text-[#8f8f9b]">Profile verified flag: <strong class="text-[#dcdce4]">{selected.status === 'verified' ? 'true' : 'false'}</strong>. This is not a KYB result.</p>
+							<p class="mt-2 break-all font-code text-[9px] text-[#8f8f9b]">{selected.contactEmail || 'No auth email available'}</p>
+						</div>
+						<div class="grid grid-cols-3 gap-2">
+							<div class="panel-inset p-2"><p class="mono-label !text-[7px]">Events</p><p class="mt-1 text-[12px] text-[#ececf1]">{selected.eventsCount}</p></div>
+							<div class="panel-inset p-2"><p class="mono-label !text-[7px]">Tickets</p><p class="mt-1 text-[12px] text-[#ececf1]">{selected.ticketsSold}</p></div>
+							<div class="panel-inset p-2"><p class="mono-label !text-[7px]">Paid GMV</p><p class="mt-1 text-[12px] text-[#ececf1]">{moneyCompact(selected.grossVolumeNgn)}</p></div>
+						</div>
+						<div>
+							<p class="mono-label !text-[8px]">Linked events</p>
+							<div class="mt-2 space-y-1.5">
+								{#each pipeline as event}
+									<a href={`/events/${event.id}`} class="flex items-center justify-between gap-2 rounded-md border border-[#292930] px-2 py-1.5 hover:bg-[#1e1e25]">
+										<span class="truncate text-[10px] text-[#c9c9d4]">{event.title}</span><span class="font-code text-[8px] text-[#6f6f7b]">{event.sold} sold</span>
+									</a>
+								{:else}<p class="text-[10px] text-[#6f6f7b]">No events linked to this profile.</p>{/each}
+							</div>
+							</div>
+						</div>
+				</div>
+			{:else if selected}
 				{@const meta = organizerStatus(selected.status)}
 				<div class="panel sticky top-[76px] overflow-hidden">
 					<div class="flex items-start justify-between gap-2 border-b border-[#26262e] px-4 py-3">

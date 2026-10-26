@@ -20,6 +20,7 @@
 		"@fontsource/space-grotesk": "^5.0.0",
 		"@lucide/svelte": "^1.55.0",
 		"@supabase/supabase-js": "^2.49.0",
+		"dotenv": "^16.6.1",
 		"qrcode": "^1.5.4",
 		"zod": "^4.6.6"
 	},

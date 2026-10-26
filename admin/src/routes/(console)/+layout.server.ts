@@ -5,13 +5,14 @@ import { adminDataSource } from '$admin/server/supabase-data';
 
 export const load: LayoutServerLoad = async ({ locals, parent }) => {
 	if (!locals.admin) redirect(303, '/login');
-	const { admin } = await parent();
+	const { admin, mode } = await parent();
 	const source = adminDataSource();
 	const refunds = source === 'demo' ? getRefundsData() : null;
 	const cases = source === 'demo' ? countCases() : null;
 
 	return {
 		admin,
+		mode,
 		counts: {
 			// The customer app's public.events schema has no moderation status column.
 			pendingEvents: source === 'supabase' ? 0 : countEvents().pending,

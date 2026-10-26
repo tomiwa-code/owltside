@@ -90,7 +90,7 @@ export interface AdminOrganizer {
 	beneficiaryMismatch?: boolean;
 }
 
-export type TicketStatus = 'valid' | 'void' | 'refunded' | 'transferred';
+export type TicketStatus = 'valid' | 'used' | 'void' | 'refunded' | 'transferred';
 
 export interface AdminTicket {
 	id: string;

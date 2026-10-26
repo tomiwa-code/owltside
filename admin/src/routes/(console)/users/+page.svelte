@@ -78,13 +78,15 @@
 <div class="space-y-4">
 	<PageHeader
 		title="Users Directory"
-		subtitle="Audit account statuses, access rights, KYC tiers, and ticket spend across the platform."
+		subtitle={data.source === 'supabase' ? 'Profiles, auth contacts, and associated ticket/order totals from the configured Supabase project.' : 'Audit account statuses, access rights, KYC tiers, and ticket spend across the platform.'}
 		crumbs={['platform', 'users']}
-		eyebrow="Live cluster"
+		eyebrow={data.source === 'supabase' ? 'Supabase · live data' : 'Demo seed data'}
 	>
 		{#snippet actions()}
-			<a class="btn btn-sm" href="/api/export/users" download><Download size={12} /> Export CSV Roster</a>
-			<a class="btn btn-sm btn-primary" href="/staff"><UserCheck size={13} /> Invite User / Staff</a>
+			{#if data.source === 'demo'}
+				<a class="btn btn-sm" href="/api/export/users" download><Download size={12} /> Export CSV Roster</a>
+				<a class="btn btn-sm btn-primary" href="/staff"><UserCheck size={13} /> Invite User / Staff</a>
+			{/if}
 		{/snippet}
 	</PageHeader>
 
@@ -92,22 +94,22 @@
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Total registered</p><Users size={13} class="text-[#6f6f7b]" /></div>
 			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">{num(data.counts.total)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Cumulative accounts <span class="text-emerald-300">+12.4% MoM</span></p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{data.source === 'supabase' ? 'public.profiles records' : 'Cumulative accounts · +12.4% MoM'}</p>
 		</div>
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Active attendees</p><span class="status-dot"></span></div>
 			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">{num(data.counts.active)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Engaged within last 90 days · {Math.round((data.counts.active / data.counts.total) * 100)}% active</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{data.source === 'supabase' ? 'Not currently banned in Supabase Auth' : `Engaged within last 90 days · ${Math.round((data.counts.active / Math.max(1, data.counts.total)) * 100)}% active`}</p>
 		</div>
 		<div class="panel p-4">
-			<div class="flex items-center justify-between"><p class="mono-label">Verified organizers</p><ShieldCheck size={13} class="text-[#8dd3c7]" /></div>
+			<div class="flex items-center justify-between"><p class="mono-label">{data.source === 'supabase' ? 'Organizer profiles' : 'Verified organizers'}</p><ShieldCheck size={13} class="text-[#8dd3c7]" /></div>
 			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">{num(data.counts.verifiedOrganizers)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">KYC tiers 1–3 · certified merchant payouts</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{data.source === 'supabase' ? 'operating_identity = organizer' : 'KYC tiers 1–3 · certified merchant payouts'}</p>
 		</div>
 		<div class="panel border-red-500/20 bg-red-500/[0.03] p-4">
-			<div class="flex items-center justify-between"><p class="mono-label !text-red-200/70">Suspended / flagged</p><span class="chip chip-danger !h-[17px] !text-[8px]">Under audit</span></div>
+			<div class="flex items-center justify-between"><p class="mono-label !text-red-200/70">{data.source === 'supabase' ? 'Banned accounts' : 'Suspended / flagged'}</p><span class="chip chip-danger !h-[17px] !text-[8px]">{data.source === 'supabase' ? 'Auth status' : 'Under audit'}</span></div>
 			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-red-100">{num(data.counts.flagged + data.counts.blocked)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#a0a0ab]">Chargebacks, bot signatures, KYC blocks</p>
+			<p class="mt-1.5 text-[10.5px] text-[#a0a0ab]">{data.source === 'supabase' ? 'banned_until in Supabase Auth' : 'Chargebacks, bot signatures, KYC blocks'}</p>
 		</div>
 	</div>
 
@@ -118,21 +120,26 @@
 				<select name="status" class="select !h-[34px] !text-[11.5px]" onchange={change} aria-label="Filter by status">
 					<option value="all" selected={data.filters.status === 'all'}>Status: All</option>
 					<option value="active" selected={data.filters.status === 'active'}>Active</option>
-					<option value="flagged" selected={data.filters.status === 'flagged'}>Flagged</option>
+					{#if data.source === 'demo'}<option value="flagged" selected={data.filters.status === 'flagged'}>Flagged</option>{/if}
 					<option value="blocked" selected={data.filters.status === 'blocked'}>Blocked</option>
 				</select>
 				<select name="role" class="select !h-[34px] !text-[11.5px]" onchange={change} aria-label="Filter by role">
 					<option value="all" selected={data.filters.role === 'all'}>Role: All</option>
 					<option value="Attendee" selected={data.filters.role === 'Attendee'}>Attendee</option>
 					<option value="Organizer" selected={data.filters.role === 'Organizer'}>Organizer</option>
-					<option value="Speaker" selected={data.filters.role === 'Speaker'}>Speaker</option>
+					{#if data.source === 'demo'}<option value="Speaker" selected={data.filters.role === 'Speaker'}>Speaker</option>{/if}
 				</select>
 				<select name="kyc" class="select !h-[34px] !text-[11.5px]" onchange={change} aria-label="Filter by KYC">
 					<option value="all" selected={data.filters.kyc === 'all'}>KYC: All tiers</option>
-					<option value="3" selected={data.filters.kyc === '3'}>Tier 3</option>
-					<option value="2" selected={data.filters.kyc === '2'}>Tier 2</option>
-					<option value="1" selected={data.filters.kyc === '1'}>Tier 1</option>
-					<option value="0" selected={data.filters.kyc === '0'}>Tier 0</option>
+					{#if data.source === 'supabase'}
+						<option value="1" selected={data.filters.kyc === '1'}>Profile verified</option>
+						<option value="0" selected={data.filters.kyc === '0'}>Profile unverified</option>
+					{:else}
+						<option value="3" selected={data.filters.kyc === '3'}>Tier 3</option>
+						<option value="2" selected={data.filters.kyc === '2'}>Tier 2</option>
+						<option value="1" selected={data.filters.kyc === '1'}>Tier 1</option>
+						<option value="0" selected={data.filters.kyc === '0'}>Tier 0</option>
+					{/if}
 				</select>
 				<span class="chip !h-[34px] justify-center !text-[9px]">Sort: Latest registration</span>
 			</div>
@@ -144,7 +151,7 @@
 		<div class="flex items-center justify-between border-b border-[#26262e] px-4 py-2.5">
 			<div class="flex items-center gap-2">
 				<p class="font-code text-[9px] uppercase tracking-[0.1em] text-[#8f8f9b]">Entities discovered</p>
-				<span class="chip chip-ok !h-[18px] !text-[8px]">Query {data.table.total.toLocaleString('en-US')} · 8.4ms</span>
+				<span class="chip {data.source === 'supabase' ? 'chip-accent' : 'chip-ok'} !h-[18px] !text-[8px]">{data.source === 'supabase' ? 'Supabase query' : 'Demo seed'} · {data.table.total.toLocaleString('en-US')}</span>
 			</div>
 			<div class="flex items-center gap-2 font-code text-[8px] uppercase tracking-[0.08em] text-[#6f6f7b]">
 				<span>Engine: postgres-read-replica-01</span>
@@ -177,7 +184,7 @@
 							<td>
 								<p class="text-[10.5px] text-[#d4d4dc]">{user.role}</p>
 								<div class="mt-0.5 flex items-center gap-1">
-									<span class="font-code text-[8.5px] text-[#8f8f9b]">KYC Tier {user.kycTier}</span>
+									<span class="font-code text-[8.5px] text-[#8f8f9b]">{data.source === 'supabase' ? `Profile verified: ${user.kycTier === 1 ? 'yes' : 'no'}` : `KYC Tier ${user.kycTier}`}</span>
 									{#if user.status !== 'active'}<StatusChip label={status.label} tone={status.tone} />{/if}
 								</div>
 							</td>
@@ -212,7 +219,7 @@
 						<div class="min-w-0 flex-1">
 							<div class="flex flex-wrap items-center gap-1.5">
 								<h3 class="font-display text-[17px] font-semibold text-[#f0f0f5]">{selected.name}</h3>
-								<span class="chip chip-accent !h-[17px] !text-[8px]">Tier {selected.kycTier} verified</span>
+								<span class="chip chip-accent !h-[17px] !text-[8px]">{data.source === 'supabase' ? `Profile verified: ${selected.kycTier === 1 ? 'yes' : 'no'}` : `Tier ${selected.kycTier} verified`}</span>
 							</div>
 							<p class="mt-0.5 font-code text-[9px] text-[#8f8f9b]">@{selected.handle} · #{selected.id.toUpperCase()}</p>
 							<div class="mt-2 flex flex-wrap gap-1">
@@ -224,9 +231,9 @@
 					</div>
 
 					<div class="mt-3 flex flex-wrap gap-1.5">
-						<button type="button" class="btn btn-sm" onclick={() => toasts.info('Admin ping sent', `${selected.name} received a secure in-app notification.`)}>
-							<Smartphone size={12} /> Send admin ping
-						</button>
+						{#if data.source === 'demo'}
+							<button type="button" class="btn btn-sm" onclick={() => toasts.info('Admin ping sent', `${selected.name} received a secure in-app notification.`)}><Smartphone size={12} /> Send admin ping</button>
+						{/if}
 						<button type="button" class="btn btn-sm" onclick={exportDossier}><Download size={12} /> Export dossier</button>
 					</div>
 
@@ -237,6 +244,16 @@
 					</div>
 
 					{#if tab === 'overview'}
+						{#if data.source === 'supabase'}
+							<div class="mt-3 space-y-3">
+								<div><p class="mono-label !text-[7.5px]">Supabase profile record</p><p class="mt-1 break-all font-code text-[9px] text-[#b7b7c2]">{selected.id}</p></div>
+								<div><p class="mono-label !text-[7.5px]">Auth contact</p><p class="mt-1 text-[10px] text-[#dcdce4]">{selected.email || 'No email returned by Auth'}</p><p class="mt-1 text-[10px] text-[#dcdce4]">{selected.phone || 'No phone returned by Auth'}</p></div>
+								<div><p class="mono-label !text-[7.5px]">Profile fields</p><p class="mt-1 text-[10px] text-[#a0a0ab]">City: {selected.city} · Identity: {selected.role} · verified: {selected.kycTier === 1 ? 'true' : 'false'}</p></div>
+								<div><p class="mono-label !text-[7.5px]">Auth activity</p><p class="mt-1 text-[10px] text-[#a0a0ab]">Created {relative(selected.joinedAt)} · Last sign-in {relative(selected.lastSeenAt)} · Account {selected.status}</p></div>
+								<p class="rounded-md border border-[#292930] bg-[#18181e] p-2 text-[9.5px] leading-relaxed text-[#8f8f9b]">The current schema has no NIN, KYC-tier, chargeback, or admin audit tables. Those fields are not inferred here.</p>
+								<div><p class="mono-label !text-[7.5px]">Account status action</p><p class="mt-1 text-[10px] text-[#8f8f9b]">Status changes are read-only until an admin account-status field or RPC is added.</p></div>
+							</div>
+						{:else}
 						<div class="mt-3 space-y-3">
 							<div>
 								<p class="mono-label !text-[7.5px]">Personal & contact telemetry</p>
@@ -276,6 +293,7 @@
 								{/if}
 							</div>
 						</div>
+						{/if}
 					{:else if tab === 'passes'}
 						<div class="mt-3 space-y-1.5">
 							{#each data.related.tickets as ticket}
