@@ -90,13 +90,30 @@ identifier, amount and status always stay visible without clipping.
 
 ## Data layer
 
-`src/lib/server/store.ts` is the single read/write surface over the deterministic
-seed in `src/lib/server/seed.ts` (18,420 users, 142 events, ~4,820 tickets,
-~4,900 orders, refunds, moderation cases, staff, 1,428 audit records, settings).
-The store is built once per server process; mutations last for the process
-lifetime. In production the same query surface is served by Supabase — routes,
-types and UI do not change. `subscribe()`/`touch()` are the hooks for pushing
-live updates into the client.
+The console has two data modes. Without a server-side Supabase URL and service
+key, it uses the deterministic demo seed in `src/lib/server/seed.ts`. With
+`PUBLIC_SUPABASE_URL` (or `SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY` set in
+`admin/.env`, the event registry, event dossier, dashboard order/ticket metrics,
+and event counts read from the configured Supabase project. The service key is
+used only on the server to bypass attendee/organizer-scoped RLS; do not expose it
+as a `PUBLIC_` variable or in browser code. Copy these values from the main
+app's local environment into `admin/.env` (the nested admin app does not inherit
+the root `.env` automatically).
+
+The current schema in `../supabase/sql/000_full_schema.sql` has `events`,
+`profiles`, `tickets`, and `orders`, but does not store event moderation status,
+admin audit records, or settlement records. Accordingly, the live events view
+is read-only; pending/draft/suspended counts are not reported as real, and event
+creation/moderation actions are disabled rather than silently changing demo
+state. Dashboard gross volume is calculated from paid + pending orders over the
+last 30 days; paid order total, ticket counts/status, event counts, and event
+capacity/sales come from database rows. Metrics that the schema cannot support
+(such as settlement fees and moderation queues) are omitted/zeroed in live mode.
+
+Other admin modules (users, organizers, refunds, moderation, staff, settings,
+exports, and their mutations) still use the in-memory demo store. The `subscribe()`/
+`touch()` hooks apply to that demo store only; Supabase reads currently refresh
+when a page is loaded or revalidated.
 
 ## API surface
 

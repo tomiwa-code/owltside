@@ -64,22 +64,24 @@
 		title={event.title}
 		subtitle={`${event.category} · ${event.venue}, ${event.city} · ${dateTime(event.startsAt)}`}
 		crumbs={['platform', 'events']}
-		eyebrow={event.status === 'published' ? 'Live listing' : event.status}
+		eyebrow={data.source === 'supabase' ? 'Supabase event record' : event.status === 'published' ? 'Live listing' : event.status}
 	>
 		{#snippet actions()}
-			<a class="btn btn-sm" href="/api/export/events?event={event.id}" download><Download size={12} /> Export roster</a>
+			{#if data.source === 'demo'}
+				<a class="btn btn-sm" href="/api/export/events?event={event.id}" download><Download size={12} /> Export roster</a>
+			{/if}
 			<a class="btn btn-sm" href={`${data.publicAppUrl}/events/${event.slug}`} target="_blank" rel="noreferrer">
 				<ExternalLink size={12} /> View public page
 			</a>
-			{#if event.status === 'pending' || event.status === 'draft'}
+			{#if data.source === 'demo' && (event.status === 'pending' || event.status === 'draft')}
 				<button type="button" class="btn btn-sm btn-primary" onclick={() => { action = 'published'; actionOpen = true; }}>
 					<Check size={12} /> Publish event
 				</button>
-			{:else if event.status === 'published'}
+			{:else if data.source === 'demo' && event.status === 'published'}
 				<button type="button" class="btn btn-sm btn-danger-soft" onclick={() => { action = 'suspended'; actionOpen = true; }}>
 					<Flag size={12} /> Suspend
 				</button>
-			{:else}
+			{:else if data.source === 'demo'}
 				<button type="button" class="btn btn-sm btn-primary" onclick={() => { action = 'published'; actionOpen = true; }}>
 					Reinstate
 				</button>
@@ -97,7 +99,7 @@
 		<div class="panel p-4">
 			<p class="mono-label">Gross ticketing</p>
 			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-[#f1f1f6]">{moneyCompact(event.grossNgn)}</p>
-			<p class="mt-1.5 font-code text-[9px] uppercase tracking-[0.06em] text-[#6f6f7b]">Paystack settled · platform fee 6.5%</p>
+			<p class="mt-1.5 font-code text-[9px] uppercase tracking-[0.06em] text-[#6f6f7b]">{data.source === 'supabase' ? 'Estimated from tier sold × price' : 'Paystack settled · platform fee 6.5%'}</p>
 		</div>
 		<div class="panel p-4">
 			<p class="mono-label">Tickets remaining</p>
@@ -140,11 +142,17 @@
 			<div>
 				<p class="mono-label">Event summary</p>
 				<p class="mt-2 text-[12px] leading-relaxed text-[#a0a0ab]">
-					A curated {event.category.toLowerCase()} experience hosted by {event.organizerName} at {event.venue},
-					{event.city}. Tickets are issued as signed digital passes, delivered straight to Apple and Google Wallet
-					and redeemable at the venue entrance.
+					{#if data.source === 'supabase'}
+						Supabase event record for {event.title}, hosted by {event.organizerName} at {event.venue}, {event.city}.
+						The current events schema does not include a moderation status or event description field.
+					{:else}
+						A curated {event.category.toLowerCase()} experience hosted by {event.organizerName} at {event.venue},
+						{event.city}. Tickets are issued as signed digital passes, delivered straight to Apple and Google Wallet
+						and redeemable at the venue entrance.
+					{/if}
 				</p>
 
+				{#if data.source === 'demo'}
 				<div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
 					<div class="panel-inset p-3">
 						<p class="mono-label !text-[8px]">Settlement architecture</p>
@@ -163,6 +171,7 @@
 						</div>
 					</div>
 				</div>
+				{/if}
 
 				<div class="mt-4">
 					<p class="mono-label">Tier allocation & pricing</p>
@@ -193,16 +202,18 @@
 							{event.organizerName.slice(0, 2).toUpperCase()}
 						</span>
 						<div class="min-w-0 flex-1">
-							<p class="flex items-center gap-1 truncate text-[11.5px] text-[#e6e6ec]">{event.organizerName}<BadgeCheck size={11} class="text-[#8dd3c7]" /></p>
-							<p class="font-code text-[8px] uppercase tracking-[0.06em] text-[#6f6f7b]">Tier {event.organizerTier} · KYB verified</p>
+							<p class="flex items-center gap-1 truncate text-[11.5px] text-[#e6e6ec]">{event.organizerName}{#if data.source === 'demo'}<BadgeCheck size={11} class="text-[#8dd3c7]" />{/if}</p>
+							<p class="font-code text-[8px] uppercase tracking-[0.06em] text-[#6f6f7b]">{data.source === 'supabase' ? 'Public profile record' : `Tier ${event.organizerTier} · KYB verified`}</p>
 						</div>
-						<a href={`/organizers/${event.organizerId}`} class="font-code text-[8px] uppercase text-[#c6bcff] hover:underline">Dossier</a>
+						{#if data.source === 'demo'}<a href={`/organizers/${event.organizerId}`} class="font-code text-[8px] uppercase text-[#c6bcff] hover:underline">Dossier</a>{/if}
 					</div>
+					{#if data.source === 'demo'}
 					<ul class="mt-2.5 space-y-1.5 border-t border-[#2a2a32] pt-2.5">
 						<li class="flex items-center gap-1.5 text-[10px] text-[#a0a0ab]"><ShieldCheck size={11} class="text-emerald-400" /> CAC registry verified</li>
 						<li class="flex items-center gap-1.5 text-[10px] text-[#a0a0ab]"><ScanLine size={11} class="text-emerald-400" /> Payout subaccount linked</li>
 						<li class="flex items-center gap-1.5 text-[10px] text-[#a0a0ab]"><Users size={11} class="text-emerald-400" /> Venue capacity physically verified</li>
 					</ul>
+					{/if}
 				</div>
 
 				{#if event.moderationNote}
@@ -215,11 +226,11 @@
 				<div class="panel-inset p-3">
 					<div class="flex items-center justify-between">
 						<p class="mono-label !text-[8px]">Audit trail</p>
-						<a href="/audit" class="font-code text-[8px] uppercase text-[#c6bcff] hover:underline">All logs</a>
+						{#if data.source === 'demo'}<a href="/audit" class="font-code text-[8px] uppercase text-[#c6bcff] hover:underline">All logs</a>{/if}
 					</div>
 					<div class="mt-2 space-y-2">
 						{#if data.audit.length === 0}
-							<p class="text-[10px] text-[#6f6f7b]">No admin actions recorded for this event yet.</p>
+							<p class="text-[10px] text-[#6f6f7b]">{data.source === 'supabase' ? 'Admin audit storage is not part of the current Supabase schema.' : 'No admin actions recorded for this event yet.'}</p>
 						{/if}
 						{#each data.audit as record}
 							<div class="border-l border-[#33333d] pl-2.5">
@@ -230,16 +241,16 @@
 					</div>
 				</div>
 
-				<a href={`/tickets?eventId=${event.id}`} class="btn btn-sm w-full">View all issued passes</a>
+				{#if data.source === 'demo'}<a href={`/tickets?eventId=${event.id}`} class="btn btn-sm w-full">View all issued passes</a>{/if}
 			</div>
 		</div>
 	</div>
 
 	<div class="grid grid-cols-1 gap-2.5 xl:grid-cols-2">
 		<section class="panel overflow-hidden">
-			<div class="panel-head"><div><h2 class="font-display text-[14px] font-semibold text-[#f0f0f5]">Recent orders</h2><p class="mt-0.5 text-[10.5px] text-[#7f7f8c]">Latest settlement activity for this event.</p></div><a href="/orders" class="font-code text-[8px] uppercase tracking-[0.1em] text-[#c6bcff]">All orders →</a></div>
+			<div class="panel-head"><div><h2 class="font-display text-[14px] font-semibold text-[#f0f0f5]">Recent orders</h2><p class="mt-0.5 text-[10.5px] text-[#7f7f8c]">{data.source === 'supabase' ? 'Order rows are not joined in this event dossier.' : 'Latest settlement activity for this event.'}</p></div>{#if data.source === 'demo'}<a href="/orders" class="font-code text-[8px] uppercase tracking-[0.1em] text-[#c6bcff]">All orders →</a>{/if}</div>
 			{#if data.orders.length === 0}
-				<EmptyState title="No orders yet" message="Sales for this event have not started." />
+				<EmptyState title={data.source === 'supabase' ? 'Order details not loaded' : 'No orders yet'} message={data.source === 'supabase' ? 'The event record is live; this dossier does not yet load related orders.' : 'Sales for this event have not started.'} />
 			{:else}
 				<div class="table-wrap"><table class="tbl"><thead><tr><th>Order</th><th>Customer</th><th class="!text-right">Total</th><th>Status</th></tr></thead>
 					<tbody>
@@ -252,9 +263,9 @@
 			{/if}
 		</section>
 		<section class="panel overflow-hidden">
-			<div class="panel-head"><div><h2 class="font-display text-[14px] font-semibold text-[#f0f0f5]">Issued passes</h2><p class="mt-0.5 text-[10.5px] text-[#7f7f8c]">Cryptographic admission credentials.</p></div><a href="/tickets" class="font-code text-[8px] uppercase tracking-[0.1em] text-[#c6bcff]">Registry →</a></div>
+			<div class="panel-head"><div><h2 class="font-display text-[14px] font-semibold text-[#f0f0f5]">Issued passes</h2><p class="mt-0.5 text-[10.5px] text-[#7f7f8c]">{data.source === 'supabase' ? 'Ticket rows are not joined in this event dossier.' : 'Cryptographic admission credentials.'}</p></div>{#if data.source === 'demo'}<a href="/tickets" class="font-code text-[8px] uppercase tracking-[0.1em] text-[#c6bcff]">Registry →</a>{/if}</div>
 			{#if data.tickets.length === 0}
-				<EmptyState title="No passes minted" />
+				<EmptyState title={data.source === 'supabase' ? 'Pass details not loaded' : 'No passes minted'} message={data.source === 'supabase' ? 'Related ticket rows are not loaded in this event dossier.' : undefined} />
 			{:else}
 				<div class="table-wrap"><table class="tbl"><thead><tr><th>Pass</th><th>Holder</th><th>Tier</th><th>Status</th></tr></thead>
 					<tbody>

@@ -17,7 +17,7 @@
 	import { untrack } from 'svelte';
 	import { toasts } from '$admin/state/toast.svelte';
 	import { chipClass, eventStatus } from '$admin/utils/status';
-	import { countdown, date, money, num, time } from '$admin/utils/format';
+	import { countdown, date, money, num, pct, time } from '$admin/utils/format';
 	import type { AdminEvent } from '$admin/types';
 	import PageHeader from '$components/PageHeader.svelte';
 	import CoverArt from '$components/CoverArt.svelte';
@@ -110,17 +110,21 @@
 <div class="space-y-4">
 	<PageHeader
 		title="Events Management"
-		subtitle="Review, moderate, monitor capacity, and manage all events across Owltside."
+		subtitle={data.source === 'supabase' ? 'Events loaded from public.events in Supabase. The current schema does not store admin moderation status.' : 'Review, moderate, monitor capacity, and manage all events across Owltside.'}
 		crumbs={['platform', 'events']}
-		eyebrow="Registry index"
+		eyebrow={data.source === 'supabase' ? 'Supabase · live data' : 'Demo registry'}
 	>
 		{#snippet actions()}
-			<a class="btn btn-sm" href="/api/export/events" download>
-				<Download size={12} /> Export Roster (CSV)
-			</a>
-			<button type="button" class="btn btn-sm btn-primary" onclick={() => (createOpen = true)}>
-				<Plus size={13} /> Create Admin Event
-			</button>
+			{#if data.source === 'demo'}
+				<a class="btn btn-sm" href="/api/export/events" download>
+					<Download size={12} /> Export Roster (CSV)
+				</a>
+			{/if}
+			{#if data.source === 'demo'}
+				<button type="button" class="btn btn-sm btn-primary" onclick={() => (createOpen = true)}>
+					<Plus size={13} /> Create Admin Event
+				</button>
+			{/if}
 		{/snippet}
 	</PageHeader>
 
@@ -133,12 +137,12 @@
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Published</p><span class="status-dot"></span></div>
 			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-[#f1f1f6]">{num(data.counts.published)}</p>
-			<p class="mt-1.5 font-code text-[9px] uppercase tracking-[0.06em] text-[#6f6f7b]">69.0% live</p>
+			<p class="mt-1.5 font-code text-[9px] uppercase tracking-[0.06em] text-[#6f6f7b]">{pct(data.counts.total ? data.counts.published / data.counts.total * 100 : 0, 1)} future events</p>
 		</div>
 		<div class="panel border-amber-400/25 bg-amber-400/[0.03] p-4">
 			<div class="flex items-center justify-between"><p class="mono-label !text-amber-200/80">Pending review</p><span class="chip chip-warn !h-[17px] !text-[8px]">Needs action</span></div>
 			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-amber-100">{String(data.counts.pending).padStart(2, '0')}</p>
-			<p class="mt-1.5 font-code text-[9px] uppercase tracking-[0.06em] text-[#8f8f9b]">Queue SLA · 2h</p>
+			<p class="mt-1.5 font-code text-[9px] uppercase tracking-[0.06em] text-[#8f8f9b]">{data.source === 'supabase' ? 'No moderation field in schema' : 'Queue SLA · 2h'}</p>
 		</div>
 		<div class="panel p-4">
 			<p class="mono-label">Drafts</p>
@@ -338,7 +342,9 @@
 						</div>
 
 						<div class="mt-4 space-y-1.5 border-t border-[#26262e] pt-3">
-							{#if selected.status === 'pending'}
+							{#if data.source === 'supabase'}
+								<a href={`/events/${selected.id}`} class="btn btn-primary w-full">Open event record</a>
+							{:else if selected.status === 'pending'}
 								<button type="button" class="btn btn-primary w-full" disabled={busy} onclick={() => applyStatus(selected.id, 'published', 'Moderation approved — listing published')}>
 									<Check size={13} /> Approve & Publish Event
 								</button>

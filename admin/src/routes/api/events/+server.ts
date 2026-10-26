@@ -2,8 +2,10 @@ import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireMutation } from '$admin/server/auth';
 import { createEvent, getOrganizer } from '$admin/server/store';
+import { adminDataSource } from '$admin/server/supabase-data';
 
 export const POST: RequestHandler = async ({ request, locals }) => {
+	if (adminDataSource() === 'supabase') error(501, 'Event creation is disabled for Supabase-backed data until the schema includes admin-managed event status and audit fields.');
 	const admin = requireMutation(locals.admin);
 	const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 	const title = String(body.title ?? '').trim();

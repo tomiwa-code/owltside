@@ -31,6 +31,8 @@
 	const range = $derived(`${shortDate(d.series[0].day)} – ${shortDate(d.series[d.series.length - 1].day)}, ${new Date(d.series[d.series.length - 1].day).getFullYear()}`);
 	const totalPasses = $derived(d.series.reduce((sum, point) => sum + point.passes, 0));
 	const ledgerShare = $derived.by(() => (d.passes ? (d.activePasses / d.passes) * 100 : 0));
+	const settledShare = $derived.by(() => (d.grossNgn ? (d.netNgn / d.grossNgn) * 100 : 0));
+	const peakDay = $derived(d.series.reduce((peak, point) => point.grossNgn > peak.grossNgn ? point : peak, d.series[0]));
 
 	let refreshing = $state(false);
 	async function refresh() {
@@ -50,9 +52,9 @@
 <div class="space-y-4">
 	<PageHeader
 		title="Dashboard Overview"
-		subtitle="Real-time telemetry, gross ticketing volume, and operational queue."
+		subtitle={data.source === 'supabase' ? 'Event, order and ticket metrics loaded from the configured Supabase project.' : 'Demo snapshot of ticketing volume and operational queues.'}
 		crumbs={['system']}
-		eyebrow="Synced just now"
+		eyebrow={data.source === 'supabase' ? 'Supabase · live data' : 'Demo data'}
 	>
 		{#snippet actions()}
 			<span class="btn btn-sm btn-ghost pointer-events-none !text-[#9c9ca8]">
@@ -63,10 +65,12 @@
 				<RefreshCw size={12} class={refreshing ? 'animate-spin' : ''} />
 				Refresh
 			</button>
-			<a class="btn btn-sm btn-primary" href="/api/export/dashboard">
-				<Download size={12} />
-				Export Executive Brief
-			</a>
+			{#if data.source === 'demo'}
+				<a class="btn btn-sm btn-primary" href="/api/export/dashboard">
+					<Download size={12} />
+					Export Executive Brief
+				</a>
+			{/if}
 		{/snippet}
 	</PageHeader>
 
@@ -77,8 +81,8 @@
 				label="Gross volume"
 				value={money(d.grossNgn)}
 				delta={`${d.grossDelta}%`}
-				sub="30d rolling · settled & pending"
-				footnote="net of failed charges"
+				sub="30d rolling · paid & pending orders"
+				footnote="failed orders excluded"
 			>
 				<div class="flex items-end gap-1.5">
 					<div class="h-[20px] min-w-0 flex-1">
@@ -89,20 +93,20 @@
 			</KpiCard>
 		</div>
 		<KpiCard
-			label="Net settled"
+			label="Paid orders"
 			value={money(d.netNgn)}
-			sub="After ₦6.43M refunds · 95.5% net"
-			progress={95.5}
+			sub={`${pct(settledShare, 1)} of paid + pending volume`}
+			progress={settledShare}
 			progressTone="ok"
-			footnote="paystack rail · T+1"
+			footnote={data.source === 'supabase' ? 'orders.status = paid' : 'demo settled snapshot'}
 		/>
 		<KpiCard
 			label="Passes minted"
 			value={num(d.passes)}
-			delta="+8.3%"
-			sub="Capacity 99.2% filled"
-			progress={99.2}
-			footnote="signed passes · wallet-ready"
+			delta={data.source === 'supabase' ? undefined : '+8.3%'}
+			sub={data.source === 'supabase' ? 'All ticket records' : 'Capacity 99.2% filled'}
+			progress={data.source === 'supabase' ? undefined : 99.2}
+			footnote={data.source === 'supabase' ? 'public.tickets · all-time' : 'signed passes · wallet-ready'}
 		/>
 		<KpiCard label="Live & active" value={String(d.liveEvents)} sub="Events active">
 			<div class="grid grid-cols-2 gap-2 border-t border-[#292930] pt-2.5">
@@ -166,15 +170,15 @@
 				<div class="mt-2 grid grid-cols-3 gap-3 border-t border-[#26262e] px-1 pt-3">
 					<div>
 						<p class="mono-label !text-[8px]">Peak velocity day</p>
-						<p class="mt-1 font-code text-[11.5px] text-[#dcdce4]">₦7.82M · {shortDate(d.series[d.series.length - 3].day)}</p>
+						<p class="mt-1 font-code text-[11.5px] text-[#dcdce4]">{moneyCompact(peakDay.grossNgn)} · {shortDate(peakDay.day)}</p>
 					</div>
 					<div>
-						<p class="mono-label !text-[8px]">Median cart</p>
-						<p class="mt-1 font-code text-[11.5px] text-[#dcdce4]">₦29,600</p>
+						<p class="mono-label !text-[8px]">Passes · 30 days</p>
+						<p class="mt-1 font-code text-[11.5px] text-[#dcdce4]">{num(totalPasses)}</p>
 					</div>
 					<div>
-						<p class="mono-label !text-[8px]">Settlement velocity</p>
-						<p class="mt-1 font-code text-[11.5px] text-emerald-300">T+0 Paystack</p>
+						<p class="mono-label !text-[8px]">Metric source</p>
+						<p class="mt-1 font-code text-[11.5px] text-emerald-300">{data.source === 'supabase' ? 'Orders + tickets' : 'Demo snapshot'}</p>
 					</div>
 				</div>
 			</div>
