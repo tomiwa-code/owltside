@@ -18,16 +18,39 @@ export const load: PageServerLoad = async ({ url }) => {
 	const requested = url.searchParams.get('user');
 	const source = adminDataSource();
 	if (source === 'supabase') {
-		const live = await listSupabaseUsers({ q, status, role, kyc, page, perPage: 10 }, requested ?? undefined);
-		return {
-			table: { rows: live.page.rows, total: live.page.total, page: live.page.page, pages: live.page.pages, perPage: live.page.perPage },
-			filters: { q, status, role, kyc },
-			counts: live.counts,
-			selectedId: live.selected?.id ?? null,
-			selected: live.selected,
-			related: live.related,
-			source
-		};
+		try {
+			const live = await listSupabaseUsers({ q, status, role, kyc, page, perPage: 10 }, requested ?? undefined);
+			return {
+				table: { rows: live.page.rows, total: live.page.total, page: live.page.page, pages: live.page.pages, perPage: live.page.perPage },
+				filters: { q, status, role, kyc },
+				counts: live.counts,
+				selectedId: live.selected?.id ?? null,
+				selected: live.selected,
+				related: live.related,
+				source
+			};
+		} catch (cause) {
+			console.error('[users] live Supabase fetch failed, falling back to demo:', cause);
+			const liveError = cause instanceof Error ? cause.message : 'Live users unavailable.';
+			const table = listUsers({ q, status, role, kyc, page, perPage: 10 });
+			const selected = table.rows.find((user) => user.id === requested) ?? table.rows[0] ?? null;
+			return {
+				table: { rows: table.rows, total: table.total, page: table.page, pages: table.pages, perPage: table.perPage },
+				filters: { q, status, role, kyc },
+				counts: countUsers(),
+				selectedId: selected?.id ?? null,
+				selected,
+				related: selected
+					? {
+							tickets: ticketsForHandle(selected.handle, 4),
+							orders: ordersForEmail(selected.email, 4),
+							audit: auditFor(selected.id, 4)
+						}
+					: { tickets: [], orders: [], audit: [] },
+				source: 'demo' as const,
+				liveError
+			};
+		}
 	}
 	const table = listUsers({ q, status, role, kyc, page, perPage: 10 });
 	const selected = table.rows.find((user) => user.id === requested) ?? table.rows[0] ?? null;
