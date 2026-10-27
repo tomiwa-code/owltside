@@ -3,6 +3,7 @@ import type { LayoutServerLoad } from './$types';
 import { countCases, countEvents, getRefundsData } from '$admin/server/store';
 import { pendingApprovalCount } from '$admin/server/approvals';
 import { countReports } from '$admin/server/store';
+import { adminDataSource } from '$admin/server/supabase-data';
 
 export const load: LayoutServerLoad = async ({ locals, parent }) => {
 	if (!locals.admin) redirect(303, '/login');
@@ -16,10 +17,10 @@ export const load: LayoutServerLoad = async ({ locals, parent }) => {
 		mode,
 		counts: {
 			pendingEvents: countEvents().pending,
-			refunds: refunds.pending,
+			refunds: refunds?.pending ?? 0,
 			approvals: pendingApprovalCount(),
 			reports: countReports(),
-			moderation: cases.open
+			moderation: cases?.open ?? 0
 		},
 		serverTime: new Date().toISOString(),
 		// The admin console is a separate deployment; this is the link back to the

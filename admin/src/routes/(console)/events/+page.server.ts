@@ -7,6 +7,7 @@ import {
 	type ModerationMode
 } from '$admin/server/moderation';
 import type { PlatformStatus } from '$admin/types';
+import { adminDataSource, listSupabaseEvents } from '$admin/server/supabase-data';
 
 export const load: PageServerLoad = async ({ url }) => {
 	const q = url.searchParams.get('q') ?? '';
