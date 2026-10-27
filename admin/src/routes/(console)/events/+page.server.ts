@@ -20,6 +20,19 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	if (source === 'supabase') {
 		const listed = await listSupabaseEvents({ q, status, category, organizer, sort, page, perPage: 7 });
+		// Keep the submission-queue fetch resilient — a broken Supabase credential
+		// should surface as a banner, not a crashed screen (same pattern as demo).
+		const supabaseMode: ModerationMode = moderationMode();
+		let supabaseSubmissions: EventSubmission[] = [];
+		let supabaseSubmissionError = '';
+		try {
+			supabaseSubmissions = await listSubmissions();
+		} catch (cause) {
+			supabaseSubmissionError =
+				cause instanceof Error
+					? `The live submission queue could not be loaded: ${cause.message}`
+					: 'The live submission queue could not be loaded.';
+		}
 		return {
 			table: { rows: listed.rows, total: listed.total, page: listed.page, pages: listed.pages, perPage: listed.perPage },
 			filters: { q, status, category, organizer, sort },
@@ -27,6 +40,9 @@ export const load: PageServerLoad = async ({ url }) => {
 			counts: listed.counts,
 			pending: [],
 			selectedId: listed.rows[0]?.id ?? null,
+			submissions: supabaseSubmissions,
+			submissionMode: supabaseMode,
+			submissionError: supabaseSubmissionError,
 			source
 		};
 	}

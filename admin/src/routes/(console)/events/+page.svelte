@@ -38,18 +38,18 @@
 	let busy = $state(false);
 	let creating = $state(false);
 
-	const combined = $derived([...data.table.rows, ...data.pending]);
+	const combined = $derived([...(data.table?.rows ?? []), ...(data.pending ?? [])]);
 	const selected = $derived<AdminEvent | null>(
 		combined.find((event) => event.id === (selectedOverride ?? data.selectedId)) ??
-			data.pending[0] ??
-			data.table.rows[0] ??
+			(data.pending ?? [])[0] ??
+			(data.table?.rows ?? [])[0] ??
 			null
 	);
 
 	const form = $state({
 		title: '',
-		category: untrack(() => data.options.categories[0] ?? 'Tech & AI'),
-		organizerId: untrack(() => data.options.organizerList[0]?.id ?? ''),
+		category: untrack(() => data.options?.categories?.[0] ?? 'Tech & AI'),
+		organizerId: untrack(() => data.options?.organizerList?.[0]?.id ?? ''),
 		startsAt: new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 16),
 		venue: '',
 		city: 'Lagos',
@@ -170,13 +170,13 @@
 				</select>
 				<select name="category" class="select !h-[34px] !text-[11.5px]" onchange={submitFilters} aria-label="Filter by category">
 					<option value="all" selected={data.filters.category === 'all'}>Category: All</option>
-					{#each data.options.categories as category}
+					{#each (data.options?.categories ?? []) as category}
 						<option value={category} selected={data.filters.category === category}>{category}</option>
 					{/each}
 				</select>
 				<select name="organizer" class="select !h-[34px] !text-[11.5px]" onchange={submitFilters} aria-label="Filter by organizer">
 					<option value="all" selected={data.filters.organizer === 'all'}>Org: All verified</option>
-					{#each data.options.organizers as organizer}
+					{#each (data.options?.organizers ?? []) as organizer}
 						<option value={organizer} selected={data.filters.organizer === organizer}>{organizer}</option>
 					{/each}
 				</select>
@@ -190,17 +190,17 @@
 		</form>
 	</div>
 
-	<SubmissionQueue rows={data.submissions} mode={data.submissionMode} error={data.submissionError} />
+	<SubmissionQueue rows={data.submissions ?? []} mode={data.submissionMode ?? 'demo'} error={data.submissionError ?? ''} />
 
 	<div class="grid grid-cols-1 gap-2.5 min-[1400px]:grid-cols-[1.68fr_1fr]">
 		<section class="panel min-w-0 overflow-hidden">
 			<div class="flex items-center justify-between border-b border-[#26262e] px-4 py-2.5">
 				<p class="font-code text-[9px] uppercase tracking-[0.1em] text-[#8f8f9b]">
-					Event registry <span class="text-[#54545f]">· {data.table.total} records</span>
+					Event registry <span class="text-[#54545f]">· {(data.table?.total ?? 0)} records</span>
 				</p>
-				<span class="chip !h-[18px] !text-[8px]">{data.table.rows.length} shown</span>
+				<span class="chip !h-[18px] !text-[8px]">{(data.table?.rows ?? []).length} shown</span>
 			</div>
-			{#if data.table.rows.length === 0}
+			{#if (data.table?.rows ?? []).length === 0}
 				<EmptyState title="No events matched" message="Adjust the status, category or organizer filters." />
 			{:else}
 				<div class="table-wrap">
@@ -216,7 +216,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each data.table.rows as event (event.id)}
+							{#each (data.table?.rows ?? []) as event (event.id)}
 								{@const meta = eventStatus(event.status)}
 								<tr data-selected={selected?.id === event.id}>
 									<td class="min-w-[190px]">
@@ -273,7 +273,7 @@
 					</table>
 				</div>
 			{/if}
-			<Pagination pageNumber={data.table.page} pages={data.table.pages} total={data.table.total} perPage={data.table.perPage} label="events" />
+			<Pagination pageNumber={data.table?.page ?? 1} pages={data.table?.pages ?? 1} total={data.table?.total ?? 0} perPage={data.table?.perPage ?? 7} label="events" />
 		</section>
 
 		<!-- Dossier / moderation panel -->
@@ -287,7 +287,7 @@
 								{selected.status === 'pending' ? 'Pending event review' : 'Event dossier'}
 							</p>
 							{#if selected.status === 'pending'}
-								<span class="chip !h-[16px] !text-[7.5px]">1 of {data.pending.length}</span>
+								<span class="chip !h-[16px] !text-[7.5px]">1 of {(data.pending ?? []).length}</span>
 							{/if}
 						</div>
 						<a href={`/events/${selected.id}`} class="font-code text-[8px] uppercase tracking-[0.1em] text-[#c6bcff] hover:underline">Open dossier ↗</a>
@@ -398,13 +398,13 @@
 			<div>
 				<label class="field-label" for="evt-category">Category</label>
 				<select id="evt-category" class="select" bind:value={form.category}>
-					{#each data.options.categories as category}<option value={category}>{category}</option>{/each}
+					{#each (data.options?.categories ?? []) as category}<option value={category}>{category}</option>{/each}
 				</select>
 			</div>
 			<div>
 				<label class="field-label" for="evt-org">Organizer</label>
 				<select id="evt-org" class="select" bind:value={form.organizerId}>
-					{#each data.options.organizerList as organizer}<option value={organizer.id}>{organizer.name}</option>{/each}
+					{#each (data.options?.organizerList ?? []) as organizer}<option value={organizer.id}>{organizer.name}</option>{/each}
 				</select>
 			</div>
 		</div>

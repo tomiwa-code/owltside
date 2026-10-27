@@ -9,10 +9,10 @@
 	import Sheet from '$components/Sheet.svelte';
 
 	let {
-		rows,
-		mode,
+		rows = [],
+		mode = 'demo' as ModerationMode,
 		error: loadError = ''
-	}: { rows: EventSubmission[]; mode: ModerationMode; error?: string } = $props();
+	}: { rows?: EventSubmission[]; mode?: ModerationMode; error?: string } = $props();
 
 	let busyId = $state<string | null>(null);
 	let rejectTarget = $state<EventSubmission | null>(null);
@@ -50,7 +50,7 @@
 	<div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#26262e] px-4 py-2.5">
 		<div class="flex items-center gap-2">
 			<p class="mono-label !text-[9px]">Organizer submission queue</p>
-			<span class="chip chip-warn !h-[17px] !text-[8px]">{rows.length} awaiting review</span>
+			<span class="chip chip-warn !h-[17px] !text-[8px]">{(rows ?? []).length} awaiting review</span>
 			<span class="chip !h-[17px] !text-[8px]" title={mode === 'supabase'
 				? 'Reading submissions from your Supabase project with the service-role key.'
 				: 'No Supabase credentials set — the console is moderating its seeded demo dataset.'}>
@@ -68,14 +68,14 @@
 		</p>
 	{/if}
 
-	{#if rows.length === 0}
+	{#if (rows ?? []).length === 0}
 		<EmptyState
 			title="No events waiting for review"
 			message="New organizer submissions land here. Approved events are published to the public home and explore feeds immediately."
 		/>
 	{:else}
 		<ul class="divide-y divide-[#24242c]">
-			{#each rows as submission (submission.id)}
+			{#each (rows ?? []) as submission (submission.id)}
 				<li class="grid gap-3 px-4 py-3.5 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-start">
 					<CoverArt
 						from={submission.coverFrom}
