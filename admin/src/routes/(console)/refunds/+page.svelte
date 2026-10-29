@@ -101,6 +101,13 @@
 		{/snippet}
 	</PageHeader>
 
+	{#if data.error}
+		<div class="panel border border-rose-500/30 p-4 text-[11px] text-rose-200">
+			{data.error}
+			<span class="mt-1 block text-[#8f8f9b]">Set PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in this admin app's environment (Vercel) to point at the public Owltside database, then reload. The refund queue also requires the <code>approval_requests</code> table from <code>supabase/sql/023_approval_requests.sql</code>.</span>
+		</div>
+	{/if}
+
 	<p class="rounded-lg border border-[#2b2b33] bg-[#15151a] px-3 py-2 font-code text-[8.5px] uppercase tracking-[0.08em] text-[#8f8f9b]">
 		Refunds submitted from the public app wait in <a class="text-[#c6bcff] underline" href="/approvals">Approvals</a> — a pass stays valid and scan-able until that decision is made.
 	</p>
