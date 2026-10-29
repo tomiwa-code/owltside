@@ -701,3 +701,217 @@ export async function getSupabaseDashboard(): Promise<AdminDashboard> {
 		]
 	};
 }
+
+export type SettlementsRow = {
+	organizerId: string;
+	name: string;
+	initials: string;
+	events: number;
+	tickets: number;
+	gmvNgn: number;
+	feeNgn: number;
+	payoutNgn: number;
+	state: 'settled' | 'queued' | 'frozen' | 'next_batch';
+	bank: string;
+	accountLast4: string;
+};
+
+export interface SettlementsAnalytics {
+	range: { from: string; to: string };
+	grossNgn: number;
+	grossDelta: number;
+	settledNgn: number;
+	settledPct: number;
+	commissionNgn: number;
+	commissionRate: number;
+	escrowNgn: number;
+	escrowEvents: number;
+	refundedNgn: number;
+	refundedPct: number;
+	velocity: { day: string; grossNgn: number; payoutNgn: number }[];
+	rows: SettlementsRow[];
+	totalProfiles: number;
+	totalSubaccounts: number;
+	peakDay: { day: string; grossNgn: number; payoutNgn: number };
+	avgDaily: number;
+	onTimePct: number;
+	batchWindow: string;
+}
+
+const COMMISSION_RATE = 0.08; // 8% platform fee
+
+function initialsFrom(name: string): string {
+	return name
+		.split(/\s+/)
+		.filter(Boolean)
+		.slice(0, 2)
+		.map((p) => p[0]?.toUpperCase() ?? '')
+		.join('') || 'OW';
+}
+
+/**
+ * Financial analytics computed from the existing orders/events/profiles tables.
+ * Payout rails to Paystack subaccounts are not wired yet; per-organizer escrow
+ * balances are therefore held in 'queued' state and bank details show as
+ * 'Subaccount not linked' until Paystack subaccounts are provisioned.
+ */
+export async function getSupabaseSettlements(): Promise<SettlementsAnalytics> {
+	const client = createAdminClient();
+	const now = new Date();
+	const todayStart = new Date(now);
+	todayStart.setUTCHours(0, 0, 0, 0);
+	const thirtyDaysAgo = new Date(todayStart.getTime() - 29 * 86_400_000);
+	const sixtyDaysAgo = new Date(thirtyDaysAgo.getTime() - 30 * 86_400_000);
+
+	const [events, orders, tickets] = await Promise.all([
+		loadEvents(client),
+		rowsFrom(client, 'orders', 'id,owner_id,owner_name,event_id,total,status,gateway,created_at', (q) =>
+			q.gte('created_at', sixtyDaysAgo.toISOString()).order('created_at')
+		),
+		rowsFrom(client, 'tickets', 'id,owner_id,event_id,price,status,purchased_at', (q) =>
+			q.gte('purchased_at', sixtyDaysAgo.toISOString()).order('purchased_at')
+		)
+	]);
+
+	const eventById = new Map(events.map((e) => [e.id, e]));
+	const organizerEvents = new Map<string, AdminEvent[]>();
+	for (const e of events) {
+		const list = organizerEvents.get(e.organizerId) ?? [];
+		list.push(e);
+		organizerEvents.set(e.organizerId, list);
+	}
+
+	const inLast30 = orders.filter((o) => new Date(o.created_at).getTime() >= thirtyDaysAgo.getTime());
+	const prior30 = orders.filter((o) => {
+		const t = new Date(o.created_at).getTime();
+		return t < thirtyDaysAgo.getTime() && t >= sixtyDaysAgo.getTime();
+	});
+
+	const isSettled = (o: Record<string, any>) => o.status === 'paid' || o.status === 'settled';
+	const isPending = (o: Record<string, any>) => o.status === 'pending';
+	const isRefunded = (o: Record<string, any>) => o.status === 'refunded';
+
+	const grossNgn = inLast30.filter((o) => isSettled(o) || isPending(o)).reduce((s, o) => s + numberValue(o.total), 0);
+	const settledNgn = inLast30.filter(isSettled).reduce((s, o) => s + numberValue(o.total), 0);
+	const pendingNgn = inLast30.filter(isPending).reduce((s, o) => s + numberValue(o.total), 0);
+	const refundedNgn = inLast30.filter(isRefunded).reduce((s, o) => s + numberValue(o.total), 0);
+	const priorGross = prior30.filter((o) => isSettled(o) || isPending(o)).reduce((s, o) => s + numberValue(o.total), 0);
+	const grossDelta = priorGross ? ((grossNgn - priorGross) / priorGross) * 100 : 0;
+	const commissionNgn = Math.round(settledNgn * COMMISSION_RATE);
+	const commissionRate = COMMISSION_RATE * 100;
+	const settledPct = grossNgn ? Math.round((settledNgn / grossNgn) * 1000) / 10 : 0;
+	const refundedPct = grossNgn ? Math.round((refundedNgn / grossNgn) * 1000) / 10 : 0;
+
+	const velocity: { day: string; grossNgn: number; payoutNgn: number }[] = Array.from({ length: 30 }, (_, i) => {
+		const d = new Date(thirtyDaysAgo.getTime() + i * 86_400_000);
+		const key = dayKey(d);
+		return {
+			day: key,
+			grossNgn: inLast30
+				.filter((o) => dayKey(new Date(o.created_at)) === key && (isSettled(o) || isPending(o)))
+				.reduce((s, o) => s + numberValue(o.total), 0),
+			// Without a real payout rail we approximate disbursed as the prior-day
+			// settled amount (T+1 settlement assumption).
+			payoutNgn: 0
+		};
+	});
+	// Fill payoutNgn as the prior day's settled volume to mimic T+1 release.
+	for (let i = 1; i < velocity.length; i += 1) {
+		const prevKey = velocity[i - 1].day;
+		velocity[i].payoutNgn = inLast30
+			.filter((o) => dayKey(new Date(o.created_at)) === prevKey && isSettled(o))
+			.reduce((s, o) => s + Math.round(numberValue(o.total) * (1 - COMMISSION_RATE)), 0);
+	}
+
+	// Per-organizer rows keyed off events owned.
+	const organizerTotals = new Map<string, { gmv: number; fees: number; tickets: number; events: number }>();
+	const bump = (id: string, gmvAdd: number, feesAdd: number, ticketsAdd: number, eventsAdd = 0) => {
+		const cur = organizerTotals.get(id) ?? { gmv: 0, fees: 0, tickets: 0, events: 0 };
+		cur.gmv += gmvAdd;
+		cur.fees += feesAdd;
+		cur.tickets += ticketsAdd;
+		cur.events += eventsAdd;
+		organizerTotals.set(id, cur);
+	};
+	for (const e of events) bump(e.organizerId, 0, 0, 0, 1);
+	for (const o of orders) {
+		if (!isSettled(o) && !isPending(o)) continue;
+		const event = eventById.get(String(o.event_id));
+		if (!event) continue;
+		const total = numberValue(o.total);
+		bump(event.organizerId, total, Math.round(total * COMMISSION_RATE), 0);
+	}
+	for (const t of tickets) {
+		if (t.status === 'refunded' || t.status === 'void') continue;
+		const event = eventById.get(String(t.event_id));
+		if (!event) continue;
+		bump(event.organizerId, 0, 0, 1);
+	}
+
+	const rows: SettlementsRow[] = [];
+	const organizerProfileIds = new Set([...organizerEvents.keys()]);
+	for (const o of orders) {
+		if (o.owner_id) organizerProfileIds.add(String(o.owner_id));
+	}
+	const profileById = new Map<string, { name?: unknown; handle?: unknown }>();
+	const allIds = [...organizerTotals.keys()];
+	for (let offset = 0; offset < allIds.length; offset += 500) {
+		const ids = allIds.slice(offset, offset + 500);
+		const { data } = await client.from('profiles').select('id,name,handle').in('id', ids);
+		for (const p of (data ?? []) as Record<string, any>[]) profileById.set(String(p.id), p);
+	}
+	for (const [orgId, totals] of organizerTotals.entries()) {
+		const p = profileById.get(orgId);
+		const name = String(p?.name ?? p?.handle ?? 'Organizer');
+		const hasSettled = inLast30.some(
+			(o) => eventById.get(String(o.event_id))?.organizerId === orgId && isSettled(o)
+		);
+		const hasPending = inLast30.some(
+			(o) => eventById.get(String(o.event_id))?.organizerId === orgId && isPending(o)
+		);
+		const state: SettlementsRow['state'] = hasPending ? 'queued' : hasSettled ? 'next_batch' : 'queued';
+		rows.push({
+			organizerId: orgId,
+			name,
+			initials: initialsFrom(name),
+			events: totals.events,
+			tickets: totals.tickets,
+			gmvNgn: totals.gmv,
+			feeNgn: totals.fees,
+			payoutNgn: Math.round(totals.gmv - totals.fees),
+			state,
+			bank: 'Subaccount not linked',
+			accountLast4: '—'
+		});
+	}
+	rows.sort((a, b) => b.gmvNgn - a.gmvNgn);
+
+	const peakDay = velocity.reduce(
+		(p, v) => (v.grossNgn > p.grossNgn ? v : p),
+		velocity[0] ?? { day: dayKey(now), grossNgn: 0, payoutNgn: 0 }
+	);
+	const avgDaily = velocity.length ? Math.round(velocity.reduce((s, v) => s + v.grossNgn, 0) / velocity.length) : 0;
+	const onTimePct = 100; // all T+1 releases modeled on-time
+
+	return {
+		range: { from: velocity[0]?.day ?? dayKey(thirtyDaysAgo), to: velocity[velocity.length - 1]?.day ?? dayKey(now) },
+		grossNgn,
+		grossDelta: Math.round(grossDelta * 10) / 10,
+		settledNgn,
+		settledPct,
+		commissionNgn,
+		commissionRate,
+		escrowNgn: pendingNgn,
+		escrowEvents: events.filter((e) => organizerTotals.get(e.organizerId)?.gmv && e.status !== 'draft').length,
+		refundedNgn,
+		refundedPct,
+		velocity,
+		rows,
+		totalProfiles: organizerProfileIds.size,
+		totalSubaccounts: 0, // Paystack subaccounts not yet provisioned
+		peakDay,
+		avgDaily,
+		onTimePct,
+		batchWindow: 'T+1 · 02:00 UTC'
+	};
+}
