@@ -228,12 +228,21 @@ async function loadPeopleBundle(client: SupabaseClient): Promise<PeopleBundle> {
 		rowsFrom(client, 'tickets', 'id,owner_id,event_id,code,event_title,tier_name,holder_name,status,purchased_at,price,cover', (q) => q.order('purchased_at', { ascending: false }).order('id'))
 	]);
 	const authUsers = new Map<string, DataAuthUser>();
-	const perPage = 1000;
-	for (let page = 1; ; page += 1) {
-		const { data, error } = await client.auth.admin.listUsers({ page, perPage });
-		assertNoError(error, 'auth.users');
-		for (const user of data.users as DataAuthUser[]) authUsers.set(user.id, user);
-		if (data.users.length < perPage) break;
+	try {
+		const perPage = 1000;
+		for (let page = 1; ; page += 1) {
+			const { data, error } = await client.auth.admin.listUsers({ page, perPage });
+			if (error) {
+				// Some Supabase projects (or service-role configurations) reject
+				// the auth.admin listUsers call; degrade gracefully — everything
+				// except email/phone/last-seen is derivable from public.profiles.
+				break;
+			}
+			for (const user of data.users as DataAuthUser[]) authUsers.set(user.id, user);
+			if (data.users.length < perPage) break;
+		}
+	} catch {
+		// Auth endpoint unavailable; continue without auth metadata.
 	}
 	const ordersByOwner = new Map<string, Record<string, any>[]>();
 	const ticketsByOwner = new Map<string, Record<string, any>[]>();
@@ -538,22 +547,35 @@ export async function listSupabaseRefunds(): Promise<{
 	summary: { pending: number; total30dNgn: number; successRate: number; avgResolutionHours: number; escrowNgn: number };
 }> {
 	const client = createAdminClient();
+	// NOTE: approval_requests.requester_id FKs to auth.users, not public.profiles,
+	// so PostgREST cannot resolve an implicit join across schemas. Pull the
+	// request rows first and resolve profile names by id, matching how the
+	// approvals module already fetches them.
 	const { data, error } = await client
 		.from('approval_requests')
-		.select('*, requester:profiles(name,handle)')
+		.select('*')
 		.eq('kind', 'refund')
 		.order('created_at', { ascending: false })
 		.limit(200);
 	assertNoError(error, 'approval_requests');
+	const requesterIds = [...new Set(((data ?? []) as Record<string, any>[]).map((r) => String(r.requester_id)).filter(Boolean))];
+	const requesterMap = new Map<string, { name?: unknown; handle?: unknown }>();
+	for (let offset = 0; offset < requesterIds.length; offset += 500) {
+		const ids = requesterIds.slice(offset, offset + 500);
+		const { data: people, error: peopleError } = await client.from('profiles').select('id,name,handle').in('id', ids);
+		if (!peopleError) {
+			for (const p of (people ?? []) as Record<string, any>[]) requesterMap.set(String(p.id), p);
+		}
+	}
 	const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000);
 	const rows = ((data ?? []) as Record<string, any>[]).map((row) => {
-		const requester = (row.requester ?? {}) as Record<string, any>;
+		const requester = requesterMap.get(String(row.requester_id));
 		const payload = (row.payload ?? {}) as Record<string, any>;
 		const status = (row.status === 'approved' ? 'processing' : row.status === 'rejected' ? 'rejected' : 'pending') as 'pending' | 'approved' | 'rejected' | 'processing' | 'settled';
 		return {
 			id: String(row.id),
 			orderRef: String(row.subject_label ?? row.id),
-			customerName: String(requester.name ?? requester.handle ?? 'Attendee'),
+			customerName: String(requester?.name ?? requester?.handle ?? 'Attendee'),
 			eventTitle: String(row.title ?? 'Refund request').replace(/^Refund · /, ''),
 			amountNgn: numberValue(row.amount),
 			originalNgn: numberValue(row.amount),
