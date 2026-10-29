@@ -98,15 +98,9 @@
 		{/snippet}
 	</PageHeader>
 
-	{#if data.notProvisioned && data.notice}
-		<div class="panel border border-amber-400/30 bg-amber-400/[0.04] p-4 text-[11.5px] text-amber-100">
-			<div class="flex items-start gap-2">
-				<Landmark size={14} class="mt-0.5 shrink-0 text-amber-300" />
-				<div>
-					<p class="font-display text-[13px] font-semibold">Settlement rail not provisioned</p>
-					<p class="mt-0.5 text-[#d8cc8e]">{data.notice}</p>
-				</div>
-			</div>
+	{#if data.notice}
+		<div class="panel border border-rose-500/30 p-4 text-[11px] text-rose-200">
+			{data.notice}
 		</div>
 	{/if}
 
