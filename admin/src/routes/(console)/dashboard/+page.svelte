@@ -26,13 +26,19 @@
 	import Sparkline from '$components/Sparkline.svelte';
 
 	let { data } = $props();
-	const d = $derived(data.dashboard);
-	const grossSeries = $derived(d.series.map((point) => point.grossNgn));
-	const range = $derived(`${shortDate(d.series[0].day)} – ${shortDate(d.series[d.series.length - 1].day)}, ${new Date(d.series[d.series.length - 1].day).getFullYear()}`);
-	const totalPasses = $derived(d.series.reduce((sum, point) => sum + point.passes, 0));
+	const d = $derived(data.dashboard ?? {
+		rangeLabel: 'Last 30 days', grossNgn: 0, netNgn: 0, grossDelta: 0, passes: 0, passesDelta: 0,
+		liveEvents: 0, eventsToday: 0, pendingReview: 0, activePasses: 0, refundsPending: 0,
+		moderationOpen: 0, series: [], tierMix: [], categoryMix: [], topEvents: [], reviewQueue: [],
+		recentOrders: [], systemHealth: []
+	});
+	const safeSeries = $derived(d.series?.length ? d.series : [{ day: new Date().toISOString().slice(0, 10), grossNgn: 0, passes: 0 }]);
+	const grossSeries = $derived(safeSeries.map((point) => point.grossNgn));
+	const range = $derived(`${shortDate(safeSeries[0].day)} – ${shortDate(safeSeries[safeSeries.length - 1].day)}, ${new Date(safeSeries[safeSeries.length - 1].day).getFullYear()}`);
+	const totalPasses = $derived(safeSeries.reduce((sum, point) => sum + point.passes, 0));
 	const ledgerShare = $derived.by(() => (d.passes ? (d.activePasses / d.passes) * 100 : 0));
 	const settledShare = $derived.by(() => (d.grossNgn ? (d.netNgn / d.grossNgn) * 100 : 0));
-	const peakDay = $derived(d.series.reduce((peak, point) => point.grossNgn > peak.grossNgn ? point : peak, d.series[0]));
+	const peakDay = $derived(safeSeries.reduce((peak, point) => point.grossNgn > peak.grossNgn ? point : peak, safeSeries[0]));
 
 	let refreshing = $state(false);
 	async function refresh() {
@@ -52,9 +58,9 @@
 <div class="space-y-4">
 	<PageHeader
 		title="Dashboard Overview"
-		subtitle={data.source === 'supabase' ? 'Event, order and ticket metrics loaded from the configured Supabase project.' : 'Demo snapshot of ticketing volume and operational queues.'}
+		subtitle={data.source === 'supabase' ? 'Event, order and ticket metrics loaded from the configured Supabase project.' : 'Live metrics are unavailable until Supabase is configured; tiles below show zero placeholders.'}
 		crumbs={['system']}
-		eyebrow={data.source === 'supabase' ? 'Supabase · live data' : 'Demo data'}
+		eyebrow={data.source === 'supabase' ? 'Supabase · live data' : 'Unconfigured'}
 	>
 		{#snippet actions()}
 			<span class="btn btn-sm btn-ghost pointer-events-none !text-[#9c9ca8]">
@@ -71,6 +77,24 @@
 			</a>
 		{/snippet}
 	</PageHeader>
+
+	{#if data.error}
+		<div class="panel border border-amber-400/30 bg-amber-400/[0.04] p-4 text-[11.5px] text-amber-100">
+			<div class="flex items-start gap-2">
+				<AlertTriangle size={14} class="mt-0.5 shrink-0 text-amber-300" />
+				<div>
+					<p class="font-display text-[13px] font-semibold">Live metrics unavailable</p>
+					<p class="mt-0.5 text-[#d8cc8e]">{data.error}</p>
+					<p class="mt-1 text-[10.5px] text-[#8f8f9b]">
+						KPIs below are showing zero placeholders. Set
+						<code class="rounded bg-black/40 px-1 py-0.5 text-[9.5px]">PUBLIC_SUPABASE_URL</code> and
+						<code class="rounded bg-black/40 px-1 py-0.5 text-[9.5px]">SUPABASE_SERVICE_ROLE_KEY</code>
+						in this admin app's environment (Vercel) to point at the public Owltside database, then reload.
+					</p>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	<!-- KPI row -->
 	<div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">

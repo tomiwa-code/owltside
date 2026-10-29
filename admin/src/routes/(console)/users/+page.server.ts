@@ -10,14 +10,29 @@ export const load: PageServerLoad = async ({ url }) => {
 	const page = Number(url.searchParams.get('page') ?? '1') || 1;
 	const requested = url.searchParams.get('user');
 
-	const live = await listSupabaseUsers({ q, status, role, kyc, page, perPage: 10 }, requested ?? undefined);
-	return {
-		table: { rows: live.page.rows, total: live.page.total, page: live.page.page, pages: live.page.pages, perPage: live.page.perPage },
-		filters: { q, status, role, kyc },
-		counts: live.counts,
-		selectedId: live.selected?.id ?? null,
-		selected: live.selected,
-		related: live.related,
-		source: 'supabase' as const
-	};
+	try {
+		const live = await listSupabaseUsers({ q, status, role, kyc, page, perPage: 10 }, requested ?? undefined);
+		return {
+			table: { rows: live.page.rows, total: live.page.total, page: live.page.page, pages: live.page.pages, perPage: live.page.perPage },
+			filters: { q, status, role, kyc },
+			counts: live.counts,
+			selectedId: live.selected?.id ?? null,
+			selected: live.selected,
+			related: live.related,
+			error: '',
+			source: 'supabase' as const
+		};
+	} catch (cause) {
+		const error = cause instanceof Error ? cause.message : 'The user directory could not be loaded.';
+		return {
+			table: { rows: [], total: 0, page: 1, pages: 1, perPage: 10 },
+			filters: { q, status, role, kyc },
+			counts: { total: 0, active: 0, flagged: 0, blocked: 0, verifiedOrganizers: 0 },
+			selectedId: null,
+			selected: null,
+			related: { tickets: [], orders: [], audit: [] as [] },
+			error,
+			source: 'unavailable' as const
+		};
+	}
 };

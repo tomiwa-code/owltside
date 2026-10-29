@@ -90,6 +90,13 @@
 		{/snippet}
 	</PageHeader>
 
+	{#if data.error}
+		<div class="panel border border-rose-500/30 p-4 text-[11px] text-rose-200">
+			{data.error}
+			<span class="mt-1 block text-[#8f8f9b]">Set PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in this admin app's environment (Vercel) to point at the public Owltside database, then reload.</span>
+		</div>
+	{/if}
+
 	<div class="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Total registered</p><Users size={13} class="text-[#6f6f7b]" /></div>

@@ -9,14 +9,29 @@ export const load: PageServerLoad = async ({ url }) => {
 	const page = Number(url.searchParams.get('page') ?? '1') || 1;
 	const requested = url.searchParams.get('org');
 
-	const live = await listSupabaseOrganizers({ q, status, tier, page, perPage: 9 }, requested ?? undefined);
-	return {
-		table: { rows: live.page.rows, total: live.page.total, page: live.page.page, pages: live.page.pages, perPage: live.page.perPage },
-		filters: { q, status, tier },
-		counts: live.counts,
-		selectedId: live.selected?.id ?? null,
-		selected: live.selected,
-		pipelines: live.pipelines,
-		source: 'supabase' as const
-	};
+	try {
+		const live = await listSupabaseOrganizers({ q, status, tier, page, perPage: 9 }, requested ?? undefined);
+		return {
+			table: { rows: live.page.rows, total: live.page.total, page: live.page.page, pages: live.page.pages, perPage: live.page.perPage },
+			filters: { q, status, tier },
+			counts: live.counts,
+			selectedId: live.selected?.id ?? null,
+			selected: live.selected,
+			pipelines: live.pipelines,
+			error: '',
+			source: 'supabase' as const
+		};
+	} catch (cause) {
+		const error = cause instanceof Error ? cause.message : 'The organizer directory could not be loaded.';
+		return {
+			table: { rows: [], total: 0, page: 1, pages: 1, perPage: 9 },
+			filters: { q, status, tier },
+			counts: { total: 0, pending: 0, verified: 0, flagged: 0, tier1: 0, payoutVolumeNgn: 0 },
+			selectedId: null,
+			selected: null,
+			pipelines: [],
+			error,
+			source: 'unavailable' as const
+		};
+	}
 };
