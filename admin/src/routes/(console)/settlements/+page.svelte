@@ -29,16 +29,23 @@
 	let busy = $state(false);
 	let configOpen = $state(false);
 
-	const settlements = $derived<SettlementsData>(data.settlements);
+	const settlements = $derived<SettlementsData>(data.settlements ?? {
+		range: { from: '', to: '' }, grossNgn: 0, grossDelta: 0, settledNgn: 0, settledPct: 0,
+		commissionNgn: 0, commissionRate: 0, escrowNgn: 0, escrowEvents: 0, refundedNgn: 0,
+		refundedPct: 0, velocity: [], rows: [], totalProfiles: 0, totalSubaccounts: 0
+	});
 	const perPage = 6;
+	const safeRows = $derived(settlements.rows ?? []);
 	const rows = $derived(
-		settlements.rows
+		safeRows
 			.filter((row) => (status === 'all' ? true : row.state === status))
 	);
 	const pages = $derived(Math.max(1, Math.ceil(rows.length / perPage)));
 	const visible = $derived(rows.slice((page - 1) * perPage, page * perPage));
-	const cleared = $derived(settlements.rows.filter((row) => row.state === 'settled' || row.state === 'next_batch'));
+	const cleared = $derived(safeRows.filter((row) => row.state === 'settled' || row.state === 'next_batch'));
 	const clearedValue = $derived(cleared.reduce((sum, row) => sum + row.payoutNgn, 0));
+	const safePeak = $derived(data.peaks?.peakDay ?? { day: new Date().toISOString().slice(0, 10), grossNgn: 0, payoutNgn: 0 });
+	const safeVelocity = $derived((settlements.velocity ?? []).length ? settlements.velocity : [{ day: new Date().toISOString().slice(0, 10), grossNgn: 0, payoutNgn: 0 }]);
 
 	const gatewayRails = [
 		{ label: 'Cards', detail: 'Paystack direct', share: 74.0 },
@@ -91,6 +98,18 @@
 		{/snippet}
 	</PageHeader>
 
+	{#if data.notProvisioned && data.notice}
+		<div class="panel border border-amber-400/30 bg-amber-400/[0.04] p-4 text-[11.5px] text-amber-100">
+			<div class="flex items-start gap-2">
+				<Landmark size={14} class="mt-0.5 shrink-0 text-amber-300" />
+				<div>
+					<p class="font-display text-[13px] font-semibold">Settlement rail not provisioned</p>
+					<p class="mt-0.5 text-[#d8cc8e]">{data.notice}</p>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	<div class="grid grid-cols-2 gap-2.5 md:grid-cols-3 2xl:grid-cols-5">
 		<KpiCard label="Gross ticketing (GMV)" value={money(settlements.grossNgn)} delta={`+${settlements.grossDelta}%`} sub="vs prior window" />
 		<KpiCard label="Net escrow settled" value={money(settlements.settledNgn)} sub={`${pct(settlements.settledPct)} post-reversals`} progress={settlements.settledPct} progressTone="ok" />
@@ -116,8 +135,8 @@
 				<div class="flex items-end justify-between gap-4">
 					<div>
 						<p class="mono-label !text-[7.5px]">Peak velocity day</p>
-						<p class="mt-1 font-display text-[20px] font-semibold text-[#f1f1f6]">{money(data.peaks.peakDay.grossNgn)}</p>
-						<p class="font-code text-[8px] text-[#c6bcff]">{shortDate(data.peaks.peakDay.day)} · {money(data.peaks.peakDay.payoutNgn)} disbursed</p>
+					<p class="mt-1 font-display text-[20px] font-semibold text-[#f1f1f6]">{money(safePeak.grossNgn)}</p>
+					<p class="font-code text-[8px] text-[#c6bcff]">{shortDate(safePeak.day)} · {money(safePeak.payoutNgn)} disbursed</p>
 					</div>
 					<div class="text-right">
 						<p class="mono-label !text-[7.5px]">Avg daily settlement</p>
@@ -127,7 +146,7 @@
 				</div>
 				<div class="mt-3">
 					<RevenueChart
-						data={settlements.velocity.map((day) => ({ day: day.day, value: day.grossNgn, secondary: day.payoutNgn }))}
+						data={safeVelocity.map((day) => ({ day: day.day, value: day.grossNgn, secondary: day.payoutNgn }))}
 						primaryLabel="Gross GMV"
 						secondaryLabel="Payouts"
 						height={210}
