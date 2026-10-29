@@ -8,7 +8,7 @@ declare global {
 		}
 		interface PageData {
 			admin?: AdminSession | null;
-			mode?: 'live' | 'demo';
+			mode?: 'live';
 		}
 	}
 }

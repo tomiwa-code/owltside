@@ -1,6 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { AdminApproval, ApprovalKind } from '$admin/types';
-import { countApprovals, decideApproval as decideDemoApproval, getApprovalsData } from './store';
 
 /**
  * Approval queue driver.
@@ -8,16 +7,10 @@ import { countApprovals, decideApproval as decideDemoApproval, getApprovalsData 
  * Every action the public app cannot take on its own — ticket refunds, instant
  * payouts, identity and payout-account verification — is written to
  * `public.approval_requests` as `pending`. This module lists those rows and
- * records the decision, so the public web can only ever show what an admin
- * actually approved.
- *
- *  - `supabase` — live mode, uses the service-role key (RLS deliberately stops
- *    every client from deciding a request).
- *  - `demo` — no credentials configured: the deterministic seeded queue is
- *    decided in memory so the workflow stays demonstrable.
+ * records the decision using the Supabase service-role key (RLS stops every
+ * client from deciding a request), so the public web can only ever show what
+ * an admin actually approved.
  */
-
-export type ApprovalMode = 'supabase' | 'demo';
 
 function supabaseUrl(): string {
 	return (process.env.SUPABASE_URL ?? process.env.PUBLIC_SUPABASE_URL ?? '').trim();
@@ -27,16 +20,17 @@ function serviceRoleKey(): string {
 	return (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
 }
 
-export function approvalMode(): ApprovalMode {
-	return supabaseUrl() && serviceRoleKey() ? 'supabase' : 'demo';
-}
-
 let cached: { key: string; client: SupabaseClient } | null = null;
 
 function liveClient(): SupabaseClient {
 	const url = supabaseUrl();
 	const key = serviceRoleKey();
-	if (!url || !key) throw new Error('Supabase approvals are not configured.');
+	if (!url || !key) {
+		throw new Error(
+			'Supabase is not configured. Set PUBLIC_SUPABASE_URL and ' +
+			'SUPABASE_SERVICE_ROLE_KEY before starting the admin control plane.'
+		);
+	}
 	const cacheKey = `${url}:${key.slice(-8)}`;
 	if (!cached || cached.key !== cacheKey) {
 		cached = {
@@ -111,15 +105,7 @@ function mapLiveRow(row: Row, profile?: Row): AdminApproval {
 	};
 }
 
-/**
- * The queue, newest first. `mode` tells the UI whether it is looking at the
- * live table or the seeded demo dataset.
- */
-export async function listApprovals(): Promise<{ rows: AdminApproval[]; mode: ApprovalMode }> {
-	if (approvalMode() === 'demo') {
-		return { rows: getApprovalsData().rows, mode: 'demo' };
-	}
-
+export async function listApprovals(): Promise<{ rows: AdminApproval[] }> {
 	const client = liveClient();
 	const { data, error } = await client
 		.from('approval_requests')
@@ -136,14 +122,19 @@ export async function listApprovals(): Promise<{ rows: AdminApproval[]; mode: Ap
 		for (const person of (people ?? []) as Row[]) profiles.set(String(person.id), person);
 	}
 	return {
-		rows: rows.map((row) => mapLiveRow(row, profiles.get(String(row.requester_id)))),
-		mode: 'supabase'
+		rows: rows.map((row) => mapLiveRow(row, profiles.get(String(row.requester_id))))
 	};
 }
 
 /** Pending requests, for the sidebar badge. */
-export function pendingApprovalCount(): number {
-	return approvalMode() === 'demo' ? countApprovals() : 0;
+export async function pendingApprovalCount(): Promise<number> {
+	const client = liveClient();
+	const { count, error } = await client
+		.from('approval_requests')
+		.select('*', { count: 'exact', head: true })
+		.eq('status', 'pending');
+	if (error) return 0;
+	return count ?? 0;
 }
 
 export interface ApprovalDecisionResult {
@@ -152,9 +143,9 @@ export interface ApprovalDecisionResult {
 }
 
 /**
- * Record a decision. Approving a refund also settles the pass
- * (`tickets.status = 'refunded'`); in live mode that is done by the
- * `apply_approved_refund` trigger from migration 023.
+ * Record a decision. Approving a refund settles the pass
+ * (`tickets.status = 'refunded'`) via the `apply_approved_refund` trigger
+ * in migration 023.
  */
 export async function decideApproval(
 	id: string,
@@ -165,12 +156,6 @@ export async function decideApproval(
 	const trimmed = note.trim();
 	if (decision === 'reject' && !trimmed) {
 		throw new Error('Add a short reason so the requester knows what to change.');
-	}
-
-	if (approvalMode() === 'demo') {
-		const request = decideDemoApproval(id, decision, actor, trimmed);
-		if (!request) throw new Error('That request is no longer in the queue.');
-		return { id: request.id, status: decision === 'approve' ? 'approved' : 'rejected' };
 	}
 
 	const client = liveClient();

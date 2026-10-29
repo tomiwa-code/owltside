@@ -18,8 +18,13 @@ const REMEMBER_HOURS = 12;
 const MAX_FAILURES = 5;
 const WINDOW_MINUTES = 10;
 
-export function isDemoMode(): boolean {
-	return !process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD;
+/**
+ * The admin control plane requires ADMIN_EMAIL + ADMIN_PASSWORD to be set.
+ * Credentials are configured server-side; there is no "demo" sign-in that
+ * accepts a hard-coded passphrase.
+ */
+export function credentialsConfigured(): boolean {
+	return Boolean(process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD);
 }
 
 export function sessionSecret(): string {
@@ -82,23 +87,18 @@ function constantTimeEqual(a: string, b: string): boolean {
 	return timingSafeEqual(left, right);
 }
 
-const DEMO_EMAIL = 'admin@owltside.com';
-
-/**
- * Suggested sandbox passphrase, surfaced on the sign-in screen so a demo can be
- * started without hunting through docs. Demo mode accepts any 16+ characters;
- * this is only the advertised one.
- */
-export const DEMO_PASSPHRASE = 'owltside-admin-2026';
-const DEMO_ROLE: AdminRole = 'Super Admin';
-const DEMO_TIER: AdminTier = 0;
+const DEFAULT_EMAIL = 'admin@owltside.com';
+const DEFAULT_NAME = 'Tomiwa A.';
+const DEFAULT_ROLE: AdminRole = 'Super Admin';
+const DEFAULT_TIER: AdminTier = 0;
 
 export function adminIdentity() {
+	const envEmail = (process.env.ADMIN_EMAIL ?? DEFAULT_EMAIL).trim();
 	return {
-		name: process.env.ADMIN_NAME || 'Tomiwa A.',
-		email: process.env.ADMIN_EMAIL || DEMO_EMAIL,
-		role: (process.env.ADMIN_ROLE as AdminRole | undefined) || DEMO_ROLE,
-		tier: (process.env.ADMIN_TIER ? Number(process.env.ADMIN_TIER) : DEMO_TIER) as AdminTier
+		name: process.env.ADMIN_NAME?.trim() || DEFAULT_NAME,
+		email: envEmail || DEFAULT_EMAIL,
+		role: ((process.env.ADMIN_ROLE as AdminRole | undefined) || DEFAULT_ROLE),
+		tier: (process.env.ADMIN_TIER ? Number(process.env.ADMIN_TIER) : DEFAULT_TIER) as AdminTier
 	};
 }
 
@@ -116,7 +116,7 @@ export function authenticate({ email, password, remember, ip }: LoginInput): Log
 	}
 
 	const identity = adminIdentity();
-	const passwordOk = isDemoMode() ? password.length >= 16 : password.length >= 16 && constantTimeEqual(password, process.env.ADMIN_PASSWORD ?? '');
+	const passwordOk = password.length >= 16 && constantTimeEqual(password, process.env.ADMIN_PASSWORD ?? '');
 	const emailOk = constantTimeEqual(email.trim().toLowerCase(), identity.email.toLowerCase());
 
 	if (!passwordOk || !emailOk) {
@@ -125,9 +125,7 @@ export function authenticate({ email, password, remember, ip }: LoginInput): Log
 		return {
 			ok: false,
 			status: 401,
-			error: isDemoMode()
-				? `Email or passphrase is incorrect. Demo sign-in: admin@owltside.com with any 16+ character passphrase. ${remaining} attempt${remaining === 1 ? '' : 's'} left.`
-				: `Email or passphrase is incorrect. ${remaining} attempt${remaining === 1 ? '' : 's'} left.`
+			error: `Email or passphrase is incorrect. ${remaining} attempt${remaining === 1 ? '' : 's'} left.`
 		};
 	}
 
@@ -150,33 +148,8 @@ export function authenticate({ email, password, remember, ip }: LoginInput): Log
 			tier: identity.tier,
 			auth: 'password+totp',
 			ip,
-			demo: isDemoMode()
+			demo: false
 		}
-	};
-}
-
-/** Demo-only simulated hardware-key sign in. */
-export function authenticateWithKey(remember: boolean, ip: string): { session: Omit<AdminSession, 'issuedAt' | 'expiresAt'>; expiresAt: Date } {
-	const identity = adminIdentity();
-	const hours = remember ? REMEMBER_HOURS : SESSION_HOURS;
-	return {
-		session: {
-			id: `adm-key-${Date.now().toString(36)}`,
-			email: identity.email,
-			name: identity.name,
-			initials: identity.name
-				.split(/\s+/)
-				.map((part) => part[0])
-				.join('')
-				.slice(0, 2)
-				.toUpperCase(),
-			role: identity.role,
-			tier: identity.tier,
-			auth: 'webauthn',
-			ip,
-			demo: true
-		},
-		expiresAt: new Date(Date.now() + hours * 3_600_000)
 	};
 }
 

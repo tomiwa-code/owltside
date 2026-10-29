@@ -2,20 +2,13 @@
 	import {
 		BadgeCheck,
 		CalendarDays,
-		Check,
 		ChevronRight,
 		Download,
 		ExternalLink,
 		Eye,
-		Flag,
-		Plus,
 		ScanLine,
-		ShieldCheck,
-		X
+		ShieldCheck
 	} from '@lucide/svelte';
-	import { invalidateAll } from '$app/navigation';
-	import { untrack } from 'svelte';
-	import { toasts } from '$admin/state/toast.svelte';
 	import { chipClass, eventStatus } from '$admin/utils/status';
 	import { countdown, date, money, num, pct, time } from '$admin/utils/format';
 	import type { AdminEvent } from '$admin/types';
@@ -23,7 +16,6 @@
 	import CoverArt from '$components/CoverArt.svelte';
 	import StatusChip from '$components/StatusChip.svelte';
 	import Pagination from '$components/Pagination.svelte';
-	import Sheet from '$components/Sheet.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
 	import SearchField from '$components/SearchField.svelte';
 	import SubmissionQueue from '$components/SubmissionQueue.svelte';
@@ -31,12 +23,6 @@
 	let { data } = $props();
 
 	let selectedOverride = $state<string | null>(null);
-	let createOpen = $state(false);
-	let reasonOpen = $state(false);
-	let reasonMode = $state<'draft' | 'suspended'>('draft');
-	let reason = $state('');
-	let busy = $state(false);
-	let creating = $state(false);
 
 	const combined = $derived([...(data.table?.rows ?? []), ...(data.pending ?? [])]);
 	const selected = $derived<AdminEvent | null>(
@@ -46,63 +32,9 @@
 			null
 	);
 
-	const form = $state({
-		title: '',
-		category: untrack(() => data.options?.categories?.[0] ?? 'Tech & AI'),
-		organizerId: untrack(() => data.options?.organizerList?.[0]?.id ?? ''),
-		startsAt: new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 16),
-		venue: '',
-		city: 'Lagos',
-		capacity: 500,
-		priceNgn: 25000
-	});
-
 	function submitFilters(event: Event) {
 		const formElement = event.currentTarget as HTMLSelectElement;
 		formElement.form?.requestSubmit();
-	}
-
-	async function applyStatus(id: string, status: string, note: string) {
-		busy = true;
-		const response = await fetch(`/api/events/${id}/status`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ status, reason: note })
-		});
-		busy = false;
-		if (!response.ok) {
-			toasts.error('Decision not applied', (await response.json().catch(() => ({}))).message ?? 'Try again.');
-			return;
-		}
-		toasts.ok(
-			status === 'published' ? 'Event published' : status === 'suspended' ? 'Event suspended' : 'Event returned to drafts',
-			'Ledger entry written to the immutable audit trail.'
-		);
-		reasonOpen = false;
-		reason = '';
-		selectedOverride = null;
-		await invalidateAll();
-	}
-
-	async function submitCreate() {
-		creating = true;
-		const response = await fetch('/api/events', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ ...form, startsAt: new Date(form.startsAt).toISOString() })
-		});
-		creating = false;
-		if (!response.ok) {
-			const payload = await response.json().catch(() => ({}));
-			toasts.error('Event not created', payload.message ?? 'Check the required fields.');
-			return;
-		}
-		const payload = (await response.json()) as { event: AdminEvent };
-		toasts.ok('Draft event created', `${payload.event.title} is ready for configuration and review.`);
-		createOpen = false;
-		form.title = '';
-		form.venue = '';
-		await invalidateAll();
 	}
 </script>
 
@@ -111,21 +43,14 @@
 <div class="space-y-4">
 	<PageHeader
 		title="Events Management"
-		subtitle={data.source === 'supabase' ? 'Events loaded from public.events in Supabase. The current schema does not store admin moderation status.' : 'Review, moderate, monitor capacity, and manage all events across Owltside.'}
+		subtitle="Review, moderate, monitor capacity, and manage all events across Owltside. Events are loaded live from public.events in Supabase."
 		crumbs={['platform', 'events']}
-		eyebrow={data.source === 'supabase' ? 'Supabase · live data' : 'Demo registry'}
+		eyebrow="Supabase · live data"
 	>
 		{#snippet actions()}
-			{#if data.source === 'demo'}
-				<a class="btn btn-sm" href="/api/export/events" download>
-					<Download size={12} /> Export Roster (CSV)
-				</a>
-			{/if}
-			{#if data.source === 'demo'}
-				<button type="button" class="btn btn-sm btn-primary" onclick={() => (createOpen = true)}>
-					<Plus size={13} /> Create Admin Event
-				</button>
-			{/if}
+			<a class="btn btn-sm" href="/api/export/events" download>
+				<Download size={12} /> Export Roster (CSV)
+			</a>
 		{/snippet}
 	</PageHeader>
 
@@ -143,7 +68,7 @@
 		<div class="panel border-amber-400/25 bg-amber-400/[0.03] p-4">
 			<div class="flex items-center justify-between"><p class="mono-label !text-amber-200/80">Pending review</p><span class="chip chip-warn !h-[17px] !text-[8px]">Needs action</span></div>
 			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-amber-100">{String(data.counts.pending).padStart(2, '0')}</p>
-			<p class="mt-1.5 font-code text-[9px] uppercase tracking-[0.06em] text-[#8f8f9b]">{data.source === 'supabase' ? 'No moderation field in schema' : 'Queue SLA · 2h'}</p>
+			<p class="mt-1.5 font-code text-[9px] uppercase tracking-[0.06em] text-[#8f8f9b]">Queue SLA · 2h</p>
 		</div>
 		<div class="panel p-4">
 			<p class="mono-label">Drafts</p>
@@ -190,7 +115,7 @@
 		</form>
 	</div>
 
-	<SubmissionQueue rows={data.submissions ?? []} mode={data.submissionMode ?? 'demo'} error={data.submissionError ?? ''} />
+	<SubmissionQueue rows={data.submissions ?? []} error={data.submissionError ?? ''} />
 
 	<div class="grid grid-cols-1 gap-2.5 min-[1400px]:grid-cols-[1.68fr_1fr]">
 		<section class="panel min-w-0 overflow-hidden">
@@ -345,32 +270,7 @@
 						</div>
 
 						<div class="mt-4 space-y-1.5 border-t border-[#26262e] pt-3">
-							{#if data.source === 'supabase'}
-								<a href={`/events/${selected.id}`} class="btn btn-primary w-full">Open event record</a>
-							{:else if selected.status === 'pending'}
-								<button type="button" class="btn btn-primary w-full" disabled={busy} onclick={() => applyStatus(selected.id, 'published', 'Moderation approved — listing published')}>
-									<Check size={13} /> Approve & Publish Event
-								</button>
-								<div class="grid grid-cols-2 gap-1.5">
-									<button type="button" class="btn btn-sm" onclick={() => { reasonMode = 'draft'; reasonOpen = true; }}>
-										Request revisions
-									</button>
-									<button type="button" class="btn btn-sm btn-danger" onclick={() => { reasonMode = 'suspended'; reasonOpen = true; }}>
-										<X size={12} /> Reject event
-									</button>
-								</div>
-							{:else}
-								<a href={`/events/${selected.id}`} class="btn btn-primary w-full">Open full dossier</a>
-								{#if selected.status === 'published'}
-									<button type="button" class="btn btn-sm btn-danger-soft w-full" onclick={() => { reasonMode = 'suspended'; reasonOpen = true; }}>
-										<Flag size={12} /> Suspend listing
-									</button>
-								{:else}
-									<button type="button" class="btn btn-sm w-full" onclick={() => applyStatus(selected.id, 'published', 'Listing reinstated by admin')}>
-										Reinstate & publish
-									</button>
-								{/if}
-							{/if}
+							<a href={`/events/${selected.id}`} class="btn btn-primary w-full">Open event record</a>
 						</div>
 					</div>
 
@@ -386,75 +286,3 @@
 		</aside>
 	</div>
 </div>
-
-<!-- Create event -->
-<Sheet open={createOpen} title="Create admin event" subtitle="Provision a draft on behalf of a verified organizer." onclose={() => (createOpen = false)} width="520px">
-	<form class="space-y-3.5" onsubmit={(event) => { event.preventDefault(); submitCreate(); }}>
-		<div>
-			<label class="field-label" for="evt-title">Event title</label>
-			<input id="evt-title" class="input" bind:value={form.title} placeholder="e.g. Product Design Week Lagos" required minlength="3" />
-		</div>
-		<div class="grid grid-cols-2 gap-3">
-			<div>
-				<label class="field-label" for="evt-category">Category</label>
-				<select id="evt-category" class="select" bind:value={form.category}>
-					{#each (data.options?.categories ?? []) as category}<option value={category}>{category}</option>{/each}
-				</select>
-			</div>
-			<div>
-				<label class="field-label" for="evt-org">Organizer</label>
-				<select id="evt-org" class="select" bind:value={form.organizerId}>
-					{#each (data.options?.organizerList ?? []) as organizer}<option value={organizer.id}>{organizer.name}</option>{/each}
-				</select>
-			</div>
-		</div>
-		<div class="grid grid-cols-2 gap-3">
-			<div>
-				<label class="field-label" for="evt-date">Starts at (WAT)</label>
-				<input id="evt-date" type="datetime-local" class="input" bind:value={form.startsAt} required />
-			</div>
-			<div>
-				<label class="field-label" for="evt-capacity">Capacity</label>
-				<input id="evt-capacity" type="number" min="10" class="input" bind:value={form.capacity} required />
-			</div>
-		</div>
-		<div class="grid grid-cols-2 gap-3">
-			<div>
-				<label class="field-label" for="evt-venue">Venue</label>
-				<input id="evt-venue" class="input" bind:value={form.venue} placeholder="Landmark Centre" required />
-			</div>
-			<div>
-				<label class="field-label" for="evt-city">City</label>
-				<input id="evt-city" class="input" bind:value={form.city} placeholder="Lagos" required />
-			</div>
-		</div>
-		<div>
-			<label class="field-label" for="evt-price">General ticket price (₦)</label>
-			<input id="evt-price" type="number" min="0" step="1000" class="input" bind:value={form.priceNgn} required />
-			<p class="mt-1 font-code text-[8.5px] uppercase tracking-[0.06em] text-[#6f6f7b]">Early-bird tier is generated at 80% of this price.</p>
-		</div>
-		<div class="flex items-center justify-between gap-2 border-t border-[#26262e] pt-3">
-			<p class="max-w-[240px] font-code text-[8px] uppercase leading-relaxed tracking-[0.08em] text-[#6f6f7b]">
-				Created as a draft — publish it once the listing passes review.
-			</p>
-			<div class="flex gap-2">
-				<button type="button" class="btn btn-sm btn-ghost" onclick={() => (createOpen = false)}>Cancel</button>
-				<button type="submit" class="btn btn-sm btn-primary" disabled={creating}>{creating ? 'Creating…' : 'Create draft event'}</button>
-			</div>
-		</div>
-	</form>
-</Sheet>
-
-<!-- Reason capture -->
-<Sheet open={reasonOpen} title={reasonMode === 'suspended' ? 'Suspend or reject listing' : 'Request revisions'} subtitle="This reason is written to the immutable audit trail." onclose={() => (reasonOpen = false)} width="440px">
-	<form class="space-y-3" onsubmit={(event) => { event.preventDefault(); if (selected) applyStatus(selected.id, reasonMode, reason || 'Policy review'); }}>
-		<label class="field-label" for="reason">Decision note</label>
-		<textarea id="reason" class="textarea" bind:value={reason} placeholder="e.g. Beneficiary name mismatch against the CAC registry. Sales frozen pending verification." required></textarea>
-		<div class="flex justify-end gap-2">
-			<button type="button" class="btn btn-sm btn-ghost" onclick={() => (reasonOpen = false)}>Cancel</button>
-			<button type="submit" class="btn btn-sm {reasonMode === 'suspended' ? 'btn-danger' : 'btn-primary'}" disabled={busy}>
-				{reasonMode === 'suspended' ? 'Apply suspension' : 'Send back to organizer'}
-			</button>
-		</div>
-	</form>
-</Sheet>

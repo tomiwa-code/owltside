@@ -1,19 +1,14 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { AdminReport, ReportStatus, ReportTargetType } from '$admin/types';
-import { decideReport as decideDemoReport, getReportsData } from './store';
 
 /**
  * Content report driver (event listings & public profiles).
  *
  * The public app only files a report: it lands `open` in
- * `public.content_reports` and is reviewed here. Nothing is auto-actioned.
- *
- *  - `supabase` — live mode, uses the service-role key because RLS deliberately
- *    gives clients no read or update access to the queue.
- *  - `demo` — no credentials configured: the seeded queue is decided in memory.
+ * `public.content_reports` and is reviewed here using the service-role key —
+ * RLS gives clients no read or update access to the queue. Nothing is
+ * auto-actioned.
  */
-
-export type ReportMode = 'supabase' | 'demo';
 
 function supabaseUrl(): string {
 	return (process.env.SUPABASE_URL ?? process.env.PUBLIC_SUPABASE_URL ?? '').trim();
@@ -23,16 +18,17 @@ function serviceRoleKey(): string {
 	return (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
 }
 
-export function reportMode(): ReportMode {
-	return supabaseUrl() && serviceRoleKey() ? 'supabase' : 'demo';
-}
-
 let cached: { key: string; client: SupabaseClient } | null = null;
 
 function liveClient(): SupabaseClient {
 	const url = supabaseUrl();
 	const key = serviceRoleKey();
-	if (!url || !key) throw new Error('Supabase reports are not configured.');
+	if (!url || !key) {
+		throw new Error(
+			'Supabase is not configured. Set PUBLIC_SUPABASE_URL and ' +
+			'SUPABASE_SERVICE_ROLE_KEY before starting the admin control plane.'
+		);
+	}
 	const cacheKey = `${url}:${key.slice(-8)}`;
 	if (!cached || cached.key !== cacheKey) {
 		cached = {
@@ -63,7 +59,6 @@ const CATEGORY_LABELS: Record<string, string> = {
 	other: 'Something else'
 };
 
-/** Existing content snapshot so a reviewer can judge the report in place. */
 function contextFor(row: Row, event?: Row, profile?: Row): { label: string; value: string }[] {
 	const details: { label: string; value: string }[] = [];
 	if (row.target_type === 'event') {
@@ -102,11 +97,7 @@ function mapLiveRow(row: Row, reporter?: Row, event?: Row, profile?: Row): Admin
 	};
 }
 
-export async function listReports(): Promise<{ rows: AdminReport[]; mode: ReportMode }> {
-	if (reportMode() === 'demo') {
-		return { rows: getReportsData().rows, mode: 'demo' };
-	}
-
+export async function listReports(): Promise<{ rows: AdminReport[] }> {
 	const client = liveClient();
 	const { data, error } = await client
 		.from('content_reports')
@@ -151,8 +142,7 @@ export async function listReports(): Promise<{ rows: AdminReport[]; mode: Report
 				events.get(asText(row.target_id)),
 				profiles.get(asText(row.target_id))
 			)
-		),
-		mode: 'supabase'
+		)
 	};
 }
 
@@ -175,12 +165,6 @@ export async function decideReport(
 	const trimmed = note.trim();
 	if (!trimmed) throw new Error('Add a short note explaining the outcome.');
 
-	if (reportMode() === 'demo') {
-		const report = decideDemoReport(id, decision, actor, trimmed);
-		if (!report) throw new Error('That report is no longer open.');
-		return { id: report.id, status: decision === 'action' ? 'actioned' : 'dismissed' };
-	}
-
 	const client = liveClient();
 	const { data, error } = await client
 		.from('content_reports')
@@ -198,4 +182,14 @@ export async function decideReport(
 	if (!data) throw new Error('That report is no longer open.');
 
 	return { id: data.id, status: decision === 'action' ? 'actioned' : 'dismissed' };
+}
+
+export async function countOpenReports(): Promise<number> {
+	const client = liveClient();
+	const { count, error } = await client
+		.from('content_reports')
+		.select('*', { count: 'exact', head: true })
+		.eq('status', 'open');
+	if (error) return 0;
+	return count ?? 0;
 }

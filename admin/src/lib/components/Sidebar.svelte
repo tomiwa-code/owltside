@@ -201,7 +201,7 @@
 			</form>
 		</div>
 		<div class="mt-2 flex items-center justify-between px-1 font-code text-[8px] uppercase tracking-[0.12em] text-[#54545f]">
-			<span>{admin.demo ? 'Demo cluster' : 'Secure cluster'}</span>
+			<span>Secure cluster</span>
 			<a href={publicAppUrl} target="_blank" rel="noreferrer" class="flex items-center gap-1 hover:text-[#c6bcff]" title="Open the public Owltside app">
 				Public site <ArrowUpRight size={9} />
 			</a>

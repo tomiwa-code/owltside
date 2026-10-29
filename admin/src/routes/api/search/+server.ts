@@ -1,8 +1,11 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { globalSearch } from '$admin/server/store';
 
-export const GET: RequestHandler = ({ url }) => {
-	const query = (url.searchParams.get('q') ?? '').slice(0, 80);
-	return json({ results: globalSearch(query, 9) });
+/**
+ * Federated command-palette search previously ran against the in-memory demo
+ * store. A live Supabase-backed version is not yet wired up, so return an
+ * empty result set rather than stale seed data.
+ */
+export const GET: RequestHandler = () => {
+	return json({ results: [] });
 };

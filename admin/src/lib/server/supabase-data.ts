@@ -1,17 +1,20 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { config as loadDotenv } from 'dotenv';
 import { resolve } from 'node:path';
-import type { AdminDashboard, AdminEvent, AdminOrder, AdminOrganizer, AdminTicket, AdminUser, EventTier } from '$admin/types';
+import type {
+	AdminDashboard,
+	AdminEvent,
+	AdminOrder,
+	AdminOrganizer,
+	AdminTicket,
+	AdminUser,
+	EventTier
+} from '$admin/types';
 import type { EventQuery, OrganizerQuery, Page, UserQuery } from './store';
-
-export type AdminDataSource = 'supabase' | 'demo';
 
 let localEnvLoaded = false;
 function loadLocalEnvFiles(): void {
 	if (localEnvLoaded || process.env.NODE_ENV === 'production') return;
-	// The public app reads the repository-root .env, while the admin is a nested
-	// SvelteKit project. Load both locations (admin-specific files first) so its
-	// process sees the same Supabase credentials without duplicating local secrets.
 	const cwd = process.cwd();
 	const mode = process.env.NODE_ENV || 'development';
 	const envFiles = [`.env.${mode}.local`, '.env.local', `.env.${mode}`, '.env'];
@@ -20,20 +23,21 @@ function loadLocalEnvFiles(): void {
 	localEnvLoaded = true;
 }
 
-function createAdminClient(): SupabaseClient | null {
+export function createAdminClient(): SupabaseClient {
 	loadLocalEnvFiles();
 	const url = (process.env.PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
-	// The public app's RLS policies are organizer/attendee scoped. Admin reads
-	// must use a server-only key; never fall back to an anon key here.
 	const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '').trim();
-	if (!url || !key) return null;
+	if (!url || !key) {
+		throw new Error(
+			'Supabase admin client is not configured. Set PUBLIC_SUPABASE_URL and ' +
+			'SUPABASE_SERVICE_ROLE_KEY (pointing at the public web app\'s database) ' +
+			'before starting the admin control plane. The console no longer ships ' +
+			'with demo seed data.'
+		);
+	}
 	return createClient(url, key, {
 		auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
 	});
-}
-
-export function adminDataSource(): AdminDataSource {
-	return createAdminClient() ? 'supabase' : 'demo';
 }
 
 function assertNoError(error: { message: string } | null, resource: string): void {
@@ -82,10 +86,14 @@ export function mapSupabaseEvent(row: Record<string, any>, organizerName = 'Orga
 	const tierSold = tiers.reduce((sum, tier) => sum + tier.sold, 0);
 	const sold = tierSold || numberValue(row.attendees);
 	const grossNgn = tiers.reduce((sum, tier) => sum + tier.sold * tier.priceNgn, 0);
-	const cover = row.cover && typeof row.cover === 'object' ? row.cover as Record<string, unknown> : {};
+	const cover = row.cover && typeof row.cover === 'object' ? (row.cover as Record<string, unknown>) : {};
 	const endsAt = String(row.ends_at ?? startsAt);
 	const now = Date.now();
-	const status = new Date(endsAt).getTime() < now ? 'completed' : 'published';
+	const rawStatus = String(row.status ?? 'published');
+	let status: AdminEvent['status'] = (['published', 'pending', 'draft', 'suspended', 'completed'] as const).includes(rawStatus as AdminEvent['status'])
+		? (rawStatus as AdminEvent['status'])
+		: new Date(endsAt).getTime() < now ? 'completed' : 'published';
+	if (rawStatus === 'rejected') status = 'suspended';
 	return {
 		id: String(row.id),
 		ref: `EVT-${String(row.id).slice(0, 8).toUpperCase()}`,
@@ -95,7 +103,7 @@ export function mapSupabaseEvent(row: Record<string, any>, organizerName = 'Orga
 		organizerId: String(row.organizer_id ?? ''),
 		organizerName,
 		organizerTier: 1,
-		status,
+		status: status as AdminEvent['status'],
 		startsAt,
 		endsAt,
 		venue: String(row.venue ?? ''),
@@ -106,7 +114,9 @@ export function mapSupabaseEvent(row: Record<string, any>, organizerName = 'Orga
 		tiers,
 		coverFrom: String(cover.from ?? '#1b2a4a'),
 		coverTo: String(cover.to ?? '#43318a'),
-		coverIcon: String(cover.icon ?? 'calendar-days')
+		coverIcon: String(cover.icon ?? 'calendar-days'),
+		submittedAt: row.submitted_at ? String(row.submitted_at) : undefined,
+		moderationNote: row.moderation_note ? String(row.moderation_note) : undefined
 	};
 }
 
@@ -114,7 +124,7 @@ async function loadEvents(client: SupabaseClient): Promise<AdminEvent[]> {
 	const records = await rowsFrom(
 		client,
 		'events',
-		'id,slug,title,category,starts_at,ends_at,venue,city,cover,organizer_id,tiers,attendees,live,created_at'
+		'id,slug,title,category,starts_at,ends_at,venue,city,cover,organizer_id,tiers,attendees,status,submitted_at,moderation_note,created_at'
 	);
 	const organizerIds = [...new Set(records.map((row) => String(row.organizer_id ?? '')).filter(Boolean))];
 	const organizers = new Map<string, string>();
@@ -142,9 +152,15 @@ function paginate<T>(items: T[], page = 1, perPage = 12): Page<T> {
 	};
 }
 
-export async function listSupabaseEvents(query: EventQuery = {}): Promise<Page<AdminEvent> & { categories: string[]; organizers: string[]; organizerList: { id: string; name: string }[]; counts: { total: number; published: number; pending: number; draft: number; suspended: number } }> {
+export async function listSupabaseEvents(query: EventQuery = {}): Promise<
+	Page<AdminEvent> & {
+		categories: string[];
+		organizers: string[];
+		organizerList: { id: string; name: string }[];
+		counts: { total: number; published: number; pending: number; draft: number; suspended: number };
+	}
+> {
 	const client = createAdminClient();
-	if (!client) throw new Error('Supabase admin client is not configured.');
 	const events = await loadEvents(client);
 	const q = (query.q ?? '').trim().toLowerCase();
 	const filtered = events
@@ -153,7 +169,7 @@ export async function listSupabaseEvents(query: EventQuery = {}): Promise<Page<A
 		.filter((event) => !query.organizer || query.organizer === 'all' || event.organizerId === query.organizer || event.organizerName === query.organizer)
 		.filter((event) => !q || [event.title, event.ref, event.organizerName, event.city, event.venue].some((value) => value.toLowerCase().includes(q)))
 		.sort((a, b) => {
-			if (query.sort === 'newest') return b.startsAt.localeCompare(a.startsAt);
+			if (query.sort === 'newest') return (b.submittedAt ?? b.startsAt).localeCompare(a.submittedAt ?? a.startsAt);
 			if (query.sort === 'gmv') return b.grossNgn - a.grossNgn;
 			return a.startsAt.localeCompare(b.startsAt);
 		});
@@ -165,16 +181,33 @@ export async function listSupabaseEvents(query: EventQuery = {}): Promise<Page<A
 		organizerList: [...organizers].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
 		counts: {
 			total: events.length,
-			published: events.filter((event) => event.status === 'published').length,
-			pending: 0,
-			draft: 0,
-			suspended: 0
+			published: events.filter((e) => e.status === 'published').length,
+			pending: events.filter((e) => e.status === 'pending').length,
+			draft: events.filter((e) => e.status === 'draft').length,
+			suspended: events.filter((e) => e.status === 'suspended').length
 		}
 	};
 }
 
-type DataProfile = Record<string, any> & { id: string; name: string; handle: string };
-type DataAuthUser = Record<string, any> & { id: string; email?: string; phone?: string };
+export async function getSupabaseEvent(id: string): Promise<AdminEvent | null> {
+	const client = createAdminClient();
+	const baseQuery = client
+		.from('events')
+		.select('id,slug,title,category,starts_at,ends_at,venue,city,cover,organizer_id,tiers,attendees,status,submitted_at,moderation_note,created_at');
+	const eventQuery = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
+		? await baseQuery.eq('id', id).maybeSingle()
+		: await baseQuery.eq('slug', id).maybeSingle();
+	assertNoError(eventQuery.error, 'events');
+	if (!eventQuery.data) return null;
+	const profileQuery = eventQuery.data.organizer_id
+		? await client.from('profiles').select('name,handle').eq('id', eventQuery.data.organizer_id).maybeSingle()
+		: { data: null, error: null };
+	assertNoError(profileQuery.error, 'profiles');
+	return mapSupabaseEvent(eventQuery.data, profileQuery.data?.name ?? profileQuery.data?.handle ?? 'Organizer');
+}
+
+type DataProfile = Record<string, any>;
+type DataAuthUser = Record<string, any>;
 type PeopleBundle = {
 	profiles: DataProfile[];
 	authUsers: Map<string, DataAuthUser>;
@@ -189,10 +222,10 @@ type PeopleBundle = {
 
 async function loadPeopleBundle(client: SupabaseClient): Promise<PeopleBundle> {
 	const [profiles, events, orders, tickets] = await Promise.all([
-		rowsFrom(client, 'profiles', 'id,handle,name,city,verified,operating_identity,created_at,avatar_url', (query) => query.order('created_at', { ascending: false }).order('id')),
+		rowsFrom(client, 'profiles', 'id,handle,name,city,verified,operating_identity,created_at,avatar_url', (q) => q.order('created_at', { ascending: false }).order('id')),
 		loadEvents(client),
-		rowsFrom(client, 'orders', 'id,owner_id,event_id,reference,total,status,gateway,created_at', (query) => query.order('created_at', { ascending: false }).order('id')),
-		rowsFrom(client, 'tickets', 'id,owner_id,event_id,code,event_title,tier_name,holder_name,status,purchased_at,price,cover', (query) => query.order('purchased_at', { ascending: false }).order('id'))
+		rowsFrom(client, 'orders', 'id,owner_id,owner_name,event_id,reference,total,items_label,status,gateway,created_at', (q) => q.order('created_at', { ascending: false }).order('id')),
+		rowsFrom(client, 'tickets', 'id,owner_id,event_id,code,event_title,tier_name,holder_name,status,purchased_at,price,cover', (q) => q.order('purchased_at', { ascending: false }).order('id'))
 	]);
 	const authUsers = new Map<string, DataAuthUser>();
 	const perPage = 1000;
@@ -220,7 +253,7 @@ async function loadPeopleBundle(client: SupabaseClient): Promise<PeopleBundle> {
 		const eventId = String(ticket.event_id ?? '');
 		ticketsByEvent.set(eventId, (ticketsByEvent.get(eventId) ?? 0) + 1);
 	}
-	return { profiles: profiles as DataProfile[], authUsers, events, orders, tickets, ordersByOwner, ticketsByOwner, ticketsByEvent, paidGrossByEvent };
+	return { profiles, authUsers, events, orders, tickets, ordersByOwner, ticketsByOwner, ticketsByEvent, paidGrossByEvent };
 }
 
 function mapDataUser(profile: DataProfile, auth: DataAuthUser | undefined, bundle: PeopleBundle): AdminUser {
@@ -229,7 +262,7 @@ function mapDataUser(profile: DataProfile, auth: DataAuthUser | undefined, bundl
 	const now = Date.now();
 	const isBlocked = auth?.banned_until && new Date(auth.banned_until).getTime() > now;
 	const isOrganizer = profile.operating_identity === 'organizer' || bundle.events.some((event) => event.organizerId === profile.id);
-	const role = isOrganizer ? 'Organizer' : 'Attendee';
+	const role: AdminUser['role'] = isOrganizer ? 'Organizer' : 'Attendee';
 	return {
 		id: profile.id,
 		handle: String(profile.handle ?? profile.id.slice(0, 8)),
@@ -250,7 +283,7 @@ function mapDataUser(profile: DataProfile, auth: DataAuthUser | undefined, bundl
 
 function mapDataTicket(ticket: Record<string, any>, profileById: Map<string, DataProfile>): AdminTicket {
 	const profile = profileById.get(String(ticket.owner_id));
-	const status = ['valid', 'used', 'refunded', 'transferred'].includes(ticket.status) ? ticket.status : 'void';
+	const status = ['valid', 'used', 'refunded', 'transferred'].includes(ticket.status) ? (ticket.status as AdminTicket['status']) : 'void';
 	return {
 		id: String(ticket.id),
 		code: String(ticket.code ?? ''),
@@ -270,16 +303,20 @@ function mapDataTicket(ticket: Record<string, any>, profileById: Map<string, Dat
 function mapDataOrder(order: Record<string, any>, profileById: Map<string, DataProfile>, eventById: Map<string, AdminEvent>): AdminOrder {
 	const profile = profileById.get(String(order.owner_id));
 	const event = eventById.get(String(order.event_id));
-	const status = order.status === 'paid' ? 'settled' : order.status === 'failed' || order.status === 'refunded' ? order.status : 'pending';
+	const status: AdminOrder['status'] = order.status === 'paid'
+		? 'settled'
+		: order.status === 'failed' || order.status === 'refunded'
+			? (order.status as AdminOrder['status'])
+			: 'pending';
 	return {
 		id: String(order.id),
 		reference: String(order.reference ?? order.id),
-		customerName: String(profile?.name ?? 'Attendee'),
+		customerName: String(order.owner_name ?? profile?.name ?? 'Attendee'),
 		customerEmail: '',
 		customerPhone: '',
 		eventId: String(order.event_id ?? ''),
-		eventTitle: event?.title ?? 'Event',
-		tierLabel: 'Ticket',
+		eventTitle: event?.title ?? String(order.items_label ?? 'Event'),
+		tierLabel: String(order.items_label ?? 'Ticket'),
 		qty: 1,
 		subtotalNgn: numberValue(order.total),
 		feeNgn: 0,
@@ -299,7 +336,6 @@ export async function listSupabaseUsers(query: UserQuery = {}, selectedId?: stri
 	related: { tickets: AdminTicket[]; orders: AdminOrder[]; audit: [] };
 }> {
 	const client = createAdminClient();
-	if (!client) throw new Error('Supabase admin client is not configured.');
 	const bundle = await loadPeopleBundle(client);
 	const profileById = new Map(bundle.profiles.map((profile) => [profile.id, profile]));
 	const users = bundle.profiles.map((profile) => mapDataUser(profile, bundle.authUsers.get(profile.id), bundle));
@@ -338,6 +374,78 @@ export async function getSupabaseUser(id: string): Promise<{ user: AdminUser; ti
 	return { user: result.selected, tickets: result.related.tickets, orders: result.related.orders };
 }
 
+export async function listSupabaseTickets(query: { q?: string; status?: string; eventId?: string; page?: number; perPage?: number } = {}): Promise<{
+	page: Page<AdminTicket>;
+	events: { id: string; title: string }[];
+	counts: { total: number; valid: number; revoked: number; valueNgn: number; avgPriceNgn: number };
+}> {
+	const client = createAdminClient();
+	const bundle = await loadPeopleBundle(client);
+	const profileById = new Map(bundle.profiles.map((p) => [p.id, p]));
+	const tickets = bundle.tickets.map((t) => mapDataTicket(t, profileById));
+	const q = (query.q ?? '').trim().toLowerCase();
+	const filtered = tickets
+		.filter((t) => !query.status || query.status === 'all' || t.status === query.status)
+		.filter((t) => !query.eventId || query.eventId === 'all' || t.eventId === query.eventId)
+		.filter((t) => !q || [t.code, t.holderName, t.holderHandle, t.orderRef, t.eventTitle].some((v) => v.toLowerCase().includes(q)))
+		.sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt));
+	const revoked = filtered.filter((t) => ['void', 'refunded', 'transferred'].includes(t.status)).length;
+	const valueNgn = filtered.reduce((sum, t) => sum + t.priceNgn, 0);
+	return {
+		page: paginate(filtered, query.page, query.perPage ?? 8),
+		events: bundle.events.map((e) => ({ id: e.id, title: e.title })),
+		counts: {
+			total: filtered.length,
+			valid: filtered.filter((t) => t.status === 'valid').length,
+			revoked,
+			valueNgn,
+			avgPriceNgn: filtered.length ? Math.round(valueNgn / filtered.length) : 0
+		}
+	};
+}
+
+export async function listSupabaseOrders(query: { q?: string; status?: string; method?: string; page?: number; perPage?: number } = {}): Promise<{
+	page: Page<AdminOrder>;
+	methods: string[];
+	counts: { total: number; settled: number; pending: number; failed: number; refunded: number; disputed: number };
+	financials: { grossNgn: number; settledNgn: number; pendingNgn: number; failedNgn: number; settledPct: number };
+}> {
+	const client = createAdminClient();
+	const bundle = await loadPeopleBundle(client);
+	const profileById = new Map(bundle.profiles.map((p) => [p.id, p]));
+	const eventById = new Map(bundle.events.map((e) => [e.id, e]));
+	const orders = bundle.orders.map((o) => mapDataOrder(o, profileById, eventById));
+	const q = (query.q ?? '').trim().toLowerCase();
+	const filtered = orders
+		.filter((o) => !query.status || query.status === 'all' || o.status === query.status)
+		.filter((o) => !query.method || query.method === 'all' || o.method === query.method)
+		.filter((o) => !q || [o.reference, o.customerName, o.customerEmail, o.eventTitle, o.tierLabel].some((v) => v.toLowerCase().includes(q)))
+		.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+	const grossNgn = orders.filter((o) => o.status === 'settled' || o.status === 'pending').reduce((s, o) => s + o.totalNgn, 0);
+	const settledNgn = orders.filter((o) => o.status === 'settled').reduce((s, o) => s + o.totalNgn, 0);
+	const pendingNgn = orders.filter((o) => o.status === 'pending').reduce((s, o) => s + o.totalNgn, 0);
+	const failedNgn = orders.filter((o) => o.status === 'failed').reduce((s, o) => s + o.totalNgn, 0);
+	return {
+		page: paginate(filtered, query.page, query.perPage ?? 10),
+		methods: [...new Set(orders.map((o) => o.method))].sort(),
+		counts: {
+			total: orders.length,
+			settled: orders.filter((o) => o.status === 'settled').length,
+			pending: orders.filter((o) => o.status === 'pending').length,
+			failed: orders.filter((o) => o.status === 'failed').length,
+			refunded: orders.filter((o) => o.status === 'refunded').length,
+			disputed: 0
+		},
+		financials: {
+			grossNgn,
+			settledNgn,
+			pendingNgn,
+			failedNgn,
+			settledPct: grossNgn ? Math.round((settledNgn / grossNgn) * 1000) / 10 : 0
+		}
+	};
+}
+
 function mapDataOrganizer(profile: DataProfile, auth: DataAuthUser | undefined, bundle: PeopleBundle): AdminOrganizer {
 	const ownEvents = bundle.events.filter((event) => event.organizerId === profile.id);
 	const ticketsSold = ownEvents.reduce((sum, event) => sum + (bundle.ticketsByEvent.get(event.id) ?? 0), 0);
@@ -363,8 +471,8 @@ function mapDataOrganizer(profile: DataProfile, auth: DataAuthUser | undefined, 
 		settlementAccountLast4: '',
 		settlementState: 'pending',
 		risk: 'low',
-		verifiedDocs: 0,
-		requiredDocs: 0,
+		verifiedDocs: profile.verified ? 1 : 0,
+		requiredDocs: 1,
 		createdAt: String(profile.created_at ?? new Date(0).toISOString())
 	};
 }
@@ -376,12 +484,10 @@ export async function listSupabaseOrganizers(query: OrganizerQuery = {}, selecte
 	pipelines: Record<string, { id: string; title: string; sold: number }[]>;
 }> {
 	const client = createAdminClient();
-	if (!client) throw new Error('Supabase admin client is not configured.');
 	const bundle = await loadPeopleBundle(client);
-	const authProfiles = new Set(bundle.events.map((event) => event.organizerId));
-	const profiles = bundle.profiles.filter((profile) => profile.operating_identity === 'organizer' || authProfiles.has(profile.id));
+	const eventOrganizerIds = new Set(bundle.events.map((event) => event.organizerId));
+	const profiles = bundle.profiles.filter((profile) => profile.operating_identity === 'organizer' || eventOrganizerIds.has(profile.id));
 	const organizers = profiles.map((profile) => mapDataOrganizer(profile, bundle.authUsers.get(profile.id), bundle));
-	const profileById = new Map(bundle.profiles.map((profile) => [profile.id, profile]));
 	const filtered = organizers
 		.filter((org) => !query.status || query.status === 'all' || org.status === query.status)
 		.filter((org) => !query.tier || query.tier === 'all')
@@ -391,7 +497,7 @@ export async function listSupabaseOrganizers(query: OrganizerQuery = {}, selecte
 		})
 		.sort((a, b) => b.grossVolumeNgn - a.grossVolumeNgn);
 	const page = paginate(filtered, query.page, query.perPage ?? 10);
-	const selected = organizers.find((org) => org.id === selectedId) ?? page.rows[0] ?? null;
+	const selected: AdminOrganizer | null = organizers.find((org: AdminOrganizer) => org.id === selectedId) ?? page.rows[0] ?? null;
 	const pipelines = Object.fromEntries([...new Set([...page.rows.map((org) => org.id), selected?.id].filter(Boolean) as string[])].map((id) => [
 		id,
 		bundle.events.filter((event) => event.organizerId === id).slice(0, 3).map((event) => ({ id: event.id, title: event.title, sold: event.sold }))
@@ -403,7 +509,7 @@ export async function listSupabaseOrganizers(query: OrganizerQuery = {}, selecte
 			pending: organizers.filter((org) => org.status === 'pending').length,
 			verified: organizers.filter((org) => org.status === 'verified').length,
 			flagged: 0,
-			tier1: 0,
+			tier1: organizers.filter((org) => org.tier === 1).length,
 			payoutVolumeNgn: organizers.reduce((sum, org) => sum + org.grossVolumeNgn, 0)
 		},
 		selected,
@@ -413,9 +519,7 @@ export async function listSupabaseOrganizers(query: OrganizerQuery = {}, selecte
 
 export async function getSupabaseOrganizer(id: string): Promise<{ organizer: AdminOrganizer; events: AdminEvent[] } | null> {
 	const client = createAdminClient();
-	if (!client) throw new Error('Supabase admin client is not configured.');
 	const bundle = await loadPeopleBundle(client);
-	const profileById = new Map(bundle.profiles.map((profile) => [profile.id, profile]));
 	const eventOrganizerIds = new Set(bundle.events.map((event) => event.organizerId));
 	const profile = bundle.profiles.find((item) => item.id === id || item.handle === id);
 	if (!profile || (profile.operating_identity !== 'organizer' && !eventOrganizerIds.has(profile.id))) return null;
@@ -429,9 +533,54 @@ function dayKey(date: Date): string {
 	return date.toISOString().slice(0, 10);
 }
 
+export async function listSupabaseRefunds(): Promise<{
+	rows: { id: string; orderRef: string; customerName: string; eventTitle: string; amountNgn: number; originalNgn: number; reason: string; status: 'pending' | 'approved' | 'rejected' | 'processing' | 'settled'; requestedAt: string; slaHours: number; policyMatch: number; signals: string[]; note?: string; decidedAt?: string; decidedBy?: string }[];
+	summary: { pending: number; total30dNgn: number; successRate: number; avgResolutionHours: number; escrowNgn: number };
+}> {
+	const client = createAdminClient();
+	const { data, error } = await client
+		.from('approval_requests')
+		.select('*, requester:profiles(name,handle)')
+		.eq('kind', 'refund')
+		.order('created_at', { ascending: false })
+		.limit(200);
+	assertNoError(error, 'approval_requests');
+	const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000);
+	const rows = ((data ?? []) as Record<string, any>[]).map((row) => {
+		const requester = (row.requester ?? {}) as Record<string, any>;
+		const payload = (row.payload ?? {}) as Record<string, any>;
+		const status = (row.status === 'approved' ? 'processing' : row.status === 'rejected' ? 'rejected' : 'pending') as 'pending' | 'approved' | 'rejected' | 'processing' | 'settled';
+		return {
+			id: String(row.id),
+			orderRef: String(row.subject_label ?? row.id),
+			customerName: String(requester.name ?? requester.handle ?? 'Attendee'),
+			eventTitle: String(row.title ?? 'Refund request').replace(/^Refund · /, ''),
+			amountNgn: numberValue(row.amount),
+			originalNgn: numberValue(row.amount),
+			reason: String(payload.reason ?? 'Refund requested'),
+			status,
+			requestedAt: String(row.created_at ?? new Date().toISOString()),
+			slaHours: 8,
+			policyMatch: 100,
+			signals: ['Submitted from public app'],
+			note: row.decision_note ? String(row.decision_note) : undefined,
+			decidedAt: row.decided_at ? String(row.decided_at) : undefined,
+			decidedBy: row.decided_by ? String(row.decided_by) : undefined
+		};
+	});
+	const pending = rows.filter((r) => r.status === 'pending').length;
+	const last30 = rows.filter((r) => new Date(r.requestedAt).getTime() >= thirtyDaysAgo.getTime());
+	const total30 = last30.reduce((s, r) => s + r.amountNgn, 0);
+	const decided = last30.filter((r) => r.status !== 'pending');
+	const successRate = decided.length ? Math.round((decided.filter((r) => r.status === 'processing').length / decided.length) * 1000) / 10 : 100;
+	return {
+		rows,
+		summary: { pending, total30dNgn: total30, successRate, avgResolutionHours: 0, escrowNgn: total30 }
+	};
+}
+
 export async function getSupabaseDashboard(): Promise<AdminDashboard> {
 	const client = createAdminClient();
-	if (!client) throw new Error('Supabase admin client is not configured.');
 	const now = new Date();
 	const todayStart = new Date(now);
 	todayStart.setUTCHours(0, 0, 0, 0);
@@ -439,8 +588,8 @@ export async function getSupabaseDashboard(): Promise<AdminDashboard> {
 	const sixtyDaysAgo = new Date(thirtyDaysAgo.getTime() - 30 * 86_400_000);
 	const [events, orders, tickets] = await Promise.all([
 		loadEvents(client),
-		rowsFrom(client, 'orders', 'total,status,created_at', (query) => query.gte('created_at', sixtyDaysAgo.toISOString()).order('created_at')),
-		rowsFrom(client, 'tickets', 'status,purchased_at,price,tier_name', (query) => query.order('purchased_at'))
+		rowsFrom(client, 'orders', 'total,status,created_at', (q) => q.gte('created_at', sixtyDaysAgo.toISOString()).order('created_at')),
+		rowsFrom(client, 'tickets', 'status,purchased_at,price,tier_name', (q) => q.order('purchased_at'))
 	]);
 
 	const paidOrPending = (order: Record<string, any>) => order.status === 'paid' || order.status === 'pending';
@@ -482,11 +631,23 @@ export async function getSupabaseDashboard(): Promise<AdminDashboard> {
 	const categoryGross = new Map<string, number>();
 	for (const event of events) categoryGross.set(event.category, (categoryGross.get(event.category) ?? 0) + event.grossNgn);
 	const categoryTotal = [...categoryGross.values()].reduce((sum, value) => sum + value, 0);
-	const categoryMix = [...categoryGross.entries()].map(([category, value]) => ({
+	const categoryMix = [...categoryGross.entries()].map(([category, gmvNgn]) => ({
 		category,
-		gmvNgn: value,
-		share: categoryTotal ? (value / categoryTotal) * 100 : 0
+		gmvNgn,
+		share: categoryTotal ? (gmvNgn / categoryTotal) * 100 : 0
 	})).sort((a, b) => b.gmvNgn - a.gmvNgn).slice(0, 3);
+
+	const reviewQueue = events
+		.filter((event) => event.status === 'pending')
+		.slice(0, 3)
+		.map((event) => ({
+			id: event.id,
+			ref: event.ref,
+			title: event.title,
+			organizer: event.organizerName,
+			status: 'Under review',
+			tone: 'warn' as const
+		}));
 
 	return {
 		rangeLabel: 'Last 30 days',
@@ -497,18 +658,18 @@ export async function getSupabaseDashboard(): Promise<AdminDashboard> {
 		passesDelta: 0,
 		liveEvents: upcoming.length,
 		eventsToday: events.filter((event) => dayKey(new Date(event.startsAt)) === today).length,
-		pendingReview: 0,
+		pendingReview: events.filter((e) => e.status === 'pending').length,
 		activePasses,
 		refundsPending: 0,
-		moderationOpen: 0,
+		moderationOpen: events.filter((e) => e.status === 'pending').length,
 		series,
 		tierMix,
 		categoryMix,
-		topEvents: [...events].sort((a, b) => b.sold - a.sold).slice(0, 2).map((event) => ({
+		topEvents: [...events].filter((e) => e.status === 'published').sort((a, b) => b.sold - a.sold).slice(0, 2).map((event) => ({
 			id: event.id, title: event.title, venue: event.venue, sold: event.sold,
 			capacity: event.capacity, grossNgn: event.grossNgn
 		})),
-		reviewQueue: [],
+		reviewQueue,
 		recentOrders: [],
 		systemHealth: [
 			{ key: 'supabase', label: 'Supabase data', value: `${events.length.toLocaleString('en-NG')} events · connected`, ok: true },
@@ -517,20 +678,4 @@ export async function getSupabaseDashboard(): Promise<AdminDashboard> {
 			{ key: 'tickets', label: 'Ticket ledger', value: `${allPasses.toLocaleString('en-NG')} passes`, ok: true }
 		]
 	};
-}
-
-export async function getSupabaseEvent(id: string): Promise<AdminEvent | null> {
-	const client = createAdminClient();
-	if (!client) return null;
-	const baseQuery = client.from('events').select('id,slug,title,category,starts_at,ends_at,venue,city,cover,organizer_id,tiers,attendees,live,created_at');
-	const eventQuery = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
-		? await baseQuery.eq('id', id).maybeSingle()
-		: await baseQuery.eq('slug', id).maybeSingle();
-	assertNoError(eventQuery.error, 'events');
-	if (!eventQuery.data) return null;
-	const profileQuery = eventQuery.data.organizer_id
-		? await client.from('profiles').select('name,handle').eq('id', eventQuery.data.organizer_id).maybeSingle()
-		: { data: null, error: null };
-	assertNoError(profileQuery.error, 'profiles');
-	return mapSupabaseEvent(eventQuery.data, profileQuery.data?.name ?? profileQuery.data?.handle ?? 'Organizer');
 }

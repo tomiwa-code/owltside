@@ -3,16 +3,15 @@
 	import { invalidateAll } from '$app/navigation';
 	import { toasts } from '$admin/state/toast.svelte';
 	import { date, time } from '$admin/utils/format';
-	import type { EventSubmission, ModerationMode } from '$admin/server/moderation';
+	import type { EventSubmission } from '$admin/server/moderation';
 	import CoverArt from '$components/CoverArt.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
 	import Sheet from '$components/Sheet.svelte';
 
 	let {
 		rows = [],
-		mode = 'demo' as ModerationMode,
 		error: loadError = ''
-	}: { rows?: EventSubmission[]; mode?: ModerationMode; error?: string } = $props();
+	}: { rows?: EventSubmission[]; error?: string } = $props();
 
 	let busyId = $state<string | null>(null);
 	let rejectTarget = $state<EventSubmission | null>(null);
@@ -51,10 +50,8 @@
 		<div class="flex items-center gap-2">
 			<p class="mono-label !text-[9px]">Organizer submission queue</p>
 			<span class="chip chip-warn !h-[17px] !text-[8px]">{(rows ?? []).length} awaiting review</span>
-			<span class="chip !h-[17px] !text-[8px]" title={mode === 'supabase'
-				? 'Reading submissions from your Supabase project with the service-role key.'
-				: 'No Supabase credentials set — the console is moderating its seeded demo dataset.'}>
-				{mode === 'supabase' ? 'Live database' : 'Demo dataset'}
+			<span class="chip !h-[17px] !text-[8px]" title="Reading submissions from your Supabase project with the service-role key.">
+				Live database
 			</span>
 		</div>
 		<p class="font-code text-[8px] uppercase tracking-[0.1em] text-[#6f6f7b]">

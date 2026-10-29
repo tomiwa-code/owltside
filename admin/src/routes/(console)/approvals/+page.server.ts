@@ -1,8 +1,8 @@
 import type { PageServerLoad } from './$types';
-import { approvalMode, listApprovals } from '$admin/server/approvals';
+import { listApprovals } from '$admin/server/approvals';
 
 export const load: PageServerLoad = async ({ url }) => {
-	let rows = [] as Awaited<ReturnType<typeof listApprovals>>['rows'];
+	let rows: Awaited<ReturnType<typeof listApprovals>>['rows'] = [];
 	let error = '';
 	try {
 		rows = (await listApprovals()).rows;
@@ -15,7 +15,6 @@ export const load: PageServerLoad = async ({ url }) => {
 		rows.find((row) => row.id === requested) ?? pending[0] ?? rows[0] ?? null;
 	return {
 		rows,
-		mode: approvalMode(),
 		error,
 		selectedId: selected?.id ?? null,
 		counts: {
@@ -23,6 +22,8 @@ export const load: PageServerLoad = async ({ url }) => {
 			pending: pending.length,
 			approved: rows.filter((row) => row.status === 'approved').length,
 			rejected: rows.filter((row) => row.status === 'rejected').length
-		}
+		},
+		source: 'supabase' as const,
+		mode: 'supabase' as const
 	};
 };
