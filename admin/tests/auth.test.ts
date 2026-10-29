@@ -2,11 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
 	AuthzError,
 	authenticate,
-	authenticateWithKey,
 	canConfigure,
 	canMutate,
-	DEMO_PASSPHRASE,
-	isDemoMode,
 	isSecureRequest,
 	requireAudit,
 	requireConfigure,
@@ -20,17 +17,20 @@ import type { AdminSession } from '$admin/types';
 const ENV_KEYS = ['ADMIN_EMAIL', 'ADMIN_PASSWORD', 'ADMIN_SESSION_SECRET'] as const;
 const original = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
+const TEST_EMAIL = 'admin@owltside.com';
+const TEST_PASSWORD = 'owltside-admin-2026-long-passphrase';
+
 function session(overrides: Partial<AdminSession> = {}): AdminSession {
 	return {
 		id: 'adm-test',
-		email: 'admin@owltside.com',
+		email: TEST_EMAIL,
 		name: 'Tomiwa A.',
 		initials: 'TA',
 		role: 'Super Admin',
 		tier: 0,
 		auth: 'password+totp',
 		ip: '127.0.0.1',
-		demo: true,
+		demo: false,
 		issuedAt: new Date().toISOString(),
 		expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
 		...overrides
@@ -47,63 +47,42 @@ function restoreEnv() {
 describe('admin authentication', () => {
 	beforeEach(() => {
 		restoreEnv();
-		delete process.env.ADMIN_EMAIL;
-		delete process.env.ADMIN_PASSWORD;
+		process.env.ADMIN_EMAIL = TEST_EMAIL;
+		process.env.ADMIN_PASSWORD = TEST_PASSWORD;
 	});
 
 	afterEach(restoreEnv);
 
-	it('runs in demo mode until real credentials are configured', () => {
-		expect(isDemoMode()).toBe(true);
-		process.env.ADMIN_EMAIL = 'ops@owltside.com';
-		expect(isDemoMode()).toBe(true);
-		process.env.ADMIN_PASSWORD = 'a-very-long-production-passphrase';
-		expect(isDemoMode()).toBe(false);
-	});
-
-	it('rejects short demo passphrases and keeps an attempt budget', () => {
-		const weak = authenticate({ email: 'admin@owltside.com', password: 'short', remember: false, ip: '10.0.0.1' });
+	it('rejects short passphrases and keeps an attempt budget', () => {
+		const weak = authenticate({ email: TEST_EMAIL, password: 'short', remember: false, ip: '10.0.0.1' });
 		expect(weak.ok).toBe(false);
 		expect(weak.status).toBe(401);
 
 		for (let attempt = 0; attempt < 5; attempt++) {
-			authenticate({ email: 'intruder@owltside.com', password: 'owltside-admin-2026', remember: false, ip: '10.0.0.2' });
+			authenticate({ email: 'intruder@owltside.com', password: 'wrong-passphrase-1234567', remember: false, ip: '10.0.0.2' });
 		}
-		const locked = authenticate({ email: 'admin@owltside.com', password: 'owltside-admin-2026', remember: false, ip: '10.0.0.2' });
+		const locked = authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: false, ip: '10.0.0.2' });
 		expect(locked.ok).toBe(false);
 		expect(locked.status).toBe(429);
 	});
 
 	it('issues a 2h session, extended to 12h when the device is remembered', () => {
-		const short = authenticate({ email: 'admin@owltside.com', password: 'owltside-admin-2026', remember: false, ip: '10.0.0.3' });
+		const short = authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: false, ip: '10.0.0.3' });
 		expect(short.ok).toBe(true);
 		expect(short.session?.tier).toBe(0);
 		const shortHours = (short.expiresAt!.getTime() - Date.now()) / 3_600_000;
 		expect(shortHours).toBeGreaterThan(1.9);
 		expect(shortHours).toBeLessThan(2.1);
 
-		const remembered = authenticate({ email: 'admin@owltside.com', password: 'owltside-admin-2026', remember: true, ip: '10.0.0.4' });
+		const remembered = authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: true, ip: '10.0.0.4' });
 		const rememberedHours = (remembered.expiresAt!.getTime() - Date.now()) / 3_600_000;
 		expect(rememberedHours).toBeGreaterThan(11.9);
 		expect(rememberedHours).toBeLessThan(12.1);
 	});
 
-	it('issues hardware-key sessions carrying the WebAuthn authenticator marker', () => {
-		const { session: keyed, expiresAt } = authenticateWithKey(true, '10.0.0.5');
-		expect(keyed.email).toBe('admin@owltside.com');
-		expect(keyed.auth).toBe('webauthn');
-		expect(keyed.tier).toBe(0);
-		const hours = (expiresAt.getTime() - Date.now()) / 3_600_000;
-		expect(hours).toBeGreaterThan(11.9);
-
-		process.env.ADMIN_EMAIL = 'ops@owltside.com';
-		process.env.ADMIN_PASSWORD = 'a-very-long-production-passphrase';
-		expect(isDemoMode()).toBe(false);
-	});
-
 	it('round-trips a signed session cookie payload and rejects tampering', () => {
 		const token = signSession(session());
-		expect(verifySession(token)?.email).toBe('admin@owltside.com');
+		expect(verifySession(token)?.email).toBe(TEST_EMAIL);
 
 		const [payload, signature] = token.split('.');
 		expect(verifySession(`${payload}.${signature.slice(0, -2)}xx`)).toBeNull();
@@ -177,31 +156,5 @@ describe('HTTPS detection for session cookies', () => {
 				url('http://localhost:5174/login')
 			)
 		).toBe(true);
-	});
-});
-
-describe('demo sign-in credentials', () => {
-	it('advertises a passphrase that the demo gate actually accepts', () => {
-		expect(DEMO_PASSPHRASE.length).toBeGreaterThanOrEqual(16);
-
-		const result = authenticate({
-			email: 'admin@owltside.com',
-			password: DEMO_PASSPHRASE,
-			remember: false,
-			ip: '10.0.0.9'
-		});
-		expect(result.ok).toBe(true);
-		expect(result.session?.demo).toBe(true);
-	});
-
-	it('rejects the right passphrase paired with the wrong email', () => {
-		const result = authenticate({
-			email: 'admin@owltside.co',
-			password: DEMO_PASSPHRASE,
-			remember: false,
-			ip: '10.0.0.10'
-		});
-		expect(result.ok).toBe(false);
-		expect(result.status).toBe(401);
 	});
 });

@@ -1,8 +1,8 @@
 import type { PageServerLoad } from './$types';
-import { listReports, reportMode } from '$admin/server/reports';
+import { listReports } from '$admin/server/reports';
 
 export const load: PageServerLoad = async ({ url }) => {
-	let rows = [] as Awaited<ReturnType<typeof listReports>>['rows'];
+	let rows: Awaited<ReturnType<typeof listReports>>['rows'] = [];
 	let error = '';
 	try {
 		rows = (await listReports()).rows;
@@ -14,7 +14,6 @@ export const load: PageServerLoad = async ({ url }) => {
 	const selected = rows.find((row) => row.id === requested) ?? open[0] ?? rows[0] ?? null;
 	return {
 		rows,
-		mode: reportMode(),
 		error,
 		selectedId: selected?.id ?? null,
 		counts: {
@@ -22,6 +21,8 @@ export const load: PageServerLoad = async ({ url }) => {
 			open: open.length,
 			actioned: rows.filter((row) => row.status === 'actioned').length,
 			dismissed: rows.filter((row) => row.status === 'dismissed').length
-		}
+		},
+		source: 'supabase' as const,
+		mode: 'supabase' as const
 	};
 };

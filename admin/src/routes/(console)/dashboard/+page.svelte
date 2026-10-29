@@ -65,12 +65,10 @@
 				<RefreshCw size={12} class={refreshing ? 'animate-spin' : ''} />
 				Refresh
 			</button>
-			{#if data.source === 'demo'}
-				<a class="btn btn-sm btn-primary" href="/api/export/dashboard">
-					<Download size={12} />
-					Export Executive Brief
-				</a>
-			{/if}
+			<a class="btn btn-sm btn-primary" href="/api/export/dashboard">
+				<Download size={12} />
+				Export Executive Brief
+			</a>
 		{/snippet}
 	</PageHeader>
 
@@ -98,15 +96,13 @@
 			sub={`${pct(settledShare, 1)} of paid + pending volume`}
 			progress={settledShare}
 			progressTone="ok"
-			footnote={data.source === 'supabase' ? 'orders.status = paid' : 'demo settled snapshot'}
+			footnote="orders.status = paid"
 		/>
 		<KpiCard
 			label="Passes minted"
 			value={num(d.passes)}
-			delta={data.source === 'supabase' ? undefined : '+8.3%'}
-			sub={data.source === 'supabase' ? 'All ticket records' : 'Capacity 99.2% filled'}
-			progress={data.source === 'supabase' ? undefined : 99.2}
-			footnote={data.source === 'supabase' ? 'public.tickets · all-time' : 'signed passes · wallet-ready'}
+			sub="All ticket records"
+			footnote="public.tickets · all-time"
 		/>
 		<KpiCard label="Live & active" value={String(d.liveEvents)} sub="Events active">
 			<div class="grid grid-cols-2 gap-2 border-t border-[#292930] pt-2.5">

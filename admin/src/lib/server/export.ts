@@ -1,28 +1,22 @@
 import type {
-	AdminCase,
 	AdminEvent,
 	AdminOrder,
 	AdminOrganizer,
-	AdminRefund,
-	AdminStaff,
 	AdminTicket,
-	AdminUser,
-	AuditRecord
+	AdminUser
 } from '$admin/types';
+import { getSettings } from './store';
 import {
-	getSettlements,
-	getSettings,
-	listAudit,
-	listCases,
-	listEvents,
-	listOrders,
-	listOrganizers,
-	listStaff,
-	listTickets,
-	listUsers,
-	getRefundsData,
-	getDashboard
-} from './store';
+	getSupabaseDashboard,
+	listSupabaseEvents,
+	listSupabaseOrders,
+	listSupabaseOrganizers,
+	listSupabaseTickets,
+	listSupabaseUsers
+} from './supabase-data';
+import { listApprovals } from './approvals';
+import { listReports } from './reports';
+import { listStaff } from './store';
 
 /** RFC-4180 safe escaping — used for every CSV the control plane emits. */
 export function toCsv(columns: { key: string; label: string }[], rows: Record<string, unknown>[]): string {
@@ -37,8 +31,9 @@ export function toCsv(columns: { key: string; label: string }[], rows: Record<st
 
 const naira = (value: number) => (value / 1).toFixed(2);
 
-function eventRows(): Record<string, unknown>[] {
-	return listEvents({ perPage: 100 }).rows.map((event: AdminEvent) => ({
+async function eventRows(): Promise<Record<string, unknown>[]> {
+	const result = await listSupabaseEvents({ perPage: 1000 });
+	return result.rows.map((event: AdminEvent) => ({
 		ref: event.ref,
 		title: event.title,
 		organizer: event.organizerName,
@@ -53,8 +48,9 @@ function eventRows(): Record<string, unknown>[] {
 	}));
 }
 
-function organizerRows(): Record<string, unknown>[] {
-	return listOrganizers({ perPage: 100 }).rows.map((org: AdminOrganizer) => ({
+async function organizerRows(): Promise<Record<string, unknown>[]> {
+	const result = await listSupabaseOrganizers({ perPage: 1000 });
+	return result.page.rows.map((org: AdminOrganizer) => ({
 		id: org.id,
 		name: org.name,
 		legal_name: org.legalName,
@@ -71,8 +67,9 @@ function organizerRows(): Record<string, unknown>[] {
 	}));
 }
 
-function userRows(): Record<string, unknown>[] {
-	return listUsers({ perPage: 100 }).rows.map((user: AdminUser) => ({
+async function userRows(): Promise<Record<string, unknown>[]> {
+	const result = await listSupabaseUsers({ perPage: 1000 });
+	return result.page.rows.map((user: AdminUser) => ({
 		id: user.id,
 		name: user.name,
 		handle: user.handle,
@@ -90,14 +87,15 @@ function userRows(): Record<string, unknown>[] {
 	}));
 }
 
-function ticketRows(): Record<string, unknown>[] {
-	return listTickets({ perPage: 100 }).rows.map((ticket: AdminTicket) => ({
+async function ticketRows(): Promise<Record<string, unknown>[]> {
+	const result = await listSupabaseTickets({ perPage: 1000 });
+	return result.page.rows.map((ticket: AdminTicket) => ({
 		code: ticket.code,
 		holder: ticket.holderName,
 		handle: ticket.holderHandle,
 		event: ticket.eventTitle,
 		tier: ticket.tierName,
-		seat: ticket.seat,
+		seat: ticket.seat ?? '',
 		status: ticket.status,
 		settlement: ticket.settlement,
 		order_ref: ticket.orderRef,
@@ -107,8 +105,9 @@ function ticketRows(): Record<string, unknown>[] {
 	}));
 }
 
-function orderRows(): Record<string, unknown>[] {
-	return listOrders({ perPage: 100 }).rows.map((order: AdminOrder) => ({
+async function orderRows(): Promise<Record<string, unknown>[]> {
+	const result = await listSupabaseOrders({ perPage: 1000 });
+	return result.page.rows.map((order: AdminOrder) => ({
 		reference: order.reference,
 		customer: order.customerName,
 		email: order.customerEmail,
@@ -126,59 +125,37 @@ function orderRows(): Record<string, unknown>[] {
 	}));
 }
 
-function refundRows(): Record<string, unknown>[] {
-	return getRefundsData().rows.map((refund: AdminRefund) => ({
-		ref: refund.id,
-		order_ref: refund.orderRef,
-		customer: refund.customerName,
-		event: refund.eventTitle,
-		amount_ngn: naira(refund.amountNgn),
-		original_ngn: naira(refund.originalNgn),
-		status: refund.status,
-		policy_match: refund.policyMatch,
-		reason: refund.reason,
-		requested_at: refund.requestedAt,
-		decided_at: refund.decidedAt ?? '',
-		decided_by: refund.decidedBy ?? ''
+async function approvalRows(): Promise<Record<string, unknown>[]> {
+	const { rows } = await listApprovals();
+	return rows.map((a) => ({
+		ref: a.id,
+		kind: a.kind,
+		title: a.title,
+		requester: a.requesterHandle,
+		amount_ngn: a.amountNgn !== undefined ? naira(a.amountNgn) : '',
+		status: a.status,
+		requested_at: a.requestedAt,
+		decided_at: a.decidedAt ?? '',
+		decided_by: a.decidedBy ?? ''
 	}));
 }
 
-function moderationRows(): Record<string, unknown>[] {
-	return listCases({}).map((item: AdminCase) => ({
-		ref: item.ref,
-		title: item.title,
-		category: item.category,
-		severity: item.severity,
-		status: item.status,
-		target: item.target,
-		reported_by: item.reportedBy,
-		exposure_ngn: naira(item.exposureNgn),
-		escrow_ngn: naira(item.escrowNgn),
-		created_at: item.createdAt,
-		resolved_at: item.resolvedAt ?? ''
-	}));
-}
-
-function auditRows(): Record<string, unknown>[] {
-	return listAudit({ perPage: 100 }).rows.map((record: AuditRecord) => ({
-		ref: record.ref,
-		at: record.at,
-		actor: record.actor,
-		role: record.actorRole,
-		action: record.action,
-		target: record.target,
-		reason: record.reason,
-		severity: record.severity,
-		entity_kind: record.entityKind,
-		entity_id: record.entityId,
-		ip: record.ip,
-		hash: record.hash,
-		prev_hash: record.prevHash
+async function reportRows(): Promise<Record<string, unknown>[]> {
+	const { rows } = await listReports();
+	return rows.map((r) => ({
+		ref: r.id,
+		target_type: r.targetType,
+		target_label: r.targetLabel,
+		category: r.categoryLabel,
+		reporter: r.reporterHandle,
+		status: r.status,
+		created_at: r.createdAt,
+		reviewed_at: r.reviewedAt ?? ''
 	}));
 }
 
 function staffRows(): Record<string, unknown>[] {
-	return listStaff().map((member: AdminStaff) => ({
+	return listStaff().map((member) => ({
 		id: member.id,
 		name: member.name,
 		email: member.email,
@@ -192,23 +169,8 @@ function staffRows(): Record<string, unknown>[] {
 	}));
 }
 
-function settlementRows(): Record<string, unknown>[] {
-	return getSettlements().rows.map((row) => ({
-		organizer_id: row.organizerId,
-		name: row.name,
-		events: row.events,
-		tickets: row.tickets,
-		gmv_ngn: naira(row.gmvNgn),
-		fee_ngn: naira(row.feeNgn),
-		payout_ngn: naira(row.payoutNgn),
-		state: row.state,
-		bank: row.bank,
-		account_last4: row.accountLast4
-	}));
-}
-
-function dashboardRows(): Record<string, unknown>[] {
-	const dashboard = getDashboard();
+async function dashboardRows(): Promise<Record<string, unknown>[]> {
+	const dashboard = await getSupabaseDashboard();
 	return [
 		{ metric: 'gross_revenue_ngn', value: naira(dashboard.grossNgn) },
 		{ metric: 'net_revenue_ngn', value: naira(dashboard.netNgn) },
@@ -222,35 +184,18 @@ function dashboardRows(): Record<string, unknown>[] {
 	];
 }
 
-function overviewRows(): Record<string, unknown>[] {
-	const settings = getSettings();
-	const settlements = getSettlements();
-	const dashboard = getDashboard();
-	return [
-		{ section: 'treasury', metric: 'gross_gmv_ngn', value: naira(settlements.grossNgn), note: `${settlements.settledPct}% settled` },
-		{ section: 'treasury', metric: 'escrow_held_ngn', value: naira(settlements.escrowNgn), note: `${settlements.escrowEvents} events queued` },
-		{ section: 'treasury', metric: 'commission_ngn', value: naira(settlements.commissionNgn), note: `${settings.platformFeePct}% take rate` },
-		{ section: 'operations', metric: 'passes_minted', value: dashboard.passes, note: `${dashboard.activePasses} active` },
-		{ section: 'operations', metric: 'live_events', value: dashboard.liveEvents, note: `${dashboard.pendingReview} awaiting review` },
-		{ section: 'risk', metric: 'refunds_pending', value: dashboard.refundsPending, note: `${settings.firmware}` },
-		{ section: 'risk', metric: 'moderation_open', value: dashboard.moderationOpen, note: settings.lastAudit }
-	];
-}
+type Report = { label: string; filename: string; columns: { key: string; label: string }[]; rows: () => Promise<Record<string, unknown>[]> | Record<string, unknown>[] };
 
-export const REPORTS: Record<string, { label: string; filename: string; columns: { key: string; label: string }[]; rows: () => Record<string, unknown>[] }> = {
-	dashboard: {
+const makeReport = (r: Omit<Report, 'rows'> & { rows: () => Promise<Record<string, unknown>[]> | Record<string, unknown>[] }): Report => r;
+
+export const REPORTS: Record<string, Report> = {
+	dashboard: makeReport({
 		label: 'Dashboard executive brief',
 		filename: 'owltside-dashboard.csv',
 		columns: [{ key: 'metric', label: 'Metric' }, { key: 'value', label: 'Value' }],
 		rows: dashboardRows
-	},
-	overview: {
-		label: 'Platform overview',
-		filename: 'owltside-overview.csv',
-		columns: [{ key: 'section', label: 'Section' }, { key: 'metric', label: 'Metric' }, { key: 'value', label: 'Value' }, { key: 'note', label: 'Note' }],
-		rows: overviewRows
-	},
-	events: {
+	}),
+	events: makeReport({
 		label: 'Event roster',
 		filename: 'owltside-events.csv',
 		columns: [
@@ -260,8 +205,8 @@ export const REPORTS: Record<string, { label: string; filename: string; columns:
 			{ key: 'sold', label: 'Sold' }, { key: 'gross_ngn', label: 'Gross NGN' }
 		],
 		rows: eventRows
-	},
-	organizers: {
+	}),
+	organizers: makeReport({
 		label: 'Organizer registry',
 		filename: 'owltside-organizers.csv',
 		columns: [
@@ -272,8 +217,8 @@ export const REPORTS: Record<string, { label: string; filename: string; columns:
 			{ key: 'settlement_state', label: 'Settlement' }, { key: 'risk', label: 'Risk' }
 		],
 		rows: organizerRows
-	},
-	users: {
+	}),
+	users: makeReport({
 		label: 'User roster',
 		filename: 'owltside-users.csv',
 		columns: [
@@ -284,8 +229,8 @@ export const REPORTS: Record<string, { label: string; filename: string; columns:
 			{ key: 'joined_at', label: 'Joined' }, { key: 'last_seen_at', label: 'Last seen' }
 		],
 		rows: userRows
-	},
-	tickets: {
+	}),
+	tickets: makeReport({
 		label: 'Ticket manifest',
 		filename: 'owltside-tickets.csv',
 		columns: [
@@ -296,8 +241,8 @@ export const REPORTS: Record<string, { label: string; filename: string; columns:
 			{ key: 'reissues', label: 'Re-issues' }
 		],
 		rows: ticketRows
-	},
-	orders: {
+	}),
+	orders: makeReport({
 		label: 'Transaction ledger',
 		filename: 'owltside-orders.csv',
 		columns: [
@@ -308,42 +253,29 @@ export const REPORTS: Record<string, { label: string; filename: string; columns:
 			{ key: 'status', label: 'Status' }, { key: 'created_at', label: 'Created' }, { key: 'settled_at', label: 'Settled' }
 		],
 		rows: orderRows
-	},
-	refunds: {
-		label: 'Refund ledger',
-		filename: 'owltside-refunds.csv',
+	}),
+	approvals: makeReport({
+		label: 'Approval queue',
+		filename: 'owltside-approvals.csv',
 		columns: [
-			{ key: 'ref', label: 'Ref' }, { key: 'order_ref', label: 'Order' }, { key: 'customer', label: 'Customer' },
-			{ key: 'event', label: 'Event' }, { key: 'amount_ngn', label: 'Amount NGN' },
-			{ key: 'original_ngn', label: 'Original NGN' }, { key: 'status', label: 'Status' },
-			{ key: 'policy_match', label: 'Policy match' }, { key: 'reason', label: 'Reason' },
-			{ key: 'requested_at', label: 'Requested' }, { key: 'decided_at', label: 'Decided' }, { key: 'decided_by', label: 'Decided by' }
+			{ key: 'ref', label: 'ID' }, { key: 'kind', label: 'Kind' }, { key: 'title', label: 'Title' },
+			{ key: 'requester', label: 'Requester' }, { key: 'amount_ngn', label: 'Amount NGN' },
+			{ key: 'status', label: 'Status' }, { key: 'requested_at', label: 'Requested' },
+			{ key: 'decided_at', label: 'Decided' }, { key: 'decided_by', label: 'Decided by' }
 		],
-		rows: refundRows
-	},
-	moderation: {
-		label: 'Incident report',
-		filename: 'owltside-moderation.csv',
+		rows: approvalRows
+	}),
+	reports: makeReport({
+		label: 'Content reports',
+		filename: 'owltside-reports.csv',
 		columns: [
-			{ key: 'ref', label: 'Ref' }, { key: 'title', label: 'Title' }, { key: 'category', label: 'Category' },
-			{ key: 'severity', label: 'Severity' }, { key: 'status', label: 'Status' }, { key: 'target', label: 'Target' },
-			{ key: 'reported_by', label: 'Reported by' }, { key: 'exposure_ngn', label: 'Exposure NGN' },
-			{ key: 'escrow_ngn', label: 'Escrow NGN' }, { key: 'created_at', label: 'Created' }, { key: 'resolved_at', label: 'Resolved' }
+			{ key: 'ref', label: 'ID' }, { key: 'target_type', label: 'Target type' }, { key: 'target_label', label: 'Target' },
+			{ key: 'category', label: 'Category' }, { key: 'reporter', label: 'Reporter' }, { key: 'status', label: 'Status' },
+			{ key: 'created_at', label: 'Created' }, { key: 'reviewed_at', label: 'Reviewed' }
 		],
-		rows: moderationRows
-	},
-	audit: {
-		label: 'Audit ledger',
-		filename: 'owltside-audit.csv',
-		columns: [
-			{ key: 'ref', label: 'Ref' }, { key: 'at', label: 'Timestamp' }, { key: 'actor', label: 'Actor' },
-			{ key: 'role', label: 'Role' }, { key: 'action', label: 'Action' }, { key: 'target', label: 'Target' },
-			{ key: 'reason', label: 'Reason' }, { key: 'severity', label: 'Severity' }, { key: 'entity_kind', label: 'Entity kind' },
-			{ key: 'entity_id', label: 'Entity ID' }, { key: 'ip', label: 'IP' }, { key: 'hash', label: 'Hash' }, { key: 'prev_hash', label: 'Prev hash' }
-		],
-		rows: auditRows
-	},
-	staff: {
+		rows: reportRows
+	}),
+	staff: makeReport({
 		label: 'Administrator manifest',
 		filename: 'owltside-staff.csv',
 		columns: [
@@ -353,16 +285,5 @@ export const REPORTS: Record<string, { label: string; filename: string; columns:
 			{ key: 'last_active', label: 'Last active' }
 		],
 		rows: staffRows
-	},
-	settlements: {
-		label: 'Settlement statement',
-		filename: 'owltside-settlements.csv',
-		columns: [
-			{ key: 'organizer_id', label: 'Organizer ID' }, { key: 'name', label: 'Name' }, { key: 'events', label: 'Events' },
-			{ key: 'tickets', label: 'Tickets' }, { key: 'gmv_ngn', label: 'GMV NGN' }, { key: 'fee_ngn', label: 'Fee NGN' },
-			{ key: 'payout_ngn', label: 'Payout NGN' }, { key: 'state', label: 'State' }, { key: 'bank', label: 'Bank' },
-			{ key: 'account_last4', label: 'Account last 4' }
-		],
-		rows: settlementRows
-	},
+	})
 };

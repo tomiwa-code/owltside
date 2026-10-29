@@ -1,22 +1,18 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { getEvent, listEvents, setEventStatus } from './store';
 
 /**
- * Organizer submission queue.
+ * Organizer submission queue (event moderation).
  *
- * Two drivers behind one API:
- *  - `supabase` — the real moderation path. Uses the service-role key because
- *    RLS deliberately stops an organizer (and every other client) from writing
- *    `status = 'published'`. Approving here is what makes the event appear in
- *    the public app's home and explore feeds on the next request.
- *  - `demo` — with no Supabase credentials configured the console moderates its
- *    deterministic in-memory dataset, so the workflow stays demonstrable.
+ * Uses the Supabase service-role key because RLS deliberately stops an
+ * organizer (and every other client) from writing `status = 'published'`.
+ * Approving here is what makes the event appear in the public app's home and
+ * explore feeds on the next request.
  */
 
 export type EventSubmissionStatus = 'pending' | 'published' | 'rejected';
 
 export interface EventSubmission {
-	/** Event UUID in Supabase (or the seeded store id in demo mode). */
+	/** Event UUID in Supabase. */
 	id: string;
 	title: string;
 	slug: string;
@@ -37,23 +33,12 @@ export interface EventSubmission {
 	status: EventSubmissionStatus;
 }
 
-export type ModerationMode = 'supabase' | 'demo';
-
 function supabaseUrl(): string {
-	return (
-		process.env.SUPABASE_URL ??
-		process.env.PUBLIC_SUPABASE_URL ??
-		''
-	).trim();
+	return (process.env.SUPABASE_URL ?? process.env.PUBLIC_SUPABASE_URL ?? '').trim();
 }
 
 function serviceRoleKey(): string {
 	return (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
-}
-
-/** Live moderation needs a URL plus the service-role key (never the anon key). */
-export function moderationMode(): ModerationMode {
-	return supabaseUrl() && serviceRoleKey() ? 'supabase' : 'demo';
 }
 
 let cached: { key: string; client: SupabaseClient } | null = null;
@@ -61,7 +46,12 @@ let cached: { key: string; client: SupabaseClient } | null = null;
 function liveClient(): SupabaseClient {
 	const url = supabaseUrl();
 	const key = serviceRoleKey();
-	if (!url || !key) throw new Error('Supabase moderation is not configured.');
+	if (!url || !key) {
+		throw new Error(
+			'Supabase is not configured. Set PUBLIC_SUPABASE_URL and ' +
+			'SUPABASE_SERVICE_ROLE_KEY before starting the admin control plane.'
+		);
+	}
 	const cacheKey = `${url}:${key.slice(-8)}`;
 	if (!cached || cached.key !== cacheKey) {
 		cached = {
@@ -75,8 +65,6 @@ function liveClient(): SupabaseClient {
 }
 
 type Row = Record<string, any>;
-
-const liveEventStatus = (id: string) => getEvent(id)?.status;
 
 const asText = (value: unknown, fallback = ''): string =>
 	typeof value === 'string' ? value : fallback;
@@ -127,35 +115,12 @@ function mapLiveRow(row: Row): EventSubmission {
 		coverFrom: cover.from,
 		coverTo: cover.to,
 		coverIcon: cover.icon,
-		status: 'pending'
+		status: asText(row.status, 'pending') as EventSubmissionStatus
 	};
 }
 
 /** Pending organizer submissions, oldest first so the queue is FIFO. */
 export async function listSubmissions(): Promise<EventSubmission[]> {
-	if (moderationMode() === 'demo') {
-		return listEvents({ status: 'pending', perPage: 100 }).rows.map((event) => ({
-			id: event.id,
-			title: event.title,
-			slug: event.slug,
-			category: event.category,
-			description: '',
-			organizerName: event.organizerName,
-			organizerHandle: null,
-			startsAt: event.startsAt,
-			endsAt: event.endsAt ?? null,
-			submittedAt: event.submittedAt ?? event.startsAt,
-			venue: event.venue,
-			city: event.city,
-			capacity: event.capacity,
-			tierSummary: tierSummaryOf(event.tiers.map((tier) => ({ ...tier, price: tier.priceNgn }))),
-			coverFrom: event.coverFrom,
-			coverTo: event.coverTo,
-			coverIcon: event.coverIcon,
-			status: 'pending'
-		}));
-	}
-
 	const { data, error } = await liveClient()
 		.from('events')
 		.select(
@@ -190,23 +155,6 @@ export async function decideSubmission(
 	const trimmed = note.trim();
 	if (decision === 'reject' && !trimmed) {
 		throw new Error('Add a short reason so the organizer knows what to fix.');
-	}
-
-	if (moderationMode() === 'demo') {
-		// Mirrors the live `.eq('status', 'pending')` guard: a decision only ever
-		// applies to a submission that is still waiting for review.
-		if (liveEventStatus(id) !== 'pending') {
-			throw new Error('That submission is no longer in the review queue.');
-		}
-		const next = decision === 'approve' ? 'published' : 'suspended';
-		const updated = setEventStatus(
-			id,
-			next,
-			actor,
-			trimmed || (decision === 'approve' ? 'Moderation approved — listing published' : 'Rejected by admin')
-		);
-		if (!updated) throw new Error('That submission is no longer in the review queue.');
-		return { id: updated.id, status: decision === 'approve' ? 'published' : 'rejected' };
 	}
 
 	const patch =

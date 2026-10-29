@@ -15,7 +15,7 @@ export const load: PageServerLoad = () => {
 			tier0: staff.filter((member) => member.tier === 0).length,
 			hardware: staff.filter((member) => member.auth === 'FIDO2 WebAuthn').length,
 			sessions: staff.reduce((sum, member) => sum + member.sessions, 0),
-			elevated: 38,
+			elevated: staff.filter((m) => m.tier <= 1).length,
 			critical: audit.critical
 		}
 	};

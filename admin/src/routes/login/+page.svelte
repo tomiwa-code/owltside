@@ -1,14 +1,13 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { ArrowRight, Eye, EyeOff, Fingerprint, KeyRound, Lock, Mail, ShieldAlert } from '@lucide/svelte';
-	import CopyButton from '$components/CopyButton.svelte';
+	import { ArrowRight, Eye, EyeOff, Lock, Mail, ShieldAlert } from '@lucide/svelte';
 
 	let { data, form } = $props();
 
 	// Deliberate one-time snapshot: the boxes stay editable, and a failed POST
 	// re-renders the component with fresh props anyway.
 	let email = $state(untrack(() => form?.email ?? data.defaultEmail));
-	let password = $state(untrack(() => data.demoPassphrase));
+	let password = $state('');
 	let formElement = $state<HTMLFormElement | null>(null);
 	let remember = $state(true);
 	let busy = $state(false);
@@ -44,19 +43,6 @@
 		} catch {
 			/* storage blocked — the probe below simply will not find a marker */
 		}
-	}
-
-	/**
-	 * Demo convenience: put the published sandbox credentials back into the
-	 * form. Browsers happily autofill a saved work email over the defaults, and
-	 * an unknown email is the most common reason a demo sign-in is rejected.
-	 */
-	function useDemoCredentials() {
-		email = data.defaultEmail;
-		password = data.demoPassphrase;
-		showPassword = true;
-		status = null;
-		formElement?.querySelector<HTMLInputElement>('#password')?.focus();
 	}
 
 	/**
@@ -337,44 +323,6 @@
 					operations.
 				</p>
 
-				{#if data.demo}
-					<div class="mt-4 overflow-hidden rounded-xl border border-[#c6bcff]/25 bg-[#c6bcff]/[0.05]">
-						<div class="flex items-center justify-between gap-2 border-b border-[#c6bcff]/15 px-3 py-2">
-							<p class="flex items-center gap-1.5 font-code text-[8.5px] uppercase tracking-[0.14em] text-[#c6bcff]">
-								<KeyRound size={10} /> Demo security password
-							</p>
-							<span class="chip !h-[16px] !border-[#c6bcff]/30 !bg-[#c6bcff]/10 !text-[7px] !text-[#dcd6ff]">Sandbox only</span>
-						</div>
-						<div class="space-y-1.5 px-3 py-2.5">
-							<div class="flex items-center justify-between gap-2">
-								<span class="font-code text-[8px] uppercase tracking-[0.1em] text-[#7d7d8a]">Email</span>
-								<div class="flex min-w-0 items-center gap-1">
-									<code class="truncate font-code text-[10.5px] text-[#e6e1ff]">{data.defaultEmail}</code>
-									<CopyButton value={data.defaultEmail} label="Copy demo email" compact />
-								</div>
-							</div>
-							<div class="flex items-center justify-between gap-2">
-								<span class="font-code text-[8px] uppercase tracking-[0.1em] text-[#7d7d8a]">Password</span>
-								<div class="flex min-w-0 items-center gap-1">
-									<code class="truncate font-code text-[10.5px] text-[#e6e1ff]">{data.demoPassphrase}</code>
-									<CopyButton value={data.demoPassphrase} label="Copy demo password" compact />
-								</div>
-							</div>
-							<button
-								type="button"
-								class="mt-1 w-full rounded-md border border-[#c6bcff]/30 bg-[#c6bcff]/10 px-2 py-1.5 font-code text-[8.5px] uppercase tracking-[0.1em] text-[#dcd6ff] transition hover:bg-[#c6bcff]/20"
-								onclick={useDemoCredentials}
-							>
-								Fill demo credentials
-							</button>
-							<p class="pt-0.5 text-[9.5px] leading-relaxed text-[#8f8f9b]">
-								Any 16+ character passphrase is accepted in the sandbox. The hardware-key button simulates a
-								FIDO2 touch.
-							</p>
-						</div>
-					</div>
-				{/if}
-
 				{#if sessionBlocked}
 					<div class="mt-4 rounded-lg border border-amber-500/35 bg-amber-500/[0.08] px-3 py-2.5 text-[11.5px] leading-snug text-amber-100" role="alert">
 						<p class="flex items-center gap-1.5 font-code text-[8.5px] uppercase tracking-[0.12em] text-amber-200">
@@ -500,14 +448,6 @@
 						</p>
 					{/if}
 				</form>
-
-				<form method="POST" action="?/hardware" class="mt-2.5">
-					<button type="submit" class="btn btn-secondary w-full !h-[40px] !text-[12px]">
-						<Fingerprint size={14} />
-						Hardware Security Key (WebAuthn / YubiKey)
-					</button>
-				</form>
-
 
 				<div class="mt-3">
 					<button
