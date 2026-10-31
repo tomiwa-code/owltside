@@ -1,15 +1,75 @@
 -- 029 · Organizer payout request lifecycle & closed-event enforcement.
 --
--- 1. Enforces that organizer payout requests (`kind = 'payout'`) can only be
+-- 1. Backfills `subject_id` from `payload ->> 'eventId'` on legacy payout rows
+--    and cancels duplicate `pending` / `approved` payout rows per
+--    `(requester_id, coalesce(subject_id, ''))` — keeping the most recent
+--    `approved` row when any payout was already approved, otherwise the newest
+--    `pending` row — so creating `approval_requests_payout_open_or_approved_idx`
+--    succeeds cleanly on databases with pre-existing payout history.
+-- 2. Enforces that organizer payout requests (`kind = 'payout'`) can only be
 --    submitted for owned, approved events whose end timestamp (or WAT end of
 --    start date) has passed.
--- 2. Enforces at the database layer that a payout request cannot be submitted
+-- 3. Enforces at the database layer that a payout request cannot be submitted
 --    again while pending OR once approved (`approval_requests_payout_open_or_approved_idx`).
--- 3. Routes payout decision notifications directly to `/organizer?tab=past` and
+-- 4. Routes payout decision notifications directly to `/organizer?tab=past` and
 --    publishes `public.approval_requests` to `supabase_realtime` so organizer
 --    dashboards reflect Approved / Denied decisions live.
 --
 -- Safe to re-run.
+
+-- 1) Normalize/backfill `subject_id` on legacy payout rows before deduplicating.
+update public.approval_requests
+   set subject_id = coalesce(
+         nullif(btrim(subject_id), ''),
+         nullif(btrim(payload ->> 'eventId'), '')
+       )
+ where kind = 'payout'
+   and subject_id is distinct from coalesce(
+         nullif(btrim(subject_id), ''),
+         nullif(btrim(payload ->> 'eventId'), '')
+       );
+
+-- 2) Cancel duplicate open/approved payout rows per (requester_id, subject_id)
+--    before creating the partial unique index. Any approved row always wins
+--    over pending/older duplicates; otherwise the most recent pending row wins.
+with ranked_payouts as (
+  select
+    id,
+    first_value(status) over (
+      partition by requester_id, coalesce(subject_id, '')
+      order by
+        case when status = 'approved' then 0 else 1 end asc,
+        coalesce(decided_at, created_at) desc,
+        created_at desc,
+        id desc
+    ) as kept_status,
+    row_number() over (
+      partition by requester_id, coalesce(subject_id, '')
+      order by
+        case when status = 'approved' then 0 else 1 end asc,
+        coalesce(decided_at, created_at) desc,
+        created_at desc,
+        id desc
+    ) as rn
+  from public.approval_requests
+  where kind = 'payout'
+    and status in ('pending', 'approved')
+)
+update public.approval_requests ar
+   set status = 'cancelled',
+       decision_note = coalesce(
+         nullif(ar.decision_note, ''),
+         case
+           when rp.kept_status = 'approved'
+             then 'Cancelled during migration 029 — payout was already approved for this event.'
+           else 'Cancelled during migration 029 — duplicate pending payout request for this event.'
+         end
+       ),
+       decided_at = coalesce(ar.decided_at, now()),
+       decided_by = coalesce(ar.decided_by, 'system:migration-029')
+  from ranked_payouts rp
+ where ar.id = rp.id
+   and rp.rn > 1;
 
 create unique index if not exists approval_requests_payout_open_or_approved_idx
   on public.approval_requests (
@@ -35,7 +95,8 @@ begin
     raise exception 'Only an Owltside admin can decide an approval request';
   end if;
   if tg_op = 'INSERT' and new.kind = 'payout' then
-    if coalesce(new.subject_id, '') = '' then
+    new.subject_id := nullif(btrim(new.subject_id), '');
+    if new.subject_id is null then
       raise exception 'Choose a closed event to request a payout for';
     end if;
     select id, organizer_id, status, starts_at, ends_at
@@ -63,9 +124,41 @@ begin
     ) then
       raise exception 'Payout has already been approved for this event and cannot be requested again';
     end if;
+    if exists (
+      select 1
+      from public.approval_requests ar
+      where ar.requester_id = new.requester_id
+        and ar.kind = 'payout'
+        and ar.subject_id = new.subject_id
+        and ar.status = 'pending'
+    ) then
+      raise exception 'A payout request is already awaiting approval for this event';
+    end if;
+  end if;
+  if tg_op = 'UPDATE'
+     and new.kind = 'payout'
+     and new.status = 'approved'
+     and old.status is distinct from 'approved'
+  then
+    if exists (
+      select 1
+      from public.approval_requests ar
+      where ar.id <> new.id
+        and ar.requester_id = new.requester_id
+        and ar.kind = 'payout'
+        and coalesce(ar.subject_id, '') = coalesce(new.subject_id, '')
+        and ar.status = 'approved'
+    ) then
+      raise exception 'Payout has already been approved for this event';
+    end if;
   end if;
   return new;
 end $$;
+
+drop trigger if exists guard_approval_request on public.approval_requests;
+create trigger guard_approval_request
+  before insert or update on public.approval_requests
+  for each row execute function public.guard_approval_request();
 
 create or replace function public.notify_approval_decision()
 returns trigger
@@ -92,6 +185,13 @@ begin
   end if;
   return new;
 end $$;
+
+drop trigger if exists notify_approval_decision on public.approval_requests;
+create trigger notify_approval_decision
+  after update on public.approval_requests
+  for each row
+  when (new.status in ('approved', 'rejected') and old.status = 'pending')
+  execute function public.notify_approval_decision();
 
 do $$
 begin
