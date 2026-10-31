@@ -3,6 +3,11 @@ import type { Actions, PageServerLoad } from './$types';
 import { OPERATING_IDENTITY_COOKIE, isOperatingIdentity } from '$lib/constants/operating-identity';
 import { createSupabase } from '$lib/server/supabase';
 import { getSource } from '$lib/server/datasource';
+import {
+	BIOMETRIC_JUST_AUTHED_COOKIE,
+	BIOMETRIC_UNLOCKED_COOKIE,
+	BIOMETRIC_VAULT_COOKIE
+} from '$lib/server/webauthn';
 
 export const load: PageServerLoad = async ({ locals, cookies }) => {
 	// Verification and payout checks wait for an admin decision, so the page needs
@@ -81,6 +86,9 @@ export const actions: Actions = {
 
 		cookies.delete('owltside_demo_session', { path: '/' });
 		cookies.delete(OPERATING_IDENTITY_COOKIE, { path: '/' });
+		cookies.delete(BIOMETRIC_VAULT_COOKIE, { path: '/' });
+		cookies.delete(BIOMETRIC_UNLOCKED_COOKIE, { path: '/' });
+		cookies.delete(BIOMETRIC_JUST_AUTHED_COOKIE, { path: '/' });
 		redirect(303, '/');
 	},
 	signout: async ({ cookies }) => {
@@ -90,6 +98,8 @@ export const actions: Actions = {
 		}
 		cookies.delete('owltside_demo_session', { path: '/' });
 		cookies.delete(OPERATING_IDENTITY_COOKIE, { path: '/' });
+		cookies.delete(BIOMETRIC_UNLOCKED_COOKIE, { path: '/' });
+		cookies.delete(BIOMETRIC_JUST_AUTHED_COOKIE, { path: '/' });
 		redirect(303, '/');
 	}
 };

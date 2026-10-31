@@ -21,13 +21,13 @@ export interface StoredBiometricCredential {
 	userName: string;
 	userHandle?: string;
 	userEmail?: string;
-	refreshToken?: string;
 	createdAt: string;
 	lastUsedAt?: string;
 }
 
 export const BIOMETRIC_VAULT_COOKIE = 'owltside_bio_vault';
 export const BIOMETRIC_UNLOCKED_COOKIE = 'owltside_bio_unlocked';
+export const BIOMETRIC_JUST_AUTHED_COOKIE = 'owltside_just_authed';
 
 function resolveSecret(): Buffer {
 	const raw =

@@ -65,7 +65,7 @@ const defaults: AppSettings = {
 	},
 	privacy: { privateProfile: false, showAttendedEvents: true, personalizedAds: false },
 	cookies: { analytics: false, personalization: false },
-	security: { biometricLogin: false, twoFactor: true },
+	security: { biometricLogin: true, twoFactor: true },
 	payout: { bank: '', accountNumber: '' },
 	accessibility: {
 		appearance: 'dark',

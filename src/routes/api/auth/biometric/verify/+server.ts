@@ -12,6 +12,10 @@ import {
 } from '$lib/server/webauthn';
 
 export const POST: RequestHandler = async ({ request, locals, cookies, url }) => {
+	if (!locals.session) {
+		return json({ error: 'Sign in with your email first.' }, { status: 401 });
+	}
+
 	let body: {
 		challengeToken?: string;
 		credentialId?: string;
@@ -36,8 +40,15 @@ export const POST: RequestHandler = async ({ request, locals, cookies, url }) =>
 	}
 
 	let challenge: string;
+	let tokenUserId: string | null;
 	try {
-		({ challenge } = verifyWebAuthnChallengeToken(body.challengeToken, 'authenticate'));
+		({ challenge, userId: tokenUserId } = verifyWebAuthnChallengeToken(
+			body.challengeToken,
+			'authenticate'
+		));
+		if (tokenUserId && tokenUserId !== locals.session.userId) {
+			return json({ error: 'Biometric challenge user mismatch.' }, { status: 401 });
+		}
 	} catch (err) {
 		return json(
 			{ error: err instanceof Error ? err.message : 'Biometric challenge expired.' },
@@ -47,11 +58,12 @@ export const POST: RequestHandler = async ({ request, locals, cookies, url }) =>
 
 	const vault = decryptBiometricVault(cookies.get(BIOMETRIC_VAULT_COOKIE));
 	let stored: StoredBiometricCredential | undefined = vault.find(
-		(item) => item.credentialId === body.credentialId
+		(item) =>
+			item.credentialId === body.credentialId && item.userId === locals.session!.userId
 	);
 
 	const supabase = createSupabase(cookies);
-	if (!stored && supabase && locals.session?.userId) {
+	if (!stored && supabase && locals.session.userId && !locals.session.demo) {
 		const { data: row } = await supabase
 			.from('biometric_credentials')
 			.select('credential_id,public_key,algorithm,counter,device_label,user_id,created_at')
@@ -76,7 +88,7 @@ export const POST: RequestHandler = async ({ request, locals, cookies, url }) =>
 
 	if (!stored) {
 		return json(
-			{ error: 'This passkey is not enrolled on this device. Re-enable Biometric Unlock in Settings.' },
+			{ error: 'This passkey is not enrolled on this device.' },
 			{ status: 404 }
 		);
 	}
@@ -103,51 +115,8 @@ export const POST: RequestHandler = async ({ request, locals, cookies, url }) =>
 	}
 
 	const verifiedAt = new Date().toISOString();
-	let nextRefreshToken = stored.refreshToken;
-	let sessionRestored = Boolean(locals.session);
 
-	// If signing in from /auth/login while logged out, restore the Supabase or demo session!
-	if (!locals.session) {
-		if (supabase && stored.refreshToken) {
-			const { data: refreshed, error } = await supabase.auth.refreshSession({
-				refresh_token: stored.refreshToken
-			});
-			if (error || !refreshed.session || !refreshed.user) {
-				const banned = /banned/i.test(error?.message ?? '');
-				return json(
-					{
-						error: banned
-							? 'Your account has been disabled by an administrator.'
-							: 'Your saved session expired. Sign in once with email to refresh biometric login.'
-					},
-					{ status: banned ? 403 : 401 }
-				);
-			}
-			const bannedUntil = (refreshed.user as { banned_until?: string | null }).banned_until;
-			if (
-				(bannedUntil && Date.parse(bannedUntil) > Date.now()) ||
-				refreshed.user.user_metadata?.account_disabled === true
-			) {
-				await supabase.auth.signOut();
-				return json(
-					{ error: 'Your account has been disabled by an administrator.' },
-					{ status: 403 }
-				);
-			}
-			nextRefreshToken = refreshed.session.refresh_token;
-			sessionRestored = true;
-		} else if (locals.demoMode) {
-			cookies.set('owltside_demo_session', '1', {
-				path: '/',
-				httpOnly: true,
-				sameSite: 'lax',
-				maxAge: 60 * 60 * 24 * 30
-			});
-			sessionRestored = true;
-		}
-	}
-
-	if (supabase && locals.session?.userId) {
+	if (supabase && locals.session.userId && !locals.session.demo) {
 		await supabase
 			.from('biometric_credentials')
 			.update({
@@ -164,7 +133,6 @@ export const POST: RequestHandler = async ({ request, locals, cookies, url }) =>
 		{
 			...stored,
 			counter: Math.max(stored.counter, assertionResult.counter),
-			refreshToken: nextRefreshToken,
 			lastUsedAt: verifiedAt
 		},
 		...vault.filter((item) => item.credentialId !== stored!.credentialId)
@@ -187,7 +155,8 @@ export const POST: RequestHandler = async ({ request, locals, cookies, url }) =>
 	return json({
 		ok: true,
 		verifiedAt,
-		sessionRestored,
-		userName: stored.userName
+		userId: locals.session.userId,
+		userName: locals.session.name,
+		deviceLabel: stored.deviceLabel
 	});
 };
