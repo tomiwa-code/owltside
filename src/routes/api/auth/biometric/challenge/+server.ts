@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { createSupabase } from '$lib/server/supabase';
 import {
 	BIOMETRIC_VAULT_COOKIE,
 	decryptBiometricVault,
@@ -7,6 +8,10 @@ import {
 } from '$lib/server/webauthn';
 
 export const POST: RequestHandler = async ({ request, locals, cookies }) => {
+	if (!locals.session) {
+		return json({ error: 'Sign in with your email first.' }, { status: 401 });
+	}
+
 	let body: { purpose?: string } = {};
 	try {
 		body = (await request.json()) as { purpose?: string };
@@ -14,24 +19,37 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 		body = {};
 	}
 	const purpose = body.purpose === 'register' ? 'register' : 'authenticate';
-	if (purpose === 'register' && !locals.session && !locals.demoMode) {
-		return json({ error: 'Sign in first to enroll fingerprint or Face ID.' }, { status: 401 });
-	}
-	const userId = locals.session?.userId ?? (locals.demoMode ? 'demo' : null);
+	const userId = locals.session.userId;
 	const { challenge, challengeToken } = issueWebAuthnChallenge(purpose, userId);
-	const vault = decryptBiometricVault(cookies.get(BIOMETRIC_VAULT_COOKIE));
-	const allowCredentialIds = vault.map((cred) => cred.credentialId);
+
+	const vault = decryptBiometricVault(cookies.get(BIOMETRIC_VAULT_COOKIE)).filter(
+		(cred) => cred.userId === userId
+	);
+	const credentialIds = new Set<string>(vault.map((cred) => cred.credentialId));
+
+	if (purpose === 'authenticate' && credentialIds.size === 0) {
+		const supabase = createSupabase(cookies);
+		if (supabase) {
+			const { data: rows } = await supabase
+				.from('biometric_credentials')
+				.select('credential_id')
+				.eq('user_id', userId);
+			for (const row of rows ?? []) {
+				if (row.credential_id) credentialIds.add(row.credential_id);
+			}
+		}
+	}
 
 	return json({
 		challenge,
 		challengeToken,
-		allowCredentialIds,
+		allowCredentialIds: [...credentialIds],
 		user:
 			purpose === 'register'
 				? {
-						id: userId ?? 'demo',
-						name: locals.session?.email ?? locals.session?.handle ?? 'member@owltside.app',
-						displayName: locals.session?.name ?? 'Owltside Member'
+						id: userId,
+						name: locals.session.email || locals.session.handle || 'member@owltside.app',
+						displayName: locals.session.name || 'Owltside Member'
 					}
 				: null
 	});

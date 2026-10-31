@@ -13,8 +13,8 @@ import {
 } from '$lib/server/webauthn';
 
 export const POST: RequestHandler = async ({ request, locals, cookies, url }) => {
-	if (!locals.session && !locals.demoMode) {
-		return json({ error: 'Sign in to enroll fingerprint or Face ID.' }, { status: 401 });
+	if (!locals.session) {
+		return json({ error: 'Sign in with your email first.' }, { status: 401 });
 	}
 
 	let body: {
@@ -37,8 +37,15 @@ export const POST: RequestHandler = async ({ request, locals, cookies, url }) =>
 	}
 
 	let challenge: string;
+	let tokenUserId: string | null;
 	try {
-		({ challenge } = verifyWebAuthnChallengeToken(body.challengeToken, 'register'));
+		({ challenge, userId: tokenUserId } = verifyWebAuthnChallengeToken(
+			body.challengeToken,
+			'register'
+		));
+		if (tokenUserId && tokenUserId !== locals.session.userId) {
+			return json({ error: 'Biometric challenge user mismatch.' }, { status: 401 });
+		}
 		verifyClientData(body.clientDataJSON, 'webauthn.create', challenge, url.origin);
 	} catch (err) {
 		return json(
@@ -69,26 +76,21 @@ export const POST: RequestHandler = async ({ request, locals, cookies, url }) =>
 	}
 
 	const supabase = createSupabase(cookies);
-	let refreshToken: string | undefined;
-	if (supabase) {
-		const { data: sessionData } = await supabase.auth.getSession();
-		refreshToken = sessionData.session?.refresh_token;
-		if (locals.session?.userId) {
-			await supabase
-				.from('biometric_credentials')
-				.upsert(
-					{
-						user_id: locals.session.userId,
-						credential_id: body.credentialId,
-						public_key: publicKeySpki,
-						algorithm,
-						counter,
-						device_label: (body.deviceLabel ?? 'Phone Biometrics').slice(0, 80)
-					},
-					{ onConflict: 'credential_id' }
-				)
-				.then(() => undefined, () => undefined);
-		}
+	if (supabase && locals.session.userId && !locals.session.demo) {
+		await supabase
+			.from('biometric_credentials')
+			.upsert(
+				{
+					user_id: locals.session.userId,
+					credential_id: body.credentialId,
+					public_key: publicKeySpki,
+					algorithm,
+					counter,
+					device_label: (body.deviceLabel ?? 'Phone Biometrics').slice(0, 80)
+				},
+				{ onConflict: 'credential_id' }
+			)
+			.then(() => undefined, () => undefined);
 	}
 
 	const now = new Date().toISOString();
@@ -98,11 +100,10 @@ export const POST: RequestHandler = async ({ request, locals, cookies, url }) =>
 		algorithm,
 		counter,
 		deviceLabel: (body.deviceLabel ?? 'Device Biometrics').slice(0, 80),
-		userId: locals.session?.userId ?? 'demo',
-		userName: locals.session?.name ?? 'Ada Obi',
-		userHandle: locals.session?.handle,
-		userEmail: locals.session?.email,
-		refreshToken,
+		userId: locals.session.userId,
+		userName: locals.session.name || 'Owltside Member',
+		userHandle: locals.session.handle,
+		userEmail: locals.session.email,
 		createdAt: now,
 		lastUsedAt: now
 	};
@@ -128,6 +129,7 @@ export const POST: RequestHandler = async ({ request, locals, cookies, url }) =>
 
 	return json({
 		ok: true,
+		userId: newCred.userId,
 		credentialId: newCred.credentialId,
 		deviceLabel: newCred.deviceLabel,
 		createdAt: now
@@ -136,7 +138,7 @@ export const POST: RequestHandler = async ({ request, locals, cookies, url }) =>
 
 export const DELETE: RequestHandler = async ({ locals, cookies, url }) => {
 	const supabase = createSupabase(cookies);
-	if (supabase && locals.session?.userId) {
+	if (supabase && locals.session?.userId && !locals.session.demo) {
 		await supabase
 			.from('biometric_credentials')
 			.delete()

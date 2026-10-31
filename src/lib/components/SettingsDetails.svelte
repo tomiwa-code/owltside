@@ -23,6 +23,7 @@
 	} from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { appSettings, type AppSettings } from '$lib/state/settings.svelte';
 	import { PAYOUT_BANKS, isValidNuban, maskAccountNumber, normaliseNuban } from '$lib/utils/payout';
 	import { toast } from '$lib/state/toast.svelte';
@@ -122,10 +123,11 @@
 	let pushBusy = $state(false);
 	let enrolledBiometric = $state<LocalBiometricMetadata | null>(null);
 	let biometricBusy = $state(false);
+	const currentUserId = $derived(page.data.session?.userId);
 
 	onMount(() => {
 		pushPermission = getPushPermissionState();
-		enrolledBiometric = readStoredBiometric();
+		enrolledBiometric = readStoredBiometric(currentUserId);
 	});
 
 	/**
@@ -418,10 +420,10 @@
 		if (shouldEnroll) {
 			biometricBusy = true;
 			try {
-				const meta = await enrollBiometricPasskey();
+				const meta = await enrollBiometricPasskey(currentUserId);
 				enrolledBiometric = meta;
 				appSettings.value.security.biometricLogin = true;
-				toast(`${meta.deviceLabel} enrolled for biometric sign-in`, 'success');
+				toast(`${meta.deviceLabel} enrolled for biometric app unlock`, 'success');
 			} catch (err) {
 				appSettings.value.security.biometricLogin = false;
 				toast(
@@ -433,11 +435,11 @@
 			}
 		} else {
 			biometricBusy = true;
-			await disableBiometricPasskey();
+			await disableBiometricPasskey(currentUserId);
 			enrolledBiometric = null;
 			appSettings.value.security.biometricLogin = false;
 			biometricBusy = false;
-			toast('Biometric sign-in disabled on this device', 'info');
+			toast('Biometric passkey removed from this device', 'info');
 		}
 	}
 
@@ -446,13 +448,13 @@
 		biometricBusy = true;
 		try {
 			if (!enrolledBiometric) {
-				const meta = await enrollBiometricPasskey();
+				const meta = await enrollBiometricPasskey(currentUserId);
 				enrolledBiometric = meta;
 				appSettings.value.security.biometricLogin = true;
 				toast(`${meta.deviceLabel} enrolled & verified`, 'success');
 			} else {
-				await authenticateWithBiometrics();
-				enrolledBiometric = readStoredBiometric();
+				await authenticateWithBiometrics(currentUserId);
+				enrolledBiometric = readStoredBiometric(currentUserId);
 				toast('Biometric check passed (Fingerprint / Face ID verified)', 'success');
 			}
 		} catch (err) {
@@ -926,7 +928,7 @@
 			<LockKeyhole class="w-5 h-5 text-primary shrink-0" />
 		</div>
 		{#each [
-			{ key: 'biometricLogin', label: 'Biometric sign-in (Fingerprint / Face ID)', description: 'Register your phone fingerprint or Face ID passkey for instant sign-in and gate unlock.' },
+			{ key: 'biometricLogin', label: 'Biometric app unlock (Fingerprint / Face ID)', description: 'Verify your fingerprint or Face ID right after the splash screen while signed in.' },
 			{ key: 'twoFactor', label: 'Two-factor authentication', description: 'Require an additional sign-in check.' }
 		] as row (row.key)}
 			{@const key = row.key as SecurityToggle}

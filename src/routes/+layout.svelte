@@ -1,20 +1,33 @@
 <script lang="ts">
 	import '../app.css';
+	import { browser } from '$app/environment';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { Fingerprint, LockKeyhole } from '@lucide/svelte';
+	import SplashBiometricGate from '$components/SplashBiometricGate.svelte';
 	import Toasts from '$components/Toasts.svelte';
 	import PullToRefresh from '$components/PullToRefresh.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { ensureServiceWorkerRegistration } from '$lib/push.client';
 	import {
-		authenticateWithBiometrics,
+		clearBiometricSessionUnlocked,
+		consumeJustAuthenticatedCookie,
+		isBiometricSessionUnlocked,
+		isPlatformBiometricAvailable,
+		markBiometricSessionUnlocked,
 		readStoredBiometric
 	} from '$lib/webauthn.client';
-	import { toast } from '$lib/state/toast.svelte';
 
 	let { children } = $props();
-	let biometricLocked = $state(false);
-	let biometricUnlocking = $state(false);
+
+	const session = $derived(page.data.session);
+	const onRootOrAuth = $derived(
+		page.url.pathname === '/' || page.url.pathname.startsWith('/auth/')
+	);
+
+	let biometricGateOpen = $state(false);
+	let biometricGateKey = $state(0);
+	let biometricBusy = $state(false);
+	let checkedUserId = '';
 
 	$effect(() => {
 		const preferences = appSettings.value.accessibility;
@@ -32,41 +45,118 @@
 		document.documentElement.dataset.screenReaderLabels = String(preferences.screenReaderLabels);
 	});
 
-	async function unlockWithBiometricShield() {
-		if (biometricUnlocking) return;
-		biometricUnlocking = true;
-		try {
-			await authenticateWithBiometrics();
-			biometricLocked = false;
-			toast('Unlocked with biometrics', 'success');
-		} catch (err) {
-			toast(
-				err instanceof Error ? err.message : 'Biometric unlock cancelled.',
-				'error'
-			);
-		} finally {
-			biometricUnlocking = false;
+	$effect(() => {
+		if (!browser) return;
+
+		if (!session) {
+			checkedUserId = '';
+			biometricGateOpen = false;
+			clearBiometricSessionUnlocked();
+			return;
 		}
-	}
+
+		if (onRootOrAuth) {
+			biometricGateOpen = false;
+			return;
+		}
+
+		const uid = session.userId;
+		if (consumeJustAuthenticatedCookie(uid) || isBiometricSessionUnlocked(uid)) {
+			checkedUserId = uid;
+			biometricGateOpen = false;
+			return;
+		}
+
+		if (readStoredBiometric(uid)) {
+			checkedUserId = uid;
+			biometricGateOpen = true;
+			return;
+		}
+
+		if (checkedUserId === uid) return;
+		checkedUserId = uid;
+
+		void isPlatformBiometricAvailable().then((res) => {
+			if (page.data.session?.userId !== uid) return;
+			if (page.url.pathname === '/' || page.url.pathname.startsWith('/auth/')) return;
+			if (isBiometricSessionUnlocked(uid)) return;
+			if (res.supported) {
+				biometricGateOpen = true;
+			} else {
+				markBiometricSessionUnlocked(uid);
+			}
+		});
+	});
 
 	onMount(() => {
 		void ensureServiceWorkerRegistration();
 
 		let hiddenAt = 0;
-		const onVisibility = () => {
-			if (document.visibilityState === 'hidden') {
-				hiddenAt = Date.now();
-			} else if (
-				hiddenAt > 0 &&
-				Date.now() - hiddenAt > 5 * 60_000 &&
-				appSettings.value.security.biometricLogin &&
-				readStoredBiometric()
-			) {
-				biometricLocked = true;
+		let lastFilePickerAt = 0;
+
+		const onDocumentClick = (event: MouseEvent) => {
+			const target = event.target as HTMLElement | null;
+			if (target?.closest('input[type="file"], label')) {
+				const input =
+					target instanceof HTMLInputElement
+						? target
+						: target?.querySelector<HTMLInputElement>('input[type="file"]');
+				if (input?.type === 'file') {
+					lastFilePickerAt = Date.now();
+				}
 			}
 		};
+
+		const onVisibility = () => {
+			if (document.visibilityState === 'hidden') {
+				if (!biometricBusy) {
+					hiddenAt = Date.now();
+				}
+				return;
+			}
+
+			if (hiddenAt <= 0 || biometricBusy) return;
+			const elapsed = Date.now() - hiddenAt;
+			hiddenAt = 0;
+
+			if (Date.now() - lastFilePickerAt < 60_000) return;
+			const activeSession = page.data.session;
+			if (
+				!activeSession ||
+				page.url.pathname === '/' ||
+				page.url.pathname.startsWith('/auth/')
+			) {
+				return;
+			}
+
+			const isStandalone =
+				Boolean(window.matchMedia?.('(display-mode: standalone)').matches) ||
+				Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+			const lockThresholdMs = isStandalone ? 2_000 : 5 * 60_000;
+			if (elapsed < lockThresholdMs) return;
+
+			const uid = activeSession.userId;
+			if (readStoredBiometric(uid)) {
+				clearBiometricSessionUnlocked();
+				biometricGateKey += 1;
+				biometricGateOpen = true;
+				return;
+			}
+
+			void isPlatformBiometricAvailable().then((res) => {
+				if (!res.supported || page.data.session?.userId !== uid) return;
+				clearBiometricSessionUnlocked();
+				biometricGateKey += 1;
+				biometricGateOpen = true;
+			});
+		};
+
+		document.addEventListener('click', onDocumentClick, true);
 		document.addEventListener('visibilitychange', onVisibility);
-		return () => document.removeEventListener('visibilitychange', onVisibility);
+		return () => {
+			document.removeEventListener('click', onDocumentClick, true);
+			document.removeEventListener('visibilitychange', onVisibility);
+		};
 	});
 </script>
 
@@ -76,29 +166,20 @@
 
 <div class="min-h-dvh bg-surface-base text-on-surface font-body">
 	{@render children()}
-	{#if biometricLocked}
-		<div class="fixed inset-0 z-[100] bg-surface-base/95 backdrop-blur-xl flex flex-col items-center justify-center p-6 text-center">
-			<div class="w-full max-w-sm rounded-2xl border border-surface-glass-border bg-surface-container p-6 flex flex-col items-center gap-4 shadow-2xl">
-				<span class="w-14 h-14 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary">
-					<Fingerprint class="w-7 h-7" />
-				</span>
-				<div>
-					<h2 class="font-display text-headline-md text-on-surface font-bold">Owltside Locked</h2>
-					<p class="text-body-sm text-on-surface-variant mt-1">
-						Verify your fingerprint or Face ID to unlock your passes and account.
-					</p>
-				</div>
-				<button
-					type="button"
-					disabled={biometricUnlocking}
-					onclick={unlockWithBiometricShield}
-					class="w-full h-12 rounded-full bg-primary text-on-primary font-semibold flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50"
-				>
-					<LockKeyhole class="w-4 h-4" />
-					<span>{biometricUnlocking ? 'Verifying…' : 'Unlock with Fingerprint / Face ID'}</span>
-				</button>
-			</div>
-		</div>
+	{#if biometricGateOpen && session && !onRootOrAuth}
+		{#key biometricGateKey}
+			<SplashBiometricGate
+				{session}
+				overlay={true}
+				startWithSplash={true}
+				onBusyChange={(busy) => {
+					biometricBusy = busy;
+				}}
+				onUnlocked={() => {
+					biometricGateOpen = false;
+				}}
+			/>
+		{/key}
 	{/if}
 	<PullToRefresh />
 	<Toasts />
