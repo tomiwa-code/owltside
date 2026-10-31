@@ -1,21 +1,18 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { env as publicEnv } from '$env/dynamic/public';
-import { env as privateEnv } from '$env/dynamic/private';
 import { createSupabase } from '$lib/server/supabase';
-
-function resolveVapidPublicKey(): string {
-	return (
-		publicEnv.PUBLIC_VAPID_PUBLIC_KEY ||
-		privateEnv.VAPID_PUBLIC_KEY ||
-		''
-	).trim();
-}
+import {
+	forgetPushSubscription,
+	rememberPushSubscription,
+	resolveVapidKeys
+} from '$lib/server/webpush';
 
 export const GET: RequestHandler = async () => {
-	return json({
-		vapidPublicKey: resolveVapidPublicKey() || null
-	});
+	const { publicKey } = resolveVapidKeys();
+	return json(
+		{ vapidPublicKey: publicKey || null },
+		{ headers: { 'cache-control': 'private, no-store' } }
+	);
 };
 
 export const POST: RequestHandler = async ({ request, locals, cookies }) => {
@@ -30,7 +27,18 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 	}
 
 	if (!body.endpoint || !body.keys?.p256dh || !body.keys?.auth) {
-		return json({ error: 'Push subscription endpoint and encryption keys are required.' }, { status: 400 });
+		return json(
+			{ error: 'Push subscription endpoint and encryption keys are required.' },
+			{ status: 400 }
+		);
+	}
+
+	if (locals.session?.userId) {
+		rememberPushSubscription(locals.session.userId, {
+			endpoint: body.endpoint,
+			p256dh: body.keys.p256dh,
+			auth: body.keys.auth
+		});
 	}
 
 	const supabase = createSupabase(cookies);
@@ -48,7 +56,10 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 				},
 				{ onConflict: 'endpoint' }
 			)
-			.then(() => undefined, () => undefined);
+			.then(
+				() => undefined,
+				() => undefined
+			);
 	}
 
 	return json({ ok: true });
@@ -61,6 +72,9 @@ export const DELETE: RequestHandler = async ({ request, locals, cookies }) => {
 		endpoint = body.endpoint ?? '';
 	} catch {
 		endpoint = '';
+	}
+	if (locals.session?.userId) {
+		forgetPushSubscription(locals.session.userId, endpoint || undefined);
 	}
 	const supabase = createSupabase(cookies);
 	if (supabase && locals.session?.userId) {

@@ -1,7 +1,10 @@
 import { browser } from '$app/environment';
-import type { NotificationItem } from '$lib/types';
+import type { Conversation, MessageRequest, NotificationItem } from '$lib/types';
 
 const SEEN_STORAGE_KEY = 'owltside.push.seen.v1';
+const SEEN_DM_KEY_PREFIX = 'owltside.push.dm.seen.v1:';
+const SEEN_MSGREQ_KEY_PREFIX = 'owltside.push.msgreq.seen.v1:';
+const DELIVERED_DM_KEY_PREFIX = 'owltside.push.dm.delivered.v1:';
 
 export interface DeviceNotificationInput {
 	title: string;
@@ -9,6 +12,18 @@ export interface DeviceNotificationInput {
 	url?: string;
 	tag?: string;
 	silent?: boolean;
+}
+
+export interface InboxPushPrefs {
+	pushEnabled: boolean;
+	messages: boolean;
+	soundHaptics: boolean;
+}
+
+interface SeenConversationEntry {
+	unread: number;
+	lastAt: string;
+	lastMessage: string;
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -20,6 +35,12 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 		outputArray[i] = rawData.charCodeAt(i);
 	}
 	return outputArray;
+}
+
+export function dmNotificationTag(conversationId: string, sentAtOrKey: string): string {
+	const parsedMs = Date.parse(sentAtOrKey);
+	const suffix = Number.isFinite(parsedMs) ? String(parsedMs) : sentAtOrKey.slice(0, 32);
+	return `owltside-dm-${conversationId}-${suffix}`;
 }
 
 export function getPushPermissionState(): NotificationPermission | 'unsupported' {
@@ -48,11 +69,12 @@ export async function showDeviceNotification(input: DeviceNotificationInput): Pr
 	if (!browser || typeof window.Notification === 'undefined') return false;
 	if (Notification.permission !== 'granted') return false;
 
+	const tag = input.tag ?? `owltside-${Date.now()}`;
 	const options: NotificationOptions & { vibrate?: number[]; renotify?: boolean } = {
 		body: input.body,
 		icon: '/icon.svg',
 		badge: '/icon.svg',
-		tag: input.tag ?? `owltside-${Date.now()}`,
+		tag,
 		silent: Boolean(input.silent ?? false),
 		vibrate: input.silent ? undefined : [120, 60, 120],
 		renotify: true,
@@ -62,6 +84,10 @@ export async function showDeviceNotification(input: DeviceNotificationInput): Pr
 	const reg = await ensureServiceWorkerRegistration();
 	if (reg) {
 		try {
+			if (typeof reg.getNotifications === 'function') {
+				const activeWithSameTag = await reg.getNotifications({ tag }).catch(() => []);
+				if (activeWithSameTag.length > 0) return true;
+			}
 			await reg.showNotification(input.title, options);
 			return true;
 		} catch {
@@ -97,6 +123,46 @@ export async function showDeviceNotification(input: DeviceNotificationInput): Pr
 		return true;
 	} catch {
 		return false;
+	}
+}
+
+async function registerBrowserPushSubscription(reg: ServiceWorkerRegistration): Promise<void> {
+	if (!('pushManager' in reg)) return;
+	try {
+		const cfgRes = await fetch('/api/push/subscribe');
+		const cfg = (await cfgRes.json().catch(() => ({}))) as { vapidPublicKey?: string | null };
+		if (!cfg.vapidPublicKey) return;
+		const existingSub = await reg.pushManager.getSubscription();
+		const sub =
+			existingSub ??
+			(await reg.pushManager.subscribe({
+				userVisibleOnly: true,
+				applicationServerKey: urlBase64ToUint8Array(cfg.vapidPublicKey) as BufferSource
+			}));
+		await fetch('/api/push/subscribe', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(sub.toJSON())
+		});
+	} catch {
+		// Service worker showNotification still works even if pushManager registration fails
+	}
+}
+
+let syncedSessionUserId: string | null = null;
+
+/**
+ * Quietly ensure an already-authorized browser has its W3C PushSubscription
+ * synced with `/api/push/subscribe` for background delivery (no UI prompt or banner).
+ */
+export async function syncPushSubscriptionIfGranted(userId?: string): Promise<void> {
+	if (!browser || !userId) return;
+	if (syncedSessionUserId === userId) return;
+	if (getPushPermissionState() !== 'granted') return;
+	syncedSessionUserId = userId;
+	const reg = await ensureServiceWorkerRegistration();
+	if (reg) {
+		await registerBrowserPushSubscription(reg);
 	}
 }
 
@@ -147,33 +213,14 @@ export async function enablePushNotifications(options?: {
 	}
 
 	const reg = await ensureServiceWorkerRegistration();
-	if (reg && 'pushManager' in reg) {
-		try {
-			const cfgRes = await fetch('/api/push/subscribe');
-			const cfg = (await cfgRes.json().catch(() => ({}))) as { vapidPublicKey?: string | null };
-			if (cfg.vapidPublicKey) {
-				const existingSub = await reg.pushManager.getSubscription();
-				const sub =
-					existingSub ??
-					(await reg.pushManager.subscribe({
-						userVisibleOnly: true,
-						applicationServerKey: urlBase64ToUint8Array(cfg.vapidPublicKey) as BufferSource
-					}));
-				await fetch('/api/push/subscribe', {
-					method: 'POST',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify(sub.toJSON())
-				});
-			}
-		} catch {
-			// Service worker showNotification still works even without external VAPID relay
-		}
+	if (reg) {
+		await registerBrowserPushSubscription(reg);
 	}
 
 	if (!options?.silentWelcome) {
 		await showDeviceNotification({
 			title: 'Owltside Push Active',
-			body: 'Pass updates, transfers, and organizer broadcasts will alert your phone.',
+			body: 'Pass updates, inbox messages, transfers, and organizer broadcasts will alert your phone.',
 			url: '/notifications',
 			tag: 'owltside-push-welcome'
 		});
@@ -184,6 +231,7 @@ export async function enablePushNotifications(options?: {
 
 export async function disablePushNotifications(): Promise<void> {
 	if (!browser) return;
+	syncedSessionUserId = null;
 	try {
 		const reg = await navigator.serviceWorker?.getRegistration('/');
 		const sub = await reg?.pushManager?.getSubscription();
@@ -201,10 +249,10 @@ export async function disablePushNotifications(): Promise<void> {
 	}
 }
 
-function readSeenIds(): Set<string> | null {
+function readSeenIds(storageKey = SEEN_STORAGE_KEY): Set<string> | null {
 	if (!browser) return null;
 	try {
-		const raw = localStorage.getItem(SEEN_STORAGE_KEY);
+		const raw = localStorage.getItem(storageKey);
 		if (!raw) return null;
 		const parsed = JSON.parse(raw);
 		return Array.isArray(parsed) ? new Set(parsed.map(String)) : null;
@@ -213,11 +261,11 @@ function readSeenIds(): Set<string> | null {
 	}
 }
 
-function writeSeenIds(ids: Set<string>): void {
+function writeSeenIds(ids: Set<string>, storageKey = SEEN_STORAGE_KEY): void {
 	if (!browser) return;
 	try {
 		const recent = [...ids].slice(-250);
-		localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(recent));
+		localStorage.setItem(storageKey, JSON.stringify(recent));
 	} catch {
 		// Ignore quota errors
 	}
@@ -281,5 +329,243 @@ export async function notifyUnreadStreamItems(
 			tag: `owltside-notif-${item.id}`,
 			silent: !prefs.soundHaptics
 		});
+	}
+}
+
+function readSeenConversations(userId: string): Record<string, SeenConversationEntry> | null {
+	if (!browser) return null;
+	try {
+		const raw = localStorage.getItem(`${SEEN_DM_KEY_PREFIX}${userId}`);
+		if (!raw) return null;
+		const parsed = JSON.parse(raw);
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+		return parsed as Record<string, SeenConversationEntry>;
+	} catch {
+		return null;
+	}
+}
+
+function writeSeenConversations(
+	userId: string,
+	map: Record<string, SeenConversationEntry>
+): void {
+	if (!browser) return;
+	try {
+		const entries = Object.entries(map).slice(-200);
+		localStorage.setItem(`${SEEN_DM_KEY_PREFIX}${userId}`, JSON.stringify(Object.fromEntries(entries)));
+	} catch {
+		// Ignore storage quota errors
+	}
+}
+
+function buildDmFingerprint(conversationId: string, sentAt: string, body: string): string {
+	const ms = Date.parse(sentAt);
+	const timeBucket = Number.isFinite(ms) ? String(Math.floor(ms / 1000)) : sentAt.slice(0, 19);
+	return `${conversationId}::${timeBucket}::${body.trim().slice(0, 80)}`;
+}
+
+function hasDeliveredDm(
+	userId: string,
+	conversationId: string,
+	sentAt: string,
+	body: string
+): boolean {
+	const set = readSeenIds(`${DELIVERED_DM_KEY_PREFIX}${userId}`);
+	if (!set) return false;
+	const exact = buildDmFingerprint(conversationId, sentAt, body);
+	return set.has(exact);
+}
+
+function markDeliveredDm(
+	userId: string,
+	conversationId: string,
+	sentAt: string,
+	body: string
+): void {
+	const key = `${DELIVERED_DM_KEY_PREFIX}${userId}`;
+	const set = readSeenIds(key) ?? new Set<string>();
+	set.add(buildDmFingerprint(conversationId, sentAt, body));
+	writeSeenIds(set, key);
+}
+
+/**
+ * Pre-seed a conversation's unread baseline (e.g. when an organizer clicks Accept
+ * on a message request they already saw) so accepting doesn't echo-notify them.
+ */
+export function markConversationPushBaseline(
+	conversationId: string,
+	unread: number,
+	lastAt: string,
+	lastMessage: string,
+	userId = 'default'
+): void {
+	if (!browser || !conversationId) return;
+	const existing = readSeenConversations(userId) ?? {};
+	existing[conversationId] = { unread, lastAt, lastMessage };
+	writeSeenConversations(userId, existing);
+	if (lastAt || lastMessage) {
+		markDeliveredDm(userId, conversationId, lastAt, lastMessage);
+	}
+}
+
+/**
+ * Deliver an OS push notification immediately when a Realtime `messages` INSERT
+ * or active thread poll observes a message sent by another user (`senderId !== meId`).
+ * Shares deduplication state with `notifyUnreadInboxItems` so the same message never alerts twice.
+ */
+export async function notifyIncomingDirectMessage(
+	input: {
+		id?: string;
+		conversationId: string;
+		senderName: string;
+		body: string;
+		sentAt: string;
+	},
+	prefs: InboxPushPrefs,
+	userId = 'default'
+): Promise<boolean> {
+	if (!browser || !prefs.pushEnabled || prefs.messages === false) return false;
+	if (getPushPermissionState() !== 'granted') return false;
+	if (!input.conversationId) return false;
+
+	if (hasDeliveredDm(userId, input.conversationId, input.sentAt, input.body)) {
+		return false;
+	}
+	markDeliveredDm(userId, input.conversationId, input.sentAt, input.body);
+
+	const senderLabel = input.senderName?.trim() || 'Owltside User';
+	return showDeviceNotification({
+		title: `New message from ${senderLabel}`,
+		body: input.body?.trim() || 'Sent you a message.',
+		url: `/inbox/${input.conversationId}`,
+		tag: dmNotificationTag(input.conversationId, input.sentAt || input.id || String(Date.now())),
+		silent: !prefs.soundHaptics
+	});
+}
+
+/**
+ * Deliver OS push notifications for newly arrived unread inbox messages (`conversations`)
+ * and incoming organizer contact requests (`message_requests`), mirroring `notifyUnreadStreamItems`.
+ */
+export async function notifyUnreadInboxItems(
+	conversations: Conversation[] | undefined,
+	requests: MessageRequest[] | undefined,
+	prefs: InboxPushPrefs,
+	userId = 'default'
+): Promise<void> {
+	if (!browser || !prefs.pushEnabled) return;
+	if (getPushPermissionState() !== 'granted') return;
+
+	const allowMessages = prefs.messages !== false;
+	const freshCutoff = Date.now() - 45_000;
+
+	if (Array.isArray(conversations)) {
+		const existing = readSeenConversations(userId);
+		if (existing === null) {
+			const seeded: Record<string, SeenConversationEntry> = {};
+			const freshIncoming: Conversation[] = [];
+			for (const conv of conversations) {
+				const unread = conv.unread ?? 0;
+				seeded[conv.id] = {
+					unread,
+					lastAt: conv.lastAt ?? '',
+					lastMessage: conv.lastMessage ?? ''
+				};
+				if (unread > 0 && +new Date(conv.lastAt) >= freshCutoff) {
+					freshIncoming.push(conv);
+				}
+			}
+			writeSeenConversations(userId, seeded);
+
+			if (allowMessages) {
+				for (const conv of freshIncoming.slice(0, 3)) {
+					if (hasDeliveredDm(userId, conv.id, conv.lastAt ?? '', conv.lastMessage ?? '')) continue;
+					markDeliveredDm(userId, conv.id, conv.lastAt ?? '', conv.lastMessage ?? '');
+					await showDeviceNotification({
+						title: `New message from ${conv.peer?.name || 'Owltside User'}`,
+						body: conv.lastMessage || 'Tap to open conversation in Inbox.',
+						url: `/inbox/${conv.id}`,
+						tag: dmNotificationTag(conv.id, conv.lastAt || String(conv.unread)),
+						silent: !prefs.soundHaptics
+					});
+				}
+			}
+		} else {
+			const nextSeen: Record<string, SeenConversationEntry> = { ...existing };
+			const newlyArrived: Conversation[] = [];
+
+			for (const conv of conversations) {
+				const prev = existing[conv.id];
+				const unread = conv.unread ?? 0;
+				const lastAt = conv.lastAt ?? '';
+				const lastMessage = conv.lastMessage ?? '';
+
+				if ((!prev && unread > 0) || (prev && unread > prev.unread)) {
+					newlyArrived.push(conv);
+				}
+				nextSeen[conv.id] = { unread, lastAt, lastMessage };
+			}
+			writeSeenConversations(userId, nextSeen);
+
+			if (allowMessages) {
+				for (const conv of newlyArrived.slice(0, 3)) {
+					if (hasDeliveredDm(userId, conv.id, conv.lastAt ?? '', conv.lastMessage ?? '')) continue;
+					markDeliveredDm(userId, conv.id, conv.lastAt ?? '', conv.lastMessage ?? '');
+					await showDeviceNotification({
+						title: `New message from ${conv.peer?.name || 'Owltside User'}`,
+						body: conv.lastMessage || 'Tap to open conversation in Inbox.',
+						url: `/inbox/${conv.id}`,
+						tag: dmNotificationTag(conv.id, conv.lastAt || String(conv.unread)),
+						silent: !prefs.soundHaptics
+					});
+				}
+			}
+		}
+	}
+
+	if (Array.isArray(requests)) {
+		const reqKey = `${SEEN_MSGREQ_KEY_PREFIX}${userId}`;
+		const existingReqs = readSeenIds(reqKey);
+		if (existingReqs === null) {
+			const seededReqs = new Set<string>();
+			const freshReqs: MessageRequest[] = [];
+			for (const req of requests) {
+				seededReqs.add(req.id);
+				if (+new Date(req.createdAt) >= freshCutoff) {
+					freshReqs.push(req);
+				}
+			}
+			writeSeenIds(seededReqs, reqKey);
+
+			if (allowMessages) {
+				for (const req of freshReqs.slice(0, 3)) {
+					await showDeviceNotification({
+						title: `Message request from ${req.requester?.name || 'Attendee'}`,
+						body: req.body || 'New event inquiry in your Inbox.',
+						url: '/inbox',
+						tag: `owltside-msgreq-${req.id}`,
+						silent: !prefs.soundHaptics
+					});
+				}
+			}
+		} else {
+			const newReqs = requests.filter((req) => !existingReqs.has(req.id));
+			if (newReqs.length > 0) {
+				for (const req of requests) existingReqs.add(req.id);
+				writeSeenIds(existingReqs, reqKey);
+
+				if (allowMessages) {
+					for (const req of newReqs.slice(0, 3)) {
+						await showDeviceNotification({
+							title: `Message request from ${req.requester?.name || 'Attendee'}`,
+							body: req.body || 'New event inquiry in your Inbox.',
+							url: '/inbox',
+							tag: `owltside-msgreq-${req.id}`,
+							silent: !prefs.soundHaptics
+						});
+					}
+				}
+			}
+		}
 	}
 }

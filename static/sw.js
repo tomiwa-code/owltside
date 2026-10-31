@@ -78,11 +78,15 @@ self.addEventListener('push', (event) => {
 			payload.body = event.data.text() || payload.body;
 		}
 	}
+	const options = buildNotificationOptions(payload);
 	event.waitUntil(
-		self.registration.showNotification(
-			payload.title || 'Owltside',
-			buildNotificationOptions(payload)
-		)
+		(self.registration.getNotifications
+			? self.registration.getNotifications({ tag: options.tag })
+			: Promise.resolve([])
+		).then((existing) => {
+			if (existing && existing.length > 0) return undefined;
+			return self.registration.showNotification(payload.title || 'Owltside', options);
+		})
 	);
 });
 

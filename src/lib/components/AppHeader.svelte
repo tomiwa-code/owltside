@@ -7,8 +7,13 @@
 	import { profileAppearance } from '$lib/state/profile.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { queryClient, useQuery } from '$lib/state/query.svelte';
-	import { subscribeTable } from '$lib/realtime';
-	import { notifyUnreadStreamItems, showDeviceNotification, getPushPermissionState } from '$lib/push.client';
+	import { subscribeIncomingMessages, subscribeTable } from '$lib/realtime';
+	import {
+		notifyIncomingDirectMessage,
+		notifyUnreadInboxItems,
+		notifyUnreadStreamItems,
+		syncPushSubscriptionIfGranted
+	} from '$lib/push.client';
 	import { UNREAD_BADGE_CLASS, formatCount } from '$lib/utils/badges';
 	import type { Conversation, MessageRequest, NotificationItem } from '$lib/types';
 	let search = $state('');
@@ -27,13 +32,13 @@
 	const notificationsQuery = useQuery<NotificationItem[]>(
 		'notifications:mine',
 		async () => (await fetch('/api/notifications')).json(),
-		{ staleTime: 15_000, refetchInterval: 30_000, enabled: !!page.data.session },
+		{ staleTime: 10_000, refetchInterval: 20_000, enabled: !!page.data.session },
 		undefined
 	);
 	const conversationsQuery = useQuery<Conversation[]>(
 		'conversations:mine',
 		async () => (await fetch('/api/conversations')).json(),
-		{ staleTime: 15_000, refetchInterval: 20_000, enabled: !!page.data.session },
+		{ staleTime: 5_000, refetchInterval: 8_000, enabled: !!page.data.session },
 		undefined
 	);
 	const requestsQuery = useQuery<MessageRequest[]>(
@@ -42,7 +47,7 @@
 			const r = await fetch('/api/message-requests');
 			return r.ok ? await r.json() : [];
 		},
-		{ staleTime: 10_000, refetchInterval: 20_000, enabled: !!page.data.session },
+		{ staleTime: 5_000, refetchInterval: 10_000, enabled: !!page.data.session },
 		undefined
 	);
 
@@ -66,8 +71,14 @@
 		return page.data.inboxUnread ?? 0;
 	});
 
-	// Deliver newly arrived notifications and DMs to the phone OS notification tray
-	// whenever push notifications are enabled and permission is granted.
+	// Ensure already-authorized devices sync their W3C PushSubscription in the background.
+	$effect(() => {
+		const uid = session?.userId;
+		if (!uid || !appSettings.value.notifications.pushEnabled) return;
+		void syncPushSubscriptionIfGranted(uid);
+	});
+
+	// Deliver newly arrived notifications to the phone/OS notification tray.
 	$effect(() => {
 		if (!session || !notifications) return;
 		const nPrefs = appSettings.value.notifications;
@@ -79,26 +90,22 @@
 		});
 	});
 
-	let lastKnownRequestIds: Set<string> | null = null;
+	// Deliver newly arrived inbox messages (conversations) and message requests
+	// to the phone/OS notification tray whenever push & message alerts are enabled.
 	$effect(() => {
-		if (!session || !requests) return;
-		if (lastKnownRequestIds === null) {
-			lastKnownRequestIds = new Set(requests.map((r) => r.id));
-			return;
-		}
+		if (!session?.userId) return;
+		if (conversations === undefined && requests === undefined) return;
 		const nPrefs = appSettings.value.notifications;
-		for (const req of requests) {
-			if (!lastKnownRequestIds.has(req.id) && nPrefs.pushEnabled && nPrefs.messages && getPushPermissionState() === 'granted') {
-				void showDeviceNotification({
-					title: `Message request from ${req.requester.name}`,
-					body: req.body,
-					url: '/inbox',
-					tag: `owltside-msgreq-${req.id}`,
-					silent: nPrefs.quietHours
-				});
-			}
-		}
-		lastKnownRequestIds = new Set(requests.map((r) => r.id));
+		void notifyUnreadInboxItems(
+			conversations,
+			requests,
+			{
+				pushEnabled: nPrefs.pushEnabled,
+				messages: nPrefs.messages !== false,
+				soundHaptics: !nPrefs.quietHours
+			},
+			session.userId
+		);
 	});
 
 	$effect(() => {
@@ -111,7 +118,72 @@
 			},
 			`user_id=eq.${uid}`
 		);
-		return () => unsubNotifs();
+		const unsubMessages = subscribeIncomingMessages(uid, async (msg) => {
+			await conversationsQuery.refetch();
+			const latestConvs = queryClient.get<Conversation[]>('conversations:mine')?.data;
+			const matched = Array.isArray(latestConvs)
+				? latestConvs.find((c) => c.id === msg.conversationId)
+				: undefined;
+			const nPrefs = appSettings.value.notifications;
+			await notifyIncomingDirectMessage(
+				{
+					id: msg.id,
+					conversationId: msg.conversationId,
+					senderName: matched?.peer?.name ?? 'Owltside User',
+					body: msg.body,
+					sentAt: msg.sentAt
+				},
+				{
+					pushEnabled: nPrefs.pushEnabled,
+					messages: nPrefs.messages !== false,
+					soundHaptics: !nPrefs.quietHours
+				},
+				uid
+			);
+		});
+		const unsubConvOwner = subscribeTable(
+			'conversations',
+			() => {
+				void conversationsQuery.refetch();
+			},
+			`user_id=eq.${uid}`
+		);
+		const unsubConvPeer = subscribeTable(
+			'conversations',
+			() => {
+				void conversationsQuery.refetch();
+			},
+			`peer_id=eq.${uid}`
+		);
+		const unsubMsgReqs = subscribeTable(
+			'message_requests',
+			() => {
+				void requestsQuery.refetch();
+			},
+			`organizer_id=eq.${uid}`
+		);
+
+		const onWake = () => {
+			if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+				void notificationsQuery.refetch();
+				void conversationsQuery.refetch();
+				void requestsQuery.refetch();
+			}
+		};
+		if (typeof document !== 'undefined') {
+			document.addEventListener('visibilitychange', onWake);
+		}
+
+		return () => {
+			unsubNotifs();
+			unsubMessages();
+			unsubConvOwner();
+			unsubConvPeer();
+			unsubMsgReqs();
+			if (typeof document !== 'undefined') {
+				document.removeEventListener('visibilitychange', onWake);
+			}
+		};
 	});
 
 	/**

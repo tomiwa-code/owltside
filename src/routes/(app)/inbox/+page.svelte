@@ -11,6 +11,7 @@
 	import { peerIdentityLabel } from '$lib/constants/operating-identity';
 	import { fmtRelative } from '$lib/utils/dates';
 	import { UNREAD_BADGE_CLASS, formatCount } from '$lib/utils/badges';
+	import { markConversationPushBaseline } from '$lib/push.client';
 	import { page } from '$app/state';
 	import type { Conversation, MessageRequest } from '$lib/types';
 
@@ -50,6 +51,15 @@
 			});
 			const result = await response.json();
 			if (!response.ok) throw new Error(result.error ?? 'The request could not be updated');
+			if (accept && result.request?.conversationId) {
+				markConversationPushBaseline(
+					result.request.conversationId,
+					1,
+					new Date().toISOString(),
+					result.request.body ?? '',
+					page.data.session?.userId ?? 'default'
+				);
+			}
 			queryClient.invalidate('message-requests:mine');
 			queryClient.invalidate('conversations:mine');
 			if (accept && result.request?.conversationId) await goto(`/inbox/${result.request.conversationId}`);

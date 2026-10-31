@@ -1,5 +1,6 @@
 import { getSource } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
+import { sendWebPushToUser } from '$lib/server/webpush';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -30,6 +31,17 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 	if (body.length < 1 || body.length > 2000) return json({ error: 'Write a message of up to 2,000 characters.' }, { status: 400 });
 	try {
 		const messageRequest = await getSource(createSupabase(cookies)).createMessageRequest(locals.session.userId, eventSlug, body);
+		if (messageRequest.organizer?.id && messageRequest.organizer.id !== locals.session.userId) {
+			await Promise.race([
+				sendWebPushToUser(messageRequest.organizer.id, {
+					title: `Message request from ${messageRequest.requester?.name || locals.session.name || 'Attendee'}`,
+					body: messageRequest.body,
+					url: '/inbox',
+					tag: `owltside-msgreq-${messageRequest.id}`
+				}),
+				new Promise((resolve) => setTimeout(resolve, 1_500))
+			]).catch(() => undefined);
+		}
 		return json({ request: messageRequest }, { status: 201 });
 	} catch (error) {
 		return failure(error, 'Your message request could not be sent');
