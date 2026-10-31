@@ -6,5 +6,5 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ locals, cookies }) => {
 	const userId = locals.session?.userId ?? 'demo';
 	const items = await getSource(createSupabase(cookies)).getNotifications(userId);
-	return json(items, { headers: { 'cache-control': 'private, max-age=10, stale-while-revalidate=30' } });
+	return json(items, { headers: { 'cache-control': 'private, no-store' } });
 };

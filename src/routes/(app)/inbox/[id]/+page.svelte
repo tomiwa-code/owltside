@@ -19,6 +19,8 @@
 	import DesktopInboxList from '$components/DesktopInboxList.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import { toast } from '$lib/state/toast.svelte';
+	import { appSettings } from '$lib/state/settings.svelte';
+	import { notifyIncomingDirectMessage } from '$lib/push.client';
 	import { createChatTransport } from '$lib/realtime';
 	import { useQuery, queryClient } from '$lib/state/query.svelte';
 	import { fmtTime } from '$lib/utils/dates';
@@ -109,12 +111,39 @@
 		});
 	});
 
-	// autoscroll on new messages
+	// autoscroll on new messages & dispatch OS push notification for incoming peer replies
+	let seenThreadMsgIds: Set<string> | null = null;
 	$effect(() => {
 		const list = messages.data ?? [];
 		if (scroller) scroller.scrollTop = scroller.scrollHeight;
 		if (deskScroller) deskScroller.scrollTop = deskScroller.scrollHeight;
-		void list.length;
+		if (seenThreadMsgIds === null) {
+			seenThreadMsgIds = new Set(list.map((m) => m.id));
+			return;
+		}
+		const nPrefs = appSettings.value.notifications;
+		for (const m of list) {
+			if (!seenThreadMsgIds.has(m.id)) {
+				seenThreadMsgIds.add(m.id);
+				if (m.senderId && m.senderId !== meId && page.data.session?.userId) {
+					void notifyIncomingDirectMessage(
+						{
+							id: m.id,
+							conversationId: conv.id,
+							senderName: conv.peer.name,
+							body: m.body,
+							sentAt: m.sentAt
+						},
+						{
+							pushEnabled: nPrefs.pushEnabled,
+							messages: nPrefs.messages !== false,
+							soundHaptics: !nPrefs.quietHours
+						},
+						page.data.session.userId
+					);
+				}
+			}
+		}
 	});
 </script>
 
