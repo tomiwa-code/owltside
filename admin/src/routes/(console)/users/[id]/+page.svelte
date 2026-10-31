@@ -3,19 +3,22 @@
 		ArrowLeft,
 		ArrowUpRight,
 		Ban,
+		Check,
+		Download,
+		FileText,
 		Fingerprint,
 		Mail,
 		MapPin,
 		Phone,
-		ShieldCheck,
 		Ticket,
-		Wallet
+		Wallet,
+		ZoomIn
 	} from '@lucide/svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { toasts } from '$admin/state/toast.svelte';
 	import { chipClass, orderStatus, ticketStatus, userStatus } from '$admin/utils/status';
 	import { money, moneyCompact, num, relative, shortDate } from '$admin/utils/format';
-	import type { AdminUser } from '$admin/types';
+	import type { AdminApprovalAttachment, AdminUser } from '$admin/types';
 	import PageHeader from '$components/PageHeader.svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import StatusChip from '$components/StatusChip.svelte';
@@ -24,6 +27,7 @@
 	let { data } = $props();
 
 	let blockOpen = $state(false);
+	let previewAttachment = $state<AdminApprovalAttachment | null>(null);
 	let reason = $state('');
 	let busy = $state(false);
 
@@ -35,14 +39,21 @@
 		const response = await fetch(`/api/users/${user.id}/status`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ status, reason: reason || 'Account review decision' })
+			body: JSON.stringify({
+				status,
+				reason: reason || (status === 'blocked' ? 'Disabled from user dossier' : 'Enabled from user dossier')
+			})
 		});
+		const payload = (await response.json().catch(() => ({}))) as { message?: string };
 		busy = false;
 		if (!response.ok) {
-			toasts.error('Account update failed', 'Insufficient privileges.');
+			toasts.error('Account update failed', payload.message ?? 'Insufficient privileges.');
 			return;
 		}
-		toasts.ok(status === 'blocked' ? 'Account blocked' : 'Account reinstated', `${user.name} · audit trail updated.`);
+		toasts.ok(
+			status === 'blocked' ? 'User account disabled' : 'User account enabled',
+			`${user.name} (@${user.handle}) · audit trail updated.`
+		);
 		blockOpen = false;
 		reason = '';
 		await invalidateAll();
@@ -54,22 +65,32 @@
 <div class="space-y-4">
 	<PageHeader
 		title={user.name}
-		subtitle={`@${user.handle} · ${user.email}`}
+		subtitle={`@${user.handle} · ${user.email || 'No email'} · ${user.phone || 'No phone'}`}
 		crumbs={['platform', 'users', user.handle]}
-		eyebrow={data.source === 'supabase' ? `Supabase profile · verified ${user.kycTier === 1 ? 'yes' : 'no'}` : `KYC Tier ${user.kycTier}`}
+		eyebrow={`Live profile · Verified: ${user.kycTier === 1 ? 'Yes' : 'No'}`}
 	>
 		{#snippet actions()}
 			<a href="/users" class="btn btn-sm"><ArrowLeft size={12} /> Back to directory</a>
-			{#if data.source === 'demo'}
-				<a class="btn btn-sm" href={`/tickets?q=${encodeURIComponent(user.handle)}`}><Ticket size={12} /> All passes</a>
-				{#if user.status === 'active'}
-					<button type="button" class="btn btn-sm btn-danger-soft" onclick={() => (blockOpen = true)}><Ban size={12} /> Suspend account</button>
-				{:else}
-					<button type="button" class="btn btn-sm btn-primary" disabled={busy} onclick={() => setStatus('active')}>Reinstate account</button>
-				{/if}
+			<a class="btn btn-sm" href={`/tickets?q=${encodeURIComponent(user.handle)}`}>
+				<Ticket size={12} /> All passes
+			</a>
+			{#if user.status === 'active'}
+				<button type="button" class="btn btn-sm btn-danger-soft" onclick={() => (blockOpen = true)}>
+					<Ban size={12} /> Disable account
+				</button>
+			{:else}
+				<button type="button" class="btn btn-sm btn-primary" disabled={busy} onclick={() => setStatus('active')}>
+					<Check size={12} /> Enable account
+				</button>
 			{/if}
 		{/snippet}
 	</PageHeader>
+
+	{#if user.disabledReason && user.status === 'blocked'}
+		<div class="panel border border-rose-500/30 bg-rose-500/[0.06] p-3.5 text-[11.5px] text-rose-200">
+			<strong>Account disabled:</strong> {user.disabledReason}
+		</div>
+	{/if}
 
 	<div class="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
 		<div class="panel flex items-center gap-3 p-4">
@@ -90,9 +111,9 @@
 			<p class="mt-1.5 text-[10px] text-[#8f8f9b]">Not yet redeemed</p>
 		</div>
 		<div class="panel p-4">
-			<p class="mono-label">{data.source === 'supabase' ? 'Risk signals' : 'Risk signals'}</p>
-			<p class="mt-1.5 font-display text-[clamp(16px,2.2vw,22px)] font-semibold leading-none text-[#f1f1f6]">{data.source === 'supabase' ? 'N/A' : user.flags?.length ?? 0}</p>
-			<p class="mt-1.5 text-[10px] text-[#8f8f9b]">{data.source === 'supabase' ? 'Not stored in the current schema' : 'Chargebacks 0.0%'}</p>
+			<p class="mono-label">Settlement bank</p>
+			<p class="mt-1.5 truncate font-code text-[13px] font-semibold text-[#f1f1f6]">{user.bankAccountNumber || 'Not linked'}</p>
+			<p class="mt-1 text-[10px] text-[#8f8f9b]">{user.bankName || 'No payout bank submitted'}</p>
 		</div>
 	</div>
 
@@ -105,7 +126,7 @@
 						<a href={`/tickets?ticket=${ticket.id}`} class="flex items-center gap-3 px-3.5 py-2.5 hover:bg-[#1b1b22]">
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-[11px] text-[#e6e6ec]">{ticket.eventTitle}</p>
-								<p class="font-code text-[8px] text-[#6f6f7b]">{ticket.code} · {ticket.tierName} · {ticket.seat}</p>
+								<p class="font-code text-[8px] text-[#6f6f7b]">{ticket.code} · {ticket.tierName}</p>
 							</div>
 							<span class="font-code text-[10px] text-[#dcdce4]">{money(ticket.priceNgn)}</span>
 							<span class={chipClass(ticketStatus(ticket.status).tone)}>{ticketStatus(ticket.status).label}</span>
@@ -141,35 +162,52 @@
 
 		<div class="space-y-3">
 			<section class="panel overflow-hidden">
-				<header class="panel-head"><p class="mono-label">Contact telemetry</p><Mail size={12} class="text-[#8f8f9b]" /></header>
-				<div class="space-y-1.5 p-3.5 text-[10px]">
-					<p class="flex items-center justify-between gap-3"><span class="flex items-center gap-1.5 text-[#6f6f7b]"><Mail size={9} /> Email</span><span class="truncate font-code text-[#dcdce4]">{user.email}</span></p>
-					<p class="flex items-center justify-between gap-3"><span class="flex items-center gap-1.5 text-[#6f6f7b]"><Phone size={9} /> Phone</span><span class="font-code text-[#dcdce4]">{user.phone}</span></p>
-					<p class="flex items-center justify-between gap-3"><span class="flex items-center gap-1.5 text-[#6f6f7b]"><MapPin size={9} /> Base</span><span class="text-[#dcdce4]">{user.city}, Nigeria</span></p>
-					<p class="flex justify-between gap-3"><span class="text-[#6f6f7b]">Role</span><span class="text-[#dcdce4]">{user.role}</span></p>
-					<p class="flex justify-between gap-3"><span class="text-[#6f6f7b]">Joined</span><span class="text-[#dcdce4]">{relative(user.joinedAt)}</span></p>
-					<p class="flex justify-between gap-3"><span class="text-[#6f6f7b]">Last seen</span><span class="text-[#dcdce4]">{relative(user.lastSeenAt)}</span></p>
+				<header class="panel-head"><p class="mono-label">Full contact & profile</p><Mail size={12} class="text-[#8f8f9b]" /></header>
+				<div class="space-y-1.5 p-3.5 text-[10.5px]">
+					<p class="flex items-center justify-between gap-3"><span class="flex items-center gap-1.5 text-[#8f8f9b]"><Mail size={10} /> Email</span><span class="truncate font-code select-all text-[#ededf4]">{user.email || '—'}</span></p>
+					<p class="flex items-center justify-between gap-3"><span class="flex items-center gap-1.5 text-[#8f8f9b]"><Phone size={10} /> Phone</span><span class="font-code select-all text-[#ededf4]">{user.phone || '—'}</span></p>
+					<p class="flex items-center justify-between gap-3"><span class="flex items-center gap-1.5 text-[#8f8f9b]"><MapPin size={10} /> City</span><span class="text-[#dcdce4]">{user.city}</span></p>
+					<p class="flex justify-between gap-3"><span class="text-[#8f8f9b]">Role</span><span class="text-[#dcdce4]">{user.role} ({user.operatingIdentity ?? 'attendee'})</span></p>
+					<p class="flex justify-between gap-3"><span class="text-[#8f8f9b]">User ID</span><span class="font-code text-[9px] select-all text-[#a0a0ab]">{user.id}</span></p>
+					<p class="flex justify-between gap-3"><span class="text-[#8f8f9b]">Joined</span><span class="text-[#dcdce4]">{relative(user.joinedAt)}</span></p>
+					<p class="flex justify-between gap-3"><span class="text-[#8f8f9b]">Last seen</span><span class="text-[#dcdce4]">{relative(user.lastSeenAt)}</span></p>
+					{#if user.bio}
+						<p class="border-t border-[#24242c] pt-2 text-[10px] text-[#a0a0ab]">{user.bio}</p>
+					{/if}
 				</div>
 			</section>
 
 			<section class="panel overflow-hidden">
-				<header class="panel-head"><p class="mono-label">Compliance &amp; identity</p><Fingerprint size={12} class="text-[#8f8f9b]" /></header>
-				<div class="space-y-1.5 p-3.5 text-[10px]">
-					{#if data.source === 'supabase'}
-						<p class="text-[#8f8f9b]">NIN, KYC, passkey enrollment, and payment-customer records are not in the current profile schema.</p>
-						<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">Profile verified</span><span class="font-code text-[#dcdce4]">{user.kycTier === 1 ? 'true' : 'false'}</span></p>
-					{:else}
-						<p class="flex items-center justify-between gap-2"><span class="flex items-center gap-1.5 text-[#6f6f7b]"><ShieldCheck size={9} class="text-emerald-400" /> NIN identity</span><span class="font-code text-[#dcdce4]">9048-••••-319</span></p>
-						<p class="flex items-center justify-between gap-2"><span class="flex items-center gap-1.5 text-[#6f6f7b]"><Fingerprint size={9} class="text-emerald-400" /> Passkey enclave</span><span class="font-code text-[#dcdce4]">FIDO2 active</span></p>
-						<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">KYC tier</span><span class="font-code text-[#dcdce4]">Tier {user.kycTier} verified</span></p>
-						<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">Payment anchor</span><span class="font-code text-[#dcdce4]">Paystack CUS_{user.id.slice(-6)}</span></p>
+				<header class="panel-head"><p class="mono-label">Unmasked KYC & bank details</p><Fingerprint size={12} class="text-[#8f8f9b]" /></header>
+				<div class="space-y-1.5 p-3.5 text-[10.5px]">
+					<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Profile verified</span><span class="font-code text-[#dcdce4]">{user.kycTier === 1 ? 'Yes' : 'No'}</span></p>
+					<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Legal name</span><span class="font-code select-all text-[#ededf4]">{user.kycLegalName || user.name}</span></p>
+					<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Date of birth</span><span class="font-code select-all text-[#ededf4]">{user.kycDateOfBirth || '—'}</span></p>
+					<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">ID type</span><span class="font-code text-[#ededf4]">{user.kycDocument || '—'}</span></p>
+					<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Full ID / NIN / BVN</span><span class="font-code font-semibold select-all text-emerald-300">{user.kycReference || '—'}</span></p>
+					<p class="flex justify-between gap-2 border-t border-[#24242c] pt-1.5"><span class="text-[#8f8f9b]">Bank</span><span class="font-code text-[#ededf4]">{user.bankName || '—'}</span></p>
+					<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Full NUBAN</span><span class="font-code font-semibold select-all text-emerald-300">{user.bankAccountNumber || '—'}</span></p>
+					<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Account holder</span><span class="font-code text-[#ededf4]">{user.bankAccountHolder || '—'}</span></p>
+
+					{#if user.kycAttachments && user.kycAttachments.length > 0}
+						<div class="grid grid-cols-2 gap-2 pt-2">
+							{#each user.kycAttachments as att}
+								<button
+									type="button"
+									onclick={() => (previewAttachment = att)}
+									class="flex items-center justify-between rounded border border-[#32323d] bg-[#14141b] px-2.5 py-2 font-code text-[9px] text-[#c6bcff] hover:border-[#7c60f6]"
+								>
+									<span class="truncate">{att.side.toUpperCase()} ID</span>
+									{#if att.mimeType.startsWith('image/')}
+										<ZoomIn size={11} />
+									{:else}
+										<FileText size={11} />
+									{/if}
+								</button>
+							{/each}
+						</div>
 					{/if}
 				</div>
-				{#if user.flags?.length}
-					<div class="flex flex-wrap gap-1 border-t border-[#26262e] px-3.5 py-2">
-						{#each user.flags as flag}<span class="chip chip-warn !h-[17px] !text-[7.5px]">{flag}</span>{/each}
-					</div>
-				{/if}
 			</section>
 
 			<section class="panel overflow-hidden">
@@ -181,25 +219,50 @@
 							<p class="text-[9px] text-[#6f6f7b]">{record.actor} · {relative(record.at)}</p>
 						</div>
 					{:else}
-						<p class="text-[10.5px] text-[#6f6f7b]">{data.source === 'supabase' ? 'Admin audit records are not stored in the current schema.' : 'No admin actions on this account.'}</p>
+						<p class="text-[10.5px] text-[#6f6f7b]">No session audit entries recorded for this account yet.</p>
 					{/each}
 				</div>
 			</section>
 
 			<div class="panel p-3.5 text-[9.5px] leading-relaxed text-[#6f6f7b]">
-				{data.source === 'supabase' ? 'User profile, ticket, and order records loaded from Supabase. Admin action history is not in the schema.' : 'Account actions are append-only and require a written justification. Suspensions revoke wallet passes and chat access within 30 seconds.'} {num(user.ticketsCount)} passes · {money(user.spendNgn)} lifetime.
+				Disabling an account terminates active sessions on the public app and prevents OTP/OAuth/passkey login until re-enabled. {num(user.ticketsCount)} passes · {money(user.spendNgn)} lifetime.
 			</div>
 		</div>
 	</div>
 </div>
 
-<Sheet open={blockOpen} title="Suspend account access" subtitle="Reversible; logged with your admin signature." onclose={() => (blockOpen = false)} width="430px">
+<Sheet open={blockOpen} title="Disable user account" subtitle="Reversible; logged with your admin signature." onclose={() => (blockOpen = false)} width="430px">
 	<form class="space-y-3" onsubmit={(event) => { event.preventDefault(); setStatus('blocked'); }}>
-		<label class="field-label" for="block-reason">Justification</label>
-		<textarea id="block-reason" class="textarea" bind:value={reason} required placeholder="e.g. Chargeback ring investigation — risk engine escalation."></textarea>
+		<label class="field-label" for="block-reason">Reason</label>
+		<textarea id="block-reason" class="textarea" bind:value={reason} required placeholder="e.g. Policy violation — account access disabled."></textarea>
 		<div class="flex justify-end gap-2">
 			<button type="button" class="btn btn-sm btn-ghost" onclick={() => (blockOpen = false)}>Cancel</button>
-			<button type="submit" class="btn btn-sm btn-danger" disabled={busy}>Suspend account</button>
+			<button type="submit" class="btn btn-sm btn-danger" disabled={busy}>
+				<Ban size={12} /> Disable account
+			</button>
 		</div>
 	</form>
+</Sheet>
+
+<Sheet
+	open={previewAttachment !== null}
+	title={previewAttachment ? `${previewAttachment.side.toUpperCase()} ID · ${previewAttachment.name}` : 'ID Document'}
+	subtitle="Uploaded KYC identity document"
+	onclose={() => (previewAttachment = null)}
+	width="680px"
+>
+	{#if previewAttachment?.dataUrl}
+		<div class="space-y-3">
+			{#if previewAttachment.mimeType.startsWith('image/')}
+				<img src={previewAttachment.dataUrl} alt={previewAttachment.name} class="max-h-[72vh] w-full rounded-lg border border-[#2d2d37] bg-black object-contain" />
+			{:else}
+				<iframe src={previewAttachment.dataUrl} title={previewAttachment.name} class="h-[70vh] w-full rounded-lg border border-[#2d2d37] bg-white"></iframe>
+			{/if}
+			<div class="flex justify-end gap-2">
+				<a href={previewAttachment.dataUrl} download={previewAttachment.name} class="btn btn-sm btn-primary">
+					<Download size={12} /> Download original
+				</a>
+			</div>
+		</div>
+	{/if}
 </Sheet>

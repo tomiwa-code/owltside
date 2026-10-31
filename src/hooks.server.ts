@@ -25,7 +25,29 @@ export const handle: Handle = async ({ event, resolve }) => {
 			} = await db.auth.getUser();
 			if (user) {
 				const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+				const bannedUntil = (user as { banned_until?: string | null }).banned_until;
+				const isBanned =
+					(bannedUntil ? Date.parse(bannedUntil) > Date.now() : false) ||
+					meta.account_disabled === true;
 				let { data: profile } = await db.from('profiles').select('*').eq('id', user.id).maybeSingle();
+				if (isBanned || profile?.disabled === true) {
+					await db.auth.signOut().catch(() => undefined);
+					event.locals.session = null;
+					const path = event.url.pathname;
+					if (!path.startsWith('/auth/') && !path.startsWith('/api/')) {
+						const reason =
+							(typeof profile?.disabled_reason === 'string' && profile.disabled_reason) ||
+							(typeof meta.disabled_reason === 'string' && meta.disabled_reason) ||
+							'Your account has been disabled by an administrator.';
+						return new Response(null, {
+							status: 303,
+							headers: {
+								location: `/auth/login?error=${encodeURIComponent(reason)}`
+							}
+						});
+					}
+					return resolve(event);
+				}
 				if (!profile) {
 					const rawHandle =
 						(meta.handle as string | undefined) ||

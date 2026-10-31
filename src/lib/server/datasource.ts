@@ -1120,7 +1120,16 @@ export const demoSource: DataSource = {
 			amount: ticket.price,
 			subjectId: ticket.id,
 			subjectLabel: ticket.code,
-			payload: { reason: request?.reason ?? '', details: request?.details ?? '', code: ticket.code }
+			payload: {
+				reason: request?.reason ?? '',
+				details: request?.details ?? '',
+				code: ticket.code,
+				eventId: ticket.eventId,
+				eventTitle: ticket.eventTitle,
+				tierName: ticket.tierName,
+				holder: ticket.holder,
+				price: ticket.price
+			}
 		});
 	},
 	async reportContent(userId, input) {
@@ -2490,7 +2499,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (!isUuid(userId) || !isUuid(ticketId)) throw new Error('Invalid ticket or user ID');
 			const { data: ticket, error: ticketError } = await db
 				.from('tickets')
-				.select('id,code,event_title,tier_name,price,status')
+				.select('id,code,event_id,event_title,tier_name,holder,price,status')
 				.eq('id', ticketId)
 				.eq('owner_id', userId)
 				.maybeSingle();
@@ -2506,7 +2515,16 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				amount: Number(ticket.price ?? 0),
 				subjectId: ticket.id,
 				subjectLabel: ticket.code,
-				payload: { reason: request?.reason ?? '', details: request?.details ?? '', code: ticket.code }
+				payload: {
+					reason: request?.reason ?? '',
+					details: request?.details ?? '',
+					code: ticket.code,
+					eventId: ticket.event_id,
+					eventTitle: ticket.event_title,
+					tierName: ticket.tier_name,
+					holder: ticket.holder ?? '',
+					price: Number(ticket.price ?? 0)
+				}
 			});
 		}
 	};

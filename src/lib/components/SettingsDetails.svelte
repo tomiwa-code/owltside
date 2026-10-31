@@ -7,6 +7,7 @@
 		CheckCheck,
 		Database,
 		ExternalLink,
+		Fingerprint,
 		HelpCircle,
 		IdCard,
 		LockKeyhole,
@@ -20,10 +21,24 @@
 		Phone,
 		Upload
 	} from '@lucide/svelte';
+	import { onMount } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { appSettings, type AppSettings } from '$lib/state/settings.svelte';
 	import { PAYOUT_BANKS, isValidNuban, maskAccountNumber, normaliseNuban } from '$lib/utils/payout';
 	import { toast } from '$lib/state/toast.svelte';
+	import {
+		authenticateWithBiometrics,
+		disableBiometricPasskey,
+		enrollBiometricPasskey,
+		readStoredBiometric,
+		type LocalBiometricMetadata
+	} from '$lib/webauthn.client';
+	import {
+		disablePushNotifications,
+		enablePushNotifications,
+		getPushPermissionState,
+		showDeviceNotification
+	} from '$lib/push.client';
 	import type { ApprovalRequest } from '$lib/types';
 	import ApprovalNotice from '$components/ApprovalNotice.svelte';
 	import Sheet from '$components/Sheet.svelte';
@@ -92,8 +107,8 @@
 	let identityName = $state('');
 	let identityDob = $state('');
 	let identityNumber = $state('');
-	let identityFront = $state<{ name: string; preview: string | null } | null>(null);
-	let identityBack = $state<{ name: string; preview: string | null } | null>(null);
+	let identityFront = $state<{ name: string; preview: string | null; mimeType?: string } | null>(null);
+	let identityBack = $state<{ name: string; preview: string | null; mimeType?: string } | null>(null);
 	let cropSide = $state<'front' | 'back' | null>(null);
 	let cropFile = $state<File | null>(null);
 	let identityError = $state('');
@@ -103,6 +118,15 @@
 	let payoutError = $state('');
 	let payoutVerifying = $state(false);
 	let identitySubmitting = $state(false);
+	let pushPermission = $state<NotificationPermission | 'unsupported'>('default');
+	let pushBusy = $state(false);
+	let enrolledBiometric = $state<LocalBiometricMetadata | null>(null);
+	let biometricBusy = $state(false);
+
+	onMount(() => {
+		pushPermission = getPushPermissionState();
+		enrolledBiometric = readStoredBiometric();
+	});
 
 	/**
 	 * Submit a request for administrator review. Nothing is marked verified here:
@@ -166,6 +190,11 @@
 		appSettings.value.verification.phone = true;
 		phoneOpen = false;
 		phoneError = '';
+		void submitForReview({
+			kind: 'verification',
+			check: 'phone',
+			details: { phone: phoneNumber.replace(/\s/g, '') }
+		}).catch(() => undefined);
 		toast('Phone number verified', 'success');
 	}
 
@@ -181,10 +210,22 @@
 		input.value = '';
 		if (!file) return;
 		if (!file.type.startsWith('image/')) {
-			// PDFs keep their original bytes — nothing to resize or crop.
-			const attachment = { name: file.name, preview: null };
-			if (side === 'front') identityFront = attachment;
-			else identityBack = attachment;
+			// Read PDF bytes as a data URL so the admin review console can inspect it.
+			const reader = new FileReader();
+			reader.onload = () => {
+				const dataUrl = typeof reader.result === 'string' ? reader.result : null;
+				const attachment = {
+					name: file.name,
+					preview: dataUrl,
+					mimeType: file.type || 'application/pdf'
+				};
+				if (side === 'front') identityFront = attachment;
+				else identityBack = attachment;
+			};
+			reader.readAsDataURL(file);
+			const initial = { name: file.name, preview: null, mimeType: file.type || 'application/pdf' };
+			if (side === 'front') identityFront = initial;
+			else identityBack = initial;
 			toast(`${file.name} attached — resize and crop apply to images.`, 'info');
 			return;
 		}
@@ -197,7 +238,7 @@
 	}
 	function applyCroppedDocument(preview: string) {
 		const side = cropSide;
-		const attachment = { name: cropFile?.name ?? 'ID photo', preview };
+		const attachment = { name: cropFile?.name ?? 'ID photo', preview, mimeType: 'image/jpeg' };
 		if (side === 'front') identityFront = attachment;
 		else if (side === 'back') identityBack = attachment;
 		toast(`${side === 'back' ? 'Back' : 'Front'} of ID fitted to the frame and attached.`, 'success');
@@ -237,8 +278,21 @@
 			details: {
 				document: identityDoc,
 				reference: identityNumber,
-				// Never send or store the document image itself in the request.
-				attachment: identityBack ? 'front+back' : 'front'
+				legalName: identityName.trim(),
+				dateOfBirth: identityDob,
+				attachment: identityBack ? 'front+back' : 'front',
+				frontDocument: {
+					name: identityFront.name,
+					dataUrl: identityFront.preview,
+					mimeType: identityFront.mimeType ?? 'image/jpeg'
+				},
+				backDocument: identityBack
+					? {
+							name: identityBack.name,
+							dataUrl: identityBack.preview,
+							mimeType: identityBack.mimeType ?? 'image/jpeg'
+						}
+					: null
 			}
 		});
 		identitySubmitting = false;
@@ -302,17 +356,113 @@
 		payoutOpen = false;
 	}
 
-	function toggleNotification(key: NotificationToggle) {
-		appSettings.value.notifications[key] = !appSettings.value.notifications[key];
+	async function toggleNotification(key: NotificationToggle) {
+		if (key !== 'pushEnabled') {
+			appSettings.value.notifications[key] = !appSettings.value.notifications[key];
+			return;
+		}
+		if (pushBusy) return;
+		const nextEnabled = !appSettings.value.notifications.pushEnabled || pushPermission !== 'granted';
+		if (nextEnabled) {
+			pushBusy = true;
+			const result = await enablePushNotifications();
+			pushBusy = false;
+			pushPermission = result.permission;
+			if (!result.ok) {
+				appSettings.value.notifications.pushEnabled = false;
+				toast(result.reason ?? 'Could not enable push notifications on this device.', 'error');
+				return;
+			}
+			appSettings.value.notifications.pushEnabled = true;
+			toast('Phone push notifications enabled', 'success');
+		} else {
+			appSettings.value.notifications.pushEnabled = false;
+			await disablePushNotifications();
+			toast('Push notifications paused on this device', 'info');
+		}
 	}
+
+	async function sendTestPush() {
+		if (pushPermission !== 'granted') {
+			const res = await enablePushNotifications({ silentWelcome: true });
+			pushPermission = res.permission;
+			if (!res.ok) {
+				toast(res.reason ?? 'Grant notification permission first.', 'error');
+				return;
+			}
+			appSettings.value.notifications.pushEnabled = true;
+		}
+		const shown = await showDeviceNotification({
+			title: 'Owltside Test Notification',
+			body: 'Phone notification delivery is live. Gate passes and event alerts will appear here.',
+			url: '/notifications',
+			tag: `owltside-test-${Date.now()}`
+		});
+		if (shown) toast('Test notification sent to your device tray', 'success');
+		else toast('Could not display device notification. Check OS notification settings.', 'error');
+	}
+
 	function togglePrivacy(key: PrivacyToggle) {
 		appSettings.value.privacy[key] = !appSettings.value.privacy[key];
 	}
 	function toggleCookie(key: CookieToggle) {
 		appSettings.value.cookies[key] = !appSettings.value.cookies[key];
 	}
-	function toggleSecurity(key: SecurityToggle) {
-		appSettings.value.security[key] = !appSettings.value.security[key];
+	async function toggleSecurity(key: SecurityToggle) {
+		if (key !== 'biometricLogin') {
+			appSettings.value.security[key] = !appSettings.value.security[key];
+			return;
+		}
+		if (biometricBusy) return;
+		const shouldEnroll = !appSettings.value.security.biometricLogin || !enrolledBiometric;
+		if (shouldEnroll) {
+			biometricBusy = true;
+			try {
+				const meta = await enrollBiometricPasskey();
+				enrolledBiometric = meta;
+				appSettings.value.security.biometricLogin = true;
+				toast(`${meta.deviceLabel} enrolled for biometric sign-in`, 'success');
+			} catch (err) {
+				appSettings.value.security.biometricLogin = false;
+				toast(
+					err instanceof Error ? err.message : 'Could not set up fingerprint or Face ID.',
+					'error'
+				);
+			} finally {
+				biometricBusy = false;
+			}
+		} else {
+			biometricBusy = true;
+			await disableBiometricPasskey();
+			enrolledBiometric = null;
+			appSettings.value.security.biometricLogin = false;
+			biometricBusy = false;
+			toast('Biometric sign-in disabled on this device', 'info');
+		}
+	}
+
+	async function verifyDeviceBiometricNow() {
+		if (biometricBusy) return;
+		biometricBusy = true;
+		try {
+			if (!enrolledBiometric) {
+				const meta = await enrollBiometricPasskey();
+				enrolledBiometric = meta;
+				appSettings.value.security.biometricLogin = true;
+				toast(`${meta.deviceLabel} enrolled & verified`, 'success');
+			} else {
+				await authenticateWithBiometrics();
+				enrolledBiometric = readStoredBiometric();
+				toast('Biometric check passed (Fingerprint / Face ID verified)', 'success');
+			}
+		} catch (err) {
+			toast(
+				err instanceof Error ? err.message : 'Biometric check failed.',
+				'error'
+			);
+		} finally {
+			biometricBusy = false;
+		}
 	}
 	function toggleAccessibility(key: AccessibilityToggle) {
 		appSettings.value.accessibility[key] = !appSettings.value.accessibility[key];
@@ -663,12 +813,54 @@
 		<h3 class="text-label-badge tracking-wider uppercase text-on-surface-variant mb-2">Channels</h3>
 		<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
 			{#each notificationRows as row (row.key)}
-				{@const enabled = appSettings.value.notifications[row.key]}
-				<button type="button" role="switch" aria-checked={enabled} class="flex items-center justify-between gap-2 rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-3 text-left" onclick={() => toggleNotification(row.key)}>
+				{@const enabled = row.key === 'pushEnabled' ? appSettings.value.notifications.pushEnabled && pushPermission === 'granted' : appSettings.value.notifications[row.key]}
+				<button type="button" role="switch" aria-checked={enabled} disabled={row.key === 'pushEnabled' && pushBusy} class="flex items-center justify-between gap-2 rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-3 text-left disabled:opacity-60" onclick={() => toggleNotification(row.key)}>
 					<span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface">{row.label}</span><span class="block text-xs text-on-surface-variant mt-0.5">{row.description}</span></span>
 					<span aria-hidden="true" class="w-9 h-5 rounded-full p-0.5 shrink-0 transition-colors {enabled ? 'bg-primary' : 'bg-outline-variant'}"><span class="block w-4 h-4 rounded-full bg-white transition-transform {enabled ? 'translate-x-4' : ''}"></span></span>
 				</button>
 			{/each}
+		</div>
+		<div class="mb-4 rounded-lg border border-surface-glass-border bg-surface-container-high/40 p-3 flex flex-wrap items-center justify-between gap-3">
+			<div class="min-w-0">
+				<p class="text-body-sm font-semibold text-on-surface">
+					{#if appSettings.value.notifications.pushEnabled && pushPermission === 'granted'}
+						Phone & browser push active
+					{:else if pushPermission === 'denied'}
+						Notifications blocked in browser settings
+					{:else if pushPermission === 'unsupported'}
+						Install to Home Screen for OS push alerts
+					{:else}
+						Phone push permission required
+					{/if}
+				</p>
+				<p class="text-xs text-on-surface-variant mt-0.5">
+					{#if appSettings.value.notifications.pushEnabled && pushPermission === 'granted'}
+						Alerts deliver directly to your phone notification shade.
+					{:else}
+						Allow notification permission so pass updates and broadcasts show in your phone tray.
+					{/if}
+				</p>
+			</div>
+			<div class="flex items-center gap-2 shrink-0">
+				{#if pushPermission !== 'granted' || !appSettings.value.notifications.pushEnabled}
+					<button
+						type="button"
+						disabled={pushBusy}
+						onclick={() => toggleNotification('pushEnabled')}
+						class="h-8 px-3 rounded-full bg-primary text-on-primary text-xs font-semibold hover:opacity-90 disabled:opacity-50"
+					>
+						{pushBusy ? 'Enabling…' : 'Enable Phone Push'}
+					</button>
+				{:else}
+					<button
+						type="button"
+						onclick={sendTestPush}
+						class="h-8 px-3 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface text-xs font-semibold hover:bg-surface-bright"
+					>
+						Send Test Alert
+					</button>
+				{/if}
+			</div>
 		</div>
 		<div class="border-t border-surface-glass-border pt-3">
 			<h3 class="text-label-badge tracking-wider uppercase text-on-surface-variant mb-2">What you hear about</h3>
@@ -734,16 +926,45 @@
 			<LockKeyhole class="w-5 h-5 text-primary shrink-0" />
 		</div>
 		{#each [
-			{ key: 'biometricLogin', label: 'Biometric sign-in', description: 'Use device biometrics when supported.' },
+			{ key: 'biometricLogin', label: 'Biometric sign-in (Fingerprint / Face ID)', description: 'Register your phone fingerprint or Face ID passkey for instant sign-in and gate unlock.' },
 			{ key: 'twoFactor', label: 'Two-factor authentication', description: 'Require an additional sign-in check.' }
 		] as row (row.key)}
 			{@const key = row.key as SecurityToggle}
-			{@const enabled = appSettings.value.security[key]}
+			{@const enabled = key === 'biometricLogin' ? appSettings.value.security.biometricLogin && !!enrolledBiometric : appSettings.value.security[key]}
 			<label class="flex items-center justify-between gap-3 py-3 border-b border-surface-glass-border cursor-pointer">
 				<span><span class="block text-body-sm font-semibold text-on-surface">{row.label}</span><span class="block text-xs text-on-surface-variant mt-0.5">{row.description}</span></span>
-				<input type="checkbox" checked={enabled} onchange={() => toggleSecurity(key)} class="w-4 h-4 accent-primary shrink-0" />
+				<input type="checkbox" checked={enabled} disabled={key === 'biometricLogin' && biometricBusy} onchange={() => toggleSecurity(key)} class="w-4 h-4 accent-primary shrink-0" />
 			</label>
 		{/each}
+		<div class="mt-3 rounded-lg border border-surface-glass-border bg-surface-container-high/40 p-3 flex flex-wrap items-center justify-between gap-3">
+			<div class="flex items-center gap-2.5 min-w-0">
+				<Fingerprint class="w-5 h-5 {enrolledBiometric ? 'text-accent-emerald' : 'text-primary'} shrink-0" />
+				<div class="min-w-0">
+					<p class="text-body-sm font-semibold text-on-surface truncate">
+						{enrolledBiometric ? enrolledBiometric.deviceLabel : 'No biometric passkey enrolled yet'}
+					</p>
+					<p class="text-xs text-on-surface-variant truncate">
+						{enrolledBiometric
+							? 'Hardware WebAuthn passkey active on this device'
+							: 'Tap Enroll to link your phone fingerprint or Face ID'}
+					</p>
+				</div>
+			</div>
+			<div class="flex items-center gap-2 shrink-0">
+				<button
+					type="button"
+					disabled={biometricBusy}
+					onclick={verifyDeviceBiometricNow}
+					class="h-8 px-3 rounded-full {enrolledBiometric ? 'border border-surface-glass-border bg-surface-container-high text-on-surface' : 'bg-primary text-on-primary'} text-xs font-semibold hover:opacity-90 disabled:opacity-50"
+				>
+					{biometricBusy
+						? 'Checking sensor…'
+						: enrolledBiometric
+							? 'Test Fingerprint / Face ID'
+							: 'Enroll Fingerprint / Face ID'}
+				</button>
+			</div>
+		</div>
 		<div class="pt-3">
 			<div class="flex items-center justify-between gap-3 mb-2"><span class="text-body-sm font-semibold text-on-surface">Active sessions</span><button type="button" class="text-body-sm text-primary hover:underline" onclick={() => toast('Other sessions were signed out', 'success')}>Sign out others</button></div>
 			<div class="flex items-center gap-3 rounded-lg bg-surface-container-high/50 p-3">

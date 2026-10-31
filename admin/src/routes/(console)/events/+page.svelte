@@ -1,14 +1,19 @@
 <script lang="ts">
 	import {
 		BadgeCheck,
+		Ban,
 		CalendarDays,
+		Check,
 		ChevronRight,
 		Download,
 		ExternalLink,
 		Eye,
 		ScanLine,
-		ShieldCheck
+		ShieldCheck,
+		Trash2
 	} from '@lucide/svelte';
+	import { invalidateAll } from '$app/navigation';
+	import { toasts } from '$admin/state/toast.svelte';
 	import { chipClass, eventStatus } from '$admin/utils/status';
 	import { countdown, date, money, num, pct, time } from '$admin/utils/format';
 	import type { AdminEvent } from '$admin/types';
@@ -19,10 +24,64 @@
 	import EmptyState from '$components/EmptyState.svelte';
 	import SearchField from '$components/SearchField.svelte';
 	import SubmissionQueue from '$components/SubmissionQueue.svelte';
+	import Sheet from '$components/Sheet.svelte';
 
 	let { data } = $props();
 
 	let selectedOverride = $state<string | null>(null);
+	let busyEventId = $state<string | null>(null);
+	let deleteTarget = $state<AdminEvent | null>(null);
+	let deleteReason = $state('');
+
+	async function toggleEventStatus(target: AdminEvent, nextStatus: 'published' | 'suspended') {
+		busyEventId = target.id;
+		const res = await fetch(`/api/events/${target.id}/status`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				status: nextStatus,
+				reason:
+					nextStatus === 'suspended'
+						? 'Disabled from Events console'
+						: 'Enabled from Events console'
+			})
+		});
+		const payload = (await res.json().catch(() => ({}))) as { message?: string };
+		busyEventId = null;
+		if (!res.ok) {
+			toasts.error('Unable to update event', payload.message ?? 'Check admin permissions.');
+			return;
+		}
+		toasts.ok(
+			nextStatus === 'published' ? 'Event enabled' : 'Event disabled',
+			nextStatus === 'published'
+				? `"${target.title}" is now live on the public app.`
+				: `"${target.title}" is now hidden from public feeds and checkout.`
+		);
+		await invalidateAll();
+	}
+
+	async function confirmDeleteEvent() {
+		if (!deleteTarget) return;
+		const target = deleteTarget;
+		busyEventId = target.id;
+		const res = await fetch(`/api/events/${target.id}`, {
+			method: 'DELETE',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ reason: deleteReason || 'Deleted by Owltside Admin' })
+		});
+		const payload = (await res.json().catch(() => ({}))) as { message?: string };
+		busyEventId = null;
+		if (!res.ok) {
+			toasts.error('Delete failed', payload.message ?? 'Could not delete event.');
+			return;
+		}
+		toasts.ok('Event permanently deleted', `"${target.title}" and dependent records were removed.`);
+		if (selectedOverride === target.id) selectedOverride = null;
+		deleteTarget = null;
+		deleteReason = '';
+		await invalidateAll();
+	}
 
 	const combined = $derived([...(data.table?.rows ?? []), ...(data.pending ?? [])]);
 	const selected = $derived<AdminEvent | null>(
@@ -191,6 +250,39 @@
 									<td><StatusChip label={meta.label} tone={meta.tone} /></td>
 									<td>
 										<div class="flex items-center justify-end gap-1">
+											{#if event.status === 'published'}
+												<button
+													type="button"
+													class="row-action text-amber-300 hover:text-amber-200"
+													title="Disable event"
+													aria-label={`Disable ${event.title}`}
+													disabled={busyEventId === event.id}
+													onclick={() => toggleEventStatus(event, 'suspended')}
+												>
+													<Ban size={13} />
+												</button>
+											{:else}
+												<button
+													type="button"
+													class="row-action text-emerald-300 hover:text-emerald-200"
+													title="Enable / publish event"
+													aria-label={`Enable ${event.title}`}
+													disabled={busyEventId === event.id}
+													onclick={() => toggleEventStatus(event, 'published')}
+												>
+													<Check size={13} />
+												</button>
+											{/if}
+											<button
+												type="button"
+												class="row-action text-rose-300 hover:text-rose-200"
+												title="Delete event"
+												aria-label={`Delete ${event.title}`}
+												disabled={busyEventId === event.id}
+												onclick={() => { deleteTarget = event; deleteReason = ''; }}
+											>
+												<Trash2 size={13} />
+											</button>
 											<button type="button" class="row-action" aria-label={`Inspect ${event.title}`} onclick={() => (selectedOverride = event.id)}>
 												<Eye size={13} />
 											</button>
@@ -238,10 +330,14 @@
 						</div>
 
 						<div class="mt-3 overflow-hidden rounded-lg border border-[#2a2a32]">
-							<CoverArt from={selected.coverFrom} to={selected.coverTo} icon={selected.coverIcon} class="!h-28 !w-full !rounded-none" />
+							{#if selected.coverSrc}
+								<img src={selected.coverSrc} alt={selected.title} class="h-32 w-full object-cover" />
+							{:else}
+								<CoverArt from={selected.coverFrom} to={selected.coverTo} icon={selected.coverIcon} class="!h-28 !w-full !rounded-none" />
+							{/if}
 						</div>
 
-						<p class="mt-3 text-[11px] leading-relaxed text-[#8f8f9b]">{selected.moderationNote ?? selected.venue + ' · ' + selected.city}</p>
+						<p class="mt-3 text-[11px] leading-relaxed text-[#8f8f9b]">{selected.description || selected.moderationNote || selected.venue + ' · ' + selected.city}</p>
 
 						<div class="mt-3 flex items-center gap-2 rounded-lg border border-[#26262e] bg-[#191920] p-2">
 							<span class="flex h-7 w-7 items-center justify-center rounded-md bg-[#2a2540] font-code text-[9px] text-[#c6bcff]">
@@ -278,14 +374,42 @@
 
 						<div class="mt-4 space-y-1.5 border-t border-[#26262e] pt-3">
 							<a href={`/events/${selected.id}`} class="btn btn-primary w-full">Open event record</a>
+							<div class="grid grid-cols-2 gap-1.5">
+								{#if selected.status === 'published'}
+									<button
+										type="button"
+										class="btn btn-sm btn-danger-soft w-full"
+										disabled={busyEventId === selected.id}
+										onclick={() => toggleEventStatus(selected, 'suspended')}
+									>
+										<Ban size={12} /> Disable event
+									</button>
+								{:else}
+									<button
+										type="button"
+										class="btn btn-sm w-full"
+										disabled={busyEventId === selected.id}
+										onclick={() => toggleEventStatus(selected, 'published')}
+									>
+										<Check size={12} /> Enable event
+									</button>
+								{/if}
+								<button
+									type="button"
+									class="btn btn-sm btn-danger w-full"
+									disabled={busyEventId === selected.id}
+									onclick={() => { deleteTarget = selected; deleteReason = ''; }}
+								>
+									<Trash2 size={12} /> Delete event
+								</button>
+							</div>
 						</div>
 					</div>
 
 					<div class="flex items-start gap-2 border-t border-[#26262e] bg-[#17171c] px-4 py-2.5">
 						<ShieldCheck size={12} class="mt-0.5 shrink-0 text-[#6f6f7b]" />
 						<p class="text-[9.5px] leading-relaxed text-[#6f6f7b]">
-							Owltside publishing policy v2.4 — events with total capacity above 1,000 attendees require automated
-							perimeter dispatch confirmation before ticket sales go live.
+							Owltside publishing policy v2.4 — disabling an event hides it from public feeds and blocks ticket sales immediately.
 						</p>
 					</div>
 				</div>
@@ -293,3 +417,27 @@
 		</aside>
 	</div>
 </div>
+
+<Sheet
+	open={deleteTarget !== null}
+	title={deleteTarget ? `Delete "${deleteTarget.title}"` : 'Delete event'}
+	subtitle="This permanently deletes the event and its associated tickets, orders, and promo codes."
+	onclose={() => (deleteTarget = null)}
+	width="440px"
+>
+	<form class="space-y-3" onsubmit={(e) => { e.preventDefault(); confirmDeleteEvent(); }}>
+		<label class="field-label" for="del-event-reason">Deletion reason (recorded in audit trail & organizer notification)</label>
+		<textarea
+			id="del-event-reason"
+			class="textarea"
+			bind:value={deleteReason}
+			placeholder="e.g. Duplicate listing / fraudulent event removed by Trust & Safety."
+		></textarea>
+		<div class="flex justify-end gap-2">
+			<button type="button" class="btn btn-sm btn-ghost" onclick={() => (deleteTarget = null)}>Cancel</button>
+			<button type="submit" class="btn btn-sm btn-danger" disabled={busyEventId !== null}>
+				<Trash2 size={12} /> Delete permanently
+			</button>
+		</div>
+	</form>
+</Sheet>

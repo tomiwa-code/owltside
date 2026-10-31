@@ -1,13 +1,13 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient, type User as AuthUser } from '@supabase/supabase-js';
 import type { AdminReport, ReportStatus, ReportTargetType } from '$admin/types';
 
 /**
  * Content report driver (event listings & public profiles).
  *
- * The public app only files a report: it lands `open` in
- * `public.content_reports` and is reviewed here using the service-role key —
- * RLS gives clients no read or update access to the queue. Nothing is
- * auto-actioned.
+ * The public app files reports into `public.content_reports` as `open`;
+ * this module resolves full unredacted reporter and target profile/event
+ * details (including auth email, phone, organizer info, bio, and status)
+ * using the Supabase service-role key.
  */
 
 function supabaseUrl(): string {
@@ -26,7 +26,7 @@ function liveClient(): SupabaseClient {
 	if (!url || !key) {
 		throw new Error(
 			'Supabase is not configured. Set PUBLIC_SUPABASE_URL and ' +
-			'SUPABASE_SERVICE_ROLE_KEY before starting the admin control plane.'
+				'SUPABASE_SERVICE_ROLE_KEY before starting the admin control plane.'
 		);
 	}
 	const cacheKey = `${url}:${key.slice(-8)}`;
@@ -59,23 +59,83 @@ const CATEGORY_LABELS: Record<string, string> = {
 	other: 'Something else'
 };
 
-function contextFor(row: Row, event?: Row, profile?: Row): { label: string; value: string }[] {
+async function loadAuthUsersMap(client: SupabaseClient): Promise<Map<string, AuthUser>> {
+	const map = new Map<string, AuthUser>();
+	try {
+		const { data } = await client.auth.admin.listUsers({ page: 1, perPage: 1000 });
+		for (const u of data?.users ?? []) map.set(u.id, u);
+	} catch {
+		// Ignore if auth admin API is unreachable
+	}
+	return map;
+}
+
+function contextFor(
+	row: Row,
+	authMap: Map<string, AuthUser>,
+	event?: Row,
+	profile?: Row
+): { label: string; value: string }[] {
 	const details: { label: string; value: string }[] = [];
 	if (row.target_type === 'event') {
-		details.push({ label: 'Listing', value: asText(event?.title, asText(row.target_label, row.target_id)) });
-		details.push({ label: 'Venue', value: [asText(event?.venue), asText(event?.city)].filter(Boolean).join(', ') || '—' });
-		details.push({ label: 'Organizer', value: asText(event?.organizer?.handle, '—') });
+		const org = (event?.organizer ?? {}) as Row;
+		const orgAuth = org?.id ? authMap.get(String(org.id)) : undefined;
+		details.push({
+			label: 'Listing',
+			value: asText(event?.title, asText(row.target_label, row.target_id))
+		});
+		details.push({
+			label: 'Venue',
+			value: [asText(event?.venue), asText(event?.city)].filter(Boolean).join(', ') || '—'
+		});
+		details.push({
+			label: 'Organizer',
+			value: org?.name ? `${org.name} (@${asText(org.handle, '—')})` : asText(org?.handle, '—')
+		});
+		if (orgAuth?.email) {
+			details.push({ label: 'Organizer email', value: orgAuth.email });
+		}
 		details.push({ label: 'Status', value: asText(event?.status, 'unknown') });
 	} else {
-		details.push({ label: 'Profile', value: `${asText(profile?.handle, asText(row.target_label, row.target_id))} · ${asText(profile?.name, 'Unknown')}` });
-		details.push({ label: 'Email', value: asText(profile?.email, '—') });
-		details.push({ label: 'Operating identity', value: asText(profile?.operating_identity, 'attendee') });
+		const targetAuth = authMap.get(asText(row.target_id));
+		const meta = (targetAuth?.user_metadata ?? {}) as Row;
+		details.push({
+			label: 'Profile',
+			value: `${asText(profile?.name, 'Unknown')} (@${asText(profile?.handle, asText(row.target_label, row.target_id))})`
+		});
+		details.push({ label: 'Email', value: asText(targetAuth?.email, '—') });
+		const phone = asText(targetAuth?.phone) || asText(meta.verified_phone);
+		if (phone) details.push({ label: 'Phone', value: phone });
+		details.push({
+			label: 'Operating identity',
+			value: asText(profile?.operating_identity, 'attendee')
+		});
+		if (asText(profile?.city)) details.push({ label: 'City', value: asText(profile?.city) });
+		if (asText(profile?.bio)) details.push({ label: 'Bio', value: asText(profile?.bio) });
 	}
-	details.push({ label: 'Reported', value: asText(row.created_at, new Date().toISOString()) });
+	details.push({ label: 'Reported at', value: asText(row.created_at, new Date().toISOString()) });
 	return details;
 }
 
-function mapLiveRow(row: Row, reporter?: Row, event?: Row, profile?: Row): AdminReport {
+function mapLiveRow(
+	row: Row,
+	authMap: Map<string, AuthUser>,
+	reporter?: Row,
+	event?: Row,
+	profile?: Row
+): AdminReport {
+	const reporterId = asText(row.reporter_id);
+	const reporterAuth = reporterId ? authMap.get(reporterId) : undefined;
+	const reporterMeta = (reporterAuth?.user_metadata ?? {}) as Row;
+	const reporterName =
+		asText(reporter?.name) ||
+		asText(reporterMeta.full_name) ||
+		asText(reporterMeta.name) ||
+		(reporterAuth?.email ? reporterAuth.email.split('@')[0] : '') ||
+		(reporterId ? 'Owltside Member' : 'Guest reporter');
+	const reporterHandle =
+		asText(reporter?.handle) || asText(reporterMeta.handle) || (reporterId ? 'member' : 'guest');
+
 	return {
 		id: String(row.id),
 		targetType: asText(row.target_type, 'event') as ReportTargetType,
@@ -84,13 +144,14 @@ function mapLiveRow(row: Row, reporter?: Row, event?: Row, profile?: Row): Admin
 		category: asText(row.category),
 		categoryLabel: CATEGORY_LABELS[asText(row.category)] ?? asText(row.category),
 		details: asText(row.details),
-		reporterName: asText(reporter?.name, row.reporter_id ? 'Owltside member' : 'Guest reporter'),
-		reporterHandle: asText(reporter?.handle, '—'),
-		reporterEmail: asText(reporter?.email, ''),
+		reporterId: reporterId || undefined,
+		reporterName,
+		reporterHandle,
+		reporterEmail: asText(reporterAuth?.email, ''),
 		status: asText(row.status, 'open') as ReportStatus,
 		createdAt: asText(row.created_at, new Date().toISOString()),
 		slaHours: row.target_type === 'profile' ? 12 : 24,
-		context: contextFor(row, event, profile),
+		context: contextFor(row, authMap, event, profile),
 		reviewerName: asText(row.reviewer_name) || undefined,
 		reviewNote: asText(row.review_note) || undefined,
 		reviewedAt: asText(row.reviewed_at) || undefined
@@ -99,45 +160,63 @@ function mapLiveRow(row: Row, reporter?: Row, event?: Row, profile?: Row): Admin
 
 export async function listReports(): Promise<{ rows: AdminReport[] }> {
 	const client = liveClient();
-	const { data, error } = await client
-		.from('content_reports')
-		.select('*')
-		.order('created_at', { ascending: false })
-		.limit(200);
+	const [{ data, error }, authMap] = await Promise.all([
+		client
+			.from('content_reports')
+			.select('*')
+			.order('created_at', { ascending: false })
+			.limit(200),
+		loadAuthUsersMap(client)
+	]);
 	if (error) throw new Error(error.message);
 
 	const rows = (data ?? []) as Row[];
 	const reporterIds = [...new Set(rows.map((row) => asText(row.reporter_id)).filter(Boolean))];
-	const eventIds = [...new Set(rows.filter((row) => row.target_type === 'event').map((row) => asText(row.target_id)).filter(Boolean))];
-	const profileIds = [...new Set(rows.filter((row) => row.target_type === 'profile').map((row) => asText(row.target_id)).filter(Boolean))];
+	const eventIds = [
+		...new Set(
+			rows
+				.filter((row) => row.target_type === 'event')
+				.map((row) => asText(row.target_id))
+				.filter(Boolean)
+		)
+	];
+	const profileIds = [
+		...new Set(
+			rows
+				.filter((row) => row.target_type === 'profile')
+				.map((row) => asText(row.target_id))
+				.filter(Boolean)
+		)
+	];
 
 	const reporters = new Map<string, Row>();
 	const events = new Map<string, Row>();
 	const profiles = new Map<string, Row>();
 
-	if (reporterIds.length) {
-		const { data: people } = await client.from('profiles').select('id,name,handle,email').in('id', reporterIds);
-		for (const person of (people ?? []) as Row[]) reporters.set(String(person.id), person);
+	const allProfileIds = [...new Set([...reporterIds, ...profileIds])];
+	if (allProfileIds.length) {
+		const { data: people } = await client
+			.from('profiles')
+			.select('id,name,handle,bio,city,link,verified,operating_identity')
+			.in('id', allProfileIds);
+		for (const person of (people ?? []) as Row[]) {
+			reporters.set(String(person.id), person);
+			profiles.set(String(person.id), person);
+		}
 	}
 	if (eventIds.length) {
 		const { data: found } = await client
 			.from('events')
-			.select('id,title,venue,city,status,organizer:profiles(handle)')
+			.select('id,title,venue,city,status,organizer:profiles(id,name,handle)')
 			.in('id', eventIds);
 		for (const event of (found ?? []) as Row[]) events.set(String(event.id), event);
-	}
-	if (profileIds.length) {
-		const { data: found } = await client
-			.from('profiles')
-			.select('id,name,handle,email,operating_identity')
-			.in('id', profileIds);
-		for (const profile of (found ?? []) as Row[]) profiles.set(String(profile.id), profile);
 	}
 
 	return {
 		rows: rows.map((row) =>
 			mapLiveRow(
 				row,
+				authMap,
 				reporters.get(asText(row.reporter_id)),
 				events.get(asText(row.target_id)),
 				profiles.get(asText(row.target_id))
@@ -151,11 +230,6 @@ export interface ReportDecisionResult {
 	status: Extract<ReportStatus, 'actioned' | 'dismissed'>;
 }
 
-/**
- * Record the review outcome. `action` means the team acted on the content
- * (suspended the listing, restricted the account, …); `dismiss` closes it with
- * no further action. Both require a short note for the audit trail.
- */
 export async function decideReport(
 	id: string,
 	decision: 'action' | 'dismiss',

@@ -1,18 +1,22 @@
 <script lang="ts">
 	import {
+		ArrowUpRight,
 		Banknote,
 		BadgeCheck,
 		Check,
 		Clock,
+		Download,
+		FileText,
 		IdCard,
 		RotateCcw,
 		Search,
-		X
+		X,
+		ZoomIn
 	} from '@lucide/svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { toasts } from '$admin/state/toast.svelte';
 	import { money, relative } from '$admin/utils/format';
-	import type { AdminApproval, ApprovalKind } from '$admin/types';
+	import type { AdminApproval, AdminApprovalAttachment, ApprovalKind } from '$admin/types';
 	import PageHeader from '$components/PageHeader.svelte';
 	import Sheet from '$components/Sheet.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
@@ -25,6 +29,7 @@
 	let query = $state('');
 	let override = $state<string | null>(null);
 	let rejectOpen = $state(false);
+	let previewAttachment = $state<AdminApprovalAttachment | null>(null);
 	let note = $state('');
 	let busy = $state(false);
 
@@ -222,9 +227,20 @@
 
 					<div class="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-[#292930] bg-[#18181e] p-2.5">
 						<div>
-							<p class="mono-label !text-[7px]">Requester</p>
-							<p class="mt-1 text-[11px] text-[#e6e6ec]">{selected.requesterName}</p>
-							<p class="font-code text-[8.5px] text-[#6f6f7b]">@{selected.requesterHandle}{selected.requesterEmail ? ` · ${selected.requesterEmail}` : ''}</p>
+							<p class="mono-label !text-[7px]">Requester (full identity)</p>
+							<p class="mt-1 text-[11px] font-medium text-[#e6e6ec]">{selected.requesterName}</p>
+							<p class="font-code text-[8.5px] text-[#9b9ba8]">@{selected.requesterHandle}</p>
+							{#if selected.requesterEmail}
+								<p class="mt-0.5 font-code text-[8.5px] text-[#c6bcff]">{selected.requesterEmail}</p>
+							{/if}
+							{#if selected.requesterPhone}
+								<p class="mt-0.5 font-code text-[8.5px] text-[#a0a0ab]">{selected.requesterPhone}</p>
+							{/if}
+							{#if selected.requesterId}
+								<a href="/users/{selected.requesterId}" class="mt-1 inline-flex items-center gap-1 font-code text-[8px] uppercase tracking-[0.08em] text-[#a998ff] hover:underline">
+									Open user dossier <ArrowUpRight size={10} />
+								</a>
+							{/if}
 						</div>
 						<div class="text-right">
 							<p class="mono-label !text-[7px]">Submitted</p>
@@ -241,13 +257,78 @@
 					{/if}
 
 					<div class="mt-3 rounded-lg border border-[#2a2a32] p-3">
-						<p class="mono-label !text-[8px]">Submitted details</p>
-						<div class="mt-1.5 space-y-1 text-[10px]">
+						<p class="mono-label !text-[8px]">Unredacted submitted details</p>
+						<div class="mt-1.5 space-y-1.5 text-[10.5px]">
 							{#each selected.details as row}
-								<p class="flex justify-between gap-3"><span class="text-[#a0a0ab]">{row.label}</span><span class="font-code text-right text-[#dcdce4]">{row.value}</span></p>
+								<p class="flex justify-between gap-3 border-b border-[#22222a] pb-1 last:border-0 last:pb-0">
+									<span class="text-[#a0a0ab]">{row.label}</span>
+									<span class="font-code text-right font-semibold select-all text-[#ededf4]">{row.value}</span>
+								</p>
 							{/each}
 						</div>
 					</div>
+
+					{#if selected.attachments && selected.attachments.length > 0}
+						<div class="mt-3 rounded-lg border border-[#32323d] bg-[#16161d] p-3">
+							<p class="mono-label !text-[8px]">Uploaded ID documents ({selected.attachments.length})</p>
+							<div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+								{#each selected.attachments as att}
+									<div class="overflow-hidden rounded-lg border border-[#2b2b35] bg-[#111116]">
+										<div class="flex items-center justify-between border-b border-[#23232c] px-2.5 py-1.5">
+											<span class="font-code text-[8.5px] uppercase tracking-[0.1em] text-[#c6bcff]">
+												{att.side === 'front' ? 'Front of ID' : 'Back of ID'}
+											</span>
+											<div class="flex items-center gap-1.5">
+												{#if att.dataUrl}
+													<button
+														type="button"
+														onclick={() => (previewAttachment = att)}
+														class="font-code text-[8px] uppercase text-[#a998ff] hover:text-white"
+													>
+														<ZoomIn size={11} />
+													</button>
+													<a
+														href={att.dataUrl}
+														download={att.name}
+														class="font-code text-[8px] uppercase text-[#8f8f9b] hover:text-white"
+														aria-label={`Download ${att.name}`}
+													>
+														<Download size={11} />
+													</a>
+												{/if}
+											</div>
+										</div>
+										{#if att.dataUrl && att.mimeType.startsWith('image/')}
+											<button
+												type="button"
+												onclick={() => (previewAttachment = att)}
+												class="block w-full bg-black/40"
+											>
+												<img
+													src={att.dataUrl}
+													alt={`${att.side} ID document`}
+													class="h-36 w-full object-contain"
+												/>
+											</button>
+										{:else if att.dataUrl}
+											<div class="flex flex-col items-center justify-center gap-2 p-4 text-center">
+												<FileText size={22} class="text-[#c6bcff]" />
+												<p class="max-w-full truncate font-code text-[9px] text-[#d4d4dc]">{att.name}</p>
+												<div class="flex gap-1.5">
+													<button type="button" class="btn btn-xs" onclick={() => (previewAttachment = att)}>Preview PDF</button>
+													<a href={att.dataUrl} download={att.name} class="btn btn-xs">Download</a>
+												</div>
+											</div>
+										{:else}
+											<div class="p-3 text-center font-code text-[9px] text-[#7f7f8c]">
+												File name recorded: {att.name}
+											</div>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
 
 					{#if selected.summary}
 						<p class="mt-2.5 rounded-md border border-[#2b2b33] bg-[#15151a] px-2.5 py-2 text-[10px] leading-relaxed text-[#a0a0ab]">{selected.summary}</p>
@@ -313,4 +394,36 @@
 			<button type="submit" class="btn btn-sm btn-danger" disabled={busy || !note.trim()}>Reject request</button>
 		</div>
 	</form>
+</Sheet>
+
+<Sheet
+	open={previewAttachment !== null}
+	title={previewAttachment ? `${previewAttachment.side === 'front' ? 'Front' : 'Back'} ID Document · ${previewAttachment.name}` : 'ID Document'}
+	subtitle="Full-resolution KYC document submitted by the user"
+	onclose={() => (previewAttachment = null)}
+	width="680px"
+>
+	{#if previewAttachment?.dataUrl}
+		<div class="space-y-3">
+			{#if previewAttachment.mimeType.startsWith('image/')}
+				<img
+					src={previewAttachment.dataUrl}
+					alt={previewAttachment.name}
+					class="max-h-[72vh] w-full rounded-lg border border-[#2d2d37] bg-black object-contain"
+				/>
+			{:else}
+				<iframe
+					src={previewAttachment.dataUrl}
+					title={previewAttachment.name}
+					class="h-[70vh] w-full rounded-lg border border-[#2d2d37] bg-white"
+				></iframe>
+			{/if}
+			<div class="flex justify-end gap-2">
+				<a href={previewAttachment.dataUrl} download={previewAttachment.name} class="btn btn-sm btn-primary">
+					<Download size={12} /> Download original ({previewAttachment.name})
+				</a>
+				<button type="button" class="btn btn-sm" onclick={() => (previewAttachment = null)}>Close</button>
+			</div>
+		</div>
+	{/if}
 </Sheet>

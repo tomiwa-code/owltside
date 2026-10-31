@@ -5,10 +5,29 @@
 	import TopBar from '$components/TopBar.svelte';
 	import CommandPalette from '$components/CommandPalette.svelte';
 	import { ShieldAlert } from '@lucide/svelte';
-	import type { AdminSession } from '$admin/types';
+	import type { AdminNotificationItem, AdminSession } from '$admin/types';
 
-	let { children, data }: { children: Snippet; data: { admin: AdminSession | null; mode: 'live'; counts: { pendingEvents: number; refunds: number; approvals: number; reports: number; moderation: number }; serverTime: string; publicAppUrl: string } } =
-		$props();
+	let {
+		children,
+		data
+	}: {
+		children: Snippet;
+		data: {
+			admin: AdminSession | null;
+			mode: 'live';
+			notifications: AdminNotificationItem[];
+			counts: {
+				pendingEvents: number;
+				refunds: number;
+				approvals: number;
+				reports: number;
+				moderation: number;
+				notifications: number;
+			};
+			serverTime: string;
+			publicAppUrl: string;
+		};
+	} = $props();
 
 	onMount(() => {
 		// Reaching the console means the session cookie stuck — clear the marker the
@@ -26,7 +45,12 @@
 {#if data.admin}
 	<Sidebar admin={data.admin} counts={data.counts} publicAppUrl={data.publicAppUrl} />
 	<div class="flex min-h-dvh flex-col lg:pl-[252px]">
-		<TopBar admin={data.admin} serverTime={data.serverTime} alerts={data.counts.moderation + data.counts.refunds + data.counts.approvals + data.counts.reports} />
+		<TopBar
+			admin={data.admin}
+			serverTime={data.serverTime}
+			alerts={data.counts.notifications}
+			initialNotifications={data.notifications}
+		/>
 		<main class="mx-auto w-full max-w-[1580px] flex-1 px-3.5 pb-10 pt-4 sm:px-5 lg:px-7 lg:pb-14 lg:pt-5">
 			{@render children()}
 		</main>

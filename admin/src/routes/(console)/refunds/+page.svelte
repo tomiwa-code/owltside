@@ -205,8 +205,18 @@
 					<div class="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-[#292930] bg-[#18181e] p-2.5">
 						<div>
 							<p class="mono-label !text-[7px]">Attendee & order target</p>
-							<p class="mt-1 text-[11px] text-[#e6e6ec]">{selected.customerName}</p>
-							<p class="font-code text-[8.5px] text-[#6f6f7b]">{selected.orderRef} · {selected.reason}</p>
+							{#if selected.customerId}
+								<a href={`/users/${selected.customerId}`} class="mt-1 inline-block text-[11px] font-medium text-[#c6bcff] hover:underline">{selected.customerName}</a>
+							{:else}
+								<p class="mt-1 text-[11px] text-[#e6e6ec]">{selected.customerName}</p>
+							{/if}
+							{#if selected.customerEmail}
+								<p class="font-code text-[8.5px] text-[#a0a0ab]">{selected.customerEmail}</p>
+							{/if}
+							{#if selected.eventId}
+								<a href={`/events/${selected.eventId}`} class="block truncate font-code text-[8.5px] text-[#c6bcff] hover:underline">{selected.eventTitle}</a>
+							{/if}
+							<p class="font-code text-[8.5px] text-[#6f6f7b]">{selected.ticketCode ?? selected.orderRef} · {selected.reason}</p>
 						</div>
 						<div class="text-right">
 							<p class="mono-label !text-[7px]">Created</p>
@@ -222,7 +232,7 @@
 						</div>
 						<div class="mt-1.5 space-y-1 text-[10px]">
 							<p class="flex justify-between"><span class="text-[#a0a0ab]">Original order settlement</span><span class="font-code text-[#dcdce4]">{money(selected.originalNgn)}</span></p>
-							<p class="flex justify-between"><span class="text-[#a0a0ab]">Non-refundable network gateway fee</span><span class="font-code text-[#dcdce4]">-{money(selected.originalNgn - selected.amountNgn || 1_500)}</span></p>
+							<p class="flex justify-between"><span class="text-[#a0a0ab]">Non-refundable network gateway fee</span><span class="font-code text-[#dcdce4]">-{money(selected.originalNgn - selected.amountNgn)}</span></p>
 						</div>
 						<div class="mt-2 flex items-baseline justify-between border-t border-[#2a2a32] pt-2">
 							<span class="text-[10px] text-[#8f8f9b]">Net refund payable</span>
@@ -231,10 +241,10 @@
 						<div class="mt-2 flex items-center gap-2 rounded-md border border-[#2b2b33] bg-[#15151a] px-2 py-1.5">
 							<Wallet size={13} class="text-[#6f6f7b]" />
 							<div class="min-w-0 flex-1">
-								<p class="text-[9.5px] text-[#c9c9d4]">GTBank Mastercard ···· 1048</p>
-								<p class="font-code text-[8px] uppercase text-[#6f6f7b]">Paystack direct route</p>
+								<p class="text-[9.5px] text-[#c9c9d4]">Pass ref: {selected.ticketCode ?? selected.orderRef}</p>
+								<p class="font-code text-[8px] uppercase text-[#6f6f7b]">Paystack original payment reversal</p>
 							</div>
-							<span class="chip chip-ok !h-[16px] !text-[7.5px]">Verified</span>
+							<span class="chip chip-ok !h-[16px] !text-[7.5px]">Escrowed</span>
 						</div>
 					</div>
 

@@ -27,7 +27,9 @@ export function eventStatus(status: string): StatusMeta {
 		case 'draft':
 			return { label: 'Draft', tone: 'neutral' };
 		case 'suspended':
-			return { label: 'Suspended', tone: 'danger' };
+			return { label: 'Disabled', tone: 'danger' };
+		case 'rejected':
+			return { label: 'Rejected', tone: 'danger' };
 		case 'completed':
 			return { label: 'Completed', tone: 'info' };
 		default:
@@ -142,7 +144,7 @@ export function userStatus(status: string): StatusMeta {
 		case 'flagged':
 			return { label: 'Flagged', tone: 'warn' };
 		case 'blocked':
-			return { label: 'Blocked', tone: 'danger' };
+			return { label: 'Disabled', tone: 'danger' };
 		default:
 			return { label: status, tone: 'neutral' };
 	}

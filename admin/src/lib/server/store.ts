@@ -1,5 +1,7 @@
 import type {
+	AdminCase,
 	AdminEvent,
+	AdminOrder,
 	AdminOrganizer,
 	AdminStaff,
 	AdminTicket,
@@ -10,6 +12,26 @@ import type {
 } from '$admin/types';
 
 // ── Shared query types ──────────────────────────────────────────────────────
+
+export interface SearchHit {
+	kind: string;
+	id: string;
+	title: string;
+	subtitle: string;
+	href: string;
+}
+
+export interface SearchHudResults {
+	query: string;
+	scope: { users: number; events: number; tickets: number; orders: number };
+	elapsedMs: number;
+	users: AdminUser[];
+	events: AdminEvent[];
+	tickets: AdminTicket[];
+	orders: AdminOrder[];
+	organizers: AdminOrganizer[];
+	cases: AdminCase[];
+}
 
 export interface Page<T> {
 	rows: T[];
@@ -260,7 +282,7 @@ export function inviteStaff(input: { name: string; email: string; role: AdminSta
 
 const auditState: AuditRecord[] = [];
 
-function logAudit(input: {
+export function logAudit(input: {
 	actor: string;
 	action: string;
 	kind: AuditRecord['entityKind'];
@@ -301,14 +323,6 @@ export interface AuditQuery {
 	perPage?: number;
 }
 
-interface Page<T> {
-	rows: T[];
-	total: number;
-	page: number;
-	perPage: number;
-	pages: number;
-}
-
 function paginate<T>(rows: T[], page = 1, perPage = 12): Page<T> {
 	const safePerPage = Math.min(100, Math.max(1, perPage));
 	const pages = Math.max(1, Math.ceil(rows.length / safePerPage));
@@ -345,9 +359,8 @@ export function getAuditEntry(id: string): AuditRecord | null {
 	return auditState.find((record) => record.id === id || record.ref === id) ?? null;
 }
 
-export function auditFor(_entityId: string, _limit = 6): AuditRecord[] {
-	// Live audit entries are process-local and not joined per-entity here.
-	return [];
+export function auditFor(entityId: string, limit = 6): AuditRecord[] {
+	return auditState.filter((record) => record.entityId === entityId).slice(0, limit);
 }
 
 export function verifyLedger(): { records: number; verified: number; brokenAt: string | null; checkedAt: string } {

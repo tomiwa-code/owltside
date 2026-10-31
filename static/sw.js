@@ -1,23 +1,24 @@
-/* Owltside service worker — cache-first hashed assets, network-first navigation. */
-const VERSION = 'owltside-v2';
-const CORE = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/logo.png'];
+// Owltside Service Worker — offline shell cache + native phone/OS push notifications.
+const CACHE = 'owltside-shell-v2';
+const PRECACHE = ['/', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
 	event.waitUntil(
 		caches
-			.open(VERSION)
-			.then((cache) => cache.addAll(CORE))
-			.then(() => self.skipWaiting())
+			.open(CACHE)
+			.then((cache) => cache.addAll(PRECACHE))
+			.catch(() => {})
 	);
+	self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
 	event.waitUntil(
 		caches
 			.keys()
-			.then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
-			.then(() => self.clients.claim())
+			.then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
 	);
+	self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
@@ -25,36 +26,101 @@ self.addEventListener('fetch', (event) => {
 	if (req.method !== 'GET') return;
 	const url = new URL(req.url);
 	if (url.origin !== self.location.origin) return;
-	if (url.pathname.startsWith('/auth/') || ['code', 'token_hash', 'error', 'error_description'].some((key) => url.searchParams.has(key))) return;
-
-	// Navigations: network first, fall back to cached shell for offline.
-	if (req.mode === 'navigate') {
-		event.respondWith(
-			fetch(req)
-				.then((res) => {
-					if (url.pathname === '/' && res.ok && !res.redirected && !/no-store|private/.test(res.headers.get('cache-control') ?? '')) {
-						const copy = res.clone();
-						caches.open(VERSION).then((c) => c.put('/', copy));
-					}
-					return res;
-				})
-				.catch(() => caches.match('/'))
-		);
+	// Never intercept API calls, auth callbacks, or Vite dev module requests.
+	if (
+		url.pathname.startsWith('/api/') ||
+		url.pathname.startsWith('/auth/') ||
+		url.pathname.startsWith('/@') ||
+		url.pathname.startsWith('/src/') ||
+		url.pathname.startsWith('/node_modules/')
+	) {
 		return;
 	}
+	event.respondWith(
+		fetch(req)
+			.then((res) => {
+				if (res.ok && res.type === 'basic') {
+					const copy = res.clone();
+					caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+				}
+				return res;
+			})
+			.catch(() => caches.match(req).then((hit) => hit || caches.match('/')))
+	);
+});
 
-	// Hashed immutable assets + static media: cache first.
-	if (url.pathname.startsWith('/_app/immutable/') || url.pathname.startsWith('/icons/') || url.pathname.endsWith('.png')) {
-		event.respondWith(
-			caches.match(req).then(
-				(hit) =>
-					hit ||
-					fetch(req).then((res) => {
-						const copy = res.clone();
-						caches.open(VERSION).then((c) => c.put(req, copy));
-						return res;
-					})
-			)
-		);
+function buildNotificationOptions(payload) {
+	const url = payload.url || payload.href || '/notifications';
+	return {
+		body: payload.body || 'Tap to view in Owltside.',
+		icon: payload.icon || '/icon.svg',
+		badge: payload.badge || '/icon.svg',
+		tag: payload.tag || `owltside-${Date.now()}`,
+		renotify: Boolean(payload.renotify ?? true),
+		silent: Boolean(payload.silent ?? false),
+		vibrate: payload.silent ? undefined : [120, 60, 120],
+		data: { url }
+	};
+}
+
+// Handle incoming Web Push events (W3C Push API / VAPID)
+self.addEventListener('push', (event) => {
+	let payload = {
+		title: 'Owltside',
+		body: 'You have a new update in Owltside.',
+		url: '/notifications'
+	};
+	if (event.data) {
+		try {
+			const parsed = event.data.json();
+			payload = { ...payload, ...parsed };
+		} catch {
+			payload.body = event.data.text() || payload.body;
+		}
 	}
+	event.waitUntil(
+		self.registration.showNotification(
+			payload.title || 'Owltside',
+			buildNotificationOptions(payload)
+		)
+	);
+});
+
+// Handle client-dispatched notification requests (required on Android/iOS PWA)
+self.addEventListener('message', (event) => {
+	const data = event.data;
+	if (!data || data.type !== 'OWLTSIDE_SHOW_NOTIFICATION') return;
+	const payload = data.payload || {};
+	event.waitUntil(
+		self.registration.showNotification(
+			payload.title || 'Owltside',
+			buildNotificationOptions(payload)
+		)
+	);
+});
+
+// Focus or open the target route when the user taps the phone notification
+self.addEventListener('notificationclick', (event) => {
+	event.notification.close();
+	const rawUrl = (event.notification.data && event.notification.data.url) || '/notifications';
+	const targetUrl = new URL(rawUrl, self.location.origin).href;
+
+	event.waitUntil(
+		self.clients
+			.matchAll({ type: 'window', includeUncontrolled: true })
+			.then((windowClients) => {
+				for (const client of windowClients) {
+					if (new URL(client.url).origin === self.location.origin && 'focus' in client) {
+						return client
+							.navigate(targetUrl)
+							.catch(() => client)
+							.then(() => client.focus());
+					}
+				}
+				if (self.clients.openWindow) {
+					return self.clients.openWindow(targetUrl);
+				}
+				return undefined;
+			})
+	);
 });
