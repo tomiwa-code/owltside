@@ -306,13 +306,30 @@ drop trigger if exists guard_event_moderation on public.events;
 create trigger guard_event_moderation before insert or update on public.events
 for each row execute function public.guard_event_moderation();
 
--- Ticket sales are only possible for approved (published) events.
+-- Ticket sales are only possible for approved (published) events that have not yet ended.
 create or replace function public.require_published_event_for_order() returns trigger
 language plpgsql security definer set search_path = public as $$
+declare
+  v_event record;
+  v_end_at timestamptz;
 begin
-  if not exists (select 1 from public.events e where e.id = new.event_id and e.status = 'published') then
+  select id, status, starts_at, ends_at into v_event
+  from public.events
+  where id = new.event_id;
+
+  if v_event.id is null or v_event.status <> 'published' then
     raise exception 'This event has not been approved for sale yet' using errcode = '42501';
   end if;
+
+  v_end_at := coalesce(
+    v_event.ends_at,
+    ((date_trunc('day', v_event.starts_at at time zone 'Africa/Lagos') + interval '1 day' - interval '1 millisecond') at time zone 'Africa/Lagos')
+  );
+
+  if v_end_at <= now() then
+    raise exception 'This event has ended — ticket sales are closed' using errcode = '42501';
+  end if;
+
   return new;
 end $$;
 drop trigger if exists require_published_event_for_order on public.orders;

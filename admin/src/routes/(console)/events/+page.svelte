@@ -124,7 +124,7 @@
 		<div class="panel p-4">
 			<p class="mono-label">Total events</p>
 			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-[#f1f1f6]">{num(data.counts.total)}</p>
-			<p class="mt-1.5 font-code text-[9px] uppercase tracking-[0.06em] text-[#6f6f7b]">100% pool</p>
+			<p class="mt-1.5 font-code text-[9px] uppercase tracking-[0.06em] text-[#6f6f7b]">{num(data.counts.completed ?? 0)} closed · 100% pool</p>
 		</div>
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Published</p><span class="status-dot"></span></div>
@@ -153,8 +153,9 @@
 			<SearchField value={data.filters.q} placeholder="Search by event title, ID, venue…" class="xl:w-[290px]" />
 			<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
 				<select name="status" class="select !h-[34px] !text-[11.5px]" onchange={submitFilters} aria-label="Filter by status">
-					<option value="all" selected={data.filters.status === 'all'}>Status: All active</option>
+					<option value="all" selected={data.filters.status === 'all'}>Status: All</option>
 					<option value="published" selected={data.filters.status === 'published'}>Published</option>
+					<option value="completed" selected={data.filters.status === 'completed'}>Closed</option>
 					<option value="pending" selected={data.filters.status === 'pending'}>Pending review</option>
 					<option value="draft" selected={data.filters.status === 'draft'}>Drafts</option>
 					<option value="suspended" selected={data.filters.status === 'suspended'}>Suspended</option>
@@ -243,14 +244,14 @@
 									<td>
 										<p class="primary-cell whitespace-nowrap text-[11px]">{date(event.startsAt)} <span class="text-[#6f6f7b]">{time(event.startsAt)}</span></p>
 										<p class="mt-0.5 max-w-[186px] truncate font-code text-[8.5px] uppercase tracking-[0.06em] text-[#6f6f7b]">
-											{event.startsAt < new Date().toISOString() ? 'Completed' : countdown(event.startsAt)} · {event.city.split(',')[0]}
+											{event.status === 'completed' ? 'Closed' : event.startsAt <= new Date().toISOString() ? 'Live now' : countdown(event.startsAt)} · {event.city.split(',')[0]}
 										</p>
 									</td>
 									<td class="num hidden 2xl:table-cell">{event.sold.toLocaleString('en-US')}<span class="text-[#54545f]">/{event.capacity.toLocaleString('en-US')}</span></td>
 									<td><StatusChip label={meta.label} tone={meta.tone} /></td>
 									<td>
 										<div class="flex items-center justify-end gap-1">
-											{#if event.status === 'published'}
+											{#if event.status === 'published' || event.status === 'completed'}
 												<button
 													type="button"
 													class="row-action text-amber-300 hover:text-amber-200"
@@ -375,7 +376,7 @@
 						<div class="mt-4 space-y-1.5 border-t border-[#26262e] pt-3">
 							<a href={`/events/${selected.id}`} class="btn btn-primary w-full">Open event record</a>
 							<div class="grid grid-cols-2 gap-1.5">
-								{#if selected.status === 'published'}
+								{#if selected.status === 'published' || selected.status === 'completed'}
 									<button
 										type="button"
 										class="btn btn-sm btn-danger-soft w-full"

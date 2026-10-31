@@ -4,6 +4,7 @@
 	BadgeCheck,
 	Bell,
 	CalendarDays,
+	Clock,
 	Crown,
 	Flag,
 	Globe,
@@ -24,13 +25,14 @@
 	import ConnectionsSheet from '$components/ConnectionsSheet.svelte';
 	import ReportSheet from '$components/ReportSheet.svelte';
 	import { toast } from '$lib/state/toast.svelte';
+	import { hasEventEnded } from '$lib/utils/event-status';
 import type { EventItem } from '$lib/types';
 
 	let { data } = $props();
 	const profile = $derived(data.profile);
 	const isDemoMode = $derived(Boolean((data as { demoMode?: boolean }).demoMode ?? page.data.demoMode));
 
-	type ProfileCategory = 'all' | 'organized' | 'roles';
+	type ProfileCategory = 'all' | 'organized' | 'past' | 'roles';
 	let category = $state('all' as ProfileCategory);
 	let followersOpen = $state(false);
 	let followingOpen = $state(false);
@@ -38,7 +40,11 @@ import type { EventItem } from '$lib/types';
 	const isOwnProfile = $derived(page.data.session?.userId === profile.id);
 	let reportOpen = $state(false);
 
+	const isPastEvent = (event: EventItem) => hasEventEnded(event) || event.status === 'closed';
 	const organizedEvents = $derived(data.events.filter((event) => event.organizer?.id === profile.id));
+	const upcomingOrganized = $derived(organizedEvents.filter((event) => !isPastEvent(event)));
+	const pastOrganized = $derived(organizedEvents.filter(isPastEvent));
+	const pastEvents = $derived(data.events.filter(isPastEvent));
 	const roleEvents = $derived(
 		data.events.filter((event) => {
 			if (event.organizer?.id === profile.id) return false;
@@ -52,11 +58,23 @@ import type { EventItem } from '$lib/types';
 	);
 
 	const filtered = $derived(
-		category === 'organized' ? organizedEvents : category === 'roles' ? roleEvents : data.events
+		category === 'organized'
+			? organizedEvents
+			: category === 'past'
+				? pastEvents
+				: category === 'roles'
+					? roleEvents
+					: data.events
 	);
 
 	const heading = $derived(
-		category === 'organized' ? 'Organized Events' : category === 'roles' ? 'Event Roles' : 'Events & sessions'
+		category === 'organized'
+			? 'Organized Events'
+			: category === 'past'
+				? 'Past Events'
+				: category === 'roles'
+					? 'Event Roles'
+					: 'Events & sessions'
 	);
 
 	function speakerFor(event: EventItem) {
@@ -175,16 +193,30 @@ import type { EventItem } from '$lib/types';
 			<div class="flex gap-2 flex-wrap">
 				<Chip label={`All · ${data.events.length}`} icon={CalendarDays} active={category === 'all'} onclick={() => (category = 'all')} />
 				<Chip label={`Organized · ${organizedEvents.length}`} icon={Crown} active={category === 'organized'} onclick={() => (category = 'organized')} />
+				<Chip label={`Past · ${pastEvents.length}`} icon={Clock} active={category === 'past'} onclick={() => (category = 'past')} />
 				<Chip label={`Event Roles · ${roleEvents.length}`} icon={Mic} active={category === 'roles'} onclick={() => (category = 'roles')} />
 			</div>
 			{#if category === 'all'}
-				{#if organizedEvents.length}
+				{#if upcomingOrganized.length}
 					<div class="flex flex-col gap-3">
 						<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Organized</span>
 						<div class="grid md:grid-cols-2 gap-3">
-							{#each organizedEvents as event (event.id)}
+							{#each upcomingOrganized as event (event.id)}
 								{@const profileSpeaker = speakerFor(event)}
 								<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Organizer'} />
+							{/each}
+						</div>
+					</div>
+				{/if}
+				{#if pastOrganized.length}
+					<div class="flex flex-col gap-3">
+						<span class="flex items-center gap-1.5 text-label-badge text-on-surface-variant uppercase tracking-wider">
+							<Clock class="w-3.5 h-3.5" /> Past <span class="text-outline-variant normal-case tracking-normal">· {pastOrganized.length} ended</span>
+						</span>
+						<div class="grid md:grid-cols-2 gap-3">
+							{#each pastOrganized as event (event.id)}
+								{@const profileSpeaker = speakerFor(event)}
+								<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Organizer · Past'} />
 							{/each}
 						</div>
 					</div>
@@ -209,14 +241,42 @@ import type { EventItem } from '$lib/types';
 			{:else if category === 'organized'}
 				<div class="flex flex-col gap-3">
 					{#if organizedEvents.length}
+						{#if upcomingOrganized.length}
+							<div class="grid md:grid-cols-2 gap-3">
+								{#each upcomingOrganized as event (event.id)}
+									{@const profileSpeaker = speakerFor(event)}
+									<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Organizer'} />
+								{/each}
+							</div>
+						{/if}
+						{#if pastOrganized.length}
+							<div class="flex flex-col gap-3 pt-2">
+								<span class="flex items-center gap-1.5 text-label-badge text-on-surface-variant uppercase tracking-wider">
+									<Clock class="w-3.5 h-3.5" /> Past <span class="text-outline-variant normal-case tracking-normal">· {pastOrganized.length} ended</span>
+								</span>
+								<div class="grid md:grid-cols-2 gap-3">
+									{#each pastOrganized as event (event.id)}
+										{@const profileSpeaker = speakerFor(event)}
+										<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Organizer · Past'} />
+									{/each}
+								</div>
+							</div>
+						{/if}
+					{:else}
+						<p class="text-body-sm text-on-surface-variant bg-surface-container rounded-xl p-4 border border-surface-glass-border">No organized events yet.</p>
+					{/if}
+				</div>
+			{:else if category === 'past'}
+				<div class="flex flex-col gap-3">
+					{#if pastEvents.length}
 						<div class="grid md:grid-cols-2 gap-3">
-							{#each organizedEvents as event (event.id)}
+							{#each pastEvents as event (event.id)}
 								{@const profileSpeaker = speakerFor(event)}
-								<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Organizer'} />
+								<EventRow {event} roleLabel={event.organizer?.id === profile.id ? 'Organizer · Past' : profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Speaker'} />
 							{/each}
 						</div>
 					{:else}
-						<p class="text-body-sm text-on-surface-variant bg-surface-container rounded-xl p-4 border border-surface-glass-border">No organized events yet.</p>
+						<p class="text-body-sm text-on-surface-variant bg-surface-container rounded-xl p-4 border border-surface-glass-border">No past events yet.</p>
 					{/if}
 				</div>
 			{:else}
@@ -315,17 +375,29 @@ import type { EventItem } from '$lib/types';
 					<div class="flex gap-2 overflow-x-auto pb-1 -mx-gutter px-gutter scrollbar-none">
 						<Chip label={`All · ${data.events.length}`} icon={CalendarDays} active={category === 'all'} onclick={() => (category = 'all')} />
 						<Chip label={`Organized · ${organizedEvents.length}`} icon={Crown} active={category === 'organized'} onclick={() => (category = 'organized')} />
+						<Chip label={`Past · ${pastEvents.length}`} icon={Clock} active={category === 'past'} onclick={() => (category = 'past')} />
 						<Chip label={`Event Roles · ${roleEvents.length}`} icon={Mic} active={category === 'roles'} onclick={() => (category = 'roles')} />
 					</div>
 				</div>
 
 				{#if category === 'all'}
-					{#if organizedEvents.length}
+					{#if upcomingOrganized.length}
 						<div class="flex flex-col gap-space-xs pb-2">
 							<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Organized</span>
-							{#each organizedEvents as event (event.id)}
+							{#each upcomingOrganized as event (event.id)}
 								{@const profileSpeaker = speakerFor(event)}
 								<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Organizer'} />
+							{/each}
+						</div>
+					{/if}
+					{#if pastOrganized.length}
+						<div class="flex flex-col gap-space-xs pb-2">
+							<span class="flex items-center gap-1.5 text-label-badge text-on-surface-variant uppercase tracking-wider">
+								<Clock class="w-3.5 h-3.5" /> Past · {pastOrganized.length}
+							</span>
+							{#each pastOrganized as event (event.id)}
+								{@const profileSpeaker = speakerFor(event)}
+								<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Organizer · Past'} />
 							{/each}
 						</div>
 					{/if}
@@ -347,12 +419,32 @@ import type { EventItem } from '$lib/types';
 				{:else if category === 'organized'}
 					<div class="flex flex-col gap-space-xs pb-6">
 						{#if organizedEvents.length}
-							{#each organizedEvents as event (event.id)}
+							{#each upcomingOrganized as event (event.id)}
 								{@const profileSpeaker = speakerFor(event)}
 								<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Organizer'} />
 							{/each}
+							{#if pastOrganized.length}
+								<span class="flex items-center gap-1.5 pt-2 text-label-badge text-on-surface-variant uppercase tracking-wider">
+									<Clock class="w-3.5 h-3.5" /> Past · {pastOrganized.length}
+								</span>
+								{#each pastOrganized as event (event.id)}
+									{@const profileSpeaker = speakerFor(event)}
+									<EventRow {event} roleLabel={profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Organizer · Past'} />
+								{/each}
+							{/if}
 						{:else}
 							<p class="text-body-sm text-on-surface-variant bg-surface-container rounded-xl p-4 border border-surface-glass-border">No organized events yet.</p>
+						{/if}
+					</div>
+				{:else if category === 'past'}
+					<div class="flex flex-col gap-space-xs pb-6">
+						{#if pastEvents.length}
+							{#each pastEvents as event (event.id)}
+								{@const profileSpeaker = speakerFor(event)}
+								<EventRow {event} roleLabel={event.organizer?.id === profile.id ? 'Organizer · Past' : profileSpeaker?.role ? `Event role · ${profileSpeaker.role}` : 'Speaker'} />
+							{/each}
+						{:else}
+							<p class="text-body-sm text-on-surface-variant bg-surface-container rounded-xl p-4 border border-surface-glass-border">No past events yet.</p>
 						{/if}
 					</div>
 				{:else}

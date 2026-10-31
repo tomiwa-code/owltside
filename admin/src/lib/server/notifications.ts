@@ -1,6 +1,7 @@
 import { listApprovals } from './approvals';
 import { listReports } from './reports';
 import { createAdminClient } from './supabase-data';
+import { hasAdminEventEnded } from '$admin/utils/status';
 import type { AdminNotificationItem, AdminNotificationKind } from '$admin/types';
 
 export interface AdminNotificationsBundle {
@@ -31,7 +32,7 @@ export async function listAdminNotifications(limit = 100): Promise<AdminNotifica
 				const [eventsQuery, ordersQuery] = await Promise.all([
 					client
 						.from('events')
-						.select('id,title,venue,city,status,submitted_at,created_at,organizer:profiles(name,handle)')
+						.select('id,title,venue,city,status,starts_at,ends_at,submitted_at,created_at,organizer:profiles(name,handle)')
 						.in('status', ['pending', 'suspended', 'rejected', 'published'])
 						.order('created_at', { ascending: false })
 						.limit(60),
@@ -96,9 +97,13 @@ export async function listAdminNotifications(limit = 100): Promise<AdminNotifica
 	}
 
 	for (const ev of eventsAndOrdersRes.events) {
-		const status = String(ev.status ?? 'pending');
-		// Show all pending/suspended/rejected events, plus recently submitted published events
-		if (status === 'published' && !ev.submitted_at) continue;
+		const rawStatus = String(ev.status ?? 'pending');
+		// Show all pending/suspended/rejected events, plus recently submitted published/closed events
+		if (rawStatus === 'published' && !ev.submitted_at) continue;
+		const status =
+			rawStatus === 'published' && hasAdminEventEnded(ev.starts_at, ev.ends_at)
+				? 'closed'
+				: rawStatus;
 		const org = (ev.organizer ?? {}) as Record<string, any>;
 		const actor = org?.name
 			? `${org.name}${org.handle ? ` (@${org.handle})` : ''}`

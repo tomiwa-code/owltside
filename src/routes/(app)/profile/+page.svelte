@@ -6,6 +6,7 @@
 		Bell,
 		BookmarkCheck,
 		CalendarDays,
+		Clock,
 		Crown,
 		Mic,
 		ChevronLeft,
@@ -36,6 +37,7 @@
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { fmtDate, fmtTime } from '$lib/utils/dates';
+	import { hasEventEnded } from '$lib/utils/event-status';
 	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 
 	let { data } = $props();
@@ -63,12 +65,24 @@
 
 	const savedEvents = $derived((data.events ?? []).filter((event) => bookmarks.value.includes(event.id)));
 	let profileTab = $state<'events' | 'calendar' | 'saved'>('events');
-	let eventCategory = $state<'all' | 'organized' | 'roles'>('all');
-	const profileId = $derived(session?.userId ?? data.profile?.id ?? '');
+	let eventCategory = $state<'all' | 'organized' | 'past' | 'roles'>('all');
+	const profileId = $derived(session?.userId ?? data.profile?.id ?? (isDemoMode ? 'u-ada' : ''));
+	const isPastEvent = (event: (typeof data.events)[number]) => hasEventEnded(event) || event.status === 'closed';
 	const organizedEvents = $derived((data.events ?? []).filter((event) => event.organizer?.id === profileId));
 	const roleEvents = $derived((data.events ?? []).filter((event) => event.organizer?.id !== profileId && event.speakers.some((speaker) => speaker.id === profileId && !speaker.displayOnly && (!speaker.invited || speaker.inviteStatus === 'accepted'))));
 	const profileEvents = $derived([...new Map([...organizedEvents, ...roleEvents].map((event) => [event.id, event])).values()]);
-	const visibleProfileEvents = $derived(eventCategory === 'organized' ? organizedEvents : eventCategory === 'roles' ? roleEvents : profileEvents);
+	const pastProfileEvents = $derived(profileEvents.filter(isPastEvent));
+	const visibleProfileEvents = $derived(
+		eventCategory === 'organized'
+			? organizedEvents
+			: eventCategory === 'past'
+				? pastProfileEvents
+				: eventCategory === 'roles'
+					? roleEvents
+					: profileEvents
+	);
+	const upcomingVisibleEvents = $derived(visibleProfileEvents.filter((event) => !isPastEvent(event)));
+	const pastVisibleEvents = $derived(visibleProfileEvents.filter(isPastEvent));
 
 	const upcoming = $derived(
 		(data.tickets ?? []).filter((t) => t.status === 'valid' && new Date(t.eventStartsAt) > new Date())
@@ -353,9 +367,41 @@
 			<div class="flex gap-2 flex-wrap">
 				<button type="button" aria-pressed={eventCategory === 'all'} onclick={() => (eventCategory = 'all')} class="h-9 px-4 rounded-full border text-body-sm {eventCategory === 'all' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}">All · {profileEvents.length}</button>
 				<button type="button" aria-pressed={eventCategory === 'organized'} onclick={() => (eventCategory = 'organized')} class="h-9 px-4 rounded-full border text-body-sm {eventCategory === 'organized' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}"><Crown class="inline w-4 h-4 mr-1" />Organized · {organizedEvents.length}</button>
+				<button type="button" aria-pressed={eventCategory === 'past'} onclick={() => (eventCategory = 'past')} class="h-9 px-4 rounded-full border text-body-sm {eventCategory === 'past' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}"><Clock class="inline w-4 h-4 mr-1" />Past · {pastProfileEvents.length}</button>
 				<button type="button" aria-pressed={eventCategory === 'roles'} onclick={() => (eventCategory = 'roles')} class="h-9 px-4 rounded-full border text-body-sm {eventCategory === 'roles' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}"><Mic class="inline w-4 h-4 mr-1" />Event Roles · {roleEvents.length}</button>
 			</div>
-			<div class="grid md:grid-cols-2 gap-3">{#each visibleProfileEvents as event (event.id)}<EventRow {event} roleLabel={event.organizer?.id === profileId ? 'Organizer' : `Event role · ${event.speakers.find((speaker) => speaker.id === profileId)?.role ?? 'Speaker'}`} />{:else}<p class="col-span-full rounded-xl border border-surface-glass-border bg-surface-container p-5 text-body-sm text-on-surface-variant">No {eventCategory === 'roles' ? 'accepted event roles' : eventCategory === 'organized' ? 'organized events' : 'events'} yet.</p>{/each}</div>
+			{#if visibleProfileEvents.length === 0}
+				<p class="rounded-xl border border-surface-glass-border bg-surface-container p-5 text-body-sm text-on-surface-variant">No {eventCategory === 'roles' ? 'accepted event roles' : eventCategory === 'past' ? 'past events' : eventCategory === 'organized' ? 'organized events' : 'events'} yet.</p>
+			{:else if eventCategory === 'past'}
+				<div class="flex flex-col gap-3">
+					<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Past · {pastProfileEvents.length}</span>
+					<div class="grid md:grid-cols-2 gap-3">
+						{#each pastProfileEvents as event (event.id)}
+							<EventRow {event} roleLabel={event.organizer?.id === profileId ? 'Organizer · Past' : `Event role · ${event.speakers.find((speaker) => speaker.id === profileId)?.role ?? 'Speaker'}`} />
+						{/each}
+					</div>
+				</div>
+			{:else}
+				{#if upcomingVisibleEvents.length}
+					<div class="grid md:grid-cols-2 gap-3">
+						{#each upcomingVisibleEvents as event (event.id)}
+							<EventRow {event} roleLabel={event.organizer?.id === profileId ? 'Organizer' : `Event role · ${event.speakers.find((speaker) => speaker.id === profileId)?.role ?? 'Speaker'}`} />
+						{/each}
+					</div>
+				{/if}
+				{#if pastVisibleEvents.length}
+					<div class="flex flex-col gap-3 pt-2">
+						<span class="flex items-center gap-1.5 text-label-badge text-on-surface-variant uppercase tracking-wider">
+							<Clock class="w-3.5 h-3.5" /> Past <span class="text-outline-variant normal-case tracking-normal">· {pastVisibleEvents.length} ended</span>
+						</span>
+						<div class="grid md:grid-cols-2 gap-3">
+							{#each pastVisibleEvents as event (event.id)}
+								<EventRow {event} roleLabel={event.organizer?.id === profileId ? 'Organizer · Past' : `Event role · ${event.speakers.find((speaker) => speaker.id === profileId)?.role ?? 'Speaker'}`} />
+							{/each}
+						</div>
+					</div>
+				{/if}
+			{/if}
 		</div>
 	{:else}
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 grid lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px] gap-6 items-start">
@@ -653,15 +699,37 @@
 						<div class="flex gap-2 overflow-x-auto pb-1">
 							<button type="button" aria-pressed={eventCategory === 'all'} onclick={() => (eventCategory = 'all')} class="shrink-0 px-3 h-9 rounded-full border text-label-badge {eventCategory === 'all' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}">All · {profileEvents.length}</button>
 							<button type="button" aria-pressed={eventCategory === 'organized'} onclick={() => (eventCategory = 'organized')} class="shrink-0 px-3 h-9 rounded-full border text-label-badge {eventCategory === 'organized' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}">Organized · {organizedEvents.length}</button>
+							<button type="button" aria-pressed={eventCategory === 'past'} onclick={() => (eventCategory = 'past')} class="shrink-0 px-3 h-9 rounded-full border text-label-badge {eventCategory === 'past' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}">Past · {pastProfileEvents.length}</button>
 							<button type="button" aria-pressed={eventCategory === 'roles'} onclick={() => (eventCategory = 'roles')} class="shrink-0 px-3 h-9 rounded-full border text-label-badge {eventCategory === 'roles' ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container border-surface-glass-border text-on-surface-variant'}">Event Roles · {roleEvents.length}</button>
 						</div>
-						<div class="flex flex-col gap-2">
-							{#each visibleProfileEvents as event (event.id)}
-								<EventRow {event} roleLabel={event.organizer?.id === profileId ? 'Organizer' : `Event role · ${event.speakers.find((speaker) => speaker.id === profileId)?.role ?? 'Speaker'}`} />
-							{:else}
-								<p class="rounded-xl border border-surface-glass-border bg-surface-container p-4 text-body-sm text-on-surface-variant">No {eventCategory === 'roles' ? 'accepted event roles' : eventCategory === 'organized' ? 'organized events' : 'events'} yet.</p>
-							{/each}
-						</div>
+						{#if visibleProfileEvents.length === 0}
+							<p class="rounded-xl border border-surface-glass-border bg-surface-container p-4 text-body-sm text-on-surface-variant">No {eventCategory === 'roles' ? 'accepted event roles' : eventCategory === 'past' ? 'past events' : eventCategory === 'organized' ? 'organized events' : 'events'} yet.</p>
+						{:else if eventCategory === 'past'}
+							<div class="flex flex-col gap-2">
+								<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Past · {pastProfileEvents.length}</span>
+								{#each pastProfileEvents as event (event.id)}
+									<EventRow {event} roleLabel={event.organizer?.id === profileId ? 'Organizer · Past' : `Event role · ${event.speakers.find((speaker) => speaker.id === profileId)?.role ?? 'Speaker'}`} />
+								{/each}
+							</div>
+						{:else}
+							{#if upcomingVisibleEvents.length}
+								<div class="flex flex-col gap-2">
+									{#each upcomingVisibleEvents as event (event.id)}
+										<EventRow {event} roleLabel={event.organizer?.id === profileId ? 'Organizer' : `Event role · ${event.speakers.find((speaker) => speaker.id === profileId)?.role ?? 'Speaker'}`} />
+									{/each}
+								</div>
+							{/if}
+							{#if pastVisibleEvents.length}
+								<div class="flex flex-col gap-2 pt-2">
+									<span class="flex items-center gap-1.5 text-label-badge text-on-surface-variant uppercase tracking-wider">
+										<Clock class="w-3.5 h-3.5" /> Past · {pastVisibleEvents.length}
+									</span>
+									{#each pastVisibleEvents as event (event.id)}
+										<EventRow {event} roleLabel={event.organizer?.id === profileId ? 'Organizer · Past' : `Event role · ${event.speakers.find((speaker) => speaker.id === profileId)?.role ?? 'Speaker'}`} />
+									{/each}
+								</div>
+							{/if}
+						{/if}
 					</div>
 				{:else}
 					<!-- calendar popover -->

@@ -98,7 +98,7 @@
 			<a class="btn btn-sm" href={`${data.publicAppUrl}/events/${event.slug}`} target="_blank" rel="noreferrer">
 				<ExternalLink size={12} /> View public page
 			</a>
-			{#if event.status === 'published'}
+			{#if event.status === 'published' || event.status === 'completed'}
 				<button
 					type="button"
 					class="btn btn-sm btn-danger-soft"
@@ -155,7 +155,7 @@
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Event status</p><StatusChip label={meta.label} tone={meta.tone} /></div>
 			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-[#f1f1f6]">{num(event.tiers.length)} <span class="font-code text-[10px] font-normal text-[#6f6f7b]">tiers</span></p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{event.startsAt < new Date().toISOString() ? 'Event window closed' : `Starts ${countdown(event.startsAt)}`}</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{event.status === 'completed' ? 'Event window closed' : event.startsAt <= new Date().toISOString() ? `Live now · ends ${countdown(event.endsAt)}` : `Starts ${countdown(event.startsAt)}`}</p>
 		</div>
 	</div>
 

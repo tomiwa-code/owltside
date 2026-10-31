@@ -18,6 +18,44 @@ export function chipClass(tone: Tone): string {
 	return CHIP[tone];
 }
 
+const WAT_OFFSET_MS = 60 * 60 * 1000;
+const BARE_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Compute the exact epoch millisecond at which an event closes in WAT (UTC+1).
+ * - Full `endsAt` timestamp: closes at that exact instant.
+ * - Bare date or missing `endsAt`: closes at 23:59:59.999 WAT on its end/start date.
+ */
+export function adminEventEndTimeMs(
+	startsAt: string | null | undefined,
+	endsAt?: string | null
+): number {
+	const rawEnd = typeof endsAt === 'string' ? endsAt.trim() : '';
+	if (rawEnd) {
+		if (BARE_DATE_RE.test(rawEnd)) return Date.parse(`${rawEnd}T23:59:59.999+01:00`);
+		const parsed = Date.parse(rawEnd);
+		if (!Number.isNaN(parsed)) return parsed;
+	}
+	const rawStart = typeof startsAt === 'string' ? startsAt.trim() : '';
+	if (rawStart) {
+		if (BARE_DATE_RE.test(rawStart)) return Date.parse(`${rawStart}T23:59:59.999+01:00`);
+		const startMs = Date.parse(rawStart);
+		if (!Number.isNaN(startMs)) {
+			const watDate = new Date(startMs + WAT_OFFSET_MS).toISOString().slice(0, 10);
+			return Date.parse(`${watDate}T23:59:59.999+01:00`);
+		}
+	}
+	return Number.POSITIVE_INFINITY;
+}
+
+export function hasAdminEventEnded(
+	startsAt: string | null | undefined,
+	endsAt?: string | null,
+	now = Date.now()
+): boolean {
+	return now >= adminEventEndTimeMs(startsAt, endsAt);
+}
+
 export function eventStatus(status: string): StatusMeta {
 	switch (status) {
 		case 'published':
@@ -31,7 +69,8 @@ export function eventStatus(status: string): StatusMeta {
 		case 'rejected':
 			return { label: 'Rejected', tone: 'danger' };
 		case 'completed':
-			return { label: 'Completed', tone: 'info' };
+		case 'closed':
+			return { label: 'Closed', tone: 'info' };
 		default:
 			return { label: status, tone: 'neutral' };
 	}

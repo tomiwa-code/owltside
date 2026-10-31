@@ -38,7 +38,12 @@ import {
 	promoDiscount
 } from '$lib/utils/promo';
 import { globalPromoForCode } from './promos';
-import { isPubliclyVisible, normalizedEventStatus } from '$lib/utils/event-status';
+import {
+	hasEventEnded,
+	isPubliclyAccessible,
+	isPubliclyVisible,
+	normalizedEventStatus
+} from '$lib/utils/event-status';
 
 const demoMeId = 'u-ada';
 const demoFollows = new Map<string, Set<string>>();
@@ -387,9 +392,32 @@ export function minPrice(e: EventItem): number {
 	return Math.min(...e.tiers.map((t) => t.price));
 }
 
+function withEffectiveStatus(event: EventItem): EventItem {
+	const status = normalizedEventStatus(event);
+	return {
+		...event,
+		status,
+		live: status === 'closed' ? false : event.live
+	};
+}
+
+/** Upcoming events ascending by start time, followed by past events most-recent first. */
+function sortProfileEvents(list: EventItem[]): EventItem[] {
+	const now = Date.now();
+	const upcoming: EventItem[] = [];
+	const past: EventItem[] = [];
+	for (const event of list) {
+		if (hasEventEnded(event, now)) past.push(event);
+		else upcoming.push(event);
+	}
+	upcoming.sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt));
+	past.sort((a, b) => +new Date(b.startsAt) - +new Date(a.startsAt));
+	return [...upcoming, ...past];
+}
+
 /** Public/demo catalogue reads must never leak an event's promo definitions. */
 function publicEvent(event: EventItem): EventItem {
-	const { promos: _promos, ...publicFields } = event;
+	const { promos: _promos, ...publicFields } = withEffectiveStatus(event);
 	return publicFields;
 }
 
@@ -454,7 +482,7 @@ export const demoSource: DataSource = {
 		);
 	},
 	async getEvent(slug) {
-		const event = demo.events.find((e) => e.slug === slug && isPubliclyVisible(e));
+		const event = demo.events.find((e) => e.slug === slug && isPubliclyAccessible(e));
 		return event ? publicEvent(event) : undefined;
 	},
 	async getTickets(userId = 'demo') {
@@ -532,15 +560,17 @@ export const demoSource: DataSource = {
 	},
 
 	async getProfileEvents(profileId) {
-		return demo.events
-			.filter(
-				(event) => isPubliclyVisible(event) && (event.organizer?.id === profileId || event.speakers?.some((speaker) =>
-					speaker?.id === profileId &&
-					!speaker.displayOnly &&
-					(speaker.invited ? speaker.inviteStatus === 'accepted' : speaker.inviteStatus !== 'declined')
-				))
-			)
-			.map(publicEvent);
+		return sortProfileEvents(
+			demo.events
+				.filter(
+					(event) => isPubliclyAccessible(event) && (event.organizer?.id === profileId || event.speakers?.some((speaker) =>
+						speaker?.id === profileId &&
+						!speaker.displayOnly &&
+						(speaker.invited ? speaker.inviteStatus === 'accepted' : speaker.inviteStatus !== 'declined')
+					))
+				)
+				.map(publicEvent)
+		);
 	},
 	async respondToSpeakerInvite(inviteeId, eventSlug, accept) {
 		const uid = inviteeId === 'demo' ? demoMeId : inviteeId;
@@ -666,6 +696,9 @@ export const demoSource: DataSource = {
 	async createOrder(userId, eventSlug, items, promoCode) {
 		const event = demo.events.find((e) => e.slug === eventSlug);
 		if (!event) throw new Error('Event not found');
+		if (hasEventEnded(event) || event.status === 'closed') {
+			throw new Error('This event has ended — ticket sales are closed');
+		}
 		const promo = demoPromoForOrder(event, promoCode);
 		const holder = 'Ada Obi';
 		const created: Ticket[] = [];
@@ -787,14 +820,15 @@ export const demoSource: DataSource = {
 	async getOrganizer(userId) {
 		const uid = userId === 'demo' ? demoMeId : userId;
 		return computeOrganizer(
-			demo.events.filter((e) => e.organizer?.id === uid),
+			demo.events.filter((e) => e.organizer?.id === uid).map(withEffectiveStatus),
 			allDemoTickets().filter((t) => t.eventId === 'e-rooftop' || demo.events.some((e) => e.id === t.eventId && e.organizer?.id === uid)),
 			demo.orders,
 			demo.checkins
 		);
 	},
 	async getOrganizerEvent(eventId) {
-		return demo.events.find((e) => e.id === eventId);
+		const event = demo.events.find((e) => e.id === eventId);
+		return event ? withEffectiveStatus(event) : undefined;
 	},
 	async getEventTickets(eventId) {
 		return allDemoTickets().filter((t) => t.eventId === eventId);
@@ -991,7 +1025,7 @@ export const demoSource: DataSource = {
 		}
 		if (updates.gates !== undefined) event.gates = updates.gates;
 		if (updates.live !== undefined) event.live = updates.live;
-		return event;
+		return withEffectiveStatus(event);
 	},
 	async deleteEvent(userId, eventId) {
 		const uid = userId === 'demo' ? demoMeId : userId;
@@ -1611,10 +1645,10 @@ const toEvent = (r: Row, organizer: Profile): EventItem => ({
 	trendingRank: r.trending_rank,
 	viewsToday: r.views_today ?? 0,
 	attendees: r.attendees ?? 0,
-	status: normalizedEventStatus({ status: r.status }),
+	status: normalizedEventStatus({ status: r.status, startsAt: r.starts_at, endsAt: r.ends_at }),
 	submittedAt: r.submitted_at ?? undefined,
 	moderationNote: r.moderation_note ?? undefined,
-	live: !!r.live
+	live: !!r.live && !hasEventEnded({ startsAt: r.starts_at, endsAt: r.ends_at })
 });
 
 const toTicket = (r: Row): Ticket => ({
@@ -1652,7 +1686,12 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				({ data, error } = await query());
 			}
 			if (error) throw error;
-			return sortEvents((data ?? []).map((r) => toEvent(r, toProfile(r.organizer))).filter((event) => matches(event, filters)), filters.sort);
+			return sortEvents(
+				(data ?? [])
+					.map((r) => toEvent(r, toProfile(r.organizer)))
+					.filter((event) => isPubliclyVisible(event) && matches(event, filters)),
+				filters.sort
+			);
 		},
 		async getEvent(slug) {
 			const load = (approvedOnly: boolean) => {
@@ -1794,13 +1833,15 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			let { data, error } = await load(true);
 			if (error && isMissingEventStatusError(error)) ({ data, error } = await load(false));
 			if (error) throw error;
-			return (data ?? [])
-				.map((row) => toEvent(row, toProfile(row.organizer)))
-				.filter((event) => event.organizer.id === profileId || event.speakers.some((speaker) =>
-					speaker.id === profileId &&
-					!speaker.displayOnly &&
-					(speaker.invited ? speaker.inviteStatus === 'accepted' : speaker.inviteStatus !== 'declined')
-				));
+			return sortProfileEvents(
+				(data ?? [])
+					.map((row) => toEvent(row, toProfile(row.organizer)))
+					.filter((event) => isPubliclyAccessible(event) && (event.organizer.id === profileId || event.speakers.some((speaker) =>
+						speaker.id === profileId &&
+						!speaker.displayOnly &&
+						(speaker.invited ? speaker.inviteStatus === 'accepted' : speaker.inviteStatus !== 'declined')
+					)))
+			);
 		},
 		async respondToSpeakerInvite(_inviteeId, eventSlug, accept) {
 			const { data, error } = await db.rpc('respond_to_event_speaker_invite', {
@@ -1912,6 +1953,19 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 		},
 		async createOrder(userId, eventSlug, items, promoCodeInput) {
 			if (!isUuid(userId)) throw new Error('Sign in required to purchase tickets');
+			if (typeof db.from === 'function') {
+				const { data: eventCheck } = await db
+					.from('events')
+					.select('starts_at,ends_at,status')
+					.eq('slug', eventSlug)
+					.maybeSingle();
+				if (
+					eventCheck &&
+					hasEventEnded({ startsAt: eventCheck.starts_at, endsAt: eventCheck.ends_at })
+				) {
+					throw new Error('This event has ended — ticket sales are closed');
+				}
+			}
 			const promoCode = normalizePromoCode(promoCodeInput);
 			let { data, error } = await db.rpc('create_order', {
 				p_owner: userId,

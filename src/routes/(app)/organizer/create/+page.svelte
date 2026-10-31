@@ -52,6 +52,7 @@
 	import ImageCropSheet from '$components/ImageCropSheet.svelte';
 	import { formatMoney } from '$lib/utils/money';
 	import { fmtDate } from '$lib/utils/dates';
+	import { watDateInputValue, watTimeInputValue } from '$lib/utils/event-status';
 	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 	import { browser } from '$app/environment';
 	import { toast } from '$lib/state/toast.svelte';
@@ -71,6 +72,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 	let dateEnd = $state('');
+	let timeEnd = $state('23:59');
 	const demoCover = { from: '#4c1d95', to: '#0b1326', icon: 'audio-waveform' };
 	let coverUrl = $state<string | null>(null);
 	let coverName = $state<string | null>(null);
@@ -175,12 +177,19 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 			? customCategory.trim()
 			: (categoryOptions.find((category) => category.id === selectedCategory)?.label ?? '')
 	);
+	const endTimestampValid = $derived.by(() => {
+		if (!date || !dateEnd || !/^([01]\d|2[0-3]):[0-5]\d$/.test(timeEnd) || dateEnd < date) {
+			return false;
+		}
+		const endMs = Date.parse(`${dateEnd}T${timeEnd}:00+01:00`);
+		if (Number.isNaN(endMs)) return false;
+		if (!editingEvent && endMs <= Date.now()) return false;
+		return true;
+	});
 	const basicsValid = $derived(
 		title.trim().length >= 3 &&
 			categoryLabel.length >= 2 &&
-			date !== '' &&
-			dateEnd !== '' &&
-			dateEnd >= date &&
+			endTimestampValid &&
 			venue.trim().length >= 2 &&
 			(city.trim() || 'Lagos') !== '' &&
 			description.trim().length >= 10 &&
@@ -215,6 +224,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 			speakers: roster,
 			date,
 			dateEnd,
+			timeEnd,
 			venue: venue.trim(),
 			city: city.trim() || 'Lagos',
 			description: description.trim(),
@@ -298,6 +308,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 		customCategory = selectedCategory === 'custom' ? category : '';
 		date = draft.date ?? '';
 		dateEnd = draft.dateEnd ?? '';
+		timeEnd = typeof draft.timeEnd === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(draft.timeEnd) ? draft.timeEnd : '23:59';
 		venue = draft.venue ?? '';
 		city = draft.city ?? 'Lagos';
 		description = draft.description ?? '';
@@ -322,8 +333,6 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 
 	onMount(() => {
 		if (editingEvent) {
-			const startsAt = new Date(editingEvent.startsAt);
-			const endsAt = new Date(editingEvent.endsAt ?? editingEvent.startsAt);
 			const sessionsByDay = new Map<string, Array<{ time: string; title: string; stage: string }>>();
 			for (const item of editingEvent.agenda ?? []) {
 				const match = item.start.match(/^(.*?)(?:\s+)(\d{2}:\d{2})$/);
@@ -335,7 +344,9 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 			}
 			hydrateDraft({
 				title: editingEvent.title, category: editingEvent.category, poster: editingEvent.cover.src ?? '',
-				date: startsAt.toISOString().slice(0, 10), dateEnd: endsAt.toISOString().slice(0, 10),
+				date: watDateInputValue(editingEvent.startsAt),
+				dateEnd: watDateInputValue(editingEvent.endsAt ?? editingEvent.startsAt),
+				timeEnd: watTimeInputValue(editingEvent.endsAt, '23:59'),
 				venue: editingEvent.venue, city: editingEvent.city, description: editingEvent.description,
 				tiers: editingEvent.tiers, promos: editingEvent.promos ?? [], days: [...sessionsByDay].map(([label, sessions]) => ({ label, sessions })),
 				speakers: editingEvent.speakers, gates: (editingEvent.gates ?? []).map((gate) => ({ name: gate.name, staff: gate.staff.length })),
@@ -586,16 +597,23 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 						<div class="flex flex-col gap-2">
 							<span class="{MONO} text-on-surface-variant">Timestamp Begin (UTC+1 WAT)</span>
 							<div class="relative">
-								<input type="date" bind:value={date} class="w-full h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md [color-scheme:dark] focus:outline-none focus:border-primary/50" />
+								<input type="date" aria-label="Start date" bind:value={date} class="w-full h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md [color-scheme:dark] focus:outline-none focus:border-primary/50" />
 								<CalendarDays class="w-4 h-4 text-on-surface-variant absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
 							</div>
 						</div>
 						<div class="flex flex-col gap-2">
-							<span class="{MONO} text-on-surface-variant">Timestamp Conclude (UTC+1 WAT)</span>
-							<div class="relative">
-								<input type="date" bind:value={dateEnd} class="w-full h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md [color-scheme:dark] focus:outline-none focus:border-primary/50" />
-								<CalendarDays class="w-4 h-4 text-on-surface-variant absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+							<span class="{MONO} text-on-surface-variant">Timestamp Conclude — Date &amp; Time (UTC+1 WAT)</span>
+							<div class="grid grid-cols-[1fr_132px] gap-2">
+								<div class="relative min-w-0">
+									<input type="date" aria-label="End date" bind:value={dateEnd} class="w-full h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md [color-scheme:dark] focus:outline-none focus:border-primary/50" />
+									<CalendarDays class="w-4 h-4 text-on-surface-variant absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+								</div>
+								<div class="relative min-w-0">
+									<input type="time" aria-label="End time" bind:value={timeEnd} class="w-full h-12 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md [color-scheme:dark] focus:outline-none focus:border-primary/50" />
+									<Clock class="w-4 h-4 text-on-surface-variant absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+								</div>
 							</div>
+							<span class="text-label-badge text-on-surface-variant">Event closes automatically when it reaches this end date and time.</span>
 						</div>
 					</div>
 
@@ -847,7 +865,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 								<span class="{MONO} text-on-surface-variant">Event Title</span>
 								<span class="text-[11px] text-on-surface truncate">{title || 'Untitled node'}</span>
 								<span class="{MONO} text-on-surface-variant pt-1">Date &amp; Time</span>
-								<span class="text-[11px] text-on-surface">{date ? fmtDate(date) : 'Date TBA'} → {dateEnd ? fmtDate(dateEnd) : 'Date TBA'}</span>
+								<span class="text-[11px] text-on-surface">{date ? fmtDate(date) : 'Date TBA'} → {dateEnd ? `${fmtDate(dateEnd)} ${timeEnd}` : 'Date TBA'}</span>
 								<span class="{MONO} text-on-surface-variant pt-1">Capacity</span>
 								<span class="text-[11px] text-on-surface">{totalCapacity.toLocaleString()} slots</span>
 							</div>
@@ -1567,7 +1585,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 							<span class="{MONO} text-tertiary">{(categoryLabel || 'Event').toUpperCase()} SUMMIT</span>
 							<h2 class="font-display text-headline-lg md:text-[32px] leading-tight text-on-surface pt-2">{title || 'Untitled node'}</h2>
 							<span class="flex flex-wrap items-center gap-4 pt-2 text-body-sm text-on-surface-variant">
-								<span class="flex items-center gap-1.5"><CalendarDays class="w-4 h-4 text-primary" /> {date ? fmtDate(date) : 'Date TBA'} – {dateEnd ? fmtDate(dateEnd) : 'Date TBA'}</span>
+								<span class="flex items-center gap-1.5"><CalendarDays class="w-4 h-4 text-primary" /> {date ? fmtDate(date) : 'Date TBA'} – {dateEnd ? `${fmtDate(dateEnd)} · ${timeEnd} WAT` : 'Date TBA'}</span>
 								<span class="flex items-center gap-1.5 min-w-0"><MapPin class="w-4 h-4 text-primary shrink-0" /> <span class="truncate">{venue}, {city}</span></span>
 							</span>
 						</div>
@@ -1951,14 +1969,18 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 					</div>
 				</div>
 
-				<div class="grid grid-cols-2 gap-space-sm">
+				<div class="grid grid-cols-1 gap-space-sm">
 					<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md flex flex-col gap-2">
 						<span class="text-body-sm text-on-surface-variant">Start date · WAT</span>
-						<input type="date" bind:value={date} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-sm [color-scheme:dark]" />
+						<input type="date" aria-label="Start date" bind:value={date} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-sm [color-scheme:dark]" />
 					</div>
 					<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md flex flex-col gap-2">
-						<span class="text-body-sm text-on-surface-variant">End date · WAT</span>
-						<input type="date" bind:value={dateEnd} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-sm [color-scheme:dark]" />
+						<span class="text-body-sm text-on-surface-variant">End date &amp; time · WAT</span>
+						<div class="grid grid-cols-[1fr_118px] gap-2">
+							<input type="date" aria-label="End date" bind:value={dateEnd} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-sm [color-scheme:dark]" />
+							<input type="time" aria-label="End time" bind:value={timeEnd} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-sm [color-scheme:dark]" />
+						</div>
+						<span class="text-label-badge text-on-surface-variant">Event closes when it reaches this end date and time.</span>
 					</div>
 				</div>
 				<div class="grid grid-cols-2 gap-space-sm">
@@ -2250,7 +2272,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 						{/if}
 						<div class="flex flex-col min-w-0">
 							<span class="font-display text-headline-md text-on-surface truncate">{title}</span>
-							<span class="text-body-sm text-on-surface-variant truncate">{date} – {dateEnd} • {venue}, {city}</span>
+							<span class="text-body-sm text-on-surface-variant truncate">{date} – {dateEnd} {timeEnd} WAT • {venue}, {city}</span>
 						</div>
 					</div>
 				</div>

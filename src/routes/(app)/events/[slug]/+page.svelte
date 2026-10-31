@@ -34,6 +34,7 @@
 	import { bookmarks, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { countdownLabel, fmtDate, fmtDateFull, fmtTime } from '$lib/utils/dates';
+	import { hasEventEnded } from '$lib/utils/event-status';
 	import { formatMoney } from '$lib/utils/money';
 	import { currency } from '$lib/state/prefs.svelte';
 	import { promoDiscount } from '$lib/utils/promo';
@@ -43,6 +44,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 
 	let { data } = $props();
 	const event = $derived(data.event);
+	const isClosed = $derived(hasEventEnded(event) || event.status === 'closed');
 	const categoryLabel = $derived(
 		categories.find((category) => category.id === event.category)?.label ?? event.category.replaceAll('_', ' ')
 	);
@@ -193,6 +195,10 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 	let showSignInDialog = $state(false);
 
 	function checkout() {
+		if (isClosed) {
+			toast('This event has ended — ticket sales are closed', 'info');
+			return;
+		}
 		/* Unregistered visitors are asked to sign in before buying; the
 		   sign-in flow returns them to this exact checkout afterwards. */
 		if (!session) {
@@ -246,7 +252,11 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 				<div class="flex items-center gap-2 flex-wrap">
 					<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded">{categoryLabel}</span>
 					<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded">{agendaDays.length}-Day Summit</span>
-					<span class="{MONO} bg-primary text-on-primary px-2.5 py-1 rounded">{leftAll} VIP Left</span>
+					{#if isClosed}
+						<span class="{MONO} bg-surface-container-highest border border-outline-variant/40 text-on-surface-variant px-2.5 py-1 rounded">Event Closed · Past</span>
+					{:else}
+						<span class="{MONO} bg-primary text-on-primary px-2.5 py-1 rounded">{leftAll} VIP Left</span>
+					{/if}
 					{#if event.organizer.verified}
 						<span class="{MONO} bg-surface-base/80 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded flex items-center gap-1.5">
 							Verified Organizer
@@ -602,11 +612,18 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 					</div>
 				</div>
 
-				<button type="button" onclick={checkout} class="w-full h-12 rounded-lg bg-primary text-on-primary font-semibold flex items-center justify-center gap-2 hover:bg-primary-container transition-colors glow-primary">
-					<span class="{MONO}">Proceed to Checkout • {formatMoney(totalPayable, currency.value)}</span>
-					<ArrowRight class="w-4 h-4" />
-				</button>
-				<span class="text-body-sm text-on-surface-variant text-center">Zero risk. Tickets are transferable &amp; verifiable in real-time.</span>
+				{#if isClosed}
+					<div class="rounded-lg border border-outline-variant/40 bg-surface-container-highest px-4 py-3 text-center">
+						<span class="{MONO} text-on-surface block">Event Closed</span>
+						<span class="text-body-sm text-on-surface-variant block pt-1">This event has ended — ticket sales are closed.</span>
+					</div>
+				{:else}
+					<button type="button" onclick={checkout} class="w-full h-12 rounded-lg bg-primary text-on-primary font-semibold flex items-center justify-center gap-2 hover:bg-primary-container transition-colors glow-primary">
+						<span class="{MONO}">Proceed to Checkout • {formatMoney(totalPayable, currency.value)}</span>
+						<ArrowRight class="w-4 h-4" />
+					</button>
+					<span class="text-body-sm text-on-surface-variant text-center">Zero risk. Tickets are transferable &amp; verifiable in real-time.</span>
+				{/if}
 
 				<div class="flex flex-col gap-2 border-t border-surface-glass-border pt-4">
 					{#each ([
@@ -981,10 +998,16 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 						<span class="text-body-sm text-on-surface-variant font-medium">({qty} {tier.name})</span>
 					</div>
 				</div>
-				<button class="h-12 px-6 rounded-full bg-primary-fixed text-surface-base font-display text-body-md font-semibold flex items-center justify-center gap-2 active:scale-95 transition-all shadow-md hover:bg-white" onclick={checkout}>
-					<span>Select & Checkout</span>
-					<ArrowRight class="w-4.5 h-4.5" />
-				</button>
+				{#if isClosed}
+					<span class="h-12 px-5 rounded-full bg-surface-container-highest border border-outline-variant/40 text-on-surface-variant font-display text-body-sm font-semibold flex items-center justify-center">
+						Event Closed
+					</span>
+				{:else}
+					<button class="h-12 px-6 rounded-full bg-primary-fixed text-surface-base font-display text-body-md font-semibold flex items-center justify-center gap-2 active:scale-95 transition-all shadow-md hover:bg-white" onclick={checkout}>
+						<span>Select & Checkout</span>
+						<ArrowRight class="w-4.5 h-4.5" />
+					</button>
+				{/if}
 			</div>
 		</div>
 	</div>

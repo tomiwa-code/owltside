@@ -36,7 +36,32 @@ describe('publishing validation and failure UI', () => {
 	});
 	it('stores only supplied event details plus the decoded poster, then redirects', async () => {
 		await expect(publish(draft())).rejects.toMatchObject({ status: 303, location: '/organizer/events/created-event' });
-		expect(source.createEvent).toHaveBeenCalledWith('signed-in-user', expect.objectContaining({ title: 'My real event', description: draft().description, cover: expect.objectContaining({ src: expect.stringMatching(/^data:image\/jpeg;base64,/) }), startsAt: '2099-11-20T09:00:00+01:00' }));
+		expect(source.createEvent).toHaveBeenCalledWith('signed-in-user', expect.objectContaining({ title: 'My real event', description: draft().description, cover: expect.objectContaining({ src: expect.stringMatching(/^data:image\/jpeg;base64,/) }), startsAt: '2099-11-20T09:00:00+01:00', endsAt: '2099-11-21T23:59:00+01:00' }));
+	});
+	it('stores the explicit end time from the wizard and rejects past or malformed end times', async () => {
+		await expect(publish({ ...draft(), timeEnd: '18:45' })).rejects.toMatchObject({
+			status: 303,
+			location: '/organizer/events/created-event'
+		});
+		expect(source.createEvent).toHaveBeenCalledWith(
+			'signed-in-user',
+			expect.objectContaining({
+				startsAt: '2099-11-20T09:00:00+01:00',
+				endsAt: '2099-11-21T18:45:00+01:00'
+			})
+		);
+
+		expect(await publish({ ...draft(), timeEnd: '25:99' })).toMatchObject({ status: 400 });
+		const todayWat = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
+		const pastWatMs = Date.now() - 10 * 60 * 1000;
+		const pastWatIso = new Date(pastWatMs + 3_600_000).toISOString();
+		const pastDate = pastWatIso.slice(0, 10);
+		const pastTime = pastWatIso.slice(11, 16);
+		if (pastDate === todayWat) {
+			expect(
+				await publish({ ...draft(), date: todayWat, dateEnd: todayWat, timeEnd: pastTime })
+			).toMatchObject({ status: 400 });
+		}
 	});
 	it('passes normalized organizer promo codes to the datasource without trusting client use counts', async () => {
 		const payload = {
