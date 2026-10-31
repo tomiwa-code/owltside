@@ -1,6 +1,7 @@
 import { validateEventPoster } from '$lib/server/event-poster';
 import { getSource } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
+import { isEventClosed } from '$lib/utils/event-status';
 import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
@@ -16,6 +17,7 @@ export const load: PageServerLoad = async ({ locals, cookies, url }) => {
 		const organizer = await getSource(createSupabase(cookies)).getOrganizer(locals.session?.userId ?? 'demo');
 		event = organizer.events.find((item) => item.id === editId);
 		if (!event) redirect(302, '/organizer');
+		if (isEventClosed(event)) redirect(302, '/organizer?tab=past');
 	}
 	return { owner: locals.session?.userId ?? 'demo', event: event ?? null };
 };
@@ -133,6 +135,9 @@ export const actions: Actions = {
 			const organizerId = locals.session?.userId ?? 'demo';
 			const existing = editId ? (await source.getOrganizer(organizerId)).events.find((item) => item.id === editId) : undefined;
 			if (editId && !existing) return fail(404, { error: 'Event not found' });
+			if (existing && isEventClosed(existing)) {
+				return fail(400, { error: 'Past events are closed — only payout requests are available.' });
+			}
 			// Keep the existing remote poster when the wizard merely hydrated its URL;
 			// only newly uploaded data URLs need to pass through the image validator.
 			if (d.poster && d.poster !== existing?.cover.src) {

@@ -81,12 +81,16 @@
 			return;
 		}
 		toasts.ok(
-			decision === 'approve' ? 'Request approved' : 'Request rejected',
+			decision === 'approve' ? 'Request approved' : target.kind === 'payout' ? 'Payout denied' : 'Request rejected',
 			decision === 'approve'
 				? target.kind === 'refund'
 					? `${target.title} — the pass is now refunded and the attendee has been notified.`
-					: `${target.title} — the requester now sees "approved" on the public app.`
-				: `${target.title} — the requester sees your reason on the public app.`
+					: target.kind === 'payout'
+						? `${target.title} — the organizer's payout button now shows "Approved" and cannot be requested again.`
+						: `${target.title} — the requester now sees "approved" on the public app.`
+				: target.kind === 'payout'
+					? `${target.title} — the organizer's payout button now shows "Denied" with your reason.`
+					: `${target.title} — the requester sees your reason on the public app.`
 		);
 		note = '';
 		rejectOpen = false;
@@ -100,7 +104,7 @@
 <div class="space-y-4">
 	<PageHeader
 		title="Approvals"
-		subtitle="Every request that needs an admin decision: ticket refunds, instant payouts and verification details. Nothing is approved on the public app until it is approved here."
+		subtitle="Every request that needs an admin decision: ticket refunds, organizer payout requests, and verification details. Nothing is approved on the public app until it is approved here."
 		crumbs={['platform', 'approvals']}
 		eyebrow="Public app → console"
 	>
@@ -356,7 +360,7 @@
 								<Check size={13} /> {selected.kind === 'refund' ? 'Approve refund' : selected.kind === 'payout' ? 'Approve payout' : 'Approve verification'}
 							</button>
 							<button type="button" class="btn btn-sm w-full" disabled={busy} onclick={() => (rejectOpen = true)}>
-								<X size={13} /> Reject with a reason
+								<X size={13} /> {selected.kind === 'payout' ? 'Deny with a reason' : 'Reject with a reason'}
 							</button>
 						</div>
 					{:else}

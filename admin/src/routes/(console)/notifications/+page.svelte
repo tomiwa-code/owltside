@@ -61,7 +61,7 @@
 <div class="space-y-4">
 	<PageHeader
 		title="Notifications & Submitted Requests"
-		subtitle="Every approval request (KYC ID, payout bank, phone, instant payout, ticket refund), content report, event submission, and order submitted from the public app."
+		subtitle="Every approval request (KYC ID, payout bank, phone, payout request, ticket refund), content report, event submission, and order submitted from the public app."
 		crumbs={['overview', 'notifications']}
 		eyebrow={`${counts.actionable} awaiting review`}
 	>
