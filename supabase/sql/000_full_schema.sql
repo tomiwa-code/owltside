@@ -222,6 +222,54 @@ create unique index if not exists approval_requests_open_subject_idx
     coalesce(payload ->> 'check', '')
   )
   where status = 'pending' and kind in ('refund', 'verification');
+update public.approval_requests
+   set subject_id = coalesce(
+         nullif(btrim(subject_id), ''),
+         nullif(btrim(payload ->> 'eventId'), '')
+       )
+ where kind = 'payout'
+   and subject_id is distinct from coalesce(
+         nullif(btrim(subject_id), ''),
+         nullif(btrim(payload ->> 'eventId'), '')
+       );
+with ranked_payouts as (
+  select
+    id,
+    first_value(status) over (
+      partition by requester_id, coalesce(subject_id, '')
+      order by
+        case when status = 'approved' then 0 else 1 end asc,
+        coalesce(decided_at, created_at) desc,
+        created_at desc,
+        id desc
+    ) as kept_status,
+    row_number() over (
+      partition by requester_id, coalesce(subject_id, '')
+      order by
+        case when status = 'approved' then 0 else 1 end asc,
+        coalesce(decided_at, created_at) desc,
+        created_at desc,
+        id desc
+    ) as rn
+  from public.approval_requests
+  where kind = 'payout'
+    and status in ('pending', 'approved')
+)
+update public.approval_requests ar
+   set status = 'cancelled',
+       decision_note = coalesce(
+         nullif(ar.decision_note, ''),
+         case
+           when rp.kept_status = 'approved'
+             then 'Cancelled during schema sync — payout was already approved for this event.'
+           else 'Cancelled during schema sync — duplicate pending payout request for this event.'
+         end
+       ),
+       decided_at = coalesce(ar.decided_at, now()),
+       decided_by = coalesce(ar.decided_by, 'system:schema-sync')
+  from ranked_payouts rp
+ where ar.id = rp.id
+   and rp.rn > 1;
 create unique index if not exists approval_requests_payout_open_or_approved_idx
   on public.approval_requests (
     requester_id,
@@ -1686,7 +1734,8 @@ begin
     raise exception 'Only an Owltside admin can decide an approval request';
   end if;
   if tg_op = 'INSERT' and new.kind = 'payout' then
-    if coalesce(new.subject_id, '') = '' then
+    new.subject_id := nullif(btrim(new.subject_id), '');
+    if new.subject_id is null then
       raise exception 'Choose a closed event to request a payout for';
     end if;
     select id, organizer_id, status, starts_at, ends_at
@@ -1713,6 +1762,33 @@ begin
         and ar.status = 'approved'
     ) then
       raise exception 'Payout has already been approved for this event and cannot be requested again';
+    end if;
+    if exists (
+      select 1
+      from public.approval_requests ar
+      where ar.requester_id = new.requester_id
+        and ar.kind = 'payout'
+        and ar.subject_id = new.subject_id
+        and ar.status = 'pending'
+    ) then
+      raise exception 'A payout request is already awaiting approval for this event';
+    end if;
+  end if;
+  if tg_op = 'UPDATE'
+     and new.kind = 'payout'
+     and new.status = 'approved'
+     and old.status is distinct from 'approved'
+  then
+    if exists (
+      select 1
+      from public.approval_requests ar
+      where ar.id <> new.id
+        and ar.requester_id = new.requester_id
+        and ar.kind = 'payout'
+        and coalesce(ar.subject_id, '') = coalesce(new.subject_id, '')
+        and ar.status = 'approved'
+    ) then
+      raise exception 'Payout has already been approved for this event';
     end if;
   end if;
   return new;

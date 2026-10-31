@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -549,5 +551,20 @@ describe('Organizer dashboard payout lifecycle & Past tab', () => {
 		});
 		expect(created.status).toBe('pending');
 		expect(created.subjectId).toBe(closedEventId);
+	});
+
+	it('deduplicates pre-existing open/approved payout rows before creating approval_requests_payout_open_or_approved_idx in SQL migrations', () => {
+		for (const relPath of ['supabase/sql/029_payout_lifecycle.sql', 'supabase/sql/000_full_schema.sql']) {
+			const sql = readFileSync(resolve(process.cwd(), relPath), 'utf8');
+			const backfillIdx = sql.indexOf("payload ->> 'eventId'");
+			const dedupeIdx = sql.indexOf('with ranked_payouts as');
+			const cancelIdx = sql.indexOf("set status = 'cancelled'");
+			const uniqueIdx = sql.indexOf('create unique index if not exists approval_requests_payout_open_or_approved_idx');
+
+			expect(backfillIdx).toBeGreaterThan(-1);
+			expect(dedupeIdx).toBeGreaterThan(backfillIdx);
+			expect(cancelIdx).toBeGreaterThan(dedupeIdx);
+			expect(uniqueIdx).toBeGreaterThan(cancelIdx);
+		}
 	});
 });
