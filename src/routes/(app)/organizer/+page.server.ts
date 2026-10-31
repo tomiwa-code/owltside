@@ -1,14 +1,21 @@
 import { computeOrganizer, getSource } from '$lib/server/datasource';
+import { redactForPublicClient } from '$lib/server/redact-approval';
 import { createSupabase } from '$lib/server/supabase';
 import { hasOrganizerIdentity } from '$lib/server/organizer-access';
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, cookies }) => {
-	const payload = await getSource(createSupabase(cookies))
-		.getOrganizer(locals.session?.userId ?? 'demo')
-		.catch(() => computeOrganizer([], [], [], []));
-	return { payload };
+	const source = getSource(createSupabase(cookies));
+	const userId = locals.session?.userId ?? 'demo';
+	const [payload, approvals] = await Promise.all([
+		source.getOrganizer(userId).catch(() => computeOrganizer([], [], [], [])),
+		source
+			.listApprovals(userId)
+			.then((rows) => rows.map(redactForPublicClient))
+			.catch(() => [])
+	]);
+	return { payload, approvals };
 };
 
 export const actions: Actions = {

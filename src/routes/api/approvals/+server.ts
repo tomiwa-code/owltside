@@ -1,8 +1,9 @@
 import { getSource } from '$lib/server/datasource';
+import { redactForPublicClient } from '$lib/server/redact-approval';
 import { createSupabase } from '$lib/server/supabase';
 import { json } from '@sveltejs/kit';
 import { maskAccountNumber, normaliseNuban } from '$lib/utils/payout';
-import type { ApprovalRequest, CreateApprovalInput, Session } from '$lib/types';
+import type { CreateApprovalInput, Session } from '$lib/types';
 import type { RequestHandler } from './$types';
 
 /** Everything the public app may submit for admin review. */
@@ -34,25 +35,6 @@ function sanitizeDocMedia(
 		return { name, dataUrl: preview, mimeType };
 	}
 	return { name, dataUrl: null, mimeType };
-}
-
-/**
- * Redact raw KYC media and full government ID numbers from public browser responses
- * while keeping the unredacted payload intact inside `approval_requests` for Admin.
- */
-function redactForPublicClient(approval: ApprovalRequest): ApprovalRequest {
-	const rawPayload = (approval.payload ?? {}) as Record<string, unknown>;
-	const sanitized: Record<string, unknown> = { ...rawPayload };
-	delete sanitized.fullReference;
-	if (sanitized.frontDocument && typeof sanitized.frontDocument === 'object') {
-		const doc = sanitized.frontDocument as { name?: string; mimeType?: string };
-		sanitized.frontDocument = { name: doc.name ?? 'front', uploaded: true };
-	}
-	if (sanitized.backDocument && typeof sanitized.backDocument === 'object') {
-		const doc = sanitized.backDocument as { name?: string; mimeType?: string };
-		sanitized.backDocument = { name: doc.name ?? 'back', uploaded: true };
-	}
-	return { ...approval, payload: sanitized };
 }
 
 /**
@@ -150,6 +132,7 @@ function buildApproval(
 
 	if (kind === 'payout') {
 		const eventId = text(body.subjectId, 60);
+		if (!eventId) return 'Choose a closed event to request a payout for.';
 		const eventTitle = text(body.subjectLabel, 120) || 'Settlement balance';
 		const amount = Number(body.amount);
 		if (!Number.isFinite(amount) || amount <= 0) return 'There is no cleared balance to pay out yet.';
@@ -159,10 +142,10 @@ function buildApproval(
 		const accountHolder = text(body.accountHolder, 120) || session?.name || '';
 		return {
 			kind: 'payout',
-			title: `Instant payout · ${eventTitle}`,
+			title: `Payout request · ${eventTitle}`,
 			summary: `Cleared settlement balance requested${destination ? ` to ${destination}` : ''}`,
 			amount,
-			subjectId: eventId || undefined,
+			subjectId: eventId,
 			subjectLabel: eventTitle,
 			payload: {
 				...requesterMeta,

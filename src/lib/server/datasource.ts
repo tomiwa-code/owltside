@@ -40,6 +40,7 @@ import {
 import { globalPromoForCode } from './promos';
 import {
 	hasEventEnded,
+	isEventClosed,
 	isPubliclyAccessible,
 	isPubliclyVisible,
 	normalizedEventStatus
@@ -96,12 +97,12 @@ const demoApprovals: ApprovalRequest[] = [
 		kind: 'payout',
 		status: 'pending',
 		requesterId: demoMeId,
-		title: 'Instant payout · Yaba Rooftop Sessions',
+		title: 'Payout request · Archive Rooftop Session',
 		summary: 'Cleared settlement balance requested to GTBank ••••6789',
 		amount: 1_240_000,
-		subjectId: 'e-rooftop',
-		subjectLabel: 'Yaba Rooftop Sessions',
-		payload: { eventId: 'e-rooftop', destination: 'GTBank ••••6789' },
+		subjectId: 'e-past-archive',
+		subjectLabel: 'Archive Rooftop Session',
+		payload: { eventId: 'e-past-archive', destination: 'GTBank ••••6789' },
 		createdAt: new Date(Date.now() - 95 * 60 * 1000).toISOString()
 	},
 	{
@@ -156,7 +157,7 @@ const approvalHref = (kind: ApprovalRequest['kind'], subjectId?: string): string
 	kind === 'refund' && subjectId
 		? `/tickets/${subjectId}`
 		: kind === 'payout'
-			? '/organizer'
+			? '/organizer?tab=past'
 			: '/settings';
 
 /** Inbox entry announcing receipt of a request (and, later, the decision). */
@@ -180,6 +181,29 @@ function pushDemoNotification(
  * twice — the live path relies on a partial unique index (migration 023).
  */
 function createDemoApproval(userId: string, input: CreateApprovalInput): ApprovalRequest {
+	if (input.kind === 'payout') {
+		if (!input.subjectId) {
+			throw new Error('Choose a closed event to request a payout for.');
+		}
+		const event = demo.events.find((item) => item.id === input.subjectId && item.organizer.id === userId);
+		if (!event) {
+			throw new Error('Event not found.');
+		}
+		if (!isEventClosed(event)) {
+			throw new Error('Payout can only be requested after the event closes.');
+		}
+		const alreadyApproved = demoApprovals.find(
+			(request) =>
+				request.requesterId === userId &&
+				request.kind === 'payout' &&
+				(request.subjectId ?? undefined) === input.subjectId &&
+				request.status === 'approved'
+		);
+		if (alreadyApproved) {
+			throw new Error('Payout has already been approved for this event and cannot be requested again.');
+		}
+	}
+
 	const check = typeof input.payload?.check === 'string' ? input.payload.check : undefined;
 	const duplicate = demoApprovals.find(
 		(request) =>
@@ -228,6 +252,20 @@ const describeDuplicate = (kind: ApprovalKind, check?: string): string =>
 			: check === 'payoutAccount'
 				? 'Your payout account verification'
 				: 'Your identity verification';
+
+/** Demo helper mirroring admin `decideApproval` for tests and local verification. */
+export function decideDemoApproval(
+	id: string,
+	status: 'approved' | 'rejected',
+	note?: string
+): ApprovalRequest {
+	const target = demoApprovals.find((item) => item.id === id);
+	if (!target) throw new Error('Approval request not found');
+	target.status = status;
+	target.note = note;
+	target.decidedAt = new Date().toISOString();
+	return { ...target };
+}
 
 
 const CANNED: Record<string, string[]> = {
@@ -918,6 +956,7 @@ export const demoSource: DataSource = {
 		const uid = userId === 'demo' ? demoMeId : userId;
 		const event = demo.events.find((item) => item.id === eventId && item.organizer.id === uid);
 		if (!event || !event.gates?.some((gate) => gate.name === gateName)) throw new Error('Gate not found for this event');
+		if (isEventClosed(event)) throw new Error('Past events are closed — gate PINs can no longer be generated.');
 		const code = newDemoStaffScanCode(
 			(context) => context.kind === 'gate' && context.eventId === eventId && context.gate === gateName
 		);
@@ -998,6 +1037,7 @@ export const demoSource: DataSource = {
 		const uid = userId === 'demo' ? demoMeId : userId;
 		const event = demo.events.find((e) => e.id === eventId && e.organizer.id === uid);
 		if (!event) throw new Error('Event not found');
+		if (isEventClosed(event)) throw new Error('Past events are closed and cannot be edited.');
 		// Editing a rejected listing resubmits it for review.
 		if (event.status === 'rejected') {
 			event.status = 'pending';
@@ -1031,12 +1071,14 @@ export const demoSource: DataSource = {
 		const uid = userId === 'demo' ? demoMeId : userId;
 		const idx = demo.events.findIndex((e) => e.id === eventId && e.organizer.id === uid);
 		if (idx === -1) throw new Error('Event not found');
+		if (isEventClosed(demo.events[idx])) throw new Error('Past events are closed and cannot be deleted.');
 		demo.events.splice(idx, 1);
 	},
 	async broadcastEvent(userId, eventId, message) {
 		const uid = userId === 'demo' ? demoMeId : userId;
 		const event = demo.events.find((e) => e.id === eventId && e.organizer.id === uid);
 		if (!event) throw new Error('Event not found');
+		if (isEventClosed(event)) throw new Error('Past events are closed — announcements can no longer be sent.');
 		const body = message.trim();
 		if (!body) throw new Error('Enter a message to broadcast');
 		// The announcement lands in the notification hub of every pass owner.
@@ -2193,9 +2235,12 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 		},
 		async issueGateToken(userId, eventId, gateName) {
 			if (!isUuid(userId) || !isUuid(eventId)) throw new Error('Invalid event or organizer ID');
-			const { data: event, error: eventError } = await db.from('events').select('gates').eq('id', eventId).eq('organizer_id', userId).maybeSingle();
+			const { data: event, error: eventError } = await db.from('events').select('gates,status,starts_at,ends_at').eq('id', eventId).eq('organizer_id', userId).maybeSingle();
 			if (eventError) throw eventError;
 			if (!event || !(event.gates ?? []).some((gate: Row) => gate.name === gateName)) throw new Error('Gate not found for this event');
+			if (event.starts_at && isEventClosed({ status: event.status, startsAt: event.starts_at, endsAt: event.ends_at })) {
+				throw new Error('Past events are closed — gate PINs can no longer be generated.');
+			}
 			const code = await newStaffScanCode(
 				db,
 				(context) => context.kind === 'gate' && context.eventId === eventId && context.gate === gateName
@@ -2299,10 +2344,20 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			// Published and pending events keep their current review state.
 			const { data: currentReview } = await db
 				.from('events')
-				.select('status')
+				.select('status, starts_at, ends_at')
 				.eq('id', eventId)
 				.eq('organizer_id', userId)
 				.maybeSingle();
+			if (
+				currentReview &&
+				isEventClosed({
+					status: currentReview.status,
+					startsAt: String(currentReview.starts_at ?? ''),
+					endsAt: currentReview.ends_at ? String(currentReview.ends_at) : undefined
+				})
+			) {
+				throw new Error('Past events are closed and cannot be edited.');
+			}
 			if (currentReview?.status === 'rejected') {
 				patch.status = 'pending';
 				patch.submitted_at = new Date().toISOString();
@@ -2325,6 +2380,22 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 		},
 		async deleteEvent(userId, eventId) {
 			if (!isUuid(userId) || !isUuid(eventId)) throw new Error('Invalid event or organizer ID');
+			const { data: currentEvent } = await db
+				.from('events')
+				.select('status, starts_at, ends_at')
+				.eq('id', eventId)
+				.eq('organizer_id', userId)
+				.maybeSingle();
+			if (
+				currentEvent &&
+				isEventClosed({
+					status: currentEvent.status,
+					startsAt: String(currentEvent.starts_at ?? ''),
+					endsAt: currentEvent.ends_at ? String(currentEvent.ends_at) : undefined
+				})
+			) {
+				throw new Error('Past events are closed and cannot be deleted.');
+			}
 			const { error } = await db.from('events').delete().eq('id', eventId).eq('organizer_id', userId);
 			if (error) throw error;
 		},
@@ -2335,12 +2406,18 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 
 			const { data: event, error: eventError } = await db
 				.from('events')
-				.select('id, title, slug')
+				.select('id, title, slug, status, starts_at, ends_at')
 				.eq('id', eventId)
 				.eq('organizer_id', userId)
 				.maybeSingle();
 			if (eventError) throw eventError;
 			if (!event) throw new Error('Event not found');
+			if (
+				event.starts_at &&
+				isEventClosed({ status: event.status, startsAt: event.starts_at, endsAt: event.ends_at })
+			) {
+				throw new Error('Past events are closed — announcements can no longer be sent.');
+			}
 
 			const rpcResult = await db.rpc('broadcast_to_event_holders', {
 				p_event_id: eventId,
@@ -2488,6 +2565,43 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 		},
 		async createApproval(userId, input) {
 			if (!isUuid(userId)) throw new Error('Sign in to submit a request for approval.');
+			if (input.kind === 'payout') {
+				if (!input.subjectId || !isUuid(input.subjectId)) {
+					throw new Error('Choose a closed event to request a payout for.');
+				}
+				const { data: eventRow, error: eventError } = await db
+					.from('events')
+					.select('id, organizer_id, status, starts_at, ends_at')
+					.eq('id', input.subjectId)
+					.eq('organizer_id', userId)
+					.maybeSingle();
+				if (eventError) throw eventError;
+				if (!eventRow) throw new Error('Event not found.');
+				if (
+					!isEventClosed({
+						status: eventRow.status,
+						startsAt: eventRow.starts_at,
+						endsAt: eventRow.ends_at
+					})
+				) {
+					throw new Error('Payout can only be requested after the event closes.');
+				}
+				const { data: existingPayouts, error: payoutError } = await db
+					.from('approval_requests')
+					.select('id, status')
+					.eq('requester_id', userId)
+					.eq('kind', 'payout')
+					.eq('subject_id', input.subjectId)
+					.in('status', ['pending', 'approved']);
+				if (payoutError && !isMissingApprovalStorageError(payoutError)) throw payoutError;
+				const rows = (existingPayouts ?? []) as Row[];
+				if (rows.some((r) => r.status === 'approved')) {
+					throw new Error('Payout has already been approved for this event and cannot be requested again.');
+				}
+				if (rows.some((r) => r.status === 'pending')) {
+					throw new Error('A payout request is already awaiting approval. We will let you know once it is reviewed.');
+				}
+			}
 			const { data, error } = await db
 				.from('approval_requests')
 				.insert({
@@ -2505,6 +2619,9 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (error) {
 				if (isMissingApprovalStorageError(error)) throw approvalStorageError();
 				if (isDuplicateApprovalError(error)) {
+					if (input.kind === 'payout') {
+						throw new Error('A payout request for this event has already been submitted or approved.');
+					}
 					throw new Error('This request is already awaiting approval. We will let you know once it is reviewed.');
 				}
 				throw error;
@@ -2514,7 +2631,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				kind: 'system',
 				title: `Pending approval · ${input.title}`,
 				body: `${input.summary} — submitted to the Owltside review team.`,
-				href: '/settings'
+				href: approvalHref(input.kind, input.subjectId)
 			});
 			return toApproval(data);
 		},

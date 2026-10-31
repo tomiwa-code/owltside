@@ -1,4 +1,4 @@
-import type { EventItem, EventStatus } from '$lib/types';
+import type { ApprovalRequest, EventItem, EventStatus } from '$lib/types';
 
 /**
  * Single source of truth for the event review & lifecycle workflow.
@@ -167,3 +167,77 @@ export function awaitingReview(
 ): boolean {
 	return normalizedEventStatus(event, now) === 'pending';
 }
+
+/** True once an approved event has closed (reached its end date & time). */
+export function isEventClosed(
+	event: (Pick<EventItem, 'status'> | EventLifecycleInput) | null | undefined,
+	now = Date.now()
+): boolean {
+	if (!event) return false;
+	return normalizedEventStatus(event, now) === 'closed';
+}
+
+export type PayoutButtonStateId =
+	| 'locked'
+	| 'available'
+	| 'submitting'
+	| 'requested'
+	| 'approved'
+	| 'denied';
+
+export interface PayoutButtonState {
+	state: PayoutButtonStateId;
+	label: string;
+	disabled: boolean;
+}
+
+/**
+ * Resolve the effective payout request for a specific event from an
+ * newest-first list of approval requests. Once a payout for an event is
+ * approved, that approved record permanently wins so payout cannot be
+ * requested again.
+ */
+export function resolveEventPayoutRequest(
+	approvals: readonly ApprovalRequest[],
+	eventId: string | null | undefined
+): ApprovalRequest | null {
+	if (!eventId) return null;
+	const matches = approvals.filter((request) => {
+		if (request.kind !== 'payout') return false;
+		const payloadEventId = (request.payload as { eventId?: string } | undefined)?.eventId;
+		return request.subjectId === eventId || payloadEventId === eventId;
+	});
+	if (matches.length === 0) return null;
+	const approved = matches.find((request) => request.status === 'approved');
+	if (approved) return approved;
+	const pending = matches.find((request) => request.status === 'pending');
+	if (pending) return pending;
+	return matches[0] ?? null;
+}
+
+/** Derive the payout button state, label, and disabled flag for an event. */
+export function eventPayoutButtonState(
+	event: (Pick<EventItem, 'status'> | EventLifecycleInput) | null | undefined,
+	request: ApprovalRequest | null | undefined,
+	submitting = false,
+	now = Date.now()
+): PayoutButtonState {
+	const closed = isEventClosed(event, now);
+	if (request?.status === 'approved') {
+		return { state: 'approved', label: 'Approved', disabled: true };
+	}
+	if (request?.status === 'pending') {
+		return { state: 'requested', label: 'Payout Requested', disabled: true };
+	}
+	if (submitting) {
+		return { state: 'submitting', label: 'Submitting…', disabled: true };
+	}
+	if (request?.status === 'rejected') {
+		return { state: 'denied', label: 'Denied', disabled: !closed };
+	}
+	if (!closed) {
+		return { state: 'locked', label: 'Request Payout', disabled: true };
+	}
+	return { state: 'available', label: 'Request Payout', disabled: false };
+}
+

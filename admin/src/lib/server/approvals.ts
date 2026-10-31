@@ -4,8 +4,8 @@ import type { AdminApproval, AdminApprovalAttachment, ApprovalKind } from '$admi
 /**
  * Approval queue driver.
  *
- * Every action the public app cannot take on its own — ticket refunds, instant
- * payouts, identity and payout-account verification — is written to
+ * Every action the public app cannot take on its own — ticket refunds, payout
+ * requests, identity and payout-account verification — is written to
  * `public.approval_requests` as `pending`. This module lists those rows with
  * FULL unredacted requester, bank, identity, and ID media details using the
  * Supabase service-role key, and records admin decisions.

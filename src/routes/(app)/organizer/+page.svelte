@@ -38,6 +38,7 @@
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import EventStatusBadge from '$components/EventStatusBadge.svelte';
+	import PayoutRequestButton from '$components/PayoutRequestButton.svelte';
 	import Sheet from '$components/Sheet.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
@@ -48,12 +49,15 @@
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { maskAccountNumber, payoutAccountLabel } from '$lib/utils/payout';
 	import { useQuery } from '$lib/state/query.svelte';
+	import { subscribeTable } from '$lib/realtime';
 	import { toast } from '$lib/state/toast.svelte';
 	import { formatMoney } from '$lib/utils/money';
 	import { fmtDate, fmtRelative } from '$lib/utils/dates';
-	import type { ApprovalRequest, OrganizerPayload } from '$lib/types';
+	import { isEventClosed, resolveEventPayoutRequest } from '$lib/utils/event-status';
+	import type { ApprovalRequest, EventItem, OrganizerPayload } from '$lib/types';
+	import type { PageData } from './$types';
 
-	let { data } = $props();
+	let { data }: { data: Omit<PageData, 'approvals'> & { approvals?: ApprovalRequest[] } } = $props();
 
 	const org = useQuery<OrganizerPayload>(
 		'organizer:me',
@@ -70,10 +74,32 @@
 			const response = await fetch('/api/approvals');
 			return response.ok ? await response.json() : [];
 		},
-		{ staleTime: 10_000, refetchInterval: 25_000, enabled: !!page.data.session },
-		undefined
+		{ staleTime: 5_000, refetchInterval: 10_000, enabled: !!page.data.session },
+		(data as { approvals?: ApprovalRequest[] }).approvals
 	);
-	const approvals = $derived(Array.isArray(approvalsQuery.data) ? approvalsQuery.data : []);
+	$effect(() => {
+		const uid = page.data.session?.userId;
+		if (!browser || !uid) return;
+		return subscribeTable(
+			'approval_requests',
+			() => {
+				void approvalsQuery.refetch();
+			},
+			`requester_id=eq.${uid}`
+		);
+	});
+	let submittedPayouts = $state<Record<string, ApprovalRequest>>({});
+	let submittingEventId = $state<string | null>(null);
+	const serverApprovals = $derived(
+		Array.isArray(approvalsQuery.data)
+			? approvalsQuery.data
+			: ((data as { approvals?: ApprovalRequest[] }).approvals ?? [])
+	);
+	const approvals = $derived.by(() => {
+		const serverIds = new Set(serverApprovals.map((item) => item.id));
+		const extras = Object.values(submittedPayouts).filter((item) => !serverIds.has(item.id));
+		return [...extras, ...serverApprovals];
+	});
 	const latestRequest = (kind: ApprovalRequest['kind'], check?: string) =>
 		approvals.find(
 			(request) =>
@@ -82,57 +108,48 @@
 		) ?? null;
 	const payoutAccountRequest = $derived(latestRequest('verification', 'payoutAccount'));
 	const payoutAccountPending = $derived(payoutAccountRequest?.status === 'pending');
-	const payoutRequest = $derived(latestRequest('payout'));
-	const payoutPending = $derived(payoutRequest?.status === 'pending');
-	let payoutSubmitting = $state(false);
-	async function requestInstantPayout(eventId?: string, eventTitle?: string) {
-		if (!payoutLinked) {
-			toast('Verify your payout account in Settings → Verification to receive payouts', 'info');
-			return;
-		}
-		if (payoutPending || payoutSubmitting || !stats) return;
-		payoutSubmitting = true;
-		try {
-			const response = await fetch('/api/approvals', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					kind: 'payout',
-					amount: stats.payout,
-					subjectId: eventId ?? mainEvent?.id ?? '',
-					subjectLabel: eventTitle ?? mainEvent?.title ?? 'Settlement balance',
-					destination: payoutDestination,
-					bank: payout.bank,
-					accountNumber: payout.accountNumber,
-					accountHolder: page.data.session?.name || ''
-				})
-			});
-			const body = (await response.json().catch(() => ({}))) as { error?: string };
-			if (!response.ok) {
-				toast(body.error ?? 'Your payout request could not be submitted.', 'error');
-				return;
-			}
-			toast('Payout request sent for admin approval', 'success');
-			await approvalsQuery.refetch();
-		} catch {
-			toast('Your payout request could not be submitted. Check your connection.', 'error');
-		} finally {
-			payoutSubmitting = false;
-		}
-	}
-	// Every event the organizer owns, including submissions still awaiting review.
-	// The public feeds only show the published ones; here they are all visible.
-	const myEvents = $derived(payload?.events ?? []);
-	const pendingReviews = $derived(myEvents.filter((event) => event.status === 'pending').length);
+
+	// Separate active/upcoming events from closed (past) events.
+	const allEvents = $derived(payload?.events ?? []);
+	const activeEvents = $derived(allEvents.filter((event) => !isEventClosed(event)));
+	const pastEvents = $derived(allEvents.filter((event) => isEventClosed(event)));
+	const myEvents = $derived(activeEvents);
+	const pendingReviews = $derived(activeEvents.filter((event) => event.status === 'pending').length);
+
+	let organizerTab = $state<'active' | 'past'>(
+		page.url.searchParams.get('tab') === 'past' ? 'past' : 'active'
+	);
 	let selectedEventId = $state(page.url.searchParams.get('eventId') ?? '');
 	$effect(() => {
+		const urlTab = page.url.searchParams.get('tab');
 		const urlEventId = page.url.searchParams.get('eventId');
-		if (urlEventId && myEvents.some((event) => event.id === urlEventId) && !selectedEventId) {
-			selectedEventId = urlEventId;
+		if (urlTab === 'past' && organizerTab !== 'past') {
+			organizerTab = 'past';
+		}
+		if (urlEventId && !selectedEventId) {
+			if (pastEvents.some((event) => event.id === urlEventId)) {
+				organizerTab = 'past';
+				selectedEventId = urlEventId;
+			} else if (activeEvents.some((event) => event.id === urlEventId)) {
+				selectedEventId = urlEventId;
+			}
 		}
 	});
+	function setOrganizerTab(nextTab: 'active' | 'past') {
+		organizerTab = nextTab;
+		if (browser) {
+			const nextUrl = new URL(window.location.href);
+			if (nextTab === 'past') {
+				nextUrl.searchParams.set('tab', 'past');
+				nextUrl.searchParams.delete('eventId');
+			} else {
+				nextUrl.searchParams.delete('tab');
+			}
+			window.history.replaceState(window.history.state, '', nextUrl);
+		}
+	}
 	const mainEvent = $derived(
-		myEvents.find((event) => event.id === selectedEventId) ?? myEvents[0]
+		activeEvents.find((event) => event.id === selectedEventId) ?? activeEvents[0]
 	);
 	function selectEvent(eventId: string) {
 		selectedEventId = eventId;
@@ -142,19 +159,119 @@
 			window.history.replaceState(window.history.state, '', nextUrl);
 		}
 	}
+	const eventSoldTotal = (event: { tiers: { sold: number }[] }) =>
+		event.tiers.reduce((sum, tier) => sum + tier.sold, 0);
+	const eventCapacityTotal = (event: { tiers: { capacity: number }[] }) =>
+		event.tiers.reduce((sum, tier) => sum + tier.capacity, 0);
+	const eventRevenueTotal = (event: { tiers: { sold: number; price: number }[] }) =>
+		event.tiers.reduce((sum, tier) => sum + tier.sold * tier.price, 0);
+	const eventPayoutTotal = (event: { tiers: { sold: number; price: number }[] }) =>
+		Math.round(eventRevenueTotal(event) * 0.35);
+	const eventVerifiedCheckins = (eventId: string) =>
+		(payload?.checkins ?? []).filter(
+			(checkin) => checkin.eventId === eventId && checkin.result === 'verified'
+		).length;
+	const minTierPrice = (event: { tiers: { price: number }[] }) =>
+		event.tiers.length ? Math.min(...event.tiers.map((tier) => tier.price)) : 0;
+
+	const payoutRequestFor = (eventId: string | undefined) =>
+		resolveEventPayoutRequest(approvals, eventId);
+	const payoutRequest = $derived(payoutRequestFor(mainEvent?.id));
+
+	async function requestPayout(targetEvent?: EventItem) {
+		const target = targetEvent ?? mainEvent;
+		if (!target || !isEventClosed(target)) {
+			toast('Payout request is only available after the event closes', 'info');
+			return;
+		}
+		const existing = payoutRequestFor(target.id);
+		if (
+			existing?.status === 'approved' ||
+			existing?.status === 'pending' ||
+			submittingEventId === target.id
+		) {
+			return;
+		}
+		if (!payoutLinked) {
+			toast('Verify your payout account in Settings → Verification to receive payouts', 'info');
+			return;
+		}
+		const amount = eventPayoutTotal(target);
+		if (amount <= 0) {
+			toast('There is no cleared balance to pay out for this event yet.', 'info');
+			return;
+		}
+		submittingEventId = target.id;
+		try {
+			const response = await fetch('/api/approvals', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					kind: 'payout',
+					amount,
+					subjectId: target.id,
+					subjectLabel: target.title,
+					destination: payoutDestination,
+					bank: payout.bank,
+					accountNumber: payout.accountNumber,
+					accountHolder: page.data.session?.name || ''
+				})
+			});
+			const body = (await response.json().catch(() => ({}))) as Partial<ApprovalRequest> & {
+				error?: string;
+			};
+			if (!response.ok) {
+				toast(body.error ?? 'Your payout request could not be submitted.', 'error');
+				return;
+			}
+			const created: ApprovalRequest = {
+				id: body.id ?? `ap-pending-${target.id}-${Date.now()}`,
+				kind: 'payout',
+				status: 'pending',
+				requesterId: body.requesterId ?? page.data.session?.userId ?? 'demo',
+				title: body.title ?? `Payout request · ${target.title}`,
+				summary: body.summary ?? 'Cleared settlement balance requested',
+				amount: body.amount ?? amount,
+				subjectId: target.id,
+				subjectLabel: target.title,
+				payload: body.payload ?? { eventId: target.id, destination: payoutDestination },
+				createdAt: body.createdAt ?? new Date().toISOString()
+			};
+			submittedPayouts = { ...submittedPayouts, [target.id]: created };
+			toast('Payout request sent for admin approval', 'success');
+			await approvalsQuery.refetch();
+		} catch {
+			toast('Your payout request could not be submitted. Check your connection.', 'error');
+		} finally {
+			submittingEventId = null;
+		}
+	}
+
 	const eventCheckins = $derived(
 		mainEvent
 			? (payload?.checkins ?? []).filter((checkin) => checkin.eventId === mainEvent.id)
-			: (payload?.checkins ?? [])
+			: []
 	);
 	const eventOrders = $derived(
 		mainEvent
 			? (payload?.orders ?? []).filter((order) => order.eventId === mainEvent.id)
-			: (payload?.orders ?? [])
+			: []
 	);
 	const stats = $derived.by(() => {
 		if (!payload?.stats) return undefined;
-		if (!mainEvent || myEvents.length <= 1) return payload.stats;
+		if (!mainEvent) {
+			return {
+				revenue: 0,
+				revenueDeltaPct: 0,
+				checkedIn: 0,
+				capacity: 0,
+				orders: 0,
+				soldPct: 0,
+				soldLastHour: 0,
+				payout: 0
+			};
+		}
+		if (activeEvents.length === 1 && pastEvents.length === 0) return payload.stats;
 		const revenue = mainEvent.tiers.reduce((sum, tier) => sum + tier.sold * tier.price, 0);
 		const capacity = mainEvent.tiers.reduce((sum, tier) => sum + tier.capacity, 0);
 		const sold = mainEvent.tiers.reduce((sum, tier) => sum + tier.sold, 0);
@@ -174,18 +291,12 @@
 			payout: Math.round(revenue * 0.35)
 		};
 	});
-	const eventSoldTotal = (event: { tiers: { sold: number }[] }) =>
-		event.tiers.reduce((sum, tier) => sum + tier.sold, 0);
-	const eventCapacityTotal = (event: { tiers: { capacity: number }[] }) =>
-		event.tiers.reduce((sum, tier) => sum + tier.capacity, 0);
-	const minTierPrice = (event: { tiers: { price: number }[] }) =>
-		event.tiers.length ? Math.min(...event.tiers.map((tier) => tier.price)) : 0;
 
 	let broadcastOpen = $state(false);
 	let staffOpen = $state(false);
 	let broadcastMsg = $state('');
 	let broadcastEventId = $state('');
-	const broadcastEvent = $derived(payload?.events.find((event) => event.id === broadcastEventId) ?? mainEvent);
+	const broadcastEvent = $derived(activeEvents.find((event) => event.id === broadcastEventId) ?? mainEvent);
 	function openBroadcast(eventId?: string) {
 		broadcastEventId = eventId ?? mainEvent?.id ?? '';
 		broadcastOpen = true;
@@ -209,8 +320,17 @@
 
 	// ── desktop console state ──
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
-	// One source of truth: the payout account verified in Settings.
-	const payout = $derived(appSettings.value.payout);
+	// One source of truth: the payout account verified in Settings (with SSR/approval fallback).
+	const approvedBankFromApproval = $derived.by(() => {
+		if (payoutAccountRequest?.status !== 'approved') return null;
+		const p = (payoutAccountRequest.payload ?? {}) as { bank?: string; accountNumber?: string };
+		return p.bank ? { bank: p.bank, accountNumber: p.accountNumber ?? '' } : null;
+	});
+	const payout = $derived(
+		appSettings.value.payout.bank
+			? appSettings.value.payout
+			: (approvedBankFromApproval ?? appSettings.value.payout)
+	);
 	const payoutAccountApproved = $derived(
 		appSettings.value.verification.payoutAccount || payoutAccountRequest?.status === 'approved'
 	);
@@ -223,7 +343,7 @@
 	const scannerEvent = $derived(
 		mainEvent && (mainEvent.gates ?? []).length > 0
 			? mainEvent
-			: payload?.events.find((event) => (event.gates ?? []).length > 0)
+			: activeEvents.find((event) => (event.gates ?? []).length > 0)
 	);
 	const scannerGates = $derived(scannerEvent?.gates ?? []);
 	// A generated PIN stays visible while it matches the current scanner
@@ -245,22 +365,22 @@
 	const potential = $derived(
 		mainEvent
 			? mainEvent.tiers.reduce((x, t) => x + t.capacity * t.price, 0)
-			: (payload?.events ?? []).reduce((s, e) => s + e.tiers.reduce((x, t) => x + t.capacity * t.price, 0), 0)
+			: activeEvents.reduce((s, e) => s + e.tiers.reduce((x, t) => x + t.capacity * t.price, 0), 0)
 	);
 	const goalPct = $derived(stats && potential ? Math.round((stats.revenue / potential) * 1000) / 10 : 0);
 	const gateCount = $derived(scannerGates.length);
 	const terminals = $derived(scannerGates.map((gate) => ({ name: gate.name, sub: `${gate.staff.length} scanner${gate.staff.length === 1 ? '' : 's'} configured`, ms: 'Ready' })));
-	const dateLabel = $derived(
-		mainEvent
-			? mainEvent.endsAt
-				? `${fmtDate(mainEvent.startsAt)}–${fmtDate(mainEvent.endsAt)}, ${new Date(mainEvent.endsAt).getFullYear()}`
-				: `${fmtDate(mainEvent.startsAt)}, ${new Date(mainEvent.startsAt).getFullYear()}`
-			: ''
-	);
+	const formatEventDateRange = (ev: EventItem | undefined) =>
+		ev
+			? ev.endsAt
+				? `${fmtDate(ev.startsAt)}–${fmtDate(ev.endsAt)}, ${new Date(ev.endsAt).getFullYear()}`
+				: `${fmtDate(ev.startsAt)}, ${new Date(ev.startsAt).getFullYear()}`
+			: '';
+	const dateLabel = $derived(formatEventDateRange(mainEvent));
 
-	// The scanner targets the currently selected event when available, otherwise
-	// any gated event or the bare scanner route.
-	const scannerTarget = $derived(mainEvent ?? scannerEvent ?? payload?.events[0]);
+	// The scanner targets the currently selected active event when available,
+	// otherwise any active gated event or the bare scanner route.
+	const scannerTarget = $derived(mainEvent ?? scannerEvent ?? activeEvents[0]);
 	const scannerHref = $derived(
 		scannerTarget ? `/organizer/scan?eventId=${encodeURIComponent(scannerTarget.id)}` : '/organizer/scan'
 	);
@@ -337,7 +457,7 @@
 				</span>
 			</span>
 			<span class="flex items-center gap-3 flex-wrap">
-				{#if myEvents.length > 1}
+				{#if organizerTab === 'active' && myEvents.length > 1}
 					<label class="flex items-center gap-2 h-9 px-3 rounded-lg bg-surface-container-high border border-primary/35 text-on-surface text-body-sm">
 						<ArrowLeftRight class="w-4 h-4 text-primary shrink-0" />
 						<span class="sr-only">Switch active event</span>
@@ -358,25 +478,63 @@
 				<a href="/settings" class="h-9 px-3.5 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors">
 					<ArrowLeftRight class="w-4 h-4 text-on-surface-variant" /><span>Switch Organization</span>
 				</a>
-				<span class="h-9 px-3.5 rounded-lg flex items-center gap-2 {MONO} text-on-surface-variant border border-surface-glass-border">
-					<span class="w-1.5 h-1.5 rounded-full {scannerEvent ? 'bg-accent-emerald animate-pulse' : 'bg-outline-variant'}"></span>
-					{scannerEvent ? `${gateCount} configured event gate${gateCount === 1 ? '' : 's'}` : 'No event gates configured.'}
+				{#if organizerTab === 'active'}
+					<span class="h-9 px-3.5 rounded-lg flex items-center gap-2 {MONO} text-on-surface-variant border border-surface-glass-border">
+						<span class="w-1.5 h-1.5 rounded-full {scannerEvent ? 'bg-accent-emerald animate-pulse' : 'bg-outline-variant'}"></span>
+						{scannerEvent ? `${gateCount} configured event gate${gateCount === 1 ? '' : 's'}` : 'No event gates configured.'}
+					</span>
+				{/if}
+			</span>
+			{#if organizerTab === 'active'}
+				<span class="flex items-center gap-3 flex-wrap">
+					<button class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={exportCsv}>
+						<Download class="w-4 h-4 text-on-surface-variant" /><span>Export Attendee CSV</span>
+					</button>
+					<a href={scannerHref} class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" title="Open the gate scanner">
+						<ScanBarcode class="w-4 h-4 text-on-surface-variant" /><span>Open Camera QR Scanner</span>
+					</a>
+					<a href="/organizer/create" class="h-10 px-4 rounded-lg flex items-center gap-2 bg-on-surface text-surface-base text-body-sm font-semibold hover:opacity-90 transition-opacity">
+						<Plus class="w-4 h-4" /><span>Create New Event</span>
+					</a>
 				</span>
-			</span>
-			<span class="flex items-center gap-3 flex-wrap">
-				<button class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={exportCsv}>
-					<Download class="w-4 h-4 text-on-surface-variant" /><span>Export Attendee CSV</span>
-				</button>
-				<a href={scannerHref} class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" title="Open the gate scanner">
-					<ScanBarcode class="w-4 h-4 text-on-surface-variant" /><span>Open Camera QR Scanner</span>
-				</a>
-				<a href="/organizer/create" class="h-10 px-4 rounded-lg flex items-center gap-2 bg-on-surface text-surface-base text-body-sm font-semibold hover:opacity-90 transition-opacity">
-					<Plus class="w-4 h-4" /><span>Create New Event</span>
-				</a>
-			</span>
+			{/if}
 		</div>
 
-		{#if myEvents.length > 1}
+		<!-- Active vs Past event tabs -->
+		<div
+			role="tablist"
+			aria-label="Organizer event views"
+			class="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-surface-glass-border bg-surface-container p-1.5"
+		>
+			<button
+				type="button"
+				role="tab"
+				data-organizer-tab="active"
+				aria-selected={organizerTab === 'active'}
+				onclick={() => setOrganizerTab('active')}
+				class="h-9 px-4 rounded-lg text-body-sm font-semibold flex items-center gap-2 transition-all {organizerTab === 'active'
+					? 'bg-primary text-on-primary shadow-sm'
+					: 'text-on-surface-variant hover:text-on-surface'}"
+			>
+				<span>Active</span>
+				<span class="{MONO} text-[10px] px-1.5 py-0.5 rounded-full {organizerTab === 'active' ? 'bg-on-primary/15 text-on-primary' : 'bg-surface-container-highest text-on-surface-variant'}">{activeEvents.length}</span>
+			</button>
+			<button
+				type="button"
+				role="tab"
+				data-organizer-tab="past"
+				aria-selected={organizerTab === 'past'}
+				onclick={() => setOrganizerTab('past')}
+				class="h-9 px-4 rounded-lg text-body-sm font-semibold flex items-center gap-2 transition-all {organizerTab === 'past'
+					? 'bg-primary text-on-primary shadow-sm'
+					: 'text-on-surface-variant hover:text-on-surface'}"
+			>
+				<span>Past</span>
+				<span class="{MONO} text-[10px] px-1.5 py-0.5 rounded-full {organizerTab === 'past' ? 'bg-on-primary/15 text-on-primary' : 'bg-surface-container-highest text-on-surface-variant'}">{pastEvents.length}</span>
+			</button>
+		</div>
+
+		{#if organizerTab === 'active' && myEvents.length > 1}
 			<div data-event-switcher="desktop" class="mt-4 rounded-xl border border-surface-glass-border bg-surface-container px-4 py-3 flex flex-wrap items-center gap-2.5">
 				<span class="{MONO} text-on-surface-variant flex items-center gap-1.5 mr-1 shrink-0">
 					<CalendarDays class="w-3.5 h-3.5 text-primary" />
@@ -401,6 +559,99 @@
 		{/if}
 	</div>
 
+	{#if organizerTab === 'past'}
+		<div data-organizer-past-panel="desktop" class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col gap-5 flex-1">
+			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
+				<div class="flex flex-wrap items-center justify-between gap-4">
+					<div>
+						<span class="font-display text-headline-md text-on-surface block">Past Events</span>
+						<p class="text-body-sm text-on-surface-variant mt-1">
+							Closed events are locked from edits, broadcasts, and gate operations. Only settlement payout requests are available here.
+						</p>
+					</div>
+					<div class="rounded-lg border border-surface-glass-border bg-surface-container-high/60 px-4 py-2.5 flex items-center gap-2.5">
+						<ShieldCheck class="w-4 h-4 {payoutLinked ? 'text-accent-emerald' : 'text-outline-variant'} shrink-0" />
+						<span class="text-body-sm text-on-surface">
+							{payoutLinked ? `Settlement account: ${payoutAccountLabel(payout)}` : 'No verified payout account linked (Settings → Verification)'}
+						</span>
+					</div>
+				</div>
+
+				{#if pastEvents.length === 0}
+					<div class="mt-6 rounded-lg border border-surface-glass-border bg-surface-container-high/40 p-8 text-center">
+						<p class="font-display text-body-lg font-semibold text-on-surface">No past events yet</p>
+						<p class="text-body-sm text-on-surface-variant mt-1">
+							Once an approved event reaches its end date and time, it moves here automatically so you can request your payout.
+						</p>
+					</div>
+				{:else}
+					<div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+						{#each pastEvents as pastEvent (pastEvent.id)}
+							{@const evRevenue = eventRevenueTotal(pastEvent)}
+							{@const evPayout = eventPayoutTotal(pastEvent)}
+							{@const evReq = payoutRequestFor(pastEvent.id)}
+							<article
+								data-past-event-card={pastEvent.id}
+								class="rounded-xl border border-surface-glass-border bg-surface-container-high/50 p-5 flex flex-col gap-4"
+							>
+								<div class="flex items-start justify-between gap-3">
+									<div class="min-w-0">
+										<h3 class="font-display text-body-lg font-bold text-on-surface truncate">{pastEvent.title}</h3>
+										<p class="text-body-sm text-on-surface-variant mt-1 truncate">
+											{formatEventDateRange(pastEvent)} • {pastEvent.venue}, {pastEvent.city}
+										</p>
+									</div>
+									<EventStatusBadge status="closed" />
+								</div>
+
+								<div class="grid grid-cols-3 gap-2.5 rounded-lg border border-surface-glass-border bg-surface-container p-3">
+									<div>
+										<span class="{MONO} text-on-surface-variant block">Sold</span>
+										<span class="text-body-md font-semibold text-on-surface block mt-0.5">{eventSoldTotal(pastEvent)}/{eventCapacityTotal(pastEvent)}</span>
+									</div>
+									<div>
+										<span class="{MONO} text-on-surface-variant block">Checked In</span>
+										<span class="text-body-md font-semibold text-on-surface block mt-0.5">{eventVerifiedCheckins(pastEvent.id)}</span>
+									</div>
+									<div>
+										<span class="{MONO} text-on-surface-variant block">Gross</span>
+										<span class="text-body-md font-semibold text-on-surface block mt-0.5">{formatMoney(evRevenue)}</span>
+									</div>
+								</div>
+
+								<div class="flex items-baseline justify-between pt-1">
+									<span class="{MONO} text-on-surface-variant">Settlement Payout</span>
+									<span class="font-display text-headline-md font-bold text-on-surface">{formatMoney(evPayout)}</span>
+								</div>
+
+								<div class="mt-auto">
+									<PayoutRequestButton
+										event={pastEvent}
+										request={evReq}
+										submitting={submittingEventId === pastEvent.id}
+										onclick={() => requestPayout(pastEvent)}
+									/>
+									{#if evReq}
+										<div class="mt-3">
+											<ApprovalNotice
+												request={evReq}
+												pendingLabel="Payout requested — awaiting admin approval"
+												pendingBody="Your payout request is queued for the finance team. Funds move once it is approved."
+												approvedLabel="Payout approved"
+												approvedBody="Approved by the Owltside finance team."
+												rejectedLabel="Payout denied"
+												rejectedBody="The review team denied this payout request."
+											/>
+										</div>
+									{/if}
+								</div>
+							</article>
+						{/each}
+					</div>
+				{/if}
+			</section>
+		</div>
+	{:else}
 	{#if stats}
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-5 grid md:grid-cols-2 xl:grid-cols-4 gap-5">
 			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col">
@@ -456,13 +707,18 @@
 					<span class="{MONO} text-on-surface-variant">{payoutLinked ? payoutAccountLabel(payout) : '—'}</span>
 				</div>
 				<span class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-4">{formatMoney(stats.payout)}</span>
-				<span class="text-body-sm text-on-surface-variant mt-1.5">Cleared settlement balance</span>
+				<span class="text-body-sm text-on-surface-variant mt-1.5">Available after event closes</span>
 				<div class="flex-1"></div>
-				<button class="w-full h-9 mt-4 rounded-md flex items-center justify-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors" onclick={() => requestInstantPayout()} disabled={payoutPending || payoutSubmitting} title={payoutPending ? 'Your payout request is awaiting admin approval' : undefined}>
-					<Zap class="w-4 h-4 text-accent-amber" /><span>{payoutPending ? 'Payout pending approval' : payoutSubmitting ? 'Submitting…' : 'Request Instant Payout'}</span>
-				</button>
+				<div class="mt-4">
+					<PayoutRequestButton
+						event={mainEvent}
+						request={payoutRequest}
+						submitting={submittingEventId === mainEvent?.id}
+						onclick={() => requestPayout(mainEvent)}
+					/>
+				</div>
 				{#if payoutRequest}
-					<div class="mt-3"><ApprovalNotice request={payoutRequest} pendingLabel="Payout pending admin approval" pendingBody="Your instant payout is queued for the finance team. Funds move once it is approved." /></div>
+					<div class="mt-3"><ApprovalNotice request={payoutRequest} pendingLabel="Payout requested — awaiting admin approval" pendingBody="Your payout request is queued for the finance team. Funds move once it is approved." approvedLabel="Payout approved" rejectedLabel="Payout denied" /></div>
 				{:else if payoutAccountRequest && !payoutLinked}
 					<div class="mt-3"><ApprovalNotice request={payoutAccountRequest} pendingLabel="Payout account pending review" pendingBody="Settlements are on hold until the review team approves this account." /></div>
 				{/if}
@@ -855,6 +1111,7 @@
 			</section>
 		</div>
 	</div>
+	{/if}
 
 	<footer class="mt-4 border-t border-surface-glass-border">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
@@ -878,7 +1135,9 @@
 <div class="md:hidden">
 	<TopBar title="Organizer" subtitle="Console & gate ops">
 		{#snippet right()}
-			<button aria-label="Export attendee check-ins" onclick={exportCsv} class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container"><Download class="w-4.5 h-4.5" /></button>
+			{#if organizerTab === 'active'}
+				<button aria-label="Export attendee check-ins" onclick={exportCsv} class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container"><Download class="w-4.5 h-4.5" /></button>
+			{/if}
 		{/snippet}
 	</TopBar>
 
@@ -895,8 +1154,10 @@
 						<h1 class="font-display text-headline-md text-on-surface truncate flex items-center gap-1.5">{page.data.session?.name ?? 'Ada Obi'} {#if isFullyVerified}<BadgeCheck class="w-4 h-4 text-tertiary shrink-0" aria-label="Verified member" />{/if}</h1>
 						<div class="flex items-center gap-1.5 mt-0.5">
 							<span class="rounded-full bg-surface-container-highest px-2 py-0.5 text-label-badge text-on-surface uppercase border border-outline-variant/20">Organizer Role</span>
-							<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
-							<span class="text-body-sm text-on-surface-variant truncate">{scannerEvent ? `${scannerGates.length} gate${scannerGates.length === 1 ? '' : 's'} configured` : 'No event gates'}</span>
+							{#if organizerTab === 'active'}
+								<span class="w-1 h-1 rounded-full bg-outline-variant"></span>
+								<span class="text-body-sm text-on-surface-variant truncate">{scannerEvent ? `${scannerGates.length} gate${scannerGates.length === 1 ? '' : 's'} configured` : 'No event gates'}</span>
+							{/if}
 						</div>
 					</div>
 				</div>
@@ -907,6 +1168,128 @@
 			</div>
 		</div>
 
+		<!-- Active vs Past event tabs -->
+		<div
+			role="tablist"
+			aria-label="Organizer event views"
+			class="grid grid-cols-2 gap-1.5 rounded-xl bg-surface-container border border-outline-variant/30 p-1 shadow-sm"
+		>
+			<button
+				type="button"
+				role="tab"
+				data-organizer-tab="active"
+				aria-selected={organizerTab === 'active'}
+				onclick={() => setOrganizerTab('active')}
+				class="h-9 rounded-lg text-body-sm font-semibold flex items-center justify-center gap-1.5 transition-all {organizerTab === 'active'
+					? 'bg-primary text-on-primary shadow-sm'
+					: 'text-on-surface-variant hover:text-on-surface'}"
+			>
+				<span>Active</span>
+				<span class="text-label-badge px-1.5 py-0.5 rounded-full {organizerTab === 'active' ? 'bg-on-primary/15 text-on-primary' : 'bg-surface-container-highest text-on-surface-variant'}">{activeEvents.length}</span>
+			</button>
+			<button
+				type="button"
+				role="tab"
+				data-organizer-tab="past"
+				aria-selected={organizerTab === 'past'}
+				onclick={() => setOrganizerTab('past')}
+				class="h-9 rounded-lg text-body-sm font-semibold flex items-center justify-center gap-1.5 transition-all {organizerTab === 'past'
+					? 'bg-primary text-on-primary shadow-sm'
+					: 'text-on-surface-variant hover:text-on-surface'}"
+			>
+				<span>Past</span>
+				<span class="text-label-badge px-1.5 py-0.5 rounded-full {organizerTab === 'past' ? 'bg-on-primary/15 text-on-primary' : 'bg-surface-container-highest text-on-surface-variant'}">{pastEvents.length}</span>
+			</button>
+		</div>
+
+		{#if organizerTab === 'past'}
+			<section data-organizer-past-panel="mobile" class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm flex flex-col gap-space-sm">
+				<div class="flex items-start justify-between gap-2">
+					<div>
+						<h2 class="font-display text-headline-md text-on-surface">Past Events</h2>
+						<p class="text-body-sm text-on-surface-variant pt-1">
+							Closed events are locked from edits, scanning, and broadcasts. Only payout requests are available.
+						</p>
+					</div>
+					<span class="text-label-badge uppercase tracking-wider text-on-surface-variant shrink-0">{pastEvents.length} closed</span>
+				</div>
+
+				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 px-3 py-2 flex items-center gap-2">
+					<ShieldCheck class="w-4 h-4 {payoutLinked ? 'text-accent-emerald' : 'text-outline-variant'} shrink-0" />
+					<span class="text-body-sm text-on-surface truncate">
+						{payoutLinked ? `Settlement: ${payoutAccountLabel(payout)}` : 'Verify payout account in Settings → Verification'}
+					</span>
+				</div>
+
+				{#if pastEvents.length === 0}
+					<div class="rounded-lg bg-surface-container-low border border-outline-variant/25 p-5 text-center">
+						<p class="text-body-md font-semibold text-on-surface">No past events yet</p>
+						<p class="text-body-sm text-on-surface-variant pt-1">
+							Events move here automatically after they close so you can request your payout.
+						</p>
+					</div>
+				{:else}
+					<div class="flex flex-col gap-3 pt-1">
+						{#each pastEvents as pastEvent (pastEvent.id)}
+							{@const evRevenue = eventRevenueTotal(pastEvent)}
+							{@const evPayout = eventPayoutTotal(pastEvent)}
+							{@const evReq = payoutRequestFor(pastEvent.id)}
+							<article
+								data-past-event-card={pastEvent.id}
+								class="rounded-xl border border-outline-variant/30 bg-surface-container-low p-3.5 flex flex-col gap-3"
+							>
+								<div class="flex items-start justify-between gap-2">
+									<div class="min-w-0">
+										<h3 class="text-body-md font-semibold text-on-surface truncate">{pastEvent.title}</h3>
+										<p class="text-label-badge text-on-surface-variant truncate pt-0.5">
+											{formatEventDateRange(pastEvent)} • {pastEvent.venue}
+										</p>
+									</div>
+									<EventStatusBadge status="closed" />
+								</div>
+
+								<div class="grid grid-cols-3 gap-2 text-label-badge rounded-lg bg-surface-container border border-outline-variant/20 p-2.5">
+									<div>
+										<span class="text-on-surface-variant block">Sold</span>
+										<span class="text-on-surface font-semibold block pt-0.5">{eventSoldTotal(pastEvent)}/{eventCapacityTotal(pastEvent)}</span>
+									</div>
+									<div>
+										<span class="text-on-surface-variant block">Checked in</span>
+										<span class="text-on-surface font-semibold block pt-0.5">{eventVerifiedCheckins(pastEvent.id)}</span>
+									</div>
+									<div>
+										<span class="text-on-surface-variant block">Gross</span>
+										<span class="text-on-surface font-semibold block pt-0.5">{formatMoney(evRevenue)}</span>
+									</div>
+								</div>
+
+								<div class="flex items-baseline justify-between">
+									<span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Payout Balance</span>
+									<span class="font-display text-headline-md text-on-surface font-bold">{formatMoney(evPayout)}</span>
+								</div>
+
+								<PayoutRequestButton
+									event={pastEvent}
+									request={evReq}
+									submitting={submittingEventId === pastEvent.id}
+									onclick={() => requestPayout(pastEvent)}
+								/>
+
+								{#if evReq}
+									<ApprovalNotice
+										request={evReq}
+										pendingLabel="Payout requested — awaiting admin approval"
+										pendingBody="Queued for the finance team — funds move once approved."
+										approvedLabel="Payout approved"
+										rejectedLabel="Payout denied"
+									/>
+								{/if}
+							</article>
+						{/each}
+					</div>
+				{/if}
+			</section>
+		{:else}
 		{#if myEvents.length > 1}
 			<section data-event-switcher="mobile" class="rounded-xl bg-surface-container border border-primary/30 p-space-md shadow-sm flex flex-col gap-2.5">
 				<div class="flex items-center justify-between gap-2">
@@ -1094,13 +1477,19 @@
 					</div>
 					<div class="my-space-xs">
 						<span class="font-display text-headline-lg-mobile text-on-surface block tracking-tight">{formatMoney(stats?.payout ?? 0)}</span>
-						<span class="text-label-badge text-on-surface-variant block mt-1">Ready for transfer</span>
+						<span class="text-label-badge text-on-surface-variant block mt-1">Available after event closes</span>
 					</div>
-					<button class="w-full h-8 mt-1 rounded-full bg-primary-fixed text-surface font-medium flex items-center justify-center gap-1 transition-all active:scale-95 shadow-sm" onclick={() => requestInstantPayout()} disabled={payoutPending || payoutSubmitting} title={payoutPending ? 'Your payout request is awaiting admin approval' : undefined}>
-						<Send class="w-3.5 h-3.5" /><span class="text-label-badge font-semibold">{payoutPending ? 'Payout pending' : 'Instant Payout'}</span>
-					</button>
+					<div class="mt-1">
+						<PayoutRequestButton
+							event={mainEvent}
+							request={payoutRequest}
+							submitting={submittingEventId === mainEvent?.id}
+							compact
+							onclick={() => requestPayout(mainEvent)}
+						/>
+					</div>
 					{#if payoutRequest}
-						<div class="mt-2"><ApprovalNotice request={payoutRequest} pendingLabel="Payout pending admin approval" pendingBody="Queued for the finance team — funds move once approved." /></div>
+						<div class="mt-2"><ApprovalNotice request={payoutRequest} pendingLabel="Payout requested — awaiting admin approval" pendingBody="Queued for the finance team — funds move once approved." approvedLabel="Payout approved" rejectedLabel="Payout denied" /></div>
 					{/if}
 				</div>
 			</div>
@@ -1300,6 +1689,7 @@
 				</button>
 			</div>
 		</div>
+		{/if}
 	</div>
 </main>
 </div>
@@ -1332,7 +1722,7 @@
 			);
 		}}
 	>
-		{#if (payload?.events.length ?? 0) > 1}
+		{#if activeEvents.length > 1}
 			<label class="flex flex-col gap-1 text-body-sm text-on-surface-variant">
 				Event
 				<select
@@ -1340,7 +1730,7 @@
 					bind:value={broadcastEventId}
 					class="px-3 py-2.5 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline"
 				>
-					{#each payload?.events ?? [] as e (e.id)}<option value={e.id}>{e.title}</option>{/each}
+					{#each activeEvents as e (e.id)}<option value={e.id}>{e.title}</option>{/each}
 				</select>
 			</label>
 		{:else}

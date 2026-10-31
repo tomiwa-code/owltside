@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { demoSource } from '$lib/server/datasource';
+import { decideDemoApproval, demoSource } from '$lib/server/datasource';
 import * as demo from '$lib/server/demo/seed';
 import { POST as submitApproval, GET as listMine } from '../../src/routes/api/approvals/+server';
 
@@ -116,25 +116,57 @@ describe('POST /api/approvals', () => {
 		expect(((await response.json()) as { error: string }).error).toMatch(/10-digit/i);
 	});
 
-	it('accepts a payout request with a positive amount and rejects an empty balance', async () => {
-		const ok = await submitApproval(
+	it('accepts a payout request only after the event closes, blocks active events, and blocks re-requests once approved', async () => {
+		const activeRes = await submitApproval(
 			context(
 				jsonRequest({
 					kind: 'payout',
 					amount: 1_240_000,
-					subjectId: 'e-warehouse-night',
-					subjectLabel: 'Yaba Rooftop Sessions',
+					subjectId: demo.rooftopEvent.id,
+					subjectLabel: demo.rooftopEvent.title,
+					destination: 'GTBank ••••6789'
+				})
+			)
+		);
+		expect(activeRes.status).toBe(400);
+		expect(((await activeRes.json()) as { error: string }).error).toMatch(/after the event closes/i);
+
+		const ok = await submitApproval(
+			context(
+				jsonRequest({
+					kind: 'payout',
+					amount: 308_000,
+					subjectId: demo.pastSessionEvent.id,
+					subjectLabel: demo.pastSessionEvent.title,
 					destination: 'GTBank ••••6789'
 				})
 			)
 		);
 		expect(ok.status).toBe(201);
-		const created = (await ok.json()) as { kind: string; title: string; amount: number };
+		const created = (await ok.json()) as { id: string; kind: string; title: string; amount: number };
 		expect(created.kind).toBe('payout');
-		expect(created.title).toContain('Yaba Rooftop Sessions');
-		expect(created.amount).toBe(1_240_000);
+		expect(created.title).toBe(`Payout request · ${demo.pastSessionEvent.title}`);
+		expect(created.amount).toBe(308_000);
 
-		const empty = await submitApproval(context(jsonRequest({ kind: 'payout', amount: 0 })));
+		// Once approved by admin, payout cannot be requested again for this event.
+		decideDemoApproval(created.id, 'approved', 'Settled to GTBank');
+		const repeatAfterApproval = await submitApproval(
+			context(
+				jsonRequest({
+					kind: 'payout',
+					amount: 308_000,
+					subjectId: demo.pastSessionEvent.id,
+					subjectLabel: demo.pastSessionEvent.title,
+					destination: 'GTBank ••••6789'
+				})
+			)
+		);
+		expect(repeatAfterApproval.status).toBe(400);
+		expect(((await repeatAfterApproval.json()) as { error: string }).error).toMatch(/already been approved/i);
+
+		const empty = await submitApproval(
+			context(jsonRequest({ kind: 'payout', subjectId: demo.pastSessionEvent.id, amount: 0 }))
+		);
 		expect(empty.status).toBe(400);
 	});
 
