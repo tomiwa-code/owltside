@@ -7,26 +7,34 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ locals, cookies }) => {
 	const source = getSource(createSupabase(cookies));
 	if (!locals.session) {
-		const events = await source.listEvents().catch(() => []);
+		const [feedEvents, demoProfileEvents] = await Promise.all([
+			source.listEvents().catch(() => []),
+			locals.demoMode ? source.getProfileEvents('u-ada').catch(() => []) : Promise.resolve([])
+		]);
+		const merged = new Map(feedEvents.map((event) => [event.id, event]));
+		for (const event of demoProfileEvents) merged.set(event.id, event);
 		return {
 			session: null,
 			demoMode: locals.demoMode,
 			tickets: [],
 			profile: null,
-			events
+			events: [...merged.values()]
 		};
 	}
-	const [tickets, profile, events] = await Promise.all([
+	const [tickets, profile, feedEvents, ownProfileEvents] = await Promise.all([
 		source.getTickets(locals.session.userId).catch(() => []),
 		source.getProfile(locals.session.handle).catch(() => undefined),
-		source.listEvents().catch(() => [])
+		source.listEvents().catch(() => []),
+		source.getProfileEvents(locals.session.userId).catch(() => [])
 	]);
+	const merged = new Map(feedEvents.map((event) => [event.id, event]));
+	for (const event of ownProfileEvents) merged.set(event.id, event);
 	return {
 		session: locals.session,
 		demoMode: locals.demoMode,
 		tickets,
 		profile: profile ?? null,
-		events
+		events: [...merged.values()]
 	};
 };
 

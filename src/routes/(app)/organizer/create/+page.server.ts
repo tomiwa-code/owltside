@@ -46,6 +46,10 @@ const draftSchema = z.object({
 	})).max(100).default([]),
 	date: z.iso.date('Choose a valid start date'),
 	dateEnd: z.iso.date('Choose a valid end date'),
+	timeEnd: z
+		.string()
+		.regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Choose a valid end time')
+		.default('23:59'),
 	venue: z.string().trim().min(2, 'Add a venue').max(160),
 	city: z.enum(NIGERIAN_STATES).default('Lagos'),
 	description: z.string().trim().min(10, 'Describe your event in at least 10 characters').max(600),
@@ -113,6 +117,15 @@ export const actions: Actions = {
 		const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
 		const editId = String(form.get('eventId') ?? '').trim();
 		if (d.date < today && !editId) return fail(400, { error: 'Start date cannot be in the past.' });
+		const startClock = d.date === d.dateEnd && d.timeEnd < '09:00' ? '00:00' : '09:00';
+		const startsAt = `${d.date}T${startClock}:00+01:00`;
+		const endsAt = `${d.dateEnd}T${d.timeEnd}:00+01:00`;
+		if (Date.parse(endsAt) < Date.parse(startsAt)) {
+			return fail(400, { error: 'End date and time cannot be before the start date.' });
+		}
+		if (!editId && Date.parse(endsAt) <= Date.now()) {
+			return fail(400, { error: 'End date and time must be in the future.' });
+		}
 		let poster: string | undefined;
 		let eventId: string;
 		try {
@@ -175,8 +188,8 @@ export const actions: Actions = {
 				title: d.title,
 				category: d.category,
 				tags: d.tags,
-				startsAt: `${d.date}T09:00:00+01:00`,
-				endsAt: `${d.dateEnd}T23:59:00+01:00`,
+				startsAt,
+				endsAt,
 				venue: d.venue,
 				city: d.city,
 				description: d.description,

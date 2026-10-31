@@ -17,7 +17,7 @@
 			? 'bg-accent-emerald/10 border-accent-emerald/30 text-accent-emerald'
 			: status === 'pending'
 				? 'bg-accent-amber/10 border-accent-amber/30 text-accent-amber'
-				: status === 'draft'
+				: status === 'draft' || status === 'closed'
 					? 'bg-surface-container-highest border-outline-variant/30 text-on-surface-variant'
 					: 'bg-error/10 border-error/30 text-error'
 	);

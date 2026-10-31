@@ -13,6 +13,7 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 import { computeTotals } from '$lib/server/promos';
+import { hasEventEnded } from '$lib/utils/event-status';
 import { normalizePromoCode } from '$lib/utils/promo';
 
 export const load: PageServerLoad = async ({ url, locals, cookies }) => {
@@ -26,6 +27,9 @@ export const load: PageServerLoad = async ({ url, locals, cookies }) => {
 	const source = getSource(createSupabase(cookies));
 	const event = await source.getEvent(slug);
 	if (!event) error(404, 'Event not found');
+	if (hasEventEnded(event) || event.status === 'closed') {
+		redirect(303, `/events/${encodeURIComponent(slug)}`);
+	}
 	const tierId = url.searchParams.get('tier') ?? event.tiers.find((t) => t.capacity - t.sold > 0)?.id;
 	const tier = event.tiers.find((t) => t.id === tierId) ?? event.tiers[0];
 	const qty = Math.max(1, Math.min(6, Number(url.searchParams.get('qty') ?? 1)));
@@ -64,6 +68,9 @@ export const actions: Actions = {
 		}
 		const event = await source.getEvent(slug);
 		if (!event) return fail(404, { error: 'Event not found' });
+		if (hasEventEnded(event) || event.status === 'closed') {
+			return fail(400, { error: 'This event has ended — ticket sales are closed' });
+		}
 		const tier = event.tiers.find((t) => t.id === tierId);
 		if (!tier) return fail(400, { error: 'Unknown tier' });
 

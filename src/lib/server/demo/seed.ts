@@ -314,7 +314,8 @@ export const events: EventItem[] = [
 		title: 'Underground Warehouse 04',
 		category: 'nightlife',
 		tags: ['Techno', 'Secret location', 'Live now'],
-		startsAt: at(0, Math.max(0, new Date(now).getHours() - 2)),
+		startsAt: new Date(now - 2 * 3_600_000).toISOString(),
+		endsAt: new Date(now + 4 * 3_600_000).toISOString(),
 		venue: 'Warehouse 04, Apapa Rd',
 		city: 'Lagos',
 		cover: { from: '#111827', to: '#312e81', icon: 'warehouse' },
@@ -380,8 +381,8 @@ export const rooftopEvent: EventItem = {
 	title: 'Yaba Rooftop Sessions',
 	category: 'music',
 	tags: ['Live', 'Rooftop', 'Alté'],
-	startsAt: at(0, Math.max(0, new Date(now).getHours() - 1)),
-	endsAt: at(0, 23),
+	startsAt: new Date(now - 3_600_000).toISOString(),
+	endsAt: new Date(now + 5 * 3_600_000).toISOString(),
 	venue: 'Rooftop @44',
 	city: 'Yaba, Lagos',
 	cover: { from: '#7c2d12', to: '#312e81', icon: 'audio-waveform' },
@@ -443,6 +444,34 @@ export const pendingReviewEvent: EventItem = {
 	attendees: 0
 };
 events.push(pendingReviewEvent);
+
+/** A previously published event whose end date/time has passed (shown as Closed / Past). */
+export const pastSessionEvent: EventItem = {
+	id: 'e-past-vinyl',
+	status: 'published',
+	slug: 'mainland-vinyl-social',
+	title: 'Mainland Vinyl Social',
+	category: 'music',
+	tags: ['Vinyl', 'Community', 'Soul'],
+	startsAt: at(-14, 17),
+	endsAt: at(-14, 22),
+	venue: 'Jazzhole Courtyard',
+	city: 'Ikoyi, Lagos',
+	cover: { from: '#312e81', to: '#111827', icon: 'disc-3' },
+	description:
+		'Crate digging, rare West African pressings and acoustic sunset sets in the courtyard.',
+	organizer: people.ada,
+	speakers: [people.tunde],
+	agenda: [{ id: 'pv-1', start: at(-14, 18), title: 'Opening crates', location: 'Courtyard' }],
+	tiers: [{ id: 'tier-vinyl', name: 'Entry Pass', price: 8_000, sold: 110, capacity: 120 }],
+	faqs: [],
+	policies: ['Respect the wax'],
+	gates: [{ id: 'gate-courtyard', name: 'Courtyard Gate', modes: ['QR', 'Manual'], staff: [] }],
+	live: false,
+	viewsToday: 0,
+	attendees: 110
+};
+events.push(pastSessionEvent);
 
 const rooftopCodes = [
 	'EV-RT41-AAAA-0001',

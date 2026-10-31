@@ -12,7 +12,7 @@ const emptyListed = {
 	categories: [] as string[],
 	organizers: [] as string[],
 	organizerList: [] as { id: string; name: string }[],
-	counts: { total: 0, published: 0, pending: 0, draft: 0, suspended: 0 }
+	counts: { total: 0, published: 0, completed: 0, pending: 0, draft: 0, suspended: 0 }
 };
 
 export const load: PageServerLoad = async ({ url }) => {

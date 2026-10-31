@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { extractApprovalAttachments } from '../src/lib/server/approvals';
 import { isUserRecordBlocked, mapSupabaseEvent } from '../src/lib/server/supabase-data';
+import { eventStatus, hasAdminEventEnded } from '../src/lib/utils/status';
 import { auditFor, logAudit } from '../src/lib/server/store';
 
 describe('Admin unredacted details & KYC document attachments', () => {
@@ -71,6 +72,54 @@ describe('Admin unredacted details & KYC document attachments', () => {
 		expect(mapped.promos).toEqual([{ code: 'VIP20', percent: 20, used: 4, maxUses: 50 }]);
 		expect(mapped.gatesList).toEqual([{ name: 'North Gate', staffCount: 2 }]);
 		expect(mapped.speakersList?.[0]?.inviteStatus).toBe('accepted');
+	});
+
+	it('transitions published events to completed (Closed) once their end date and time passes instead of staying published', () => {
+		const row = {
+			id: '22222222-3333-4444-8555-666666666666',
+			slug: 'lagos-sound-weekender',
+			title: 'Lagos Sound Weekender',
+			category: 'music',
+			organizer_id: 'org-2',
+			status: 'published',
+			starts_at: '2026-10-30T16:00:00+01:00',
+			ends_at: '2026-10-30T22:30:00+01:00',
+			venue: 'Landmark Beach',
+			city: 'Lagos',
+			tiers: [{ name: 'General', price: 15000, capacity: 200, sold: 180 }]
+		};
+
+		const beforeEnd = Date.parse('2026-10-30T22:29:59+01:00');
+		const atEnd = Date.parse('2026-10-30T22:30:00+01:00');
+
+		expect(hasAdminEventEnded(row.starts_at, row.ends_at, beforeEnd)).toBe(false);
+		expect(mapSupabaseEvent(row, 'Organizer', { now: beforeEnd }).status).toBe('published');
+
+		expect(hasAdminEventEnded(row.starts_at, row.ends_at, atEnd)).toBe(true);
+		const closed = mapSupabaseEvent(row, 'Organizer', { now: atEnd });
+		expect(closed.status).toBe('completed');
+		expect(eventStatus(closed.status).label).toBe('Closed');
+
+		// Legacy published events without ends_at close after their WAT event date passes
+		const legacyRow = { ...row, ends_at: null };
+		expect(
+			mapSupabaseEvent(legacyRow, 'Organizer', {
+				now: Date.parse('2026-10-30T23:00:00+01:00')
+			}).status
+		).toBe('published');
+		expect(
+			mapSupabaseEvent(legacyRow, 'Organizer', {
+				now: Date.parse('2026-10-31T00:00:01+01:00')
+			}).status
+		).toBe('completed');
+
+		// Suspended/rejected/pending/draft events keep their moderation state even if past
+		expect(
+			mapSupabaseEvent({ ...row, status: 'suspended' }, 'Organizer', { now: atEnd }).status
+		).toBe('suspended');
+		expect(
+			mapSupabaseEvent({ ...row, status: 'pending' }, 'Organizer', { now: atEnd }).status
+		).toBe('pending');
 	});
 });
 

@@ -111,10 +111,11 @@ export interface CreateReportInput {
 }
 
 /**
- * Moderation state of an event. Organizer submissions start as `pending` and
- * only reach the public feeds once an admin publishes them.
+ * Moderation and lifecycle state of an event. Organizer submissions start as
+ * `pending`, reach the public feeds once an admin publishes them (`published`),
+ * and transition to `closed` once the event's end date and time has passed.
  */
-export type EventStatus = 'draft' | 'pending' | 'published' | 'rejected' | 'suspended';
+export type EventStatus = 'draft' | 'pending' | 'published' | 'closed' | 'rejected' | 'suspended';
 
 export interface EventSpeaker extends Profile {
 	role?: string;

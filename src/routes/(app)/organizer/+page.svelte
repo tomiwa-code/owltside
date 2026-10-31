@@ -539,8 +539,8 @@
 						<div class="min-w-0">
 							<span class="flex items-center gap-3 flex-wrap">
 								<span class="flex items-center gap-1.5 px-2.5 py-1 rounded {MONO} bg-surface-container-high border border-surface-glass-border text-on-surface">
-									<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span>
-									{mainEvent.gates?.length ? `${mainEvent.gates.length} Gates Configured` : mainEvent.live ? 'Live' : 'Scheduled'}
+									<span class="w-1.5 h-1.5 rounded-full {mainEvent.status === 'published' ? 'bg-accent-emerald animate-pulse' : 'bg-outline-variant'}"></span>
+									{mainEvent.gates?.length ? `${mainEvent.gates.length} Gates Configured` : mainEvent.status === 'closed' ? 'Closed' : mainEvent.live ? 'Live' : 'Scheduled'}
 								</span>
 								{#if mainEvent.status !== 'published'}
 									<EventStatusBadge status={mainEvent.status} size="md" />

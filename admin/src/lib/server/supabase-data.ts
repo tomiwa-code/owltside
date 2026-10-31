@@ -13,6 +13,7 @@ import type {
 	EventTier
 } from '$admin/types';
 import { extractApprovalAttachments } from './approvals';
+import { hasAdminEventEnded } from '$admin/utils/status';
 import { auditFor, type EventQuery, type OrganizerQuery, type Page, type UserQuery } from './store';
 
 let localEnvLoaded = false;
@@ -91,6 +92,7 @@ export function mapSupabaseEvent(
 		organizerEmail?: string;
 		organizerPhone?: string;
 		promos?: { code: string; percent: number; used: number; maxUses: number }[];
+		now?: number;
 	}
 ): AdminEvent {
 	const tiers = parseTiers(row.tiers);
@@ -100,16 +102,24 @@ export function mapSupabaseEvent(
 	const sold = tierSold || numberValue(row.attendees);
 	const grossNgn = tiers.reduce((sum, tier) => sum + tier.sold * tier.priceNgn, 0);
 	const cover = row.cover && typeof row.cover === 'object' ? (row.cover as Record<string, unknown>) : {};
-	const endsAt = String(row.ends_at ?? startsAt);
-	const now = Date.now();
+	const rawEndsAt = typeof row.ends_at === 'string' && row.ends_at.trim() ? row.ends_at.trim() : null;
+	const endsAt = rawEndsAt ?? startsAt;
+	const now = extras?.now ?? Date.now();
+	const ended = hasAdminEventEnded(startsAt, rawEndsAt, now);
 	const rawStatus = String(row.status ?? 'published');
-	const status: AdminEvent['status'] = (
-		['published', 'pending', 'draft', 'suspended', 'rejected', 'completed'] as const
-	).includes(rawStatus as AdminEvent['status'])
-		? (rawStatus as AdminEvent['status'])
-		: new Date(endsAt).getTime() < now
-			? 'completed'
-			: 'published';
+	let status: AdminEvent['status'];
+	if (
+		rawStatus === 'pending' ||
+		rawStatus === 'draft' ||
+		rawStatus === 'suspended' ||
+		rawStatus === 'rejected'
+	) {
+		status = rawStatus;
+	} else if (rawStatus === 'completed' || rawStatus === 'closed' || ended) {
+		status = 'completed';
+	} else {
+		status = 'published';
+	}
 
 	const gatesList = Array.isArray(row.gates)
 		? row.gates.map((gate: Record<string, any>) => ({
@@ -211,7 +221,7 @@ export async function listSupabaseEvents(query: EventQuery = {}): Promise<
 		categories: string[];
 		organizers: string[];
 		organizerList: { id: string; name: string }[];
-		counts: { total: number; published: number; pending: number; draft: number; suspended: number };
+		counts: { total: number; published: number; completed: number; pending: number; draft: number; suspended: number };
 	}
 > {
 	const client = createAdminClient();
@@ -236,6 +246,7 @@ export async function listSupabaseEvents(query: EventQuery = {}): Promise<
 		counts: {
 			total: events.length,
 			published: events.filter((e) => e.status === 'published').length,
+			completed: events.filter((e) => e.status === 'completed').length,
 			pending: events.filter((e) => e.status === 'pending').length,
 			draft: events.filter((e) => e.status === 'draft').length,
 			suspended: events.filter((e) => e.status === 'suspended' || e.status === 'rejected').length

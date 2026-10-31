@@ -73,14 +73,16 @@
 	</section>
 
 	<div class="flex flex-col w-full px-gutter md:max-w-3xl md:mx-auto gap-space-md pt-space-sm">
-		<!-- review state: pending submissions are private until an admin approves them -->
+		<!-- review / lifecycle state -->
 		{#if data.event.status !== 'published'}
 			<div
 				class="rounded-xl border p-4 flex items-start gap-3 {data.event.status === 'pending'
 					? 'border-accent-amber/30 bg-accent-amber/10'
-					: 'border-error/30 bg-error/10'}"
+					: data.event.status === 'closed' || data.event.status === 'draft'
+						? 'border-outline-variant/40 bg-surface-container-high'
+						: 'border-error/30 bg-error/10'}"
 			>
-				<Info class="w-4 h-4 shrink-0 mt-0.5 {data.event.status === 'pending' ? 'text-accent-amber' : 'text-error'}" />
+				<Info class="w-4 h-4 shrink-0 mt-0.5 {data.event.status === 'pending' ? 'text-accent-amber' : data.event.status === 'closed' || data.event.status === 'draft' ? 'text-on-surface-variant' : 'text-error'}" />
 				<div class="min-w-0">
 					<p class="text-body-sm font-semibold text-on-surface flex items-center gap-2">
 						<EventStatusBadge status={data.event.status} />
@@ -88,6 +90,8 @@
 					<p class="text-body-sm text-on-surface-variant pt-1.5">
 						{#if data.event.status === 'pending'}
 							Your event is in the Owltside review queue. It appears on the home and explore feeds as soon as an admin approves it — no tickets can be sold before then.
+						{:else if data.event.status === 'closed'}
+							This event has reached its end date and time and is now closed. Ticket sales have ended and it appears as Past on your profile.
 						{:else if data.event.status === 'rejected'}
 							The review team sent this event back. Edit it to resubmit it for approval.
 						{:else if data.event.status === 'suspended'}
