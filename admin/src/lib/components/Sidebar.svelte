@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		BarChart3,
+		Bell,
 		Building2,
 		CalendarDays,
 		ClipboardCheck,
@@ -36,6 +37,7 @@
 			moderation: number;
 			approvals?: number;
 			reports?: number;
+			notifications?: number;
 		};
 		publicAppUrl?: string;
 	} = $props();
@@ -57,6 +59,7 @@
 			label: 'Overview',
 			items: [
 				{ label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+				{ label: 'Notifications', href: '/notifications', icon: Bell, badge: counts.notifications ?? 0 },
 				{ label: 'Search HUD', href: '/search', icon: Search }
 			]
 		},

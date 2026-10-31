@@ -1,12 +1,22 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import ThemeToggle from '$components/ThemeToggle.svelte';
+	import { toast } from '$lib/state/toast.svelte';
+	import {
+		authenticateWithBiometrics,
+		isPlatformBiometricAvailable,
+		readStoredBiometric,
+		type LocalBiometricMetadata
+	} from '$lib/webauthn.client';
 	import {
 		AtSign,
 		ArrowLeft,
 		BadgeCheck,
 		Compass,
+		Fingerprint,
 		Lock,
 		Mail,
 		Send,
@@ -17,7 +27,40 @@
 	let email = $state('');
 	let submitting = $state(false);
 	let googleLoading = $state(false);
+	let biometricLoading = $state(false);
+	let biometricSupported = $state(false);
+	let enrolledBiometric = $state<LocalBiometricMetadata | null>(null);
 	const valid = $derived(/^\S+@\S+\.\S+$/.test(email));
+
+	onMount(async () => {
+		enrolledBiometric = readStoredBiometric();
+		const check = await isPlatformBiometricAvailable();
+		biometricSupported = check.supported;
+	});
+
+	async function handleBiometricLogin() {
+		if (biometricLoading) return;
+		biometricLoading = true;
+		try {
+			const res = await authenticateWithBiometrics();
+			if (res.sessionRestored) {
+				toast(`Welcome back${res.userName ? `, ${res.userName}` : ''}`, 'success');
+				await goto(next || '/home', { invalidateAll: true });
+			} else {
+				toast(
+					'Biometric passkey verified. Sign in once with email to link your active session on this device.',
+					'info'
+				);
+			}
+		} catch (err) {
+			toast(
+				err instanceof Error ? err.message : 'Biometric login could not be completed.',
+				'error'
+			);
+		} finally {
+			biometricLoading = false;
+		}
+	}
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
@@ -176,6 +219,23 @@
 				</div>
 
 				<div class="grid grid-cols-1 gap-3">
+					{#if enrolledBiometric || biometricSupported}
+						<button
+							type="button"
+							disabled={submitting || googleLoading || biometricLoading}
+							onclick={handleBiometricLogin}
+							class="w-full h-12 rounded-lg bg-primary/10 border border-primary/40 text-on-surface text-body-md font-semibold flex items-center justify-center gap-2 hover:bg-primary/15 disabled:opacity-40 transition-colors"
+						>
+							<Fingerprint class="w-5 h-5 text-primary" />
+							<span>
+								{biometricLoading
+									? 'Verifying biometrics…'
+									: enrolledBiometric
+										? `Sign in with ${enrolledBiometric.deviceLabel}`
+										: 'Sign in with Fingerprint / Face ID'}
+							</span>
+						</button>
+					{/if}
 					<form method="POST" action="?/google" use:enhance={handleGoogle}>
 						<input type="hidden" name="next" value={next} />
 						<button type="submit" disabled={submitting || googleLoading} class="w-full h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md font-semibold flex items-center justify-center gap-2 hover:border-primary/40 disabled:opacity-40">
@@ -316,6 +376,23 @@
 		</div>
 
 		<div class="grid grid-cols-1 gap-space-sm mb-space-sm">
+			{#if enrolledBiometric || biometricSupported}
+				<button
+					type="button"
+					disabled={submitting || googleLoading || biometricLoading}
+					onclick={handleBiometricLogin}
+					class="w-full h-12 rounded-lg bg-primary/10 border border-primary/40 text-on-surface text-body-md font-semibold flex items-center justify-center gap-2 hover:bg-primary/15 disabled:opacity-40 transition-colors"
+				>
+					<Fingerprint class="w-5 h-5 text-primary" />
+					<span>
+						{biometricLoading
+							? 'Verifying biometrics…'
+							: enrolledBiometric
+								? `Sign in with ${enrolledBiometric.deviceLabel}`
+								: 'Sign in with Fingerprint / Face ID'}
+					</span>
+				</button>
+			{/if}
 			<form method="POST" action="?/google" use:enhance={handleGoogle}>
 				<input type="hidden" name="next" value={next} />
 				<button type="submit" disabled={submitting || googleLoading} class="w-full h-12 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md font-semibold flex items-center justify-center gap-2 hover:border-primary/40 disabled:opacity-40">

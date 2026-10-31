@@ -32,10 +32,52 @@
 	import Sheet from '$components/Sheet.svelte';
 	import RoleSwitcher from '$components/RoleSwitcher.svelte';
 	import { page } from '$app/state';
+	import { onMount } from 'svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
+	import { readStoredBiometric, type LocalBiometricMetadata } from '$lib/webauthn.client';
+	import {
+		disablePushNotifications,
+		enablePushNotifications,
+		getPushPermissionState
+	} from '$lib/push.client';
 
 	let { data } = $props();
+	let enrolledBiometric = $state<LocalBiometricMetadata | null>(null);
+	let pushPermission = $state<NotificationPermission | 'unsupported'>('default');
+	onMount(() => {
+		enrolledBiometric = readStoredBiometric();
+		pushPermission = getPushPermissionState();
+	});
+	$effect(() => {
+		// Refresh cached status whenever a settings sheet closes
+		if (openCategory === null) {
+			enrolledBiometric = readStoredBiometric();
+			pushPermission = getPushPermissionState();
+		}
+	});
+	async function togglePrefsPush() {
+		const shouldEnable =
+			!appSettings.value.notifications.pushEnabled || pushPermission !== 'granted';
+		if (shouldEnable) {
+			const res = await enablePushNotifications();
+			pushPermission = res.permission;
+			if (!res.ok) {
+				appSettings.value.notifications.pushEnabled = false;
+				toast(res.reason ?? 'Could not enable push notifications.', 'error');
+				return;
+			}
+			appSettings.value.notifications.pushEnabled = true;
+			toast('Phone push notifications enabled', 'success');
+		} else {
+			appSettings.value.notifications.pushEnabled = false;
+			await disablePushNotifications();
+			toast('Push notifications paused', 'info');
+		}
+	}
+	const biometricActive = $derived(
+		appSettings.value.security.biometricLogin && !!enrolledBiometric
+	);
 	const session = $derived(page.data.session);
 	const approvals = $derived(data.approvals ?? []);
 	// Identity and payout checks only count once an admin has approved them.
@@ -137,9 +179,14 @@
 					<span class="block text-body-sm text-on-surface-variant mt-0.5 truncate">{session?.email ?? 'browsing as guest'}</span>
 				</span>
 			</span>
-			<span class="h-9 px-3.5 rounded-lg flex items-center gap-2 {MONO} text-on-surface-variant border border-surface-glass-border">
-				<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> Gate Biometrics Active
-			</span>
+			<button
+				type="button"
+				onclick={() => (openCategory = 'securitySessions')}
+				class="h-9 px-3.5 rounded-lg flex items-center gap-2 {MONO} border transition-colors {biometricActive ? 'text-accent-emerald border-accent-emerald/30 bg-accent-emerald/5 hover:bg-accent-emerald/10' : 'text-on-surface-variant border-surface-glass-border hover:bg-surface-container-high'}"
+			>
+				<span class="w-1.5 h-1.5 rounded-full {biometricActive ? 'bg-accent-emerald animate-pulse' : 'bg-amber-400'}"></span>
+				{biometricActive ? 'Gate Biometrics Active' : 'Set Up Fingerprint / Face ID'}
+			</button>
 		</div>
 	</div>
 
@@ -254,10 +301,16 @@
 								<span class="bg-primary/20 text-primary text-label-badge px-2 py-0.5 rounded-full">ID #8921</span>
 							</div>
 							<p class="text-body-sm text-on-surface-variant truncate">{session?.email ?? 'browsing as guest'}</p>
-							<div class="flex items-center gap-1.5 mt-1">
-								<span class="w-2 h-2 rounded-full bg-accent-emerald"></span>
-								<span class="text-label-badge text-accent-emerald uppercase tracking-wider">Gate Biometrics Active</span>
-							</div>
+							<button
+								type="button"
+								onclick={() => (openCategory = 'securitySessions')}
+								class="flex items-center gap-1.5 mt-1 text-left"
+							>
+								<span class="w-2 h-2 rounded-full {biometricActive ? 'bg-accent-emerald' : 'bg-amber-400'}"></span>
+								<span class="text-label-badge {biometricActive ? 'text-accent-emerald' : 'text-amber-400'} uppercase tracking-wider">
+									{biometricActive ? 'Gate Biometrics Active' : 'Tap to Set Up Biometrics'}
+								</span>
+							</button>
 						</div>
 					</div>
 				</div>
@@ -346,8 +399,8 @@
 			</div>
 			<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3">
 				<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0"><Bell class="w-4 h-4 text-on-surface-variant" /></span>
-				<span class="flex-1 min-w-0"><span class="block text-body-sm font-medium text-on-surface">Push notifications</span><span class="block text-xs text-on-surface-variant mt-0.5">Drops, gate updates & replies</span></span>
-				<button role="switch" aria-checked={appSettings.value.notifications.pushEnabled} aria-label="Push notifications" class="w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors {appSettings.value.notifications.pushEnabled ? 'bg-primary-container border-primary/50 text-on-primary-container' : 'bg-surface-bright border-surface-glass-border text-transparent'}" onclick={() => (appSettings.value.notifications.pushEnabled = !appSettings.value.notifications.pushEnabled)}><CheckCheck class="w-3 h-3" /></button>
+				<span class="flex-1 min-w-0"><span class="block text-body-sm font-medium text-on-surface">Push notifications</span><span class="block text-xs text-on-surface-variant mt-0.5">{appSettings.value.notifications.pushEnabled && pushPermission === 'granted' ? 'Active in phone notification tray' : 'Tap to allow phone notification alerts'}</span></span>
+				<button role="switch" aria-checked={appSettings.value.notifications.pushEnabled && pushPermission === 'granted'} aria-label="Push notifications" class="w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors {appSettings.value.notifications.pushEnabled && pushPermission === 'granted' ? 'bg-primary-container border-primary/50 text-on-primary-container' : 'bg-surface-bright border-surface-glass-border text-transparent'}" onclick={togglePrefsPush}><CheckCheck class="w-3 h-3" /></button>
 			</div>
 			<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3">
 				<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0"><WifiOff class="w-4 h-4 text-accent-emerald" /></span>

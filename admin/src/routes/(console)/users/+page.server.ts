@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import type { AdminUser } from '$admin/types';
+import type { AdminOrder, AdminTicket, AdminUser, AuditRecord } from '$admin/types';
 import { listSupabaseUsers } from '$admin/server/supabase-data';
 
 export const load: PageServerLoad = async ({ url }) => {
@@ -25,12 +25,16 @@ export const load: PageServerLoad = async ({ url }) => {
 	} catch (cause) {
 		const error = cause instanceof Error ? cause.message : 'The user directory could not be loaded.';
 		return {
-			table: { rows: [], total: 0, page: 1, pages: 1, perPage: 10 },
+			table: { rows: [] as AdminUser[], total: 0, page: 1, pages: 1, perPage: 10 },
 			filters: { q, status, role, kyc },
 			counts: { total: 0, active: 0, flagged: 0, blocked: 0, verifiedOrganizers: 0 },
-			selectedId: null,
-			selected: null,
-			related: { tickets: [], orders: [], audit: [] as [] },
+			selectedId: null as string | null,
+			selected: null as AdminUser | null,
+			related: {
+				tickets: [] as AdminTicket[],
+				orders: [] as AdminOrder[],
+				audit: [] as AuditRecord[]
+			},
 			error,
 			source: 'unavailable' as const
 		};

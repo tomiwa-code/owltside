@@ -18,6 +18,7 @@ export interface EventSubmission {
 	slug: string;
 	category: string;
 	description: string;
+	organizerId?: string;
 	organizerName: string;
 	organizerHandle: string | null;
 	startsAt: string;
@@ -30,6 +31,7 @@ export interface EventSubmission {
 	coverFrom: string;
 	coverTo: string;
 	coverIcon: string;
+	coverSrc?: string;
 	status: EventSubmissionStatus;
 }
 
@@ -69,12 +71,14 @@ type Row = Record<string, any>;
 const asText = (value: unknown, fallback = ''): string =>
 	typeof value === 'string' ? value : fallback;
 
-const coverOf = (value: unknown): { from: string; to: string; icon: string } => {
+const coverOf = (value: unknown): { from: string; to: string; icon: string; src?: string } => {
 	const raw = (value ?? {}) as Row;
+	const src = asText(raw.src).trim();
 	return {
 		from: asText(raw.from, '#1b2a4a'),
 		to: asText(raw.to, '#14131f'),
-		icon: asText(raw.icon, 'sparkles')
+		icon: asText(raw.icon, 'sparkles'),
+		src: src || undefined
 	};
 };
 
@@ -97,12 +101,14 @@ function capacityOf(tiers: unknown): number {
 function mapLiveRow(row: Row): EventSubmission {
 	const organizer = (row.organizer ?? {}) as Row;
 	const cover = coverOf(row.cover);
+	const organizerId = asText(row.organizer_id).trim();
 	return {
 		id: String(row.id),
 		title: asText(row.title, 'Untitled event'),
 		slug: asText(row.slug),
 		category: asText(row.category, 'Uncategorised'),
 		description: asText(row.description),
+		organizerId: organizerId || undefined,
 		organizerName: asText(organizer.name, 'Unknown organizer'),
 		organizerHandle: asText(organizer.handle) || null,
 		startsAt: asText(row.starts_at, new Date().toISOString()),
@@ -115,6 +121,7 @@ function mapLiveRow(row: Row): EventSubmission {
 		coverFrom: cover.from,
 		coverTo: cover.to,
 		coverIcon: cover.icon,
+		coverSrc: cover.src,
 		status: asText(row.status, 'pending') as EventSubmissionStatus
 	};
 }
@@ -124,7 +131,7 @@ export async function listSubmissions(): Promise<EventSubmission[]> {
 	const { data, error } = await liveClient()
 		.from('events')
 		.select(
-			'id,slug,title,category,description,starts_at,ends_at,venue,city,cover,tiers,status,submitted_at,created_at,organizer:profiles(name,handle)'
+			'id,slug,title,category,description,organizer_id,starts_at,ends_at,venue,city,cover,tiers,status,submitted_at,created_at,organizer:profiles(name,handle)'
 		)
 		.eq('status', 'pending')
 		.order('submitted_at', { ascending: true, nullsFirst: true })
@@ -177,10 +184,31 @@ export async function decideSubmission(
 		.update(patch)
 		.eq('id', id)
 		.eq('status', 'pending')
-		.select('id,status')
+		.select('id,status,title,slug,organizer_id')
 		.maybeSingle();
 	if (error) throw new Error(error.message);
 	if (!data) throw new Error('That submission is no longer in the review queue.');
+
+	const organizerId = typeof data.organizer_id === 'string' ? data.organizer_id : '';
+	if (organizerId) {
+		const title = asText(data.title, 'Your event');
+		const slug = asText(data.slug);
+		try {
+			await liveClient().from('notifications').insert({
+				user_id: organizerId,
+				kind: 'event',
+				title: decision === 'approve' ? `Published: ${title}` : `Changes requested: ${title}`,
+				body:
+					decision === 'approve'
+						? `${title} has been approved and is now live on Owltside.`
+						: trimmed || `${title} needs changes before publishing.`,
+				href: decision === 'approve' && slug ? `/events/${slug}` : '/organizer',
+				read: false
+			});
+		} catch {
+			// Best-effort notification delivery
+		}
+	}
 
 	return {
 		id: data.id,

@@ -16,7 +16,12 @@ export const actions: Actions = {
 				email,
 				options: { emailRedirectTo: `${url.origin}/auth/verify?next=${encodeURIComponent(next)}` }
 			});
-			if (error) return fail(400, { error: error.message, email });
+			if (error) {
+				const friendly = /banned/i.test(error.message ?? '')
+					? 'Your account has been disabled by an administrator. Contact support if you believe this is a mistake.'
+					: error.message;
+				return fail(400, { error: friendly, email });
+			}
 		}
 		redirect(303, `/auth/verify?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`);
 	},

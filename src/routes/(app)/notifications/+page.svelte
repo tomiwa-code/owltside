@@ -25,6 +25,13 @@
 	import EmptyState from '$components/EmptyState.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import { useQuery, queryClient } from '$lib/state/query.svelte';
+	import { appSettings } from '$lib/state/settings.svelte';
+	import { toast } from '$lib/state/toast.svelte';
+	import {
+		disablePushNotifications,
+		enablePushNotifications,
+		getPushPermissionState
+	} from '$lib/push.client';
 	import { fmtRelative, fmtTime } from '$lib/utils/dates';
 	import type { NotificationItem } from '$lib/types';
 
@@ -183,10 +190,43 @@
 
 	let pipes = $state([
 		{ id: 'hud', label: 'In-App HUD', sub: 'Real-time gate toasts', icon: Smartphone, on: true },
-		{ id: 'push', label: 'Browser Push', sub: 'HMAC rotation pings', icon: Bell, on: true },
-		{ id: 'email', label: 'Email Digests', sub: 'Nightly gate settlement', icon: Mail, on: false },
-		{ id: 'sms', label: 'Urgent WhatsApp / SMS', sub: 'Emergency turnstile override', icon: Zap, on: true }
+		{
+			id: 'push',
+			label: 'Browser Push',
+			sub: 'Phone OS notification tray',
+			icon: Bell,
+			on: appSettings.value.notifications.pushEnabled && getPushPermissionState() === 'granted'
+		},
+		{ id: 'email', label: 'Email Digests', sub: 'Nightly gate settlement', icon: Mail, on: appSettings.value.notifications.emailEnabled },
+		{ id: 'sms', label: 'Urgent WhatsApp / SMS', sub: 'Emergency turnstile override', icon: Zap, on: appSettings.value.notifications.smsEnabled }
 	]);
+
+	async function togglePipe(pipe: (typeof pipes)[number]) {
+		if (pipe.id === 'push') {
+			const shouldEnable = !pipe.on || getPushPermissionState() !== 'granted';
+			if (shouldEnable) {
+				const res = await enablePushNotifications();
+				if (!res.ok) {
+					pipe.on = false;
+					appSettings.value.notifications.pushEnabled = false;
+					toast(res.reason ?? 'Could not enable push notifications.', 'error');
+					return;
+				}
+				pipe.on = true;
+				appSettings.value.notifications.pushEnabled = true;
+				toast('Phone push notifications enabled', 'success');
+			} else {
+				pipe.on = false;
+				appSettings.value.notifications.pushEnabled = false;
+				await disablePushNotifications();
+				toast('Push notifications paused', 'info');
+			}
+			return;
+		}
+		pipe.on = !pipe.on;
+		if (pipe.id === 'email') appSettings.value.notifications.emailEnabled = pipe.on;
+		if (pipe.id === 'sms') appSettings.value.notifications.smsEnabled = pipe.on;
+	}
 
 	const meshBars = [26, 34, 46, 38, 52, 66, 92, 44, 40, 34, 56, 30];
 </script>
@@ -292,7 +332,7 @@
 								aria-checked={p.on}
 								aria-label={p.label}
 								class="w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors {p.on ? 'bg-primary-container border-primary/50 text-on-primary-container' : 'bg-surface-bright border-surface-glass-border text-transparent'}"
-								onclick={() => (p.on = !p.on)}
+								onclick={() => togglePipe(p)}
 							>
 								<CheckCheck class="w-3 h-3" />
 							</button>
@@ -460,7 +500,7 @@ href={n.href ?? meta.action.href}
 								<div class="flex items-center gap-3 rounded-xl border border-surface-glass-border bg-surface-container-high px-3 py-2.5">
 									<span class="w-9 h-9 rounded-lg bg-surface-container-highest flex items-center justify-center shrink-0"><PIcon class="w-4 h-4 text-on-surface-variant" /></span>
 									<span class="flex-1 min-w-0"><span class="block text-body-sm font-medium text-on-surface">{p.label}</span><span class="block text-label-badge text-on-surface-variant">{p.sub}</span></span>
-									<button type="button" role="switch" aria-checked={p.on} aria-label={p.label} onclick={() => (p.on = !p.on)} class="w-11 h-6 rounded-full p-0.5 transition-colors {p.on ? 'bg-primary' : 'bg-surface-container-highest'}"><span class="block w-5 h-5 rounded-full bg-white transition-transform {p.on ? 'translate-x-5' : ''}"></span></button>
+									<button type="button" role="switch" aria-checked={p.on} aria-label={p.label} onclick={() => togglePipe(p)} class="w-11 h-6 rounded-full p-0.5 transition-colors {p.on ? 'bg-primary' : 'bg-surface-container-highest'}"><span class="block w-5 h-5 rounded-full bg-white transition-transform {p.on ? 'translate-x-5' : ''}"></span></button>
 								</div>
 							{/each}
 						</div>

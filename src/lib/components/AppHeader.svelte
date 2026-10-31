@@ -5,7 +5,10 @@
 	import Avatar from './Avatar.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { profileAppearance } from '$lib/state/profile.svelte';
+	import { appSettings } from '$lib/state/settings.svelte';
 	import { queryClient, useQuery } from '$lib/state/query.svelte';
+	import { subscribeTable } from '$lib/realtime';
+	import { notifyUnreadStreamItems, showDeviceNotification, getPushPermissionState } from '$lib/push.client';
 	import { UNREAD_BADGE_CLASS, formatCount } from '$lib/utils/badges';
 	import type { Conversation, MessageRequest, NotificationItem } from '$lib/types';
 	let search = $state('');
@@ -61,6 +64,54 @@
 			return convoUnread + (requests?.length ?? 0);
 		}
 		return page.data.inboxUnread ?? 0;
+	});
+
+	// Deliver newly arrived notifications and DMs to the phone OS notification tray
+	// whenever push notifications are enabled and permission is granted.
+	$effect(() => {
+		if (!session || !notifications) return;
+		const nPrefs = appSettings.value.notifications;
+		void notifyUnreadStreamItems(notifications, {
+			pushEnabled: nPrefs.pushEnabled,
+			eventReminders: nPrefs.eventReminders,
+			marketing: nPrefs.marketing,
+			soundHaptics: !nPrefs.quietHours
+		});
+	});
+
+	let lastKnownRequestIds: Set<string> | null = null;
+	$effect(() => {
+		if (!session || !requests) return;
+		if (lastKnownRequestIds === null) {
+			lastKnownRequestIds = new Set(requests.map((r) => r.id));
+			return;
+		}
+		const nPrefs = appSettings.value.notifications;
+		for (const req of requests) {
+			if (!lastKnownRequestIds.has(req.id) && nPrefs.pushEnabled && nPrefs.messages && getPushPermissionState() === 'granted') {
+				void showDeviceNotification({
+					title: `Message request from ${req.requester.name}`,
+					body: req.body,
+					url: '/inbox',
+					tag: `owltside-msgreq-${req.id}`,
+					silent: nPrefs.quietHours
+				});
+			}
+		}
+		lastKnownRequestIds = new Set(requests.map((r) => r.id));
+	});
+
+	$effect(() => {
+		const uid = session?.userId;
+		if (!uid) return;
+		const unsubNotifs = subscribeTable(
+			'notifications',
+			() => {
+				void notificationsQuery.refetch();
+			},
+			`user_id=eq.${uid}`
+		);
+		return () => unsubNotifs();
 	});
 
 	/**

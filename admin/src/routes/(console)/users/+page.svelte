@@ -2,20 +2,21 @@
 	import {
 		ArrowUpRight,
 		Ban,
+		Check,
 		Download,
 		Eye,
-		Fingerprint,
-		MapPin,
+		FileText,
 		ShieldCheck,
-		Smartphone,
 		UserCheck,
-		Users
+		Users,
+		ZoomIn
 	} from '@lucide/svelte';
 	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
 	import { toasts } from '$admin/state/toast.svelte';
 	import { chipClass, ticketStatus, userStatus, orderStatus } from '$admin/utils/status';
 	import { money, moneyCompact, num, relative, time } from '$admin/utils/format';
+	import type { AdminApprovalAttachment, AdminUser } from '$admin/types';
 	import PageHeader from '$components/PageHeader.svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import StatusChip from '$components/StatusChip.svelte';
@@ -26,9 +27,10 @@
 	let { data } = $props();
 
 	let tab = $state<'overview' | 'passes' | 'ledger' | 'audit'>('overview');
-	let blockOpen = $state(false);
+	let blockTarget = $state<AdminUser | null>(null);
+	let previewAttachment = $state<AdminApprovalAttachment | null>(null);
 	let reason = $state('');
-	let busy = $state(false);
+	let busyUserId = $state<string | null>(null);
 
 	const selected = $derived(data.selected);
 
@@ -42,21 +44,27 @@
 		(event.currentTarget as HTMLSelectElement).form?.requestSubmit();
 	}
 
-	async function setStatus(status: 'active' | 'blocked') {
-		if (!selected) return;
-		busy = true;
-		const response = await fetch(`/api/users/${selected.id}/status`, {
+	async function setStatus(target: AdminUser, status: 'active' | 'blocked', customReason?: string) {
+		busyUserId = target.id;
+		const response = await fetch(`/api/users/${target.id}/status`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ status, reason: reason || 'Account review decision' })
+			body: JSON.stringify({
+				status,
+				reason: customReason || reason || (status === 'blocked' ? 'Disabled by Owltside Admin' : 'Re-enabled by Owltside Admin')
+			})
 		});
-		busy = false;
+		const payload = (await response.json().catch(() => ({}))) as { message?: string };
+		busyUserId = null;
 		if (!response.ok) {
-			toasts.error('Account update failed', 'Insufficient privileges.');
+			toasts.error('Account update failed', payload.message ?? 'Insufficient privileges.');
 			return;
 		}
-		toasts.ok(status === 'blocked' ? 'Account blocked' : 'Account reinstated', `${selected.name} · audit trail updated.`);
-		blockOpen = false;
+		toasts.ok(
+			status === 'blocked' ? 'User account disabled' : 'User account enabled',
+			`${target.name} (@${target.handle}) · active sessions updated.`
+		);
+		blockTarget = null;
 		reason = '';
 		await invalidateAll();
 	}
@@ -78,22 +86,20 @@
 <div class="space-y-4">
 	<PageHeader
 		title="Users Directory"
-		subtitle={data.source === 'supabase' ? 'Profiles, auth contacts, and associated ticket/order totals from the configured Supabase project.' : 'Audit account statuses, access rights, KYC tiers, and ticket spend across the platform.'}
+		subtitle="Manage attendee & organizer accounts, disable/enable access, and inspect full unredacted contact, KYC ID, and bank payout details."
 		crumbs={['platform', 'users']}
-		eyebrow={data.source === 'supabase' ? 'Supabase · live data' : 'Demo seed data'}
+		eyebrow="Supabase · live accounts"
 	>
 		{#snippet actions()}
-			{#if data.source === 'demo'}
-				<a class="btn btn-sm" href="/api/export/users" download><Download size={12} /> Export CSV Roster</a>
-				<a class="btn btn-sm btn-primary" href="/staff"><UserCheck size={13} /> Invite User / Staff</a>
-			{/if}
+			<a class="btn btn-sm" href="/api/export/users" download><Download size={12} /> Export CSV Roster</a>
+			<a class="btn btn-sm btn-primary" href="/staff"><UserCheck size={13} /> Invite Staff</a>
 		{/snippet}
 	</PageHeader>
 
 	{#if data.error}
 		<div class="panel border border-rose-500/30 p-4 text-[11px] text-rose-200">
 			{data.error}
-			<span class="mt-1 block text-[#8f8f9b]">Set PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in this admin app's environment (Vercel) to point at the public Owltside database, then reload.</span>
+			<span class="mt-1 block text-[#8f8f9b]">Set PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in this admin app's environment, then reload.</span>
 		</div>
 	{/if}
 
@@ -101,52 +107,43 @@
 		<div class="panel p-4">
 			<div class="flex items-center justify-between"><p class="mono-label">Total registered</p><Users size={13} class="text-[#6f6f7b]" /></div>
 			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">{num(data.counts.total)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{data.source === 'supabase' ? 'public.profiles records' : 'Cumulative accounts · +12.4% MoM'}</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">public.profiles records</p>
 		</div>
 		<div class="panel p-4">
-			<div class="flex items-center justify-between"><p class="mono-label">Active attendees</p><span class="status-dot"></span></div>
+			<div class="flex items-center justify-between"><p class="mono-label">Enabled accounts</p><span class="status-dot"></span></div>
 			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">{num(data.counts.active)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{data.source === 'supabase' ? 'Not currently banned in Supabase Auth' : `Engaged within last 90 days · ${Math.round((data.counts.active / Math.max(1, data.counts.total)) * 100)}% active`}</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Permitted to sign in on public app</p>
 		</div>
 		<div class="panel p-4">
-			<div class="flex items-center justify-between"><p class="mono-label">{data.source === 'supabase' ? 'Organizer profiles' : 'Verified organizers'}</p><ShieldCheck size={13} class="text-[#8dd3c7]" /></div>
+			<div class="flex items-center justify-between"><p class="mono-label">Organizer profiles</p><ShieldCheck size={13} class="text-[#8dd3c7]" /></div>
 			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">{num(data.counts.verifiedOrganizers)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{data.source === 'supabase' ? 'operating_identity = organizer' : 'KYC tiers 1–3 · certified merchant payouts'}</p>
+			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Host identity or active listings</p>
 		</div>
 		<div class="panel border-red-500/20 bg-red-500/[0.03] p-4">
-			<div class="flex items-center justify-between"><p class="mono-label !text-red-200/70">{data.source === 'supabase' ? 'Banned accounts' : 'Suspended / flagged'}</p><span class="chip chip-danger !h-[17px] !text-[8px]">{data.source === 'supabase' ? 'Auth status' : 'Under audit'}</span></div>
+			<div class="flex items-center justify-between"><p class="mono-label !text-red-200/70">Disabled accounts</p><span class="chip chip-danger !h-[17px] !text-[8px]">Auth blocked</span></div>
 			<p class="mt-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-red-100">{num(data.counts.flagged + data.counts.blocked)}</p>
-			<p class="mt-1.5 text-[10.5px] text-[#a0a0ab]">{data.source === 'supabase' ? 'banned_until in Supabase Auth' : 'Chargebacks, bot signatures, KYC blocks'}</p>
+			<p class="mt-1.5 text-[10.5px] text-[#a0a0ab]">Signed out & blocked on public app</p>
 		</div>
 	</div>
 
 	<div class="panel px-3 py-2.5">
 		<form method="GET" class="flex flex-col gap-2 xl:flex-row xl:items-center">
-			<SearchField value={data.filters.q} placeholder="Search by name, email, or #USR-XXXX…" class="xl:w-[300px]" />
+			<SearchField value={data.filters.q} placeholder="Search by name, @handle, email, phone, ID…" class="xl:w-[300px]" />
 			<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
 				<select name="status" class="select !h-[34px] !text-[11.5px]" onchange={change} aria-label="Filter by status">
 					<option value="all" selected={data.filters.status === 'all'}>Status: All</option>
-					<option value="active" selected={data.filters.status === 'active'}>Active</option>
-					{#if data.source === 'demo'}<option value="flagged" selected={data.filters.status === 'flagged'}>Flagged</option>{/if}
-					<option value="blocked" selected={data.filters.status === 'blocked'}>Blocked</option>
+					<option value="active" selected={data.filters.status === 'active'}>Active (enabled)</option>
+					<option value="blocked" selected={data.filters.status === 'blocked'}>Disabled (blocked)</option>
 				</select>
 				<select name="role" class="select !h-[34px] !text-[11.5px]" onchange={change} aria-label="Filter by role">
 					<option value="all" selected={data.filters.role === 'all'}>Role: All</option>
 					<option value="Attendee" selected={data.filters.role === 'Attendee'}>Attendee</option>
 					<option value="Organizer" selected={data.filters.role === 'Organizer'}>Organizer</option>
-					{#if data.source === 'demo'}<option value="Speaker" selected={data.filters.role === 'Speaker'}>Speaker</option>{/if}
 				</select>
 				<select name="kyc" class="select !h-[34px] !text-[11.5px]" onchange={change} aria-label="Filter by KYC">
-					<option value="all" selected={data.filters.kyc === 'all'}>KYC: All tiers</option>
-					{#if data.source === 'supabase'}
-						<option value="1" selected={data.filters.kyc === '1'}>Profile verified</option>
-						<option value="0" selected={data.filters.kyc === '0'}>Profile unverified</option>
-					{:else}
-						<option value="3" selected={data.filters.kyc === '3'}>Tier 3</option>
-						<option value="2" selected={data.filters.kyc === '2'}>Tier 2</option>
-						<option value="1" selected={data.filters.kyc === '1'}>Tier 1</option>
-						<option value="0" selected={data.filters.kyc === '0'}>Tier 0</option>
-					{/if}
+					<option value="all" selected={data.filters.kyc === 'all'}>Verification: All</option>
+					<option value="1" selected={data.filters.kyc === '1'}>Verified</option>
+					<option value="0" selected={data.filters.kyc === '0'}>Unverified</option>
 				</select>
 				<span class="chip !h-[34px] justify-center !text-[9px]">Sort: Latest registration</span>
 			</div>
@@ -157,17 +154,21 @@
 	<section class="panel overflow-hidden">
 		<div class="flex items-center justify-between border-b border-[#26262e] px-4 py-2.5">
 			<div class="flex items-center gap-2">
-				<p class="font-code text-[9px] uppercase tracking-[0.1em] text-[#8f8f9b]">Entities discovered</p>
-				<span class="chip {data.source === 'supabase' ? 'chip-accent' : 'chip-ok'} !h-[18px] !text-[8px]">{data.source === 'supabase' ? 'Supabase query' : 'Demo seed'} · {data.table.total.toLocaleString('en-US')}</span>
-			</div>
-			<div class="flex items-center gap-2 font-code text-[8px] uppercase tracking-[0.08em] text-[#6f6f7b]">
-				<span>Engine: postgres-read-replica-01</span>
-				<span class="chip !h-[16px] !text-[7px]">Dense mode</span>
+				<p class="font-code text-[9px] uppercase tracking-[0.1em] text-[#8f8f9b]">User accounts</p>
+				<span class="chip chip-accent !h-[18px] !text-[8px]">{data.table.total.toLocaleString('en-US')} total</span>
 			</div>
 		</div>
 		<div class="table-wrap">
 			<table class="tbl">
-				<thead><tr><th>User</th><th>Email & phone</th><th>Role & KYC</th><th>Activity & spend</th><th></th></tr></thead>
+				<thead>
+					<tr>
+						<th>User</th>
+						<th>Email & phone</th>
+						<th>Role & status</th>
+						<th>Activity & spend</th>
+						<th class="!text-right">Actions</th>
+					</tr>
+				</thead>
 				<tbody>
 					{#each data.table.rows as user (user.id)}
 						{@const status = userStatus(user.status)}
@@ -178,22 +179,24 @@
 									<div class="min-w-0">
 										<a href={hrefFor(user.id)} class="flex items-center gap-1 truncate text-[11.5px] font-medium text-[#e8e8ee] hover:text-[#c6bcff]">
 											{user.name}
-											{#if user.status === 'active'}<span class="h-1 w-1 rounded-full bg-emerald-400"></span>{/if}
+											{#if user.status === 'active'}<span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>{/if}
 										</a>
-										<p class="font-code text-[8.5px] text-[#6f6f7b]">@{user.handle} · #{user.id.toUpperCase()}</p>
+										<p class="font-code text-[8.5px] text-[#6f6f7b]">@{user.handle} · {user.id.slice(0, 8)}</p>
 									</div>
 								</div>
 							</td>
 							<td>
-								<p class="primary-cell max-w-[190px] truncate text-[10.5px]">{user.email}</p>
-								<p class="font-code text-[8.5px] text-[#6f6f7b]">{user.phone}</p>
+								<p class="primary-cell max-w-[210px] truncate font-code text-[10.5px]">{user.email || '—'}</p>
+								<p class="font-code text-[8.5px] text-[#8f8f9b]">{user.phone || '—'}</p>
 							</td>
 							<td>
-								<p class="text-[10.5px] text-[#d4d4dc]">{user.role}</p>
-								<div class="mt-0.5 flex items-center gap-1">
-									<span class="font-code text-[8.5px] text-[#8f8f9b]">{data.source === 'supabase' ? `Profile verified: ${user.kycTier === 1 ? 'yes' : 'no'}` : `KYC Tier ${user.kycTier}`}</span>
-									{#if user.status !== 'active'}<StatusChip label={status.label} tone={status.tone} />{/if}
+								<div class="flex flex-wrap items-center gap-1.5">
+									<span class="text-[10.5px] text-[#d4d4dc]">{user.role}</span>
+									<StatusChip label={status.label} tone={status.tone} />
 								</div>
+								<p class="mt-0.5 font-code text-[8.5px] text-[#8f8f9b]">
+									Verified: {user.kycTier === 1 ? 'Yes' : 'No'}{user.bankAccountNumber ? ` · Bank ${user.bankAccountNumber}` : ''}
+								</p>
 							</td>
 							<td>
 								<p class="font-code text-[11px] text-[#ececf1]">{money(user.spendNgn)}</p>
@@ -201,6 +204,32 @@
 							</td>
 							<td>
 								<div class="flex justify-end gap-1">
+									{#if user.status === 'active'}
+										<button
+											type="button"
+											class="row-action text-rose-300 hover:text-rose-200"
+											title="Disable user account"
+											aria-label={`Disable ${user.name}`}
+											disabled={busyUserId === user.id}
+											onclick={() => {
+												blockTarget = user;
+												reason = '';
+											}}
+										>
+											<Ban size={13} />
+										</button>
+									{:else}
+										<button
+											type="button"
+											class="row-action text-emerald-300 hover:text-emerald-200"
+											title="Enable user account"
+											aria-label={`Enable ${user.name}`}
+											disabled={busyUserId === user.id}
+											onclick={() => setStatus(user, 'active', 'Re-enabled from Users table')}
+										>
+											<Check size={13} />
+										</button>
+									{/if}
 									<a href={hrefFor(user.id)} class="row-action" aria-label={`Inspect ${user.name}`}><Eye size={13} /></a>
 									<a href={`/users/${user.id}`} class="row-action" aria-label={`Open ${user.name}`}><ArrowUpRight size={12} /></a>
 								</div>
@@ -216,19 +245,24 @@
 	{#if selected}
 		<section class="panel overflow-hidden">
 			<div class="flex items-center justify-between border-b border-[#26262e] px-4 py-2.5">
-				<div class="flex items-center gap-2"><p class="mono-label">User dossier // inspect</p><span class="font-code text-[8px] text-[#54545f]">Session token: tok_ng_live_{selected.id.slice(-5)}</span></div>
-				<span class="chip !h-[17px] !text-[7.5px]">GDPR scoped</span>
+				<div class="flex items-center gap-2">
+					<p class="mono-label">User dossier // full unredacted view</p>
+					<span class="font-code text-[8px] text-[#6f6f7b]">{selected.id}</span>
+				</div>
+				<a href={`/users/${selected.id}`} class="font-code text-[8px] uppercase tracking-[0.1em] text-[#c6bcff] hover:underline">
+					Full page dossier ↗
+				</a>
 			</div>
-			<div class="grid grid-cols-1 lg:grid-cols-[1fr_1.45fr]">
+			<div class="grid grid-cols-1 lg:grid-cols-[1.1fr_1.35fr]">
 				<div class="border-b border-[#24242c] p-4 lg:border-b-0 lg:border-r">
 					<div class="flex items-start gap-3">
 						<Avatar name={selected.name} size="lg" />
 						<div class="min-w-0 flex-1">
 							<div class="flex flex-wrap items-center gap-1.5">
 								<h3 class="font-display text-[17px] font-semibold text-[#f0f0f5]">{selected.name}</h3>
-								<span class="chip chip-accent !h-[17px] !text-[8px]">{data.source === 'supabase' ? `Profile verified: ${selected.kycTier === 1 ? 'yes' : 'no'}` : `Tier ${selected.kycTier} verified`}</span>
+								<span class="chip chip-accent !h-[17px] !text-[8px]">Verified: {selected.kycTier === 1 ? 'Yes' : 'No'}</span>
 							</div>
-							<p class="mt-0.5 font-code text-[9px] text-[#8f8f9b]">@{selected.handle} · #{selected.id.toUpperCase()}</p>
+							<p class="mt-0.5 font-code text-[9px] text-[#8f8f9b]">@{selected.handle}</p>
 							<div class="mt-2 flex flex-wrap gap-1">
 								<StatusChip label={userStatus(selected.status).label} tone={userStatus(selected.status).tone} />
 								<span class="chip !h-[16px] !text-[7.5px]">{selected.role}</span>
@@ -238,69 +272,115 @@
 					</div>
 
 					<div class="mt-3 flex flex-wrap gap-1.5">
-						{#if data.source === 'demo'}
-							<button type="button" class="btn btn-sm" onclick={() => toasts.info('Admin ping sent', `${selected.name} received a secure in-app notification.`)}><Smartphone size={12} /> Send admin ping</button>
+						{#if selected.status === 'active'}
+							<button
+								type="button"
+								class="btn btn-sm btn-danger-soft"
+								disabled={busyUserId === selected.id}
+								onclick={() => {
+									blockTarget = selected;
+									reason = '';
+								}}
+							>
+								<Ban size={12} /> Disable account
+							</button>
+						{:else}
+							<button
+								type="button"
+								class="btn btn-sm btn-primary"
+								disabled={busyUserId === selected.id}
+								onclick={() => setStatus(selected, 'active')}
+							>
+								<Check size={12} /> Enable account
+							</button>
 						{/if}
-						<button type="button" class="btn btn-sm" onclick={exportDossier}><Download size={12} /> Export dossier</button>
+						<button type="button" class="btn btn-sm" onclick={exportDossier}>
+							<Download size={12} /> Export JSON dossier
+						</button>
 					</div>
 
+					{#if selected.disabledReason && selected.status === 'blocked'}
+						<div class="mt-3 rounded-lg border border-rose-500/25 bg-rose-500/[0.06] p-2.5 text-[10.5px] text-rose-200">
+							<strong>Disabled reason:</strong> {selected.disabledReason}
+						</div>
+					{/if}
+
 					<div class="mt-4 flex items-center gap-3 border-b border-[#26262e]">
-						{#each [{ key: 'overview', label: 'Overview & KYC' }, { key: 'passes', label: `Passes ${selected.ticketsCount}` }, { key: 'ledger', label: 'Ledger' }, { key: 'audit', label: 'Audit history' }] as item}
+						{#each [{ key: 'overview', label: 'Contact, KYC & Bank' }, { key: 'passes', label: `Passes (${selected.ticketsCount})` }, { key: 'ledger', label: 'Orders' }, { key: 'audit', label: 'Audit' }] as item}
 							<button type="button" class="tab !text-[10.5px]" data-active={tab === item.key} onclick={() => (tab = item.key as typeof tab)}>{item.label}</button>
 						{/each}
 					</div>
 
 					{#if tab === 'overview'}
-						{#if data.source === 'supabase'}
-							<div class="mt-3 space-y-3">
-								<div><p class="mono-label !text-[7.5px]">Supabase profile record</p><p class="mt-1 break-all font-code text-[9px] text-[#b7b7c2]">{selected.id}</p></div>
-								<div><p class="mono-label !text-[7.5px]">Auth contact</p><p class="mt-1 text-[10px] text-[#dcdce4]">{selected.email || 'No email returned by Auth'}</p><p class="mt-1 text-[10px] text-[#dcdce4]">{selected.phone || 'No phone returned by Auth'}</p></div>
-								<div><p class="mono-label !text-[7.5px]">Profile fields</p><p class="mt-1 text-[10px] text-[#a0a0ab]">City: {selected.city} · Identity: {selected.role} · verified: {selected.kycTier === 1 ? 'true' : 'false'}</p></div>
-								<div><p class="mono-label !text-[7.5px]">Auth activity</p><p class="mt-1 text-[10px] text-[#a0a0ab]">Created {relative(selected.joinedAt)} · Last sign-in {relative(selected.lastSeenAt)} · Account {selected.status}</p></div>
-								<p class="rounded-md border border-[#292930] bg-[#18181e] p-2 text-[9.5px] leading-relaxed text-[#8f8f9b]">The current schema has no NIN, KYC-tier, chargeback, or admin audit tables. Those fields are not inferred here.</p>
-								<div><p class="mono-label !text-[7.5px]">Account status action</p><p class="mt-1 text-[10px] text-[#8f8f9b]">Status changes are read-only until an admin account-status field or RPC is added.</p></div>
+						<div class="mt-3 space-y-3 text-[10.5px]">
+							<div class="rounded-lg border border-[#2a2a32] p-2.5 space-y-1">
+								<p class="mono-label !text-[7.5px]">Contact & profile</p>
+								<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Email</span><span class="font-code select-all text-[#ededf4]">{selected.email || '—'}</span></p>
+								<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Phone</span><span class="font-code select-all text-[#ededf4]">{selected.phone || '—'}</span></p>
+								<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Operating identity</span><span class="font-code text-[#dcdce4]">{selected.operatingIdentity ?? selected.role}</span></p>
+								{#if selected.link}
+									<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Website</span><span class="truncate font-code text-[#c6bcff]">{selected.link}</span></p>
+								{/if}
+								{#if selected.bio}
+									<p class="pt-1 text-[10px] text-[#a0a0ab]">{selected.bio}</p>
+								{/if}
 							</div>
-						{:else}
-						<div class="mt-3 space-y-3">
-							<div>
-								<p class="mono-label !text-[7.5px]">Personal & contact telemetry</p>
-								<div class="mt-1.5 space-y-1 text-[10px]">
-									<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">Primary work email</span><span class="truncate font-code text-[#dcdce4]">{selected.email}</span></p>
-									<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">Registered phone</span><span class="font-code text-[#dcdce4]">{selected.phone}</span></p>
-									<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">Verification</span><span class="font-code text-emerald-300">Verified (SPF/DKIM valid)</span></p>
-									<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">Last seen</span><span class="text-[#dcdce4]">{relative(selected.lastSeenAt)}</span></p>
-									<p class="flex justify-between gap-2"><span class="text-[#6f6f7b]">Joined</span><span class="text-[#dcdce4]">{relative(selected.joinedAt)}</span></p>
-								</div>
-							</div>
-							<div>
-								<p class="mono-label !text-[7.5px]">Geo-IP & operational base</p>
-								<p class="mt-1 flex items-center gap-1.5 text-[10.5px] text-[#c9c9d4]"><MapPin size={11} class="text-[#6f6f7b]" /> {selected.city}, Nigeria <span class="font-code text-[8px] text-[#6f6f7b]">(AS37148 MainOne)</span></p>
-							</div>
-							<div>
-								<p class="mono-label !text-[7.5px]">Compliance & KYC verification</p>
-								<div class="mt-1.5 space-y-1.5 text-[10px]">
-									<p class="flex items-center gap-1.5 text-[#a0a0ab]"><ShieldCheck size={11} class="text-emerald-400" /> NIN identity slip · <span class="font-code text-[#dcdce4]">9048-••••-319</span></p>
-									<p class="flex items-center gap-1.5 text-[#a0a0ab]"><Fingerprint size={11} class="text-emerald-400" /> Biometric passkey enclave · FIDO2 WebAuthn</p>
-									<p class="flex items-center gap-1.5 text-[#a0a0ab]"><ShieldCheck size={11} class="text-emerald-400" /> Payment gateway anchor · Paystack</p>
-								</div>
-							</div>
-							<div>
-								<p class="mono-label !text-[7.5px]">Security & policy integrity</p>
-								<div class="mt-1.5 space-y-1 text-[10px]">
-									<p class="flex justify-between"><span class="text-[#6f6f7b]">Hardware 2FA</span><span class="font-code text-emerald-300">Enforced</span></p>
-									<p class="flex justify-between"><span class="text-[#6f6f7b]">Community policy strikes</span><span class="font-code text-[#dcdce4]">{selected.flags?.length ?? 0} strikes</span></p>
-									<p class="flex justify-between"><span class="text-[#6f6f7b]">Chargebacks</span><span class="font-code text-[#dcdce4]">0 (0.0%)</span></p>
-								</div>
-							</div>
-							<div class="pt-1">
-								{#if selected.status === 'active'}
-									<button type="button" class="btn btn-sm btn-danger-soft w-full" onclick={() => (blockOpen = true)}><Ban size={12} /> Suspend account access</button>
+
+							<div class="rounded-lg border border-[#2a2a32] p-2.5 space-y-1">
+								<p class="mono-label !text-[7.5px]">Government ID / KYC (unmasked)</p>
+								{#if selected.kycReference || selected.kycDocument || selected.kycLegalName}
+									<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Status</span><span class="font-code uppercase text-[#c6bcff]">{selected.kycStatus ?? 'submitted'}</span></p>
+									{#if selected.kycLegalName}
+										<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Legal name</span><span class="font-code select-all text-[#ededf4]">{selected.kycLegalName}</span></p>
+									{/if}
+									{#if selected.kycDateOfBirth}
+										<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Date of birth</span><span class="font-code select-all text-[#ededf4]">{selected.kycDateOfBirth}</span></p>
+									{/if}
+									{#if selected.kycDocument}
+										<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Document</span><span class="font-code text-[#ededf4]">{selected.kycDocument}</span></p>
+									{/if}
+									{#if selected.kycReference}
+										<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">ID / NIN / BVN #</span><span class="font-code font-semibold select-all text-emerald-300">{selected.kycReference}</span></p>
+									{/if}
+									{#if selected.kycAttachments && selected.kycAttachments.length > 0}
+										<div class="mt-2 grid grid-cols-2 gap-2 pt-1">
+											{#each selected.kycAttachments as att}
+												<button
+													type="button"
+													onclick={() => (previewAttachment = att)}
+													class="flex items-center justify-between rounded border border-[#32323d] bg-[#14141b] px-2 py-1.5 text-left font-code text-[9px] text-[#c6bcff] hover:border-[#7c60f6]"
+												>
+													<span class="truncate">{att.side.toUpperCase()}: {att.name}</span>
+													{#if att.mimeType.startsWith('image/')}
+														<ZoomIn size={11} />
+													{:else}
+														<FileText size={11} />
+													{/if}
+												</button>
+											{/each}
+										</div>
+									{/if}
 								{:else}
-									<button type="button" class="btn btn-sm btn-primary w-full" disabled={busy} onclick={() => setStatus('active')}>Reinstate account</button>
+									<p class="text-[10px] text-[#7f7f8c]">No KYC document submitted yet.</p>
+								{/if}
+							</div>
+
+							<div class="rounded-lg border border-[#2a2a32] p-2.5 space-y-1">
+								<p class="mono-label !text-[7.5px]">Payout bank details (unmasked)</p>
+								{#if selected.bankAccountNumber || selected.bankName}
+									<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Bank</span><span class="font-code text-[#ededf4]">{selected.bankName || '—'}</span></p>
+									<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Account # (NUBAN)</span><span class="font-code font-semibold select-all text-emerald-300">{selected.bankAccountNumber || '—'}</span></p>
+									{#if selected.bankAccountHolder}
+										<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Account holder</span><span class="font-code text-[#ededf4]">{selected.bankAccountHolder}</span></p>
+									{/if}
+									{#if selected.bankStatus}
+										<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Verification</span><span class="font-code uppercase text-[#c6bcff]">{selected.bankStatus}</span></p>
+									{/if}
+								{:else}
+									<p class="text-[10px] text-[#7f7f8c]">No bank account submitted yet.</p>
 								{/if}
 							</div>
 						</div>
-						{/if}
 					{:else if tab === 'passes'}
 						<div class="mt-3 space-y-1.5">
 							{#each data.related.tickets as ticket}
@@ -338,7 +418,7 @@
 									<p class="text-[9px] text-[#6f6f7b]">{record.actor} · {relative(record.at)} · {record.target}</p>
 								</div>
 							{:else}
-								<p class="text-[10.5px] text-[#6f6f7b]">No administrative actions recorded for this account.</p>
+								<p class="text-[10.5px] text-[#6f6f7b]">No administrative actions recorded yet.</p>
 							{/each}
 						</div>
 					{/if}
@@ -352,26 +432,14 @@
 							<p class="font-code text-[7.5px] uppercase text-[#6f6f7b]">{selected.ordersCount} orders</p>
 						</div>
 						<div class="panel-inset p-2.5">
-							<p class="mono-label !text-[7px]">Chargebacks</p>
-							<p class="mt-1 font-display text-[15px] font-semibold text-emerald-300">0</p>
-							<p class="font-code text-[7.5px] uppercase text-[#6f6f7b]">zero fraud flags</p>
+							<p class="mono-label !text-[7px]">Joined</p>
+							<p class="mt-1 font-display text-[14px] font-semibold text-[#ececf1]">{relative(selected.joinedAt)}</p>
+							<p class="font-code text-[7.5px] uppercase text-[#6f6f7b]">Last seen {relative(selected.lastSeenAt)}</p>
 						</div>
 						<div class="panel-inset p-2.5">
 							<p class="mono-label !text-[7px]">Passes held</p>
 							<p class="mt-1 font-display text-[15px] font-semibold text-[#ececf1]">{selected.ticketsCount}</p>
 							<p class="font-code text-[7.5px] uppercase text-[#6f6f7b]">{selected.ordersCount} orders</p>
-						</div>
-					</div>
-
-					<div class="mt-3 rounded-lg border border-[#2a2a32] p-3">
-						<div class="flex items-center justify-between">
-							<p class="mono-label !text-[8px]">Lifetime spend & reliability</p>
-							<span class="chip chip-ok !h-[16px] !text-[7.5px]">Clean</span>
-						</div>
-						<div class="mt-1.5 space-y-1 text-[10px]">
-							<p class="flex justify-between"><span class="text-[#6f6f7b]">Lifetime ticket value</span><span class="font-code text-[#dcdce4]">{money(selected.spendNgn)}</span></p>
-							<p class="flex justify-between"><span class="text-[#6f6f7b]">Passes purchased</span><span class="font-code text-[#dcdce4]">{selected.ticketsCount}</span></p>
-							<p class="flex justify-between"><span class="text-[#6f6f7b]">Disputes</span><span class="font-code text-[#dcdce4]">0.0%</span></p>
 						</div>
 					</div>
 
@@ -381,12 +449,12 @@
 							<a href={`/tickets?q=${selected.handle}`} class="font-code text-[8px] uppercase text-[#c6bcff] hover:underline">View all →</a>
 						</div>
 						<div class="mt-1.5 space-y-1.5">
-							{#each data.related.tickets.slice(0, 2) as ticket}
-								<div class="flex items-center gap-2">
+							{#each data.related.tickets.slice(0, 4) as ticket}
+								<div class="flex items-center gap-2 rounded-md border border-[#24242c] px-2.5 py-1.5">
 									<span class="flex h-6 w-6 items-center justify-center rounded border border-[#33333d] bg-[#1e1e25] text-[7px] text-[#8f8f9b]">PASS</span>
 									<div class="min-w-0 flex-1">
 										<p class="truncate text-[10px] text-[#d4d4dc]">{ticket.eventTitle}</p>
-										<p class="font-code text-[7.5px] text-[#6f6f7b]">{ticket.tierName} · {ticket.status === 'valid' ? 'Valid / unused' : ticketStatus(ticket.status).label}</p>
+										<p class="font-code text-[7.5px] text-[#6f6f7b]">{ticket.tierName} · {ticket.code}</p>
 									</div>
 									<span class={chipClass(ticketStatus(ticket.status).tone)}>{ticketStatus(ticket.status).label}</span>
 								</div>
@@ -395,30 +463,67 @@
 							{/each}
 						</div>
 					</div>
-
-					<div class="mt-3 flex items-center justify-between rounded-lg border border-[#2a2a32] bg-[#18181e] px-3 py-2">
-						<div>
-							<p class="mono-label !text-[7px]">Last password rotation</p>
-							<p class="mt-0.5 text-[10px] text-[#c9c9d4]">48 days ago</p>
-						</div>
-						<span class="chip chip-warn !h-[16px] !text-[7.5px]">Review advised</span>
-					</div>
 				</div>
 			</div>
 		</section>
 	{/if}
 </div>
 
-<Sheet open={blockOpen} title="Suspend account access" subtitle="This immediately revokes wallet passes and chat access." onclose={() => (blockOpen = false)} width="430px">
-	<form class="space-y-3" onsubmit={(event) => { event.preventDefault(); setStatus('blocked'); }}>
-		<div class="rounded-lg border border-red-500/25 bg-red-500/[0.06] p-3 text-[10.5px] leading-relaxed text-red-100/80">
-			{selected?.name} · @{selected?.handle}. Blocking is reversible but will be logged with your admin signature.
+<Sheet
+	open={blockTarget !== null}
+	title={blockTarget ? `Disable account · ${blockTarget.name}` : 'Disable user account'}
+	subtitle="Blocks sign-in and terminates active sessions on the public app immediately."
+	onclose={() => (blockTarget = null)}
+	width="430px"
+>
+	{#if blockTarget}
+		<form
+			class="space-y-3"
+			onsubmit={(event) => {
+				event.preventDefault();
+				if (blockTarget) setStatus(blockTarget, 'blocked');
+			}}
+		>
+			<div class="rounded-lg border border-red-500/25 bg-red-500/[0.06] p-3 text-[10.5px] leading-relaxed text-red-100/80">
+				{blockTarget.name} · @{blockTarget.handle}{blockTarget.email ? ` (${blockTarget.email})` : ''}. You can re-enable this account at any time.
+			</div>
+			<label class="field-label" for="user-reason">Reason</label>
+			<textarea
+				id="user-reason"
+				class="textarea"
+				bind:value={reason}
+				required
+				placeholder="e.g. Policy violation / fraudulent activity under Trust & Safety review."
+			></textarea>
+			<div class="flex justify-end gap-2">
+				<button type="button" class="btn btn-sm btn-ghost" onclick={() => (blockTarget = null)}>Cancel</button>
+				<button type="submit" class="btn btn-sm btn-danger" disabled={busyUserId !== null}>
+					<Ban size={12} /> Disable user account
+				</button>
+			</div>
+		</form>
+	{/if}
+</Sheet>
+
+<Sheet
+	open={previewAttachment !== null}
+	title={previewAttachment ? `${previewAttachment.side.toUpperCase()} ID · ${previewAttachment.name}` : 'ID Document'}
+	subtitle="Uploaded KYC identity document"
+	onclose={() => (previewAttachment = null)}
+	width="680px"
+>
+	{#if previewAttachment?.dataUrl}
+		<div class="space-y-3">
+			{#if previewAttachment.mimeType.startsWith('image/')}
+				<img src={previewAttachment.dataUrl} alt={previewAttachment.name} class="max-h-[72vh] w-full rounded-lg border border-[#2d2d37] bg-black object-contain" />
+			{:else}
+				<iframe src={previewAttachment.dataUrl} title={previewAttachment.name} class="h-[70vh] w-full rounded-lg border border-[#2d2d37] bg-white"></iframe>
+			{/if}
+			<div class="flex justify-end gap-2">
+				<a href={previewAttachment.dataUrl} download={previewAttachment.name} class="btn btn-sm btn-primary">
+					<Download size={12} /> Download original
+				</a>
+			</div>
 		</div>
-		<label class="field-label" for="user-reason">Reason</label>
-		<textarea id="user-reason" class="textarea" bind:value={reason} required placeholder="e.g. Chargeback ring investigation — risk engine escalation."></textarea>
-		<div class="flex justify-end gap-2">
-			<button type="button" class="btn btn-sm btn-ghost" onclick={() => (blockOpen = false)}>Cancel</button>
-			<button type="submit" class="btn btn-sm btn-danger" disabled={busy}>Suspend account</button>
-		</div>
-	</form>
+	{/if}
 </Sheet>

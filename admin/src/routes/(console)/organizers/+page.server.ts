@@ -24,12 +24,12 @@ export const load: PageServerLoad = async ({ url }) => {
 	} catch (cause) {
 		const error = cause instanceof Error ? cause.message : 'The organizer directory could not be loaded.';
 		return {
-			table: { rows: [], total: 0, page: 1, pages: 1, perPage: 9 },
+			table: { rows: [] as AdminOrganizer[], total: 0, page: 1, pages: 1, perPage: 9 },
 			filters: { q, status, tier },
 			counts: { total: 0, pending: 0, verified: 0, flagged: 0, tier1: 0, payoutVolumeNgn: 0 },
-			selectedId: null,
-			selected: null,
-			pipelines: [],
+			selectedId: null as string | null,
+			selected: null as AdminOrganizer | null,
+			pipelines: {} as Record<string, { id: string; title: string; sold: number }[]>,
 			error,
 			source: 'unavailable' as const
 		};

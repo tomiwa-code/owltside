@@ -2,15 +2,18 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { config as loadDotenv } from 'dotenv';
 import { resolve } from 'node:path';
 import type {
+	AdminApprovalAttachment,
 	AdminDashboard,
 	AdminEvent,
 	AdminOrder,
 	AdminOrganizer,
 	AdminTicket,
 	AdminUser,
+	AuditRecord,
 	EventTier
 } from '$admin/types';
-import type { EventQuery, OrganizerQuery, Page, UserQuery } from './store';
+import { extractApprovalAttachments } from './approvals';
+import { auditFor, type EventQuery, type OrganizerQuery, type Page, type UserQuery } from './store';
 
 let localEnvLoaded = false;
 function loadLocalEnvFiles(): void {
@@ -75,11 +78,21 @@ function parseTiers(value: unknown): EventTier[] {
 		name: String(tier.name ?? 'General Access'),
 		priceNgn: numberValue(tier.priceNgn ?? tier.price),
 		capacity: numberValue(tier.capacity),
-		sold: numberValue(tier.sold ?? tier.attendees)
+		sold: numberValue(tier.sold ?? tier.attendees),
+		benefits: tier.benefits ? String(tier.benefits) : undefined
 	}));
 }
 
-export function mapSupabaseEvent(row: Record<string, any>, organizerName = 'Organizer'): AdminEvent {
+export function mapSupabaseEvent(
+	row: Record<string, any>,
+	organizerName = 'Organizer',
+	extras?: {
+		organizerHandle?: string;
+		organizerEmail?: string;
+		organizerPhone?: string;
+		promos?: { code: string; percent: number; used: number; maxUses: number }[];
+	}
+): AdminEvent {
 	const tiers = parseTiers(row.tiers);
 	const startsAt = String(row.starts_at ?? new Date(0).toISOString());
 	const capacity = tiers.reduce((sum, tier) => sum + tier.capacity, 0);
@@ -90,18 +103,48 @@ export function mapSupabaseEvent(row: Record<string, any>, organizerName = 'Orga
 	const endsAt = String(row.ends_at ?? startsAt);
 	const now = Date.now();
 	const rawStatus = String(row.status ?? 'published');
-	let status: AdminEvent['status'] = (['published', 'pending', 'draft', 'suspended', 'completed'] as const).includes(rawStatus as AdminEvent['status'])
+	const status: AdminEvent['status'] = (
+		['published', 'pending', 'draft', 'suspended', 'rejected', 'completed'] as const
+	).includes(rawStatus as AdminEvent['status'])
 		? (rawStatus as AdminEvent['status'])
-		: new Date(endsAt).getTime() < now ? 'completed' : 'published';
-	if (rawStatus === 'rejected') status = 'suspended';
+		: new Date(endsAt).getTime() < now
+			? 'completed'
+			: 'published';
+
+	const gatesList = Array.isArray(row.gates)
+		? row.gates.map((gate: Record<string, any>) => ({
+				name: String(gate?.name ?? 'Gate'),
+				staffCount: Array.isArray(gate?.staff) ? gate.staff.length : numberValue(gate?.staffCount)
+			}))
+		: undefined;
+	const speakersList = Array.isArray(row.speakers)
+		? row.speakers.map((speaker: Record<string, any>) => ({
+				name: String(speaker?.name ?? 'Speaker'),
+				handle: speaker?.handle ? String(speaker.handle) : undefined,
+				role: String(speaker?.role ?? ''),
+				inviteStatus: speaker?.inviteStatus ? String(speaker.inviteStatus) : undefined
+			}))
+		: undefined;
+	const agendaList = Array.isArray(row.agenda)
+		? row.agenda.map((slot: Record<string, any>) => ({
+				start: String(slot?.start ?? ''),
+				title: String(slot?.title ?? ''),
+				location: String(slot?.location ?? '')
+			}))
+		: undefined;
+
 	return {
 		id: String(row.id),
 		ref: `EVT-${String(row.id).slice(0, 8).toUpperCase()}`,
 		slug: String(row.slug ?? row.id),
 		title: String(row.title ?? 'Untitled event'),
 		category: String(row.category ?? 'Uncategorised'),
+		description: row.description ? String(row.description) : undefined,
 		organizerId: String(row.organizer_id ?? ''),
 		organizerName,
+		organizerHandle: extras?.organizerHandle,
+		organizerEmail: extras?.organizerEmail,
+		organizerPhone: extras?.organizerPhone,
 		organizerTier: 1,
 		status: status as AdminEvent['status'],
 		startsAt,
@@ -115,8 +158,13 @@ export function mapSupabaseEvent(row: Record<string, any>, organizerName = 'Orga
 		coverFrom: String(cover.from ?? '#1b2a4a'),
 		coverTo: String(cover.to ?? '#43318a'),
 		coverIcon: String(cover.icon ?? 'calendar-days'),
+		coverSrc: typeof cover.src === 'string' && cover.src ? cover.src : undefined,
 		submittedAt: row.submitted_at ? String(row.submitted_at) : undefined,
-		moderationNote: row.moderation_note ? String(row.moderation_note) : undefined
+		moderationNote: row.moderation_note ? String(row.moderation_note) : undefined,
+		promos: extras?.promos,
+		gatesList,
+		speakersList,
+		agendaList
 	};
 }
 
@@ -124,19 +172,25 @@ async function loadEvents(client: SupabaseClient): Promise<AdminEvent[]> {
 	const records = await rowsFrom(
 		client,
 		'events',
-		'id,slug,title,category,starts_at,ends_at,venue,city,cover,organizer_id,tiers,attendees,status,submitted_at,moderation_note,created_at'
+		'id,slug,title,description,category,starts_at,ends_at,venue,city,cover,organizer_id,tiers,attendees,gates,speakers,agenda,status,submitted_at,moderation_note,created_at'
 	);
 	const organizerIds = [...new Set(records.map((row) => String(row.organizer_id ?? '')).filter(Boolean))];
-	const organizers = new Map<string, string>();
+	const organizers = new Map<string, { name: string; handle: string }>();
 	for (let offset = 0; offset < organizerIds.length; offset += 500) {
 		const ids = organizerIds.slice(offset, offset + 500);
 		const { data, error } = await client.from('profiles').select('id,name,handle').in('id', ids);
 		assertNoError(error, 'profiles');
 		for (const profile of data ?? []) {
-			organizers.set(String(profile.id), String(profile.name ?? profile.handle ?? 'Organizer'));
+			organizers.set(String(profile.id), {
+				name: String(profile.name ?? profile.handle ?? 'Organizer'),
+				handle: String(profile.handle ?? '')
+			});
 		}
 	}
-	return records.map((row) => mapSupabaseEvent(row, organizers.get(String(row.organizer_id)) ?? 'Organizer'));
+	return records.map((row) => {
+		const org = organizers.get(String(row.organizer_id));
+		return mapSupabaseEvent(row, org?.name ?? 'Organizer', { organizerHandle: org?.handle });
+	});
 }
 
 function paginate<T>(items: T[], page = 1, perPage = 12): Page<T> {
@@ -184,7 +238,7 @@ export async function listSupabaseEvents(query: EventQuery = {}): Promise<
 			published: events.filter((e) => e.status === 'published').length,
 			pending: events.filter((e) => e.status === 'pending').length,
 			draft: events.filter((e) => e.status === 'draft').length,
-			suspended: events.filter((e) => e.status === 'suspended').length
+			suspended: events.filter((e) => e.status === 'suspended' || e.status === 'rejected').length
 		}
 	};
 }
@@ -193,24 +247,73 @@ export async function getSupabaseEvent(id: string): Promise<AdminEvent | null> {
 	const client = createAdminClient();
 	const baseQuery = client
 		.from('events')
-		.select('id,slug,title,category,starts_at,ends_at,venue,city,cover,organizer_id,tiers,attendees,status,submitted_at,moderation_note,created_at');
+		.select(
+			'id,slug,title,description,category,starts_at,ends_at,venue,city,cover,organizer_id,tiers,attendees,gates,speakers,agenda,status,submitted_at,moderation_note,created_at'
+		);
 	const eventQuery = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
 		? await baseQuery.eq('id', id).maybeSingle()
 		: await baseQuery.eq('slug', id).maybeSingle();
 	assertNoError(eventQuery.error, 'events');
 	if (!eventQuery.data) return null;
-	const profileQuery = eventQuery.data.organizer_id
-		? await client.from('profiles').select('name,handle').eq('id', eventQuery.data.organizer_id).maybeSingle()
-		: { data: null, error: null };
+	const organizerId = eventQuery.data.organizer_id ? String(eventQuery.data.organizer_id) : '';
+	const [profileQuery, promosQuery, authQuery] = await Promise.all([
+		organizerId
+			? client.from('profiles').select('name,handle').eq('id', organizerId).maybeSingle()
+			: Promise.resolve({ data: null, error: null }),
+		client
+			.from('event_promos')
+			.select('code,percent,used,max_uses')
+			.eq('event_id', eventQuery.data.id)
+			.then((res) => res, () => ({ data: [], error: null })),
+		organizerId
+			? client.auth.admin
+					.getUserById(organizerId)
+					.then((res) => res.data?.user ?? null, () => null)
+			: Promise.resolve(null)
+	]);
 	assertNoError(profileQuery.error, 'profiles');
-	return mapSupabaseEvent(eventQuery.data, profileQuery.data?.name ?? profileQuery.data?.handle ?? 'Organizer');
+	const promos = Array.isArray(promosQuery.data)
+		? promosQuery.data.map((p: Record<string, any>) => ({
+				code: String(p.code ?? ''),
+				percent: numberValue(p.percent),
+				used: numberValue(p.used),
+				maxUses: numberValue(p.max_uses)
+			}))
+		: [];
+	const meta = (authQuery?.user_metadata ?? {}) as Record<string, any>;
+	return mapSupabaseEvent(
+		eventQuery.data,
+		profileQuery.data?.name ?? profileQuery.data?.handle ?? 'Organizer',
+		{
+			organizerHandle: profileQuery.data?.handle ? String(profileQuery.data.handle) : undefined,
+			organizerEmail: authQuery?.email ?? undefined,
+			organizerPhone:
+				authQuery?.phone || (typeof meta.verified_phone === 'string' ? meta.verified_phone : undefined),
+			promos
+		}
+	);
 }
 
 type DataProfile = Record<string, any>;
 type DataAuthUser = Record<string, any>;
+type UserApprovalSnapshot = {
+	phone?: string;
+	bank?: string;
+	accountNumber?: string;
+	accountHolder?: string;
+	bankStatus?: string;
+	kycDocument?: string;
+	kycReference?: string;
+	kycLegalName?: string;
+	kycDateOfBirth?: string;
+	kycStatus?: string;
+	kycAttachments?: AdminApprovalAttachment[];
+};
+
 type PeopleBundle = {
 	profiles: DataProfile[];
 	authUsers: Map<string, DataAuthUser>;
+	approvalsByUser: Map<string, UserApprovalSnapshot>;
 	events: AdminEvent[];
 	orders: Record<string, any>[];
 	tickets: Record<string, any>[];
@@ -221,11 +324,17 @@ type PeopleBundle = {
 };
 
 async function loadPeopleBundle(client: SupabaseClient): Promise<PeopleBundle> {
-	const [profiles, events, orders, tickets] = await Promise.all([
-		rowsFrom(client, 'profiles', 'id,handle,name,city,verified,operating_identity,created_at,avatar_url', (q) => q.order('created_at', { ascending: false }).order('id')),
+	const [profiles, events, orders, tickets, approvalsRes] = await Promise.all([
+		rowsFrom(client, 'profiles', '*', (q) => q.order('created_at', { ascending: false }).order('id')),
 		loadEvents(client),
 		rowsFrom(client, 'orders', 'id,owner_id,owner_name,event_id,reference,total,items_label,status,gateway,created_at', (q) => q.order('created_at', { ascending: false }).order('id')),
-		rowsFrom(client, 'tickets', 'id,owner_id,event_id,code,event_title,tier_name,holder_name,status,purchased_at,price,cover', (q) => q.order('purchased_at', { ascending: false }).order('id'))
+		rowsFrom(client, 'tickets', 'id,owner_id,event_id,code,event_title,tier_name,holder_name,status,purchased_at,price,cover', (q) => q.order('purchased_at', { ascending: false }).order('id')),
+		client
+			.from('approval_requests')
+			.select('requester_id,kind,status,payload,created_at')
+			.order('created_at', { ascending: false })
+			.limit(1000)
+			.then((res) => res.data ?? [], () => [] as Record<string, any>[])
 	]);
 	const authUsers = new Map<string, DataAuthUser>();
 	try {
@@ -233,9 +342,6 @@ async function loadPeopleBundle(client: SupabaseClient): Promise<PeopleBundle> {
 		for (let page = 1; ; page += 1) {
 			const { data, error } = await client.auth.admin.listUsers({ page, perPage });
 			if (error) {
-				// Some Supabase projects (or service-role configurations) reject
-				// the auth.admin listUsers call; degrade gracefully — everything
-				// except email/phone/last-seen is derivable from public.profiles.
 				break;
 			}
 			for (const user of data.users as DataAuthUser[]) authUsers.set(user.id, user);
@@ -244,6 +350,38 @@ async function loadPeopleBundle(client: SupabaseClient): Promise<PeopleBundle> {
 	} catch {
 		// Auth endpoint unavailable; continue without auth metadata.
 	}
+
+	const approvalsByUser = new Map<string, UserApprovalSnapshot>();
+	for (const row of approvalsRes as Record<string, any>[]) {
+		const uid = String(row.requester_id ?? '');
+		if (!uid) continue;
+		const snap = approvalsByUser.get(uid) ?? {};
+		const payload = (row.payload ?? {}) as Record<string, any>;
+		if (row.kind === 'verification') {
+			const check = String(payload.check ?? 'identity');
+			if (check === 'payoutAccount' && !snap.accountNumber && payload.accountNumber) {
+				snap.bank = String(payload.bank ?? '');
+				snap.accountNumber = String(payload.accountNumber ?? '');
+				snap.accountHolder = payload.accountHolder ? String(payload.accountHolder) : undefined;
+				snap.bankStatus = String(row.status ?? 'pending');
+			} else if (check === 'phone' && !snap.phone && payload.phone) {
+				snap.phone = String(payload.phone);
+			} else if (check === 'identity' && !snap.kycReference && !snap.kycDocument) {
+				snap.kycDocument = payload.document ? String(payload.document) : undefined;
+				snap.kycReference = String(payload.fullReference ?? payload.reference ?? '');
+				snap.kycLegalName = payload.legalName ? String(payload.legalName) : undefined;
+				snap.kycDateOfBirth = payload.dateOfBirth ? String(payload.dateOfBirth) : undefined;
+				snap.kycStatus = String(row.status ?? 'pending');
+				snap.kycAttachments = extractApprovalAttachments(payload);
+			}
+		} else if (row.kind === 'payout' && !snap.accountNumber && payload.accountNumber) {
+			snap.bank = String(payload.bank ?? '');
+			snap.accountNumber = String(payload.accountNumber ?? '');
+			snap.accountHolder = payload.accountHolder ? String(payload.accountHolder) : undefined;
+		}
+		approvalsByUser.set(uid, snap);
+	}
+
 	const ordersByOwner = new Map<string, Record<string, any>[]>();
 	const ticketsByOwner = new Map<string, Record<string, any>[]>();
 	const ticketsByEvent = new Map<string, number>();
@@ -262,24 +400,64 @@ async function loadPeopleBundle(client: SupabaseClient): Promise<PeopleBundle> {
 		const eventId = String(ticket.event_id ?? '');
 		ticketsByEvent.set(eventId, (ticketsByEvent.get(eventId) ?? 0) + 1);
 	}
-	return { profiles, authUsers, events, orders, tickets, ordersByOwner, ticketsByOwner, ticketsByEvent, paidGrossByEvent };
+	return {
+		profiles,
+		authUsers,
+		approvalsByUser,
+		events,
+		orders,
+		tickets,
+		ordersByOwner,
+		ticketsByOwner,
+		ticketsByEvent,
+		paidGrossByEvent
+	};
+}
+
+export function isUserRecordBlocked(profile?: DataProfile, auth?: DataAuthUser): boolean {
+	if (profile?.disabled === true) return true;
+	const meta = (auth?.user_metadata ?? {}) as Record<string, any>;
+	if (meta.account_disabled === true) return true;
+	if (auth?.banned_until) {
+		const until = new Date(String(auth.banned_until)).getTime();
+		if (Number.isFinite(until) && until > Date.now()) return true;
+	}
+	return false;
 }
 
 function mapDataUser(profile: DataProfile, auth: DataAuthUser | undefined, bundle: PeopleBundle): AdminUser {
 	const ownedOrders = bundle.ordersByOwner.get(profile.id) ?? [];
 	const ownedTickets = bundle.ticketsByOwner.get(profile.id) ?? [];
-	const now = Date.now();
-	const isBlocked = auth?.banned_until && new Date(auth.banned_until).getTime() > now;
+	const snap = bundle.approvalsByUser.get(profile.id);
+	const meta = (auth?.user_metadata ?? {}) as Record<string, any>;
+	const isBlocked = isUserRecordBlocked(profile, auth);
 	const isOrganizer = profile.operating_identity === 'organizer' || bundle.events.some((event) => event.organizerId === profile.id);
 	const role: AdminUser['role'] = isOrganizer ? 'Organizer' : 'Attendee';
+	const phone = String(auth?.phone || meta.verified_phone || meta.phone || snap?.phone || '');
 	return {
 		id: profile.id,
 		handle: String(profile.handle ?? profile.id.slice(0, 8)),
 		name: String(profile.name ?? 'Owltside user'),
 		email: String(auth?.email ?? ''),
-		phone: String(auth?.phone ?? ''),
+		phone,
+		bio: profile.bio ? String(profile.bio) : undefined,
+		link: profile.link ? String(profile.link) : undefined,
+		operatingIdentity: profile.operating_identity ? String(profile.operating_identity) : 'attendee',
+		disabledReason:
+			(profile.disabled_reason ? String(profile.disabled_reason) : undefined) ||
+			(meta.disabled_reason ? String(meta.disabled_reason) : undefined),
 		role,
 		kycTier: profile.verified ? 1 : 0,
+		kycDocument: snap?.kycDocument,
+		kycReference: snap?.kycReference,
+		kycLegalName: snap?.kycLegalName,
+		kycDateOfBirth: snap?.kycDateOfBirth,
+		kycStatus: snap?.kycStatus,
+		kycAttachments: snap?.kycAttachments,
+		bankName: snap?.bank,
+		bankAccountNumber: snap?.accountNumber,
+		bankAccountHolder: snap?.accountHolder,
+		bankStatus: snap?.bankStatus,
 		spendNgn: ownedOrders.filter((order) => order.status === 'paid').reduce((sum, order) => sum + numberValue(order.total), 0),
 		ticketsCount: ownedTickets.length,
 		ordersCount: ownedOrders.length,
@@ -309,8 +487,16 @@ function mapDataTicket(ticket: Record<string, any>, profileById: Map<string, Dat
 	};
 }
 
-function mapDataOrder(order: Record<string, any>, profileById: Map<string, DataProfile>, eventById: Map<string, AdminEvent>): AdminOrder {
-	const profile = profileById.get(String(order.owner_id));
+function mapDataOrder(
+	order: Record<string, any>,
+	profileById: Map<string, DataProfile>,
+	eventById: Map<string, AdminEvent>,
+	authUsers?: Map<string, DataAuthUser>
+): AdminOrder {
+	const ownerId = String(order.owner_id ?? '');
+	const profile = profileById.get(ownerId);
+	const auth = authUsers?.get(ownerId);
+	const meta = (auth?.user_metadata ?? {}) as Record<string, any>;
 	const event = eventById.get(String(order.event_id));
 	const status: AdminOrder['status'] = order.status === 'paid'
 		? 'settled'
@@ -321,8 +507,8 @@ function mapDataOrder(order: Record<string, any>, profileById: Map<string, DataP
 		id: String(order.id),
 		reference: String(order.reference ?? order.id),
 		customerName: String(order.owner_name ?? profile?.name ?? 'Attendee'),
-		customerEmail: '',
-		customerPhone: '',
+		customerEmail: String(auth?.email ?? ''),
+		customerPhone: String(auth?.phone || meta.verified_phone || meta.phone || ''),
 		eventId: String(order.event_id ?? ''),
 		eventTitle: event?.title ?? String(order.items_label ?? 'Event'),
 		tierLabel: String(order.items_label ?? 'Ticket'),
@@ -342,7 +528,7 @@ export async function listSupabaseUsers(query: UserQuery = {}, selectedId?: stri
 	page: Page<AdminUser>;
 	counts: { total: number; active: number; flagged: number; blocked: number; verifiedOrganizers: number };
 	selected: AdminUser | null;
-	related: { tickets: AdminTicket[]; orders: AdminOrder[]; audit: [] };
+	related: { tickets: AdminTicket[]; orders: AdminOrder[]; audit: AuditRecord[] };
 }> {
 	const client = createAdminClient();
 	const bundle = await loadPeopleBundle(client);
@@ -362,7 +548,7 @@ export async function listSupabaseUsers(query: UserQuery = {}, selectedId?: stri
 	const selected = users.find((user) => user.id === selectedId) ?? page.rows[0] ?? null;
 	const eventById = new Map(bundle.events.map((event) => [event.id, event]));
 	const relatedTickets = selected ? (bundle.ticketsByOwner.get(selected.id) ?? []).slice(0, 8).map((ticket) => mapDataTicket(ticket, profileById)) : [];
-	const relatedOrders = selected ? (bundle.ordersByOwner.get(selected.id) ?? []).slice(0, 8).map((order) => mapDataOrder(order, profileById, eventById)) : [];
+	const relatedOrders = selected ? (bundle.ordersByOwner.get(selected.id) ?? []).slice(0, 8).map((order) => mapDataOrder(order, profileById, eventById, bundle.authUsers)) : [];
 	return {
 		page,
 		counts: {
@@ -373,7 +559,11 @@ export async function listSupabaseUsers(query: UserQuery = {}, selectedId?: stri
 			verifiedOrganizers: bundle.profiles.filter((profile) => profile.operating_identity === 'organizer' || bundle.events.some((event) => event.organizerId === profile.id)).length
 		},
 		selected,
-		related: { tickets: relatedTickets, orders: relatedOrders, audit: [] }
+		related: {
+			tickets: relatedTickets,
+			orders: relatedOrders,
+			audit: selected ? auditFor(selected.id, 8) : []
+		}
 	};
 }
 
@@ -423,7 +613,7 @@ export async function listSupabaseOrders(query: { q?: string; status?: string; m
 	const bundle = await loadPeopleBundle(client);
 	const profileById = new Map(bundle.profiles.map((p) => [p.id, p]));
 	const eventById = new Map(bundle.events.map((e) => [e.id, e]));
-	const orders = bundle.orders.map((o) => mapDataOrder(o, profileById, eventById));
+	const orders = bundle.orders.map((o) => mapDataOrder(o, profileById, eventById, bundle.authUsers));
 	const q = (query.q ?? '').trim().toLowerCase();
 	const filtered = orders
 		.filter((o) => !query.status || query.status === 'all' || o.status === query.status)
@@ -459,30 +649,52 @@ function mapDataOrganizer(profile: DataProfile, auth: DataAuthUser | undefined, 
 	const ownEvents = bundle.events.filter((event) => event.organizerId === profile.id);
 	const ticketsSold = ownEvents.reduce((sum, event) => sum + (bundle.ticketsByEvent.get(event.id) ?? 0), 0);
 	const grossVolumeNgn = ownEvents.reduce((sum, event) => sum + (bundle.paidGrossByEvent.get(event.id) ?? 0), 0);
+	const snap = bundle.approvalsByUser.get(profile.id);
+	const meta = (auth?.user_metadata ?? {}) as Record<string, any>;
+	const isBlocked = isUserRecordBlocked(profile, auth);
+	const phone = String(auth?.phone || meta.verified_phone || meta.phone || snap?.phone || '');
+	const accountNumber = snap?.accountNumber ?? '';
 	return {
 		id: profile.id,
 		name: String(profile.name ?? 'Organizer'),
-		legalName: String(profile.name ?? 'Organizer'),
+		legalName: String(snap?.kycLegalName || profile.name || 'Organizer'),
 		slug: String(profile.handle ?? profile.id.slice(0, 8)),
-		cacRegNumber: '',
+		cacRegNumber: String(snap?.kycReference ?? ''),
 		tier: 1,
-		status: profile.verified ? 'verified' : 'pending',
+		status: isBlocked ? 'suspended' : profile.verified ? 'verified' : 'pending',
 		city: String(profile.city ?? '—'),
 		state: '',
 		contactName: String(profile.name ?? ''),
 		contactEmail: String(auth?.email ?? ''),
-		contactPhone: String(auth?.phone ?? ''),
+		contactPhone: phone,
+		bio: profile.bio ? String(profile.bio) : undefined,
+		link: profile.link ? String(profile.link) : undefined,
 		eventsCount: ownEvents.length,
 		ticketsSold,
 		grossVolumeNgn,
 		escrowHeldNgn: 0,
-		settlementBank: '',
-		settlementAccountLast4: '',
-		settlementState: 'pending',
-		risk: 'low',
-		verifiedDocs: profile.verified ? 1 : 0,
-		requiredDocs: 1,
-		createdAt: String(profile.created_at ?? new Date(0).toISOString())
+		settlementBank: String(snap?.bank ?? ''),
+		settlementAccountLast4: accountNumber ? accountNumber.slice(-4) : '',
+		settlementAccountNumber: accountNumber || undefined,
+		settlementAccountHolder: snap?.accountHolder || String(profile.name ?? ''),
+		settlementState: isBlocked
+			? 'frozen'
+			: snap?.bankStatus === 'approved'
+				? 'linked'
+				: 'pending',
+		risk: isBlocked ? 'high' : 'low',
+		verifiedDocs: profile.verified ? 2 : (snap?.kycStatus === 'approved' ? 1 : 0) + (snap?.bankStatus === 'approved' ? 1 : 0),
+		requiredDocs: 2,
+		createdAt: String(profile.created_at ?? new Date(0).toISOString()),
+		flagReason:
+			(profile.disabled_reason ? String(profile.disabled_reason) : undefined) ||
+			(meta.disabled_reason ? String(meta.disabled_reason) : undefined),
+		kycDocument: snap?.kycDocument,
+		kycReference: snap?.kycReference,
+		kycLegalName: snap?.kycLegalName,
+		kycDateOfBirth: snap?.kycDateOfBirth,
+		kycStatus: snap?.kycStatus,
+		kycAttachments: snap?.kycAttachments
 	};
 }
 
@@ -543,7 +755,7 @@ function dayKey(date: Date): string {
 }
 
 export async function listSupabaseRefunds(): Promise<{
-	rows: { id: string; orderRef: string; customerName: string; eventTitle: string; amountNgn: number; originalNgn: number; reason: string; status: 'pending' | 'approved' | 'rejected' | 'processing' | 'settled'; requestedAt: string; slaHours: number; policyMatch: number; signals: string[]; note?: string; decidedAt?: string; decidedBy?: string }[];
+	rows: { id: string; orderRef: string; customerId?: string; customerName: string; customerEmail?: string; eventId?: string; eventTitle: string; ticketCode?: string; amountNgn: number; originalNgn: number; reason: string; status: 'pending' | 'approved' | 'rejected' | 'processing' | 'settled'; requestedAt: string; slaHours: number; policyMatch: number; signals: string[]; note?: string; decidedAt?: string; decidedBy?: string }[];
 	summary: { pending: number; total30dNgn: number; successRate: number; avgResolutionHours: number; escrowNgn: number };
 }> {
 	const client = createAdminClient();
@@ -569,14 +781,30 @@ export async function listSupabaseRefunds(): Promise<{
 	}
 	const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000);
 	const rows = ((data ?? []) as Record<string, any>[]).map((row) => {
-		const requester = requesterMap.get(String(row.requester_id));
+		const customerId = row.requester_id ? String(row.requester_id) : undefined;
+		const requester = customerId ? requesterMap.get(customerId) : undefined;
 		const payload = (row.payload ?? {}) as Record<string, any>;
 		const status = (row.status === 'approved' ? 'processing' : row.status === 'rejected' ? 'rejected' : 'pending') as 'pending' | 'approved' | 'rejected' | 'processing' | 'settled';
+		const customerEmail = typeof payload.requesterEmail === 'string' && payload.requesterEmail.trim()
+			? payload.requesterEmail.trim()
+			: undefined;
+		const eventId = typeof payload.eventId === 'string' && payload.eventId.trim()
+			? payload.eventId.trim()
+			: undefined;
+		const ticketCode = typeof payload.ticketCode === 'string' && payload.ticketCode.trim()
+			? payload.ticketCode.trim()
+			: row.subject_label
+				? String(row.subject_label)
+				: undefined;
 		return {
 			id: String(row.id),
 			orderRef: String(row.subject_label ?? row.id),
-			customerName: String(requester?.name ?? requester?.handle ?? 'Attendee'),
-			eventTitle: String(row.title ?? 'Refund request').replace(/^Refund · /, ''),
+			customerId,
+			customerName: String(requester?.name ?? payload.requesterName ?? requester?.handle ?? 'Attendee'),
+			customerEmail,
+			eventId,
+			eventTitle: String(payload.eventTitle ?? row.title ?? 'Refund request').replace(/^Refund · /, ''),
+			ticketCode,
 			amountNgn: numberValue(row.amount),
 			originalNgn: numberValue(row.amount),
 			reason: String(payload.reason ?? 'Refund requested'),

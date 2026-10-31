@@ -101,7 +101,10 @@
 					amount: stats.payout,
 					subjectId: eventId ?? mainEvent?.id ?? '',
 					subjectLabel: eventTitle ?? mainEvent?.title ?? 'Settlement balance',
-					destination: payoutDestination
+					destination: payoutDestination,
+					bank: payout.bank,
+					accountNumber: payout.accountNumber,
+					accountHolder: page.data.session?.name || ''
 				})
 			});
 			const body = (await response.json().catch(() => ({}))) as { error?: string };
@@ -117,12 +120,64 @@
 			payoutSubmitting = false;
 		}
 	}
-	const stats = $derived(payload?.stats);
 	// Every event the organizer owns, including submissions still awaiting review.
 	// The public feeds only show the published ones; here they are all visible.
 	const myEvents = $derived(payload?.events ?? []);
 	const pendingReviews = $derived(myEvents.filter((event) => event.status === 'pending').length);
-	const mainEvent = $derived(payload?.events[0]);
+	let selectedEventId = $state(page.url.searchParams.get('eventId') ?? '');
+	$effect(() => {
+		const urlEventId = page.url.searchParams.get('eventId');
+		if (urlEventId && myEvents.some((event) => event.id === urlEventId) && !selectedEventId) {
+			selectedEventId = urlEventId;
+		}
+	});
+	const mainEvent = $derived(
+		myEvents.find((event) => event.id === selectedEventId) ?? myEvents[0]
+	);
+	function selectEvent(eventId: string) {
+		selectedEventId = eventId;
+		if (browser) {
+			const nextUrl = new URL(window.location.href);
+			nextUrl.searchParams.set('eventId', eventId);
+			window.history.replaceState(window.history.state, '', nextUrl);
+		}
+	}
+	const eventCheckins = $derived(
+		mainEvent
+			? (payload?.checkins ?? []).filter((checkin) => checkin.eventId === mainEvent.id)
+			: (payload?.checkins ?? [])
+	);
+	const eventOrders = $derived(
+		mainEvent
+			? (payload?.orders ?? []).filter((order) => order.eventId === mainEvent.id)
+			: (payload?.orders ?? [])
+	);
+	const stats = $derived.by(() => {
+		if (!payload?.stats) return undefined;
+		if (!mainEvent || myEvents.length <= 1) return payload.stats;
+		const revenue = mainEvent.tiers.reduce((sum, tier) => sum + tier.sold * tier.price, 0);
+		const capacity = mainEvent.tiers.reduce((sum, tier) => sum + tier.capacity, 0);
+		const sold = mainEvent.tiers.reduce((sum, tier) => sum + tier.sold, 0);
+		const checkedIn = eventCheckins.filter((checkin) => checkin.result === 'verified').length;
+		const hourAgo = Date.now() - 3_600_000;
+		const recentPaid = eventOrders.filter(
+			(order) => order.status === 'paid' && +new Date(order.at) >= hourAgo
+		).length;
+		return {
+			revenue,
+			revenueDeltaPct: payload.stats.revenueDeltaPct,
+			checkedIn,
+			capacity,
+			orders: sold,
+			soldPct: capacity ? Math.round((sold / capacity) * 1000) / 10 : 0,
+			soldLastHour: recentPaid,
+			payout: Math.round(revenue * 0.35)
+		};
+	});
+	const eventSoldTotal = (event: { tiers: { sold: number }[] }) =>
+		event.tiers.reduce((sum, tier) => sum + tier.sold, 0);
+	const eventCapacityTotal = (event: { tiers: { capacity: number }[] }) =>
+		event.tiers.reduce((sum, tier) => sum + tier.capacity, 0);
 	const minTierPrice = (event: { tiers: { price: number }[] }) =>
 		event.tiers.length ? Math.min(...event.tiers.map((tier) => tier.price)) : 0;
 
@@ -165,7 +220,11 @@
 	let deskPin = $state('');
 	let deskPinContext = $state<{ eventId: string; gate: string } | null>(null);
 	let pinGateName = $state('');
-	const scannerEvent = $derived(payload?.events.find((event) => (event.gates ?? []).length > 0));
+	const scannerEvent = $derived(
+		mainEvent && (mainEvent.gates ?? []).length > 0
+			? mainEvent
+			: payload?.events.find((event) => (event.gates ?? []).length > 0)
+	);
 	const scannerGates = $derived(scannerEvent?.gates ?? []);
 	// A generated PIN stays visible while it matches the current scanner
 	// context: the selected event gate, or the standalone terminal PIN
@@ -182,9 +241,11 @@
 		if (scannerEvent && !scannerGates.some((gate) => gate.name === pinGateName)) pinGateName = scannerGates[0]?.name ?? '';
 	});
 
-	const rejected = $derived((payload?.checkins ?? []).filter((c) => c.result !== 'verified').length);
+	const rejected = $derived(eventCheckins.filter((c) => c.result !== 'verified').length);
 	const potential = $derived(
-		(payload?.events ?? []).reduce((s, e) => s + e.tiers.reduce((x, t) => x + t.capacity * t.price, 0), 0)
+		mainEvent
+			? mainEvent.tiers.reduce((x, t) => x + t.capacity * t.price, 0)
+			: (payload?.events ?? []).reduce((s, e) => s + e.tiers.reduce((x, t) => x + t.capacity * t.price, 0), 0)
 	);
 	const goalPct = $derived(stats && potential ? Math.round((stats.revenue / potential) * 1000) / 10 : 0);
 	const gateCount = $derived(scannerGates.length);
@@ -197,9 +258,9 @@
 			: ''
 	);
 
-	// The scanner is always one tap away: it targets the first event that has a
-	// gate configured, otherwise the first event, otherwise the bare route.
-	const scannerTarget = $derived(scannerEvent ?? payload?.events[0]);
+	// The scanner targets the currently selected event when available, otherwise
+	// any gated event or the bare scanner route.
+	const scannerTarget = $derived(mainEvent ?? scannerEvent ?? payload?.events[0]);
 	const scannerHref = $derived(
 		scannerTarget ? `/organizer/scan?eventId=${encodeURIComponent(scannerTarget.id)}` : '/organizer/scan'
 	);
@@ -237,14 +298,15 @@
 	}
 	function exportCsv() {
 		const rows = [
-			['Attendee', 'Tier', 'Gate', 'Result', 'Scanned At'],
-			...(payload?.checkins ?? []).map((c) => [c.holder, c.tier, c.gate, c.result, c.at])
+			['Event', 'Attendee', 'Tier', 'Gate', 'Result', 'Scanned At'],
+			...eventCheckins.map((c) => [mainEvent?.title ?? c.eventId, c.holder, c.tier, c.gate, c.result, c.at])
 		];
 		const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
 		const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = 'attendee-checkins.csv';
+		const slugPart = (mainEvent?.slug || mainEvent?.id || 'attendee').replace(/[^a-z0-9-_]/gi, '-').toLowerCase();
+		a.download = `${slugPart}-checkins.csv`;
 		a.click();
 		URL.revokeObjectURL(url);
 		toast('Attendee CSV exported', 'success');
@@ -275,6 +337,24 @@
 				</span>
 			</span>
 			<span class="flex items-center gap-3 flex-wrap">
+				{#if myEvents.length > 1}
+					<label class="flex items-center gap-2 h-9 px-3 rounded-lg bg-surface-container-high border border-primary/35 text-on-surface text-body-sm">
+						<ArrowLeftRight class="w-4 h-4 text-primary shrink-0" />
+						<span class="sr-only">Switch active event</span>
+						<select
+							aria-label="Switch active event"
+							value={mainEvent?.id ?? ''}
+							onchange={(e) => selectEvent((e.currentTarget as HTMLSelectElement).value)}
+							class="bg-transparent text-on-surface font-medium focus:outline-none max-w-[260px] truncate cursor-pointer"
+						>
+							{#each myEvents as ev (ev.id)}
+								<option value={ev.id} class="bg-surface-container text-on-surface">
+									{ev.title} ({fmtDate(ev.startsAt)})
+								</option>
+							{/each}
+						</select>
+					</label>
+				{/if}
 				<a href="/settings" class="h-9 px-3.5 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors">
 					<ArrowLeftRight class="w-4 h-4 text-on-surface-variant" /><span>Switch Organization</span>
 				</a>
@@ -295,6 +375,30 @@
 				</a>
 			</span>
 		</div>
+
+		{#if myEvents.length > 1}
+			<div data-event-switcher="desktop" class="mt-4 rounded-xl border border-surface-glass-border bg-surface-container px-4 py-3 flex flex-wrap items-center gap-2.5">
+				<span class="{MONO} text-on-surface-variant flex items-center gap-1.5 mr-1 shrink-0">
+					<CalendarDays class="w-3.5 h-3.5 text-primary" />
+					<span>Active Event ({myEvents.findIndex((e) => e.id === mainEvent?.id) + 1}/{myEvents.length}):</span>
+				</span>
+				<div class="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+					{#each myEvents as ev (ev.id)}
+						{@const active = mainEvent?.id === ev.id}
+						<button
+							type="button"
+							onclick={() => selectEvent(ev.id)}
+							aria-pressed={active}
+							class="h-9 px-3.5 rounded-lg border text-body-sm flex items-center gap-2 transition-all max-w-[280px] {active ? 'bg-primary/15 border-primary text-on-surface font-semibold shadow-sm' : 'bg-surface-container-high/60 border-surface-glass-border text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'}"
+						>
+							<span class="w-2 h-2 rounded-full shrink-0 {ev.status === 'published' ? 'bg-accent-emerald' : ev.status === 'pending' ? 'bg-accent-amber' : 'bg-error'}"></span>
+							<span class="truncate">{ev.title}</span>
+							<span class="{MONO} text-[10px] opacity-75 shrink-0">{eventSoldTotal(ev)}/{eventCapacityTotal(ev)}</span>
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
 	</div>
 
 	{#if stats}
@@ -383,13 +487,13 @@
 				</div>
 				<div class="mt-4 grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
 					{#each myEvents as event (event.id)}
-						<a
-							href="/organizer/events/{event.id}"
-							class="group rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-3.5 flex flex-col gap-2 hover:bg-surface-container-highest transition-colors"
+						{@const isSelected = mainEvent?.id === event.id}
+						<div
+							class="group rounded-lg border p-3.5 flex flex-col gap-2.5 transition-colors {isSelected ? 'border-primary bg-primary/10 shadow-sm' : 'border-surface-glass-border bg-surface-container-high/50 hover:bg-surface-container-highest'}"
 						>
 							<span class="flex items-start justify-between gap-2">
 								<span class="min-w-0">
-									<span class="block text-body-md font-semibold text-on-surface truncate group-hover:text-primary transition-colors">{event.title}</span>
+									<span class="block text-body-md font-semibold text-on-surface truncate">{event.title}</span>
 									<span class="block text-body-sm text-on-surface-variant truncate mt-0.5">{fmtDate(event.startsAt)} • {event.venue}, {event.city}</span>
 								</span>
 								<EventStatusBadge status={event.status} />
@@ -400,7 +504,27 @@
 									<span class="text-outline-variant">· submitted {fmtRelative(event.submittedAt)}</span>
 								{/if}
 							</span>
-						</a>
+							<div class="flex items-center justify-between gap-2 pt-1 border-t border-surface-glass-border">
+								{#if myEvents.length > 1}
+									<button
+										type="button"
+										onclick={() => selectEvent(event.id)}
+										class="h-7 px-2.5 rounded-md text-xs font-medium transition-colors {isSelected ? 'bg-primary text-on-primary' : 'bg-surface-container-highest text-on-surface-variant hover:text-on-surface'}"
+									>
+										{isSelected ? 'Active in Console' : 'Switch to Event'}
+									</button>
+								{:else}
+									<span class="text-xs text-on-surface-variant">Primary event</span>
+								{/if}
+								<a
+									href="/organizer/events/{event.id}"
+									class="h-7 px-2.5 rounded-md text-xs font-medium text-primary hover:underline flex items-center gap-1"
+								>
+									<span>Manage</span>
+									<ChevronRight class="w-3.5 h-3.5" />
+								</a>
+							</div>
+						</div>
 					{/each}
 				</div>
 			</section>
@@ -473,7 +597,7 @@
 							<div class="grid grid-cols-[1.3fr_0.9fr_1.1fr_1.1fr_64px] gap-3 px-3 pb-2 {MONO} text-on-surface-variant">
 								<span>Attendee</span><span>Access Tier</span><span>Terminal / Portal</span><span>Validation Status</span><span class="text-right">Time</span>
 							</div>
-							{#each (payload?.checkins ?? []).slice(0, 6) as ck (ck.id)}
+							{#each eventCheckins.slice(0, 6) as ck (ck.id)}
 								{@const bad = ck.result !== 'verified'}
 								<div class="grid grid-cols-[1.3fr_0.9fr_1.1fr_1.1fr_64px] gap-3 px-3 py-3 rounded-md items-center {bad ? 'bg-error/10' : ''}">
 									<span class="flex items-center gap-2.5 min-w-0">
@@ -783,6 +907,42 @@
 			</div>
 		</div>
 
+		{#if myEvents.length > 1}
+			<section data-event-switcher="mobile" class="rounded-xl bg-surface-container border border-primary/30 p-space-md shadow-sm flex flex-col gap-2.5">
+				<div class="flex items-center justify-between gap-2">
+					<span class="text-label-badge uppercase tracking-wider text-primary flex items-center gap-1.5">
+						<ArrowLeftRight class="w-3.5 h-3.5" />
+						<span>Switch Event ({myEvents.findIndex((e) => e.id === mainEvent?.id) + 1}/{myEvents.length})</span>
+					</span>
+					<span class="text-label-badge text-on-surface-variant">{eventSoldTotal(mainEvent!)}/{eventCapacityTotal(mainEvent!)} sold</span>
+				</div>
+				<select
+					aria-label="Switch active event"
+					value={mainEvent?.id ?? ''}
+					onchange={(e) => selectEvent((e.currentTarget as HTMLSelectElement).value)}
+					class="w-full h-10 px-3 rounded-lg bg-surface-container-low border border-outline-variant/35 text-body-sm font-medium text-on-surface focus:outline-none focus:border-primary"
+				>
+					{#each myEvents as ev (ev.id)}
+						<option value={ev.id}>{ev.title} • {fmtDate(ev.startsAt)}</option>
+					{/each}
+				</select>
+				<div class="flex gap-2 overflow-x-auto pb-0.5 scrollbar-none">
+					{#each myEvents as ev (ev.id)}
+						{@const active = mainEvent?.id === ev.id}
+						<button
+							type="button"
+							onclick={() => selectEvent(ev.id)}
+							aria-pressed={active}
+							class="whitespace-nowrap h-8 px-3 rounded-full border text-label-badge flex items-center gap-1.5 transition-all {active ? 'bg-primary text-on-primary border-primary font-semibold' : 'bg-surface-container-high border-outline-variant/30 text-on-surface-variant'}"
+						>
+							<span class="w-1.5 h-1.5 rounded-full {active ? 'bg-on-primary' : ev.status === 'published' ? 'bg-accent-emerald' : ev.status === 'pending' ? 'bg-accent-amber' : 'bg-error'}"></span>
+							<span class="max-w-[160px] truncate">{ev.title}</span>
+						</button>
+					{/each}
+				</div>
+			</section>
+		{/if}
+
 		{#if !mainEvent}
 			<EmptyState title="No events yet" sub="Launch the wizard and mint your first gate-ready event in five steps.">
 				{#snippet icon()}<Megaphone class="w-6 h-6" />{/snippet}
@@ -842,16 +1002,34 @@
 				</div>
 				<div class="flex flex-col gap-2">
 					{#each myEvents as event (event.id)}
-						<a
-							href="/organizer/events/{event.id}"
-							class="rounded-lg border border-outline-variant/25 bg-surface-container-low px-3 py-2.5 flex items-center justify-between gap-3 hover:bg-surface-container-high transition-colors"
+						{@const isSelected = mainEvent?.id === event.id}
+						<div
+							class="rounded-lg border px-3 py-2.5 flex items-center justify-between gap-2 transition-colors {isSelected ? 'border-primary bg-primary/10' : 'border-outline-variant/25 bg-surface-container-low'}"
 						>
-							<span class="min-w-0 flex flex-col">
-								<span class="text-body-sm font-semibold text-on-surface truncate">{event.title}</span>
+							<button
+								type="button"
+								onclick={() => selectEvent(event.id)}
+								class="min-w-0 flex-1 flex flex-col text-left"
+							>
+								<span class="text-body-sm font-semibold text-on-surface truncate flex items-center gap-1.5">
+									<span class="truncate">{event.title}</span>
+									{#if isSelected && myEvents.length > 1}
+										<span class="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-on-primary shrink-0">Active</span>
+									{/if}
+								</span>
 								<span class="text-label-badge text-on-surface-variant truncate pt-0.5">{fmtDate(event.startsAt)} • {event.venue}</span>
-							</span>
-							<EventStatusBadge status={event.status} />
-						</a>
+							</button>
+							<div class="flex items-center gap-1.5 shrink-0">
+								<EventStatusBadge status={event.status} />
+								<a
+									href="/organizer/events/{event.id}"
+									aria-label="Manage {event.title}"
+									class="w-8 h-8 rounded-lg bg-surface-container-high border border-outline-variant/30 flex items-center justify-center text-on-surface-variant hover:text-on-surface"
+								>
+									<ChevronRight class="w-4 h-4" />
+								</a>
+							</div>
+						</div>
 					{/each}
 				</div>
 				{#if pendingReviews}
@@ -941,7 +1119,7 @@
 					<span class="rounded-full bg-surface-container-highest border border-outline-variant/20 px-2 py-0.5 text-label-badge text-on-surface-variant truncate max-w-[140px]">{mainEvent.title}</span>
 				</div>
 				<div class="flex flex-col gap-2 pt-1">
-					{#each (payload?.checkins ?? []).slice(0, 4) as ck (ck.id)}
+					{#each eventCheckins.slice(0, 4) as ck (ck.id)}
 						<div class="flex items-center justify-between rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-2.5">
 							<div class="flex items-center gap-space-sm min-w-0">
 								<div class="w-8 h-8 rounded-full bg-surface-container-highest border border-outline-variant/30 text-on-surface flex items-center justify-center text-label-badge font-bold flex-shrink-0">

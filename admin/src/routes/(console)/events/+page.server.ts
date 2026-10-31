@@ -1,10 +1,10 @@
 import type { PageServerLoad } from './$types';
-import type { PlatformStatus } from '$admin/types';
+import type { AdminEvent, PlatformStatus } from '$admin/types';
 import { listSupabaseEvents } from '$admin/server/supabase-data';
 import { listSubmissions } from '$admin/server/moderation';
 
 const emptyListed = {
-	rows: [],
+	rows: [] as AdminEvent[],
 	total: 0,
 	page: 1,
 	pages: 1,
@@ -49,7 +49,7 @@ export const load: PageServerLoad = async ({ url }) => {
 		filters: { q, status, category, organizer, sort },
 		options: { categories: listed.categories, organizers: listed.organizers, organizerList: listed.organizerList },
 		counts: listed.counts,
-		pending: [],
+		pending: [] as AdminEvent[],
 		selectedId: listed.rows[0]?.id ?? null,
 		submissions,
 		submissionError,

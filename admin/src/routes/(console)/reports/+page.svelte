@@ -271,11 +271,15 @@
 
 					{#if selected.status === 'open'}
 						<div class="mt-3 rounded-lg border border-[#2a2a32] p-3">
-							<p class="mono-label !text-[8px]">Outcome</p>
+							<p class="mono-label !text-[8px]">Outcome & direct enforcement</p>
 							<p class="mt-1 text-[10px] leading-relaxed text-[#a0a0ab]">
-								Acting on a report records the decision here and in the audit trail; suspend the listing from
-								<a class="text-[#c6bcff] underline" href={selected.targetType === 'event' ? '/events' : '/users'}> {selected.targetType === 'event' ? 'Events' : 'Users'}</a>
-								if it should come down.
+								Acting on a report records the decision here and in the audit trail. You can also jump directly to the
+								<a
+									class="text-[#c6bcff] underline"
+									href={selected.targetType === 'event' ? `/events/${selected.targetId}` : `/users/${selected.targetId}`}
+								>
+									{selected.targetType === 'event' ? 'Event Dossier (disable or delete)' : 'User Dossier (disable account)'}
+								</a>.
 							</p>
 						</div>
 						<div class="mt-2.5 space-y-1.5">

@@ -74,20 +74,37 @@
 		<ul class="divide-y divide-[#24242c]">
 			{#each (rows ?? []) as submission (submission.id)}
 				<li class="grid gap-3 px-4 py-3.5 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-start">
-					<CoverArt
-						from={submission.coverFrom}
-						to={submission.coverTo}
-						icon={submission.coverIcon}
-						compact
-					/>
+					{#if submission.coverSrc}
+						<a href={`/events/${submission.id}`} class="block h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-[#2c2c35]">
+							<img src={submission.coverSrc} alt={submission.title} class="h-full w-full object-cover" />
+						</a>
+					{:else}
+						<CoverArt
+							from={submission.coverFrom}
+							to={submission.coverTo}
+							icon={submission.coverIcon}
+							compact
+						/>
+					{/if}
 					<div class="min-w-0">
 						<div class="flex flex-wrap items-center gap-1.5">
-							<p class="text-[12.5px] font-semibold text-[#f0f0f5]">{submission.title}</p>
+							<a href={`/events/${submission.id}`} class="text-[12.5px] font-semibold text-[#f0f0f5] hover:text-[#c6bcff] hover:underline">
+								{submission.title}
+							</a>
 							<span class="chip chip-accent !h-[16px] !text-[7.5px]">{submission.category}</span>
 							<span class="chip chip-warn !h-[16px] !text-[7.5px]">Pending Approval</span>
+							<a href={`/events/${submission.id}`} class="font-code text-[8px] uppercase tracking-[0.08em] text-[#c6bcff] hover:underline">
+								Inspect dossier →
+							</a>
 						</div>
 						<p class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-code text-[8.5px] uppercase tracking-[0.06em] text-[#8f8f9b]">
-							<span>By {submission.organizerName}{submission.organizerHandle ? ` · @${submission.organizerHandle}` : ''}</span>
+							{#if submission.organizerId}
+								<a href={`/organizers/${submission.organizerId}`} class="text-[#c6bcff] hover:underline">
+									By {submission.organizerName}{submission.organizerHandle ? ` · @${submission.organizerHandle}` : ''}
+								</a>
+							{:else}
+								<span>By {submission.organizerName}{submission.organizerHandle ? ` · @${submission.organizerHandle}` : ''}</span>
+							{/if}
 							<span class="text-[#54545f]">|</span>
 							<span>{date(submission.startsAt)} · {time(submission.startsAt)}</span>
 							<span class="flex items-center gap-1"><MapPin size={9} /> {submission.venue}{submission.city ? `, ${submission.city}` : ''}</span>

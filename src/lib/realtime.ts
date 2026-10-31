@@ -53,3 +53,28 @@ export function createChatTransport(): ChatTransport {
 		}
 	};
 }
+
+export function subscribeTable(
+	table: string,
+	onChange: () => void,
+	filter?: string
+): () => void {
+	const db = publicSupabase();
+	if (!db) return () => {};
+	const channel = db
+		.channel(`realtime:${table}:${filter ?? 'all'}`)
+		.on(
+			'postgres_changes',
+			{
+				event: '*',
+				schema: 'public',
+				table,
+				...(filter ? { filter } : {})
+			},
+			() => onChange()
+		)
+		.subscribe();
+	return () => {
+		void db.removeChannel(channel);
+	};
+}

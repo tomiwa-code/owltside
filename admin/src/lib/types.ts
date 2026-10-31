@@ -25,13 +25,42 @@ export interface AdminSession {
 	demo: boolean;
 }
 
-export type PlatformStatus = 'published' | 'pending' | 'draft' | 'suspended' | 'completed';
+export type PlatformStatus = 'published' | 'pending' | 'draft' | 'suspended' | 'rejected' | 'completed';
 
 export interface EventTier {
 	name: string;
 	priceNgn: number;
 	capacity: number;
 	sold: number;
+	benefits?: string;
+}
+
+export interface AdminApprovalAttachment {
+	side: 'front' | 'back';
+	name: string;
+	dataUrl: string | null;
+	mimeType: string;
+}
+
+export type AdminNotificationKind =
+	| 'approval'
+	| 'verification'
+	| 'payout'
+	| 'refund'
+	| 'report'
+	| 'event'
+	| 'order';
+
+export interface AdminNotificationItem {
+	id: string;
+	kind: AdminNotificationKind;
+	title: string;
+	body: string;
+	actor: string;
+	status: string;
+	actionable: boolean;
+	createdAt: string;
+	href: string;
 }
 
 export interface AdminEvent {
@@ -40,8 +69,12 @@ export interface AdminEvent {
 	slug: string;
 	title: string;
 	category: string;
+	description?: string;
 	organizerId: string;
 	organizerName: string;
+	organizerHandle?: string;
+	organizerEmail?: string;
+	organizerPhone?: string;
 	organizerTier: AdminTier | 1 | 2;
 	status: PlatformStatus;
 	startsAt: string;
@@ -55,9 +88,14 @@ export interface AdminEvent {
 	coverFrom: string;
 	coverTo: string;
 	coverIcon: string;
+	coverSrc?: string;
 	moderationNote?: string;
 	submittedAt?: string;
 	policyFlags?: string[];
+	promos?: { code: string; percent: number; used: number; maxUses: number }[];
+	gatesList?: { name: string; staffCount: number }[];
+	speakersList?: { name: string; handle?: string; role: string; inviteStatus?: string }[];
+	agendaList?: { start: string; title: string; location: string }[];
 }
 
 export interface AdminOrganizer {
@@ -74,12 +112,16 @@ export interface AdminOrganizer {
 	contactName: string;
 	contactEmail: string;
 	contactPhone: string;
+	bio?: string;
+	link?: string;
 	eventsCount: number;
 	ticketsSold: number;
 	grossVolumeNgn: number;
 	escrowHeldNgn: number;
 	settlementBank: string;
 	settlementAccountLast4: string;
+	settlementAccountNumber?: string;
+	settlementAccountHolder?: string;
 	settlementState: 'linked' | 'pending' | 'conflict' | 'frozen';
 	risk: 'low' | 'medium' | 'high';
 	verifiedDocs: number;
@@ -88,6 +130,12 @@ export interface AdminOrganizer {
 	createdAt: string;
 	flagReason?: string;
 	beneficiaryMismatch?: boolean;
+	kycDocument?: string;
+	kycReference?: string;
+	kycLegalName?: string;
+	kycDateOfBirth?: string;
+	kycStatus?: string;
+	kycAttachments?: AdminApprovalAttachment[];
 }
 
 export type TicketStatus = 'valid' | 'used' | 'void' | 'refunded' | 'transferred';
@@ -149,8 +197,12 @@ export type RefundStatus = 'pending' | 'approved' | 'rejected' | 'processing' | 
 export interface AdminRefund {
 	id: string;
 	orderRef: string;
+	customerId?: string;
 	customerName: string;
+	customerEmail?: string;
+	eventId?: string;
 	eventTitle: string;
+	ticketCode?: string;
 	amountNgn: number;
 	originalNgn: number;
 	reason: string;
@@ -172,9 +224,11 @@ export interface AdminApproval {
 	id: string;
 	kind: ApprovalKind;
 	status: ApprovalStatus;
+	requesterId?: string;
 	requesterName: string;
 	requesterHandle: string;
 	requesterEmail: string;
+	requesterPhone?: string;
 	title: string;
 	summary: string;
 	amountNgn?: number;
@@ -182,6 +236,8 @@ export interface AdminApproval {
 	subjectLabel?: string;
 	/** Straight label/value pairs rendered in the reviewer dossier. */
 	details: { label: string; value: string }[];
+	/** Uploaded KYC documents (front/back images or PDFs) visible to Admin. */
+	attachments?: AdminApprovalAttachment[];
 	requestedAt: string;
 	slaHours: number;
 	note?: string;
@@ -209,6 +265,7 @@ export interface AdminReport {
 	category: string;
 	categoryLabel: string;
 	details: string;
+	reporterId?: string;
 	reporterName: string;
 	reporterHandle: string;
 	reporterEmail: string;
@@ -236,8 +293,22 @@ export interface AdminUser {
 	name: string;
 	email: string;
 	phone: string;
+	bio?: string;
+	link?: string;
+	operatingIdentity?: string;
+	disabledReason?: string;
 	role: 'Attendee' | 'Organizer' | 'Speaker' | 'Staff';
 	kycTier: 0 | 1 | 2 | 3;
+	kycDocument?: string;
+	kycReference?: string;
+	kycLegalName?: string;
+	kycDateOfBirth?: string;
+	kycStatus?: string;
+	kycAttachments?: AdminApprovalAttachment[];
+	bankName?: string;
+	bankAccountNumber?: string;
+	bankAccountHolder?: string;
+	bankStatus?: string;
 	spendNgn: number;
 	ticketsCount: number;
 	ordersCount: number;
