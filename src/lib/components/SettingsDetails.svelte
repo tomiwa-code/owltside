@@ -7,7 +7,6 @@
 		CheckCheck,
 		Database,
 		ExternalLink,
-		Fingerprint,
 		HelpCircle,
 		IdCard,
 		LockKeyhole,
@@ -27,13 +26,6 @@
 	import { appSettings, type AppSettings } from '$lib/state/settings.svelte';
 	import { PAYOUT_BANKS, isValidNuban, maskAccountNumber, normaliseNuban } from '$lib/utils/payout';
 	import { toast } from '$lib/state/toast.svelte';
-	import {
-		authenticateWithBiometrics,
-		disableBiometricPasskey,
-		enrollBiometricPasskey,
-		readStoredBiometric,
-		type LocalBiometricMetadata
-	} from '$lib/webauthn.client';
 	import {
 		disablePushNotifications,
 		enablePushNotifications,
@@ -121,13 +113,9 @@
 	let identitySubmitting = $state(false);
 	let pushPermission = $state<NotificationPermission | 'unsupported'>('default');
 	let pushBusy = $state(false);
-	let enrolledBiometric = $state<LocalBiometricMetadata | null>(null);
-	let biometricBusy = $state(false);
-	const currentUserId = $derived(page.data.session?.userId);
 
 	onMount(() => {
 		pushPermission = getPushPermissionState();
-		enrolledBiometric = readStoredBiometric(currentUserId);
 	});
 
 	/**
@@ -410,61 +398,8 @@
 	function toggleCookie(key: CookieToggle) {
 		appSettings.value.cookies[key] = !appSettings.value.cookies[key];
 	}
-	async function toggleSecurity(key: SecurityToggle) {
-		if (key !== 'biometricLogin') {
-			appSettings.value.security[key] = !appSettings.value.security[key];
-			return;
-		}
-		if (biometricBusy) return;
-		const shouldEnroll = !appSettings.value.security.biometricLogin || !enrolledBiometric;
-		if (shouldEnroll) {
-			biometricBusy = true;
-			try {
-				const meta = await enrollBiometricPasskey(currentUserId);
-				enrolledBiometric = meta;
-				appSettings.value.security.biometricLogin = true;
-				toast(`${meta.deviceLabel} enrolled for biometric app unlock`, 'success');
-			} catch (err) {
-				appSettings.value.security.biometricLogin = false;
-				toast(
-					err instanceof Error ? err.message : 'Could not set up fingerprint or Face ID.',
-					'error'
-				);
-			} finally {
-				biometricBusy = false;
-			}
-		} else {
-			biometricBusy = true;
-			await disableBiometricPasskey(currentUserId);
-			enrolledBiometric = null;
-			appSettings.value.security.biometricLogin = false;
-			biometricBusy = false;
-			toast('Biometric passkey removed from this device', 'info');
-		}
-	}
-
-	async function verifyDeviceBiometricNow() {
-		if (biometricBusy) return;
-		biometricBusy = true;
-		try {
-			if (!enrolledBiometric) {
-				const meta = await enrollBiometricPasskey(currentUserId);
-				enrolledBiometric = meta;
-				appSettings.value.security.biometricLogin = true;
-				toast(`${meta.deviceLabel} enrolled & verified`, 'success');
-			} else {
-				await authenticateWithBiometrics(currentUserId);
-				enrolledBiometric = readStoredBiometric(currentUserId);
-				toast('Biometric check passed (Fingerprint / Face ID verified)', 'success');
-			}
-		} catch (err) {
-			toast(
-				err instanceof Error ? err.message : 'Biometric check failed.',
-				'error'
-			);
-		} finally {
-			biometricBusy = false;
-		}
+	function toggleSecurity(key: SecurityToggle) {
+		appSettings.value.security[key] = !appSettings.value.security[key];
 	}
 	function toggleAccessibility(key: AccessibilityToggle) {
 		appSettings.value.accessibility[key] = !appSettings.value.accessibility[key];
@@ -928,45 +863,15 @@
 			<LockKeyhole class="w-5 h-5 text-primary shrink-0" />
 		</div>
 		{#each [
-			{ key: 'biometricLogin', label: 'Biometric app unlock (Fingerprint / Face ID)', description: 'Verify your fingerprint or Face ID right after the splash screen while signed in.' },
 			{ key: 'twoFactor', label: 'Two-factor authentication', description: 'Require an additional sign-in check.' }
 		] as row (row.key)}
 			{@const key = row.key as SecurityToggle}
-			{@const enabled = key === 'biometricLogin' ? appSettings.value.security.biometricLogin && !!enrolledBiometric : appSettings.value.security[key]}
+			{@const enabled = appSettings.value.security[key]}
 			<label class="flex items-center justify-between gap-3 py-3 border-b border-surface-glass-border cursor-pointer">
 				<span><span class="block text-body-sm font-semibold text-on-surface">{row.label}</span><span class="block text-xs text-on-surface-variant mt-0.5">{row.description}</span></span>
-				<input type="checkbox" checked={enabled} disabled={key === 'biometricLogin' && biometricBusy} onchange={() => toggleSecurity(key)} class="w-4 h-4 accent-primary shrink-0" />
+				<input type="checkbox" checked={enabled} onchange={() => toggleSecurity(key)} class="w-4 h-4 accent-primary shrink-0" />
 			</label>
 		{/each}
-		<div class="mt-3 rounded-lg border border-surface-glass-border bg-surface-container-high/40 p-3 flex flex-wrap items-center justify-between gap-3">
-			<div class="flex items-center gap-2.5 min-w-0">
-				<Fingerprint class="w-5 h-5 {enrolledBiometric ? 'text-accent-emerald' : 'text-primary'} shrink-0" />
-				<div class="min-w-0">
-					<p class="text-body-sm font-semibold text-on-surface truncate">
-						{enrolledBiometric ? enrolledBiometric.deviceLabel : 'No biometric passkey enrolled yet'}
-					</p>
-					<p class="text-xs text-on-surface-variant truncate">
-						{enrolledBiometric
-							? 'Hardware WebAuthn passkey active on this device'
-							: 'Tap Enroll to link your phone fingerprint or Face ID'}
-					</p>
-				</div>
-			</div>
-			<div class="flex items-center gap-2 shrink-0">
-				<button
-					type="button"
-					disabled={biometricBusy}
-					onclick={verifyDeviceBiometricNow}
-					class="h-8 px-3 rounded-full {enrolledBiometric ? 'border border-surface-glass-border bg-surface-container-high text-on-surface' : 'bg-primary text-on-primary'} text-xs font-semibold hover:opacity-90 disabled:opacity-50"
-				>
-					{biometricBusy
-						? 'Checking sensor…'
-						: enrolledBiometric
-							? 'Test Fingerprint / Face ID'
-							: 'Enroll Fingerprint / Face ID'}
-				</button>
-			</div>
-		</div>
 		<div class="pt-3">
 			<div class="flex items-center justify-between gap-3 mb-2"><span class="text-body-sm font-semibold text-on-surface">Active sessions</span><button type="button" class="text-body-sm text-primary hover:underline" onclick={() => toast('Other sessions were signed out', 'success')}>Sign out others</button></div>
 			<div class="flex items-center gap-3 rounded-lg bg-surface-container-high/50 p-3">

@@ -17,7 +17,6 @@
 		Search,
 		ShieldCheck,
 		ArrowLeftRight,
-		Smartphone,
 		Ticket,
 		Trash2,
 		User,
@@ -35,7 +34,6 @@
 	import { onMount } from 'svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
-	import { readStoredBiometric, type LocalBiometricMetadata } from '$lib/webauthn.client';
 	import {
 		disablePushNotifications,
 		enablePushNotifications,
@@ -43,16 +41,13 @@
 	} from '$lib/push.client';
 
 	let { data } = $props();
-	let enrolledBiometric = $state<LocalBiometricMetadata | null>(null);
 	let pushPermission = $state<NotificationPermission | 'unsupported'>('default');
 	onMount(() => {
-		enrolledBiometric = readStoredBiometric();
 		pushPermission = getPushPermissionState();
 	});
 	$effect(() => {
 		// Refresh cached status whenever a settings sheet closes
 		if (openCategory === null) {
-			enrolledBiometric = readStoredBiometric();
 			pushPermission = getPushPermissionState();
 		}
 	});
@@ -75,9 +70,6 @@
 			toast('Push notifications paused', 'info');
 		}
 	}
-	const biometricActive = $derived(
-		appSettings.value.security.biometricLogin && !!enrolledBiometric
-	);
 	const session = $derived(page.data.session);
 	const approvals = $derived(data.approvals ?? []);
 	// Identity and payout checks only count once an admin has approved them.
@@ -101,15 +93,6 @@
 
 	const role = $derived(data.operatingIdentity ?? 'attendee');
 
-	const securityRows: Array<[string, string]> = [
-		['Cipher_Suite', 'RSA-4096 / TLS 1.3'],
-		['Token_Rotation', '45s HMAC window'],
-		['Client_Build', 'PWA v2.4.1']
-	];
-	const sessionNodes: Array<[string, string, string]> = [
-		['Lagos Edge 0x7E3', 'Primary • this device', '12ms'],
-		['Backup Vault NG-01', 'Encrypted mirror', '24ms']
-	];
 
 	let openCategory = $state<string | null>(null);
 	let deleteOpen = $state(false);
@@ -179,14 +162,6 @@
 					<span class="block text-body-sm text-on-surface-variant mt-0.5 truncate">{session?.email ?? 'browsing as guest'}</span>
 				</span>
 			</span>
-			<button
-				type="button"
-				onclick={() => (openCategory = 'securitySessions')}
-				class="h-9 px-3.5 rounded-lg flex items-center gap-2 {MONO} border transition-colors {biometricActive ? 'text-accent-emerald border-accent-emerald/30 bg-accent-emerald/5 hover:bg-accent-emerald/10' : 'text-on-surface-variant border-surface-glass-border hover:bg-surface-container-high'}"
-			>
-				<span class="w-1.5 h-1.5 rounded-full {biometricActive ? 'bg-accent-emerald animate-pulse' : 'bg-amber-400'}"></span>
-				{biometricActive ? 'Gate Biometrics Active' : 'Set Up Fingerprint / Face ID'}
-			</button>
 		</div>
 	</div>
 
@@ -207,14 +182,9 @@
 				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Account</span><span class="block text-body-sm text-on-surface-variant truncate">{session?.email ?? 'Guest'} • {session ? 'Session active' : 'Guest mode'}</span></span>
 				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
 			</button>
-			<button type="button" onclick={() => (openCategory = 'sessions')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
-				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Smartphone class="w-5 h-5 text-primary" /></span>
-				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Active Session Nodes</span><span class="block text-body-sm text-on-surface-variant truncate">{sessionNodes.length} nodes • Mesh registry</span></span>
-				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
-			</button>
-			<button type="button" onclick={() => (openCategory = 'securityAbout')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
-				<span class="w-10 h-10 rounded-xl bg-accent-emerald/10 text-accent-emerald flex items-center justify-center shrink-0"><ShieldCheck class="w-5 h-5" /></span>
-				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Security & About</span><span class="block text-body-sm text-on-surface-variant truncate">End-to-end protection • TLS 1.3 • v2.4.1</span></span>
+			<button type="button" onclick={() => (openCategory = 'securitySessions')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
+				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><LockKeyhole class="w-5 h-5 text-primary" /></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Security</span><span class="block text-body-sm text-on-surface-variant truncate">Two-factor • Active sessions</span></span>
 				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
 			</button>
 			<button type="button" onclick={() => (openCategory = 'verification')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
@@ -230,11 +200,6 @@
 			<button type="button" onclick={() => (openCategory = 'privacy')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
 				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><UserRound class="w-5 h-5 text-primary" /></span>
 				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Privacy</span><span class="block text-body-sm text-on-surface-variant truncate">Profile visibility & data use</span></span>
-				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
-			</button>
-			<button type="button" onclick={() => (openCategory = 'securitySessions')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
-				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><LockKeyhole class="w-5 h-5 text-primary" /></span>
-				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Security & Sessions</span><span class="block text-body-sm text-on-surface-variant truncate">Biometrics • 2FA • Active sessions</span></span>
 				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
 			</button>
 			<button type="button" onclick={() => (openCategory = 'accessibility')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
@@ -254,8 +219,6 @@
 			</button>
 		</div>
 	</div>
-
-
 
 	<footer class="mt-4 border-t border-surface-glass-border">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
@@ -301,16 +264,6 @@
 								<span class="bg-primary/20 text-primary text-label-badge px-2 py-0.5 rounded-full">ID #8921</span>
 							</div>
 							<p class="text-body-sm text-on-surface-variant truncate">{session?.email ?? 'browsing as guest'}</p>
-							<button
-								type="button"
-								onclick={() => (openCategory = 'securitySessions')}
-								class="flex items-center gap-1.5 mt-1 text-left"
-							>
-								<span class="w-2 h-2 rounded-full {biometricActive ? 'bg-accent-emerald' : 'bg-amber-400'}"></span>
-								<span class="text-label-badge {biometricActive ? 'text-accent-emerald' : 'text-amber-400'} uppercase tracking-wider">
-									{biometricActive ? 'Gate Biometrics Active' : 'Tap to Set Up Biometrics'}
-								</span>
-							</button>
 						</div>
 					</div>
 				</div>
@@ -334,14 +287,9 @@
 						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Account</span><span class="block text-xs text-on-surface-variant truncate">{session?.email ?? 'Guest'}</span></span>
 						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
 					</button>
-					<button type="button" onclick={() => (openCategory = 'sessions')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
-						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><Smartphone class="w-5 h-5 text-primary" /></span>
-						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Active Session Nodes</span><span class="block text-xs text-on-surface-variant truncate">{sessionNodes.length} nodes</span></span>
-						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
-					</button>
-					<button type="button" onclick={() => (openCategory = 'securityAbout')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
-						<span class="w-9 h-9 rounded-full bg-accent-emerald/10 text-accent-emerald flex items-center justify-center shrink-0"><ShieldCheck class="w-5 h-5" /></span>
-						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Security & About</span><span class="block text-xs text-on-surface-variant truncate">TLS 1.3 • v2.4.1</span></span>
+					<button type="button" onclick={() => (openCategory = 'securitySessions')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
+						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><LockKeyhole class="w-5 h-5 text-primary" /></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Security</span><span class="block text-xs text-on-surface-variant truncate">2FA • Sessions</span></span>
 						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
 					</button>
 					<button type="button" onclick={() => (openCategory = 'verification')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
@@ -357,11 +305,6 @@
 					<button type="button" onclick={() => (openCategory = 'privacy')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
 						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><UserRound class="w-5 h-5 text-primary" /></span>
 						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Privacy</span><span class="block text-xs text-on-surface-variant truncate">Profile visibility</span></span>
-						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
-					</button>
-					<button type="button" onclick={() => (openCategory = 'securitySessions')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
-						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><LockKeyhole class="w-5 h-5 text-primary" /></span>
-						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Security & Sessions</span><span class="block text-xs text-on-surface-variant truncate">Biometrics • 2FA</span></span>
 						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
 					</button>
 					<button type="button" onclick={() => (openCategory = 'accessibility')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
@@ -404,7 +347,7 @@
 			</div>
 			<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-3">
 				<span class="w-9 h-9 rounded-md bg-surface-container-highest flex items-center justify-center shrink-0"><WifiOff class="w-4 h-4 text-accent-emerald" /></span>
-				<span class="flex-1 min-w-0"><span class="block text-body-sm font-medium text-on-surface">Offline wallet cache</span><span class="block text-xs text-on-surface-variant mt-0.5">Keep HMAC passes on-device</span></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-sm font-medium text-on-surface">Offline wallet cache</span><span class="block text-xs text-on-surface-variant mt-0.5">Keep passes on-device</span></span>
 				<button role="switch" aria-checked={appSettings.value.storage.offlineMode} aria-label="Offline wallet cache" class="w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors {appSettings.value.storage.offlineMode ? 'bg-primary-container border-primary/50 text-on-primary-container' : 'bg-surface-bright border-surface-glass-border text-transparent'}" onclick={() => (appSettings.value.storage.offlineMode = !appSettings.value.storage.offlineMode)}><CheckCheck class="w-3 h-3" /></button>
 			</div>
 		</div>
@@ -494,35 +437,6 @@
 		</form>
 	</Sheet>
 
-	<Sheet open={openCategory === 'sessions'} title="Active Session Nodes" close={() => (openCategory = null)}>
-		<div class="flex flex-col gap-2.5">
-			{#each sessionNodes as [name, sub, ms], i}
-				<div class="flex items-center justify-between gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 px-3 py-2.5">
-					<span class="flex items-center gap-2.5 min-w-0"><span class="w-1.5 h-1.5 rounded-full shrink-0 {i === 0 ? 'bg-primary glow-primary' : 'bg-accent-emerald'}"></span><span class="min-w-0"><span class="block text-body-sm font-medium text-on-surface truncate">{name}</span><span class="block text-xs text-on-surface-variant truncate">{sub}</span></span></span>
-					<span class="{MONO} text-on-surface-variant shrink-0">{ms}</span>
-				</div>
-			{/each}
-		</div>
-	</Sheet>
-
-	<Sheet open={openCategory === 'securityAbout'} title="Security & About" close={() => (openCategory = null)}>
-		<div class="flex flex-col gap-4">
-			<div class="flex items-center gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high/50 p-4">
-				<span class="w-10 h-10 rounded-full bg-accent-emerald/10 text-accent-emerald flex items-center justify-center shrink-0"><ShieldCheck class="w-5 h-5" /></span>
-				<span class="min-w-0"><span class="block {MONO} text-on-surface">End-to-End Dynamic Protection</span><span class="block text-body-sm text-on-surface-variant mt-0.5">256-bit TLS • rotating HMAC gate tokens • PWA v1.0</span></span>
-			</div>
-			<div class="flex flex-col gap-2">
-				{#each securityRows as [label, value]}
-					<div class="flex items-center justify-between gap-3 text-body-sm"><span class="{MONO} text-on-surface-variant">{label}</span><span class="{MONO} text-on-surface">{value}</span></div>
-				{/each}
-			</div>
-			<div class="flex items-center justify-between gap-3 rounded-lg border border-surface-glass-border bg-surface-container-high px-4 py-3">
-				<span class="flex items-center gap-2 min-w-0 {MONO} text-on-surface-variant"><ShieldCheck class="w-4 h-4 text-accent-emerald shrink-0" />Secure_Channel: RSA-4096 / TLS 1.3</span>
-				<span class="{MONO} text-outline-variant shrink-0">v2.4.1</span>
-			</div>
-		</div>
-	</Sheet>
-
 	<Sheet open={openCategory === 'verification'} title="Verification" close={() => (openCategory = null)}>
 		<SettingsDetails category="verification" {approvals} />
 	</Sheet>
@@ -532,7 +446,7 @@
 	<Sheet open={openCategory === 'privacy'} title="Privacy" close={() => (openCategory = null)}>
 		<SettingsDetails category="privacy" />
 	</Sheet>
-	<Sheet open={openCategory === 'securitySessions'} title="Security & Sessions" close={() => (openCategory = null)}>
+	<Sheet open={openCategory === 'securitySessions'} title="Security" close={() => (openCategory = null)}>
 		<SettingsDetails category="security" />
 	</Sheet>
 	<Sheet open={openCategory === 'accessibility'} title="Accessibility" close={() => (openCategory = null)}>
