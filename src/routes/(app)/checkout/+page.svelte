@@ -25,7 +25,7 @@
 	import Avatar from '$components/Avatar.svelte';
 	import Cover from '$components/Cover.svelte';
 	import { toast } from '$lib/state/toast.svelte';
-	import { formatMoney } from '$lib/utils/money';
+	import { addFee, formatMoney } from '$lib/utils/money';
 	import { fmtDate } from '$lib/utils/dates';
 import { promoDiscount } from '$lib/utils/promo';
 import { requestEventPromo } from '$lib/utils/promo-client';
@@ -46,7 +46,7 @@ import type { ResolvedPromo } from '$lib/types';
 
 	const tier = $derived(event.tiers.find((t) => t.id === tierId)!);
 	const base = $derived(tier.price * qty);
-	const fee = $derived(base > 0 ? Math.min(Math.round(base * 0.015), 1000) : 0);
+	const fee = $derived(addFee(base, qty));
 	const discount = $derived(promoDiscount(base, appliedPromo));
 	const total = $derived(Math.max(0, base + fee - discount));
 
@@ -406,12 +406,14 @@ import type { ResolvedPromo } from '$lib/types';
 							</div>
 							<p class="text-body-sm text-on-surface-variant pt-0.5">{tier.benefits ?? 'Verified Digital Gate Pass'}</p>
 						</div>
-						<div class="flex items-center justify-between gap-3">
-							<span class="flex items-center gap-1.5 text-body-sm text-on-surface-variant">
-								Protocol &amp; Network Rail Fee <Info class="w-3.5 h-3.5 text-outline-variant" />
-							</span>
-							<span class="font-code text-body-sm text-on-surface-variant">{formatMoney(fee)}</span>
-						</div>
+						{#if fee > 0}
+							<div class="flex items-center justify-between gap-3">
+								<span class="flex items-center gap-1.5 text-body-sm text-on-surface-variant">
+									Service Fee (5% + ₦100/ticket) <Info class="w-3.5 h-3.5 text-outline-variant" />
+								</span>
+								<span class="font-code text-body-sm text-on-surface-variant">{formatMoney(fee)}</span>
+							</div>
+						{/if}
 						{#if discount > 0}
 							<div class="flex items-center justify-between gap-3">
 								<span class="flex items-center gap-2 text-body-sm text-on-surface-variant min-w-0">
@@ -588,10 +590,12 @@ import type { ResolvedPromo } from '$lib/types';
 					<div class="flex justify-between items-center text-body-sm text-on-surface-variant">
 						<span>Base Ticket Price</span><span>{formatMoney(base)}</span>
 					</div>
-					<div class="flex justify-between items-center text-body-sm text-on-surface-variant">
-						<span class="flex items-center gap-1">Processing & Gateway Fee <Info class="w-3.5 h-3.5 text-outline" /></span>
-						<span>{formatMoney(fee)}</span>
-					</div>
+					{#if fee > 0}
+						<div class="flex justify-between items-center text-body-sm text-on-surface-variant">
+							<span class="flex items-center gap-1">Service Fee (5% + ₦100/ticket) <Info class="w-3.5 h-3.5 text-outline" /></span>
+							<span>{formatMoney(fee)}</span>
+						</div>
+					{/if}
 					{#if discount > 0}
 						<div class="flex justify-between items-center text-body-sm text-accent-emerald bg-accent-emerald/10 border border-accent-emerald/20 px-2.5 py-1 rounded-lg">
 							<span class="flex items-center gap-1">

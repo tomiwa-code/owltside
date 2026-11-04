@@ -98,7 +98,7 @@ export interface TicketQuery {
 // ── Settings ────────────────────────────────────────────────────────────────
 
 const defaultSettings: SettingsData = {
-	platformFeePct: 8,
+	platformFeePct: 5,
 	escoowDisputePct: 12,
 	disbursementWindow: 'T+1 business day after event ends',
 	webhookEndpoint: 'https://hooks.owltside.com/paystack',

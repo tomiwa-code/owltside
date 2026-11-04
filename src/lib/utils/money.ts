@@ -20,8 +20,16 @@ export function toKobo(amountNgn: number): number {
 	return Math.round(amountNgn * 100);
 }
 
-export function addFee(amountNgn: number): number {
-	// 1.5% platform fee, capped at ₦1,000, waived on free tickets
-	if (amountNgn <= 0) return 0;
-	return Math.min(Math.round(amountNgn * 0.015), 1000);
+/** Platform service fee: 5% of the paid ticket value plus a flat ₦100 per ticket. */
+export const SERVICE_FEE_PCT = 0.05;
+export const SERVICE_FEE_FLAT_NGN = 100;
+
+/**
+ * Service fee charged to the buyer on top of the ticket price.
+ * `qty` tickets cost `5% of (price × qty) + ₦100 × qty`.
+ * Free tickets never carry a fee.
+ */
+export function addFee(amountNgn: number, qty = 1): number {
+	if (amountNgn <= 0 || qty <= 0) return 0;
+	return Math.round(amountNgn * SERVICE_FEE_PCT) + SERVICE_FEE_FLAT_NGN * qty;
 }

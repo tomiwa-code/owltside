@@ -1,4 +1,5 @@
 import type { ResolvedPromo } from '$lib/types';
+import { addFee } from '$lib/utils/money';
 import { normalizePromoCode, promoDiscount } from '$lib/utils/promo';
 
 export const PROMOS: Record<string, { kind: 'flat' | 'pct'; value: number }> = {
@@ -14,7 +15,8 @@ export function globalPromoForCode(code: string | null | undefined): ResolvedPro
 
 export function computeTotals(price: number, qty: number, promo: string | ResolvedPromo | null) {
 	const base = price * qty;
-	const fee = base > 0 ? Math.min(Math.round(base * 0.015), 1000) : 0;
+	// 5% + ₦100 per paid ticket, nothing on free passes.
+	const fee = addFee(base, qty);
 	const resolved = typeof promo === 'string' ? globalPromoForCode(promo) : promo;
 	const discount = promoDiscount(base, resolved);
 	return { base, fee, discount, total: Math.max(0, base + fee - discount), promo: resolved };
