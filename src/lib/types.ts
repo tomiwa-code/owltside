@@ -342,18 +342,75 @@ export interface GateConfig {
 	staff: string[];
 }
 
+/**
+ * The settlement ledger for one event, produced by `$lib/utils/settlement`.
+ *
+ * `gross − refunds === net` and `payable + held === net`, so every money figure
+ * an organizer sees reconciles: `payable` is the cleared, withdrawable balance,
+ * `held` is the part still locked until the event closes.
+ */
+export interface Settlement {
+	/** Value of every pass sold, before refunds. */
+	gross: number;
+	/** Value of refunded passes. */
+	refunds: number;
+	/** gross − refunds: what the organizer actually earned. */
+	net: number;
+	/** Net earnings on closed events — withdrawable now. */
+	payable: number;
+	/** Net earnings on events still running — released when the event closes. */
+	held: number;
+	/** Passes sold (tier counters), net of refunded passes. */
+	sold: number;
+	/** Refunded passes, for the reconciliation line. */
+	refunded: number;
+	/** Passes sold in the last hour. */
+	soldLastHour: number;
+	/**
+	 * Percentage change in ticket revenue: last 30 days vs the 30 days before.
+	 * `null` when there is no prior period to compare against, so the UI hides
+	 * the badge instead of inventing a number.
+	 */
+	revenueDeltaPct: number | null;
+}
+
+/**
+ * Money and attendance counters for the organizer console.
+ *
+ * `revenue` is gross ticket sales and `netRevenue` is what is left after
+ * refunds. `payout` is the cleared (withdrawable) balance and `held` is the part
+ * still locked until each event closes — they always sum to `netRevenue`. Both
+ * are produced by `settleOrganizer` in `$lib/utils/settlement`, never by local
+ * arithmetic in a component.
+ */
+export interface OrganizerStats {
+	/** Gross ticket sales: Σ sold × tier price. */
+	revenue: number;
+	/** Gross minus refunds: what the organizer earned. */
+	netRevenue: number;
+	/** Value of refunded passes. */
+	refunds: number;
+	/** Passes refunded. */
+	refunded: number;
+	/** Percentage change in ticket revenue vs the previous 30 days. */
+	revenueDeltaPct: number | null;
+	checkedIn: number;
+	capacity: number;
+	/** Passes sold, net of refunds. */
+	orders: number;
+	soldPct: number;
+	soldLastHour: number;
+	/** Cleared balance: net revenue on closed events. */
+	payout: number;
+	/** Net revenue still held because the event is running. */
+	held: number;
+}
+
 export interface OrganizerPayload {
 	events: EventItem[];
-	stats: {
-		revenue: number;
-		revenueDeltaPct: number;
-		checkedIn: number;
-		capacity: number;
-		orders: number;
-		soldPct: number;
-		soldLastHour: number;
-		payout: number;
-	};
+	stats: OrganizerStats;
+	/** Per-event settlement ledger, keyed by event id. */
+	settlements: Record<string, Settlement>;
 	checkins: Checkin[];
 	orders: Order[];
 }

@@ -27,6 +27,7 @@
 	import { fmtDateTime, fmtRelative } from '$lib/utils/dates';
 	import { downloadCsv, ticketsToCsv } from '$lib/utils/csv';
 	import { isEventClosed, resolveEventPayoutRequest } from '$lib/utils/event-status';
+	import { settleEvent } from '$lib/utils/settlement';
 	import { toast } from '$lib/state/toast.svelte';
 	import type { ApprovalRequest } from '$lib/types';
 	import type { Snippet } from 'svelte';
@@ -101,9 +102,10 @@
 	const payoutDestination = $derived(payoutLinked ? payoutAccountLabel(payout) : '');
 	const payoutRequest = $derived(resolveEventPayoutRequest(mergedApprovals, data.event.id));
 
-	const tierRevenue = $derived(data.event.tiers.reduce((s, t) => s + t.sold * t.price, 0));
-	const revenue = $derived(data.orders.length ? data.orders.reduce((s, o) => s + o.total, 0) : tierRevenue);
-	const payoutAmount = $derived(Math.round((tierRevenue || revenue) * 0.35));
+	// One ledger for the whole page: gross sales, refunds, net and the cleared
+	// payout. Same helper the dashboard uses, so the two can never disagree.
+	const settlement = $derived(settleEvent(data.event, data.tickets));
+	const payoutAmount = $derived(settlement.payable);
 
 	async function requestPayout() {
 		if (!closed) {
@@ -255,8 +257,8 @@
 				<p class="text-label-badge text-on-surface-variant uppercase">Checked in</p>
 			</div>
 			<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-3 text-center">
-				<p class="font-display text-headline-md-mobile text-on-surface">{formatMoney(revenue)}</p>
-				<p class="text-label-badge text-on-surface-variant uppercase">Revenue</p>
+				<p class="font-display text-headline-md-mobile text-on-surface">{formatMoney(settlement.net)}</p>
+				<p class="text-label-badge text-on-surface-variant uppercase">Net revenue</p>
 			</div>
 		</div>
 
@@ -269,7 +271,14 @@
 							<Wallet class="w-3.5 h-3.5 text-accent-amber" /> Settlement Payout
 						</span>
 						<p class="font-display text-headline-md text-on-surface pt-1">{formatMoney(payoutAmount)}</p>
-						<p class="text-body-sm text-on-surface-variant pt-0.5">
+						<dl class="flex flex-col gap-1 text-label-badge text-on-surface-variant pt-2" data-settlement-breakdown>
+							<div class="flex items-center justify-between gap-2"><dt>Gross ticket sales</dt><dd class="text-on-surface">{formatMoney(settlement.gross)}</dd></div>
+							{#if settlement.refunds > 0}
+								<div class="flex items-center justify-between gap-2"><dt>Refunds ({settlement.refunded})</dt><dd class="text-on-surface">−{formatMoney(settlement.refunds)}</dd></div>
+							{/if}
+							<div class="flex items-center justify-between gap-2"><dt>Platform commission</dt><dd class="text-on-surface">₦0 · paid by buyers</dd></div>
+						</dl>
+						<p class="text-body-sm text-on-surface-variant pt-1.5">
 							{payoutLinked ? `Destination: ${payoutDestination}` : 'Verify your payout account in Settings → Verification'}
 						</p>
 					</div>

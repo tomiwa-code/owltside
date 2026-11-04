@@ -100,12 +100,14 @@
 
 					<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
 						<div class="panel-inset p-2.5">
-							<p class="mono-label !text-[7px]">Platform take rate</p>
+							<p class="mono-label !text-[7px]">Buyer service fee</p>
 							<div class="mt-1 flex items-center gap-1">
-								<input type="number" min="0" max="25" step="0.5" class="input !h-[28px] !w-[64px] !px-2 !text-[12px]" bind:value={fee} aria-label="Platform take rate" />
+								<input type="number" min="0" max="25" step="0.5" class="input !h-[28px] !w-[64px] !px-2 !text-[12px]" bind:value={fee} aria-label="Buyer service fee percentage" />
 								<span class="font-code text-[11px] text-[#8f8f9b]">%</span>
 							</div>
-							<p class="mt-1 text-[9px] text-[#6f6f7b]">Default organizer split tier</p>
+							<p class="mt-1 text-[9px] text-[#6f6f7b]">
+							Service fee charged to buyers at checkout (5% + ₦100 per pass). Organizers keep 100% of ticket revenue on their ledger.
+						</p>
 						</div>
 						<div class="panel-inset p-2.5">
 							<p class="mono-label !text-[7px]">Escrow dispute reserve</p>

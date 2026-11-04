@@ -107,7 +107,7 @@
 	<div class="grid grid-cols-2 gap-2.5 md:grid-cols-3 2xl:grid-cols-5">
 		<KpiCard label="Gross ticketing (GMV)" value={money(settlements.grossNgn)} delta={`+${settlements.grossDelta}%`} sub="vs prior window" />
 		<KpiCard label="Net escrow settled" value={money(settlements.settledNgn)} sub={`${pct(settlements.settledPct)} post-reversals`} progress={settlements.settledPct} progressTone="ok" />
-		<KpiCard label="Platform commission" value={money(settlements.commissionNgn)} sub={`${settlements.commissionRate}% take rate`} footnote="+₦1.12M" />
+		<KpiCard label="Organizer commission withheld" value={money(settlements.commissionNgn)} sub={`${settlements.commissionRate}% take rate — the fee is buyer-side`} footnote="No cut of ticket revenue" />
 		<KpiCard label="Organizer held escrow" value={money(settlements.escrowNgn)} sub={`${settlements.escrowEvents} events queued`} />
 		<KpiCard label="Processed refunds" value={money(settlements.refundedNgn)} sub={`${pct(settlements.refundedPct)} across 4,820 tickets`} />
 	</div>
@@ -310,7 +310,7 @@
 <Sheet open={configOpen} title="Settlement configuration" subtitle="Paystack auto-batch policy for organizer subaccounts." onclose={() => (configOpen = false)} width="440px">
 	<div class="space-y-3">
 		<div class="grid grid-cols-2 gap-2">
-			<div><p class="mono-label !text-[8px]">Take rate</p><p class="mt-1 font-display text-[15px] font-semibold text-[#ececf1]">{settlements.commissionRate}%</p></div>
+			<div><p class="mono-label !text-[8px]">Organizer take rate</p><p class="mt-1 font-display text-[15px] font-semibold text-[#ececf1]">{settlements.commissionRate}%</p></div>
 			<div><p class="mono-label !text-[8px]">Settlement window</p><p class="mt-1 font-display text-[15px] font-semibold text-[#ececf1]">T+1 02:00</p></div>
 		</div>
 		<p class="rounded-lg border border-[#2a2a32] bg-[#18181e] p-2.5 text-[9.5px] leading-relaxed text-[#8f8f9b]">

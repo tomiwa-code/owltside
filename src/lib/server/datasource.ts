@@ -45,6 +45,7 @@ import {
 	isPubliclyVisible,
 	normalizedEventStatus
 } from '$lib/utils/event-status';
+import { settleEvent, settleOrganizer } from '$lib/utils/settlement';
 
 const demoMeId = 'u-ada';
 const demoFollows = new Map<string, Set<string>>();
@@ -1334,28 +1335,44 @@ export function computeOrganizer(
 	orders: Order[],
 	checkins: Checkin[]
 ): OrganizerPayload {
-	const sold = events.reduce((s, e) => s + e.tiers.reduce((x, t) => x + t.sold, 0), 0);
 	const capacity = events.reduce((s, e) => s + e.tiers.reduce((x, t) => x + t.capacity, 0), 0);
-	const revenue = events.reduce(
-		(s, e) => s + e.tiers.reduce((x, t) => x + t.sold * t.price, 0),
-		0
-	);
+	// Every money figure comes from the shared settlement ledger so the
+	// dashboard, the event manager and the payout requests cannot disagree.
+	const settlement = settleOrganizer(events, tickets);
 	const checkedIn = tickets.filter((t) => t.status === 'used').length;
 	return {
 		events,
 		stats: {
-			revenue,
-			revenueDeltaPct: 24,
+			revenue: settlement.gross,
+			netRevenue: settlement.net,
+			refunds: settlement.refunds,
+			refunded: settlement.refunded,
+			revenueDeltaPct: settlement.revenueDeltaPct,
 			checkedIn,
 			capacity,
-			orders: sold,
-			soldPct: capacity ? Math.round((sold / capacity) * 1000) / 10 : 0,
-			soldLastHour: 12,
-			payout: Math.round(revenue * 0.35)
+			orders: settlement.sold,
+			soldPct: capacity ? Math.round((settlement.sold / capacity) * 1000) / 10 : 0,
+			soldLastHour: settlement.soldLastHour,
+			payout: settlement.payable,
+			held: settlement.held
 		},
+		settlements: Object.fromEntries(
+			events.map((event) => [
+				event.id,
+				settleEvent(
+					event,
+					tickets.filter((ticket) => ticket.eventId === event.id)
+				)
+			])
+		),
 		checkins: [...checkins].sort((a, b) => +new Date(b.at) - +new Date(a.at)),
 		orders
 	};
+}
+
+/** Empty organizer payload — one shape for "no events yet" in every source. */
+export function emptyOrganizerPayload(): OrganizerPayload {
+	return computeOrganizer([], [], [], []);
 }
 
 /* ──────────────────────────── supabase mode ──────────────────────────── */
@@ -2086,7 +2103,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 		/* ── organizer side ── */
 		async getOrganizer(userId) {
 			if (!isUuid(userId))
-				return { events: [], stats: computeOrganizer([], [], [], []).stats, checkins: [], orders: [] };
+				return emptyOrganizerPayload();
 			const { data, error } = await db
 				.from('events')
 				.select('*, organizer:profiles(*)')
@@ -2095,7 +2112,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			const evs = (data ?? []).map((r) => toEvent(r, toProfile(r.organizer)));
 			const ids = evs.map((e) => e.id);
 			if (ids.length === 0)
-				return { events: [], stats: computeOrganizer([], [], [], []).stats, checkins: [], orders: [] };
+				return emptyOrganizerPayload();
 			const [t, o, c, promosByEvent] = await Promise.all([
 				db.from('tickets').select('*').in('event_id', ids),
 				db.from('orders').select('*').in('event_id', ids),
