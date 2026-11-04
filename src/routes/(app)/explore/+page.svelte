@@ -905,7 +905,7 @@
 				</div>
 			{:else}
 				<!-- stylized map -->
-				<div class="relative rounded-2xl overflow-hidden border border-surface-glass-border h-[420px]" style="background: linear-gradient(160deg, #131b2e, #0b1120 70%);">
+				<div class="relative rounded-2xl overflow-hidden border border-surface-glass-border h-[420px]" style="background: linear-gradient(160deg, var(--color-surface-container-low), var(--color-surface-base) 70%);">
 					<div class="absolute inset-0 opacity-30" style="background-image: linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px); background-size: 36px 36px;"></div>
 					{#each shown.slice(0, 6) as event, i (event.id)}
 						{@const pos = [[18, 26], [62, 18], [40, 48], [74, 62], [24, 70], [55, 80]][i]}
