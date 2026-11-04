@@ -781,7 +781,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 						<span>Directions</span><Navigation class="w-3.5 h-3.5" />
 					</button>
 				</div>
-				<div class="relative w-full h-36 rounded-lg overflow-hidden shadow-inner" style="background: linear-gradient(160deg, #171f33, #0b1120 75%);">
+				<div class="relative w-full h-36 rounded-lg overflow-hidden shadow-inner" style="background: linear-gradient(160deg, var(--color-surface-container), var(--color-surface-base) 75%);">
 					<div class="absolute inset-0 opacity-30" style="background-image: linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px); background-size: 28px 28px;"></div>
 					<span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-primary ring-4 ring-primary/25"></span>
 					<div class="absolute bottom-2 left-2 right-2 px-3 py-1.5 rounded-lg bg-surface-base/85 backdrop-blur-md flex items-center justify-between text-on-surface shadow-md">

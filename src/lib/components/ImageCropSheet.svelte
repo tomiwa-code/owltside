@@ -301,7 +301,7 @@
 
 {#if open}
 	<div class="fixed inset-0 z-[90]" role="dialog" aria-modal="true" aria-label={title}>
-		<button class="absolute inset-0 bg-[rgba(11,17,32,0.88)] backdrop-blur-[8px]" onclick={close} aria-label="Close"></button>
+		<button class="absolute inset-0 bg-[rgba(26,26,26,0.88)] backdrop-blur-[8px]" onclick={close} aria-label="Close"></button>
 		<div
 			class="absolute bottom-0 inset-x-0 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-lg
 				max-h-[92dvh] flex flex-col rounded-t-2xl bg-surface-container border-t border-x border-surface-glass-border shadow-2xl"
@@ -343,7 +343,7 @@
 					{:else if source}
 						<canvas bind:this={preview} class="w-full h-full block pointer-events-none" aria-hidden="true"></canvas>
 						{#if !interacting}
-							<span class="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 inline-flex items-center gap-2 rounded-full bg-[rgba(11,17,32,0.72)] backdrop-blur-sm px-3 py-1.5 text-label-badge text-on-surface whitespace-nowrap">
+							<span class="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 inline-flex items-center gap-2 rounded-full bg-[rgba(26,26,26,0.72)] backdrop-blur-sm px-3 py-1.5 text-label-badge text-on-surface whitespace-nowrap">
 								<ZoomIn class="w-3.5 h-3.5" /> Pinch to zoom{#if canPan}<span class="opacity-70">•</span><Move class="w-3.5 h-3.5" /> Drag to fit{/if}
 							</span>
 						{/if}

@@ -322,7 +322,7 @@ import type { EventItem } from '$lib/types';
 <main class="flex flex-col relative w-full  pb-28 bg-surface min-h-dvh">
 	<div class="flex flex-col w-full md:max-w-3xl md:mx-auto">
 		<div class="relative w-full h-36 overflow-hidden">
-			<div class="w-full h-full" style="background: linear-gradient(140deg, {profile.avatarColor}33 0%, #0b1326 80%), linear-gradient(#131b2e, #0b1120);"></div>
+			<div class="w-full h-full" style="background: linear-gradient(140deg, {profile.avatarColor}33 0%, var(--color-surface) 80%), linear-gradient(var(--color-surface-container-low), var(--color-surface-base));"></div>
 			{#if profile.bannerUrl}<img src={profile.bannerUrl} alt="{profile.name}'s profile banner" class="absolute inset-0 w-full h-full object-cover" />{/if}
 			<div class="absolute inset-0 bg-gradient-to-b from-transparent to-surface"></div>
 		</div>
