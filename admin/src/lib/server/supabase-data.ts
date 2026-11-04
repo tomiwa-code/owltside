@@ -977,7 +977,7 @@ export interface SettlementsAnalytics {
 	batchWindow: string;
 }
 
-const COMMISSION_RATE = 0.08; // 8% platform fee
+const COMMISSION_RATE = 0.05; // 5% platform service fee (+ ₦100 per paid ticket at checkout)
 
 function initialsFrom(name: string): string {
 	return name

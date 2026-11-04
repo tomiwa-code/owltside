@@ -27,7 +27,7 @@
 	import { toast } from '$lib/state/toast.svelte';
 	import { downloadIcs } from '$lib/utils/ics';
 	import { fmtDateFull, fmtRelative, fmtTime } from '$lib/utils/dates';
-	import { addFee, formatMoney } from '$lib/utils/money';
+	import { formatMoney } from '$lib/utils/money';
 import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/utils/tickets';
 	import { page } from '$app/state';
 	import type { Profile } from '$lib/types';
@@ -39,8 +39,9 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 	const refundDeadlineLabel = $derived(new Intl.DateTimeFormat('en-NG', {
 		month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Africa/Lagos'
 	}).format(refundDeadline));
-	const refundFee = $derived(addFee(ticket.price));
-	const refundAmount = $derived(Math.max(0, ticket.price - refundFee));
+	// Refunds return the ticket price. The 5% + ₦100/ticket service fee is a
+	// separate buyer-side charge, so it is not deducted from the refund.
+	const refundAmount = $derived(Math.max(0, ticket.price));
 	const refundEligible = $derived(ticket.status === 'valid' && Date.now() < refundDeadline.getTime());
 	const verified = $derived(isVerifiedTicket(ticket));
 	const ticketActionsDisabled = $derived(!canUseTicketActions(ticket));
@@ -576,10 +577,9 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 			</div>
 			<div class="flex flex-col gap-2.5 text-body-sm">
 				<div class="flex items-center justify-between gap-3 text-on-surface-variant"><span>Ticket Original (1× {ticket.tierName})</span><span class="font-code text-on-surface">{formatMoney(ticket.price)}</span></div>
-				<div class="flex items-center justify-between gap-3 text-on-surface-variant"><span>Network Gateway Fee</span><span class="font-code text-error">−{formatMoney(refundFee)}</span></div>
 			</div>
 			<div class="mt-3 pt-3 border-t border-surface-glass-border rounded-lg bg-surface-container px-3 py-2 flex items-center justify-between gap-3">
-				<div><span class="block font-code text-label-badge tracking-wider text-on-surface-variant">Net Refund Amount</span><span class="block text-body-sm text-on-surface-variant">Returned to original payment method</span></div>
+				<div><span class="block font-code text-label-badge tracking-wider text-on-surface-variant">Refund Amount</span><span class="block text-body-sm text-on-surface-variant">Returned to original payment method</span></div>
 				<span class="font-display text-headline-lg-mobile font-bold text-on-surface shrink-0">{formatMoney(refundAmount)}</span>
 			</div>
 		</section>
