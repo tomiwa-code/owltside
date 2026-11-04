@@ -10,14 +10,19 @@ import type { EventItem } from '$lib/types';
 
 const stats = {
 	revenue: 0,
-	revenueDeltaPct: 0,
+	netRevenue: 0,
+	refunds: 0,
+	refunded: 0,
+	revenueDeltaPct: null,
 	checkedIn: 0,
 	capacity: 0,
 	orders: 0,
 	soldPct: 0,
 	soldLastHour: 0,
-	payout: 0
+	payout: 0,
+	held: 0
 };
+const settlements: Record<string, never> = {};
 
 const gatedEvent = {
 	id: 'e-rooftop',
@@ -46,7 +51,7 @@ function renderScanner(events: EventItem[] = [gatedEvent], initialEventId = 'e-r
 		props: {
 			data: {
 				...layoutData,
-				organizer: { events, stats, checkins: [], orders: [] },
+				organizer: { events, stats, settlements, checkins: [], orders: [] },
 				initialEventId
 			}
 		}

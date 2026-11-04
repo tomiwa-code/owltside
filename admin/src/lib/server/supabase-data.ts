@@ -977,7 +977,9 @@ export interface SettlementsAnalytics {
 	batchWindow: string;
 }
 
-const COMMISSION_RATE = 0.05; // 5% platform service fee (+ ₦100 per paid ticket at checkout)
+// Money model (matches src/lib/utils/settlement.ts): organizers are paid the full
+// value of the passes they sold. The platform's 5% + ₦100-per-pass service fee is
+// charged to the buyer at checkout, so no cut of ticket revenue is withheld here.
 
 function initialsFrom(name: string): string {
 	return name
@@ -1036,8 +1038,12 @@ export async function getSupabaseSettlements(): Promise<SettlementsAnalytics> {
 	const refundedNgn = inLast30.filter(isRefunded).reduce((s, o) => s + numberValue(o.total), 0);
 	const priorGross = prior30.filter((o) => isSettled(o) || isPending(o)).reduce((s, o) => s + numberValue(o.total), 0);
 	const grossDelta = priorGross ? ((grossNgn - priorGross) / priorGross) * 100 : 0;
-	const commissionNgn = Math.round(settledNgn * COMMISSION_RATE);
-	const commissionRate = COMMISSION_RATE * 100;
+	// Ticket revenue is not the platform's revenue: the service fee is collected
+	// from buyers at checkout (5% + ₦100 per pass), so no commission is withheld
+	// from what an organizer earns. Payouts therefore release the full settled
+	// amount and the console reports a 0% take rate.
+	const commissionNgn = 0;
+	const commissionRate = 0;
 	const settledPct = grossNgn ? Math.round((settledNgn / grossNgn) * 1000) / 10 : 0;
 	const refundedPct = grossNgn ? Math.round((refundedNgn / grossNgn) * 1000) / 10 : 0;
 
@@ -1059,7 +1065,9 @@ export async function getSupabaseSettlements(): Promise<SettlementsAnalytics> {
 		const prevKey = velocity[i - 1].day;
 		velocity[i].payoutNgn = inLast30
 			.filter((o) => dayKey(new Date(o.created_at)) === prevKey && isSettled(o))
-			.reduce((s, o) => s + Math.round(numberValue(o.total) * (1 - COMMISSION_RATE)), 0);
+			// The organizer is released the full ticket value: any platform fee is
+			// collected from the buyer on top, not withheld from the payout.
+			.reduce((s, o) => s + numberValue(o.total), 0);
 	}
 
 	// Per-organizer rows keyed off events owned.
@@ -1078,7 +1086,8 @@ export async function getSupabaseSettlements(): Promise<SettlementsAnalytics> {
 		const event = eventById.get(String(o.event_id));
 		if (!event) continue;
 		const total = numberValue(o.total);
-		bump(event.organizerId, total, Math.round(total * COMMISSION_RATE), 0);
+		// Fees are buyer-side, so no per-order commission is booked here.
+		bump(event.organizerId, total, 0, 0);
 	}
 	for (const t of tickets) {
 		if (t.status === 'refunded' || t.status === 'void') continue;

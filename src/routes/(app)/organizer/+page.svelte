@@ -54,10 +54,40 @@
 	import { formatMoney } from '$lib/utils/money';
 	import { fmtDate, fmtRelative } from '$lib/utils/dates';
 	import { isEventClosed, resolveEventPayoutRequest } from '$lib/utils/event-status';
-	import type { ApprovalRequest, EventItem, OrganizerPayload } from '$lib/types';
+	import { settleEvent } from '$lib/utils/settlement';
+	import type { ApprovalRequest, EventItem, OrganizerPayload, OrganizerStats, Settlement } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: Omit<PageData, 'approvals'> & { approvals?: ApprovalRequest[] } } = $props();
+
+	// Zeroed ledger and counters, so every money render has a number to show even
+	// before the payload (or with no events at all). Never a second calculation:
+	// these are the identity values the settlement ledger would return.
+	const EMPTY_SETTLEMENT: Settlement = {
+		gross: 0,
+		refunds: 0,
+		net: 0,
+		payable: 0,
+		held: 0,
+		sold: 0,
+		refunded: 0,
+		soldLastHour: 0,
+		revenueDeltaPct: null
+	};
+	const EMPTY_STATS: OrganizerStats = {
+		revenue: 0,
+		netRevenue: 0,
+		refunds: 0,
+		refunded: 0,
+		revenueDeltaPct: null,
+		checkedIn: 0,
+		capacity: 0,
+		orders: 0,
+		soldPct: 0,
+		soldLastHour: 0,
+		payout: 0,
+		held: 0
+	};
 
 	const org = useQuery<OrganizerPayload>(
 		'organizer:me',
@@ -159,14 +189,39 @@
 			window.history.replaceState(window.history.state, '', nextUrl);
 		}
 	}
-	const eventSoldTotal = (event: { tiers: { sold: number }[] }) =>
-		event.tiers.reduce((sum, tier) => sum + tier.sold, 0);
+	// Passes sold net of refunds, matching the ledger's `sold` figure.
+	const eventSoldTotal = (event: EventItem) => eventSettlement(event).sold;
 	const eventCapacityTotal = (event: { tiers: { capacity: number }[] }) =>
 		event.tiers.reduce((sum, tier) => sum + tier.capacity, 0);
-	const eventRevenueTotal = (event: { tiers: { sold: number; price: number }[] }) =>
-		event.tiers.reduce((sum, tier) => sum + tier.sold * tier.price, 0);
-	const eventPayoutTotal = (event: { tiers: { sold: number; price: number }[] }) =>
-		Math.round(eventRevenueTotal(event) * 0.35);
+	// Money always comes from the settlement ledger, so the console cannot
+	// disagree with the event manager page. The per-event ledgers arrive with the
+	// payload (one server-side source of truth); the local settle is only a
+	// defensive fallback for a payload that predates them.
+	const eventSettlement = (event: EventItem): Settlement =>
+		payload?.settlements?.[event.id] ?? settleEvent(event, []);
+	const eventRevenueTotal = (event: EventItem) => eventSettlement(event).gross;
+	const eventPayoutTotal = (event: EventItem) => eventSettlement(event).payable;
+	const eventRefunds = (event: EventItem) => eventSettlement(event).refunds;
+	/** The whole-account ledger the server already computed for this payload. */
+	const accountSettlement = $derived.by<Settlement>(() => {
+		const account = payload?.stats;
+		if (!account) return EMPTY_SETTLEMENT;
+		return {
+			gross: account.revenue,
+			refunds: account.refunds,
+			net: account.netRevenue,
+			payable: account.payout,
+			held: account.held,
+			sold: account.orders,
+			refunded: account.refunded,
+			soldLastHour: account.soldLastHour,
+			revenueDeltaPct: account.revenueDeltaPct
+		};
+	});
+	/** Ledger driving the KPI cards: the selected event, else whole account. */
+	const mainSettlement = $derived<Settlement>(
+		mainEvent ? eventSettlement(mainEvent) : accountSettlement
+	);
 	const eventVerifiedCheckins = (eventId: string) =>
 		(payload?.checkins ?? []).filter(
 			(checkin) => checkin.eventId === eventId && checkin.result === 'verified'
@@ -252,43 +307,30 @@
 			? (payload?.checkins ?? []).filter((checkin) => checkin.eventId === mainEvent.id)
 			: []
 	);
-	const eventOrders = $derived(
-		mainEvent
-			? (payload?.orders ?? []).filter((order) => order.eventId === mainEvent.id)
-			: []
-	);
-	const stats = $derived.by(() => {
-		if (!payload?.stats) return undefined;
-		if (!mainEvent) {
-			return {
-				revenue: 0,
-				revenueDeltaPct: 0,
-				checkedIn: 0,
-				capacity: 0,
-				orders: 0,
-				soldPct: 0,
-				soldLastHour: 0,
-				payout: 0
-			};
-		}
-		if (activeEvents.length === 1 && pastEvents.length === 0) return payload.stats;
-		const revenue = mainEvent.tiers.reduce((sum, tier) => sum + tier.sold * tier.price, 0);
-		const capacity = mainEvent.tiers.reduce((sum, tier) => sum + tier.capacity, 0);
-		const sold = mainEvent.tiers.reduce((sum, tier) => sum + tier.sold, 0);
-		const checkedIn = eventCheckins.filter((checkin) => checkin.result === 'verified').length;
-		const hourAgo = Date.now() - 3_600_000;
-		const recentPaid = eventOrders.filter(
-			(order) => order.status === 'paid' && +new Date(order.at) >= hourAgo
-		).length;
+	// Every money figure on this page is read from the settlement ledger, scoped
+	// to the selected event (or the whole account when nothing is selected).
+	const stats = $derived.by<OrganizerStats>(() => {
+		const ledger = mainSettlement;
+		if (!payload?.stats) return EMPTY_STATS;
+		const capacity = mainEvent
+			? mainEvent.tiers.reduce((sum, tier) => sum + tier.capacity, 0)
+			: payload.stats.capacity;
+		const checkedIn = mainEvent
+			? eventCheckins.filter((checkin) => checkin.result === 'verified').length
+			: payload.stats.checkedIn;
 		return {
-			revenue,
-			revenueDeltaPct: payload.stats.revenueDeltaPct,
+			revenue: ledger.gross,
+			netRevenue: ledger.net,
+			refunds: ledger.refunds,
+			refunded: ledger.refunded,
+			revenueDeltaPct: ledger.revenueDeltaPct,
 			checkedIn,
 			capacity,
-			orders: sold,
-			soldPct: capacity ? Math.round((sold / capacity) * 1000) / 10 : 0,
-			soldLastHour: recentPaid,
-			payout: Math.round(revenue * 0.35)
+			orders: ledger.sold,
+			soldPct: capacity ? Math.round((ledger.sold / capacity) * 1000) / 10 : 0,
+			soldLastHour: ledger.soldLastHour,
+			payout: ledger.payable,
+			held: ledger.held
 		};
 	});
 
@@ -616,6 +658,9 @@
 									<div>
 										<span class="{MONO} text-on-surface-variant block">Gross</span>
 										<span class="text-body-md font-semibold text-on-surface block mt-0.5">{formatMoney(evRevenue)}</span>
+										{#if eventRefunds(pastEvent) > 0}
+											<span class="text-label-badge text-on-surface-variant block">−{formatMoney(eventRefunds(pastEvent))} refunded</span>
+										{/if}
 									</div>
 								</div>
 
@@ -656,11 +701,23 @@
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-5 grid md:grid-cols-2 xl:grid-cols-4 gap-5">
 			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex flex-col">
 				<div class="flex items-center justify-between gap-2">
-					<span class="{MONO} text-on-surface-variant">Total Gross Revenue</span>
-					<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-high text-accent-emerald">+{stats.revenueDeltaPct}%</span>
+					<span class="{MONO} text-on-surface-variant">Gross Ticket Sales</span>
+					{#if stats.revenueDeltaPct !== null}
+						<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-high text-accent-emerald">
+							{stats.revenueDeltaPct >= 0 ? '+' : ''}{stats.revenueDeltaPct}% vs prev 30d
+						</span>
+					{:else}
+						<span class="{MONO} px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant">No prior period</span>
+					{/if}
 				</div>
 				<span class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-4">{formatMoney(stats.revenue)}</span>
-				<span class="text-body-sm text-on-surface-variant mt-1.5">NGN Escrow • All {mainEvent?.tiers.length ?? 0} Tiers</span>
+				<span class="text-body-sm text-on-surface-variant mt-1.5">
+					{#if stats.refunded > 0}
+						{formatMoney(stats.refunds)} refunded → {formatMoney(stats.netRevenue)} net
+					{:else}
+						{stats.orders.toLocaleString()} passes sold • no refunds
+					{/if}
+				</span>
 				<div class="w-full h-1 rounded-full bg-surface-container-highest overflow-hidden mt-4">
 					<div class="h-full bg-primary rounded-full" style="width: {goalPct}%"></div>
 				</div>
@@ -706,8 +763,25 @@
 					<span class="{MONO} text-on-surface-variant">Available Payout</span>
 					<span class="{MONO} text-on-surface-variant">{payoutLinked ? payoutAccountLabel(payout) : '—'}</span>
 				</div>
-				<span class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-4">{formatMoney(stats.payout)}</span>
-				<span class="text-body-sm text-on-surface-variant mt-1.5">Available after event closes</span>
+				<span class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-4" data-payout-amount>{formatMoney(stats.payout)}</span>
+				<span class="text-body-sm text-on-surface-variant mt-1.5">
+					{#if stats.held > 0}
+						{formatMoney(stats.held)} still held until the event closes
+					{:else}
+						Cleared — ready to withdraw
+					{/if}
+				</span>
+				<dl class="mt-3 flex flex-col gap-1 text-label-badge text-on-surface-variant" data-settlement-breakdown>
+					<div class="flex items-center justify-between gap-2"><dt>Gross ticket sales</dt><dd class="text-on-surface">{formatMoney(stats.revenue)}</dd></div>
+					{#if stats.refunds > 0}
+						<div class="flex items-center justify-between gap-2"><dt>Refunds ({stats.refunded})</dt><dd class="text-on-surface">−{formatMoney(stats.refunds)}</dd></div>
+					{/if}
+					<div class="flex items-center justify-between gap-2 border-t border-outline-variant/25 pt-1"><dt>Net to you</dt><dd class="text-on-surface">{formatMoney(stats.netRevenue)}</dd></div>
+					<div class="flex items-center justify-between gap-2"><dt>Platform commission</dt><dd class="text-on-surface">₦0 · paid by buyers at checkout</dd></div>
+					{#if stats.held > 0}
+						<div class="flex items-center justify-between gap-2"><dt>Held until event closes</dt><dd class="text-on-surface">−{formatMoney(stats.held)}</dd></div>
+					{/if}
+				</dl>
 				<div class="flex-1"></div>
 				<div class="mt-4">
 					<PayoutRequestButton
@@ -1092,8 +1166,8 @@
 							<span class="text-on-surface">{payoutLinked ? 'Paystack Split Active' : '—'}</span>
 						</div>
 						<div class="flex items-center justify-between gap-3">
-							<span class="text-on-surface-variant">Protocol Processing Fee</span>
-							<span class="text-on-surface">{payoutLinked ? '0.00% (Genesis Tier)' : '—'}</span>
+							<span class="text-on-surface-variant">Platform Commission</span>
+							<span class="text-on-surface">{payoutLinked ? '₦0 — paid by buyers' : '—'}</span>
 						</div>
 						<div class="flex items-center justify-between gap-3">
 							<span class="text-on-surface-variant">Next Automated Sweep</span>
@@ -1260,11 +1334,14 @@
 									<div>
 										<span class="text-on-surface-variant block">Gross</span>
 										<span class="text-on-surface font-semibold block pt-0.5">{formatMoney(evRevenue)}</span>
+										{#if eventRefunds(pastEvent) > 0}
+											<span class="text-on-surface-variant block">−{formatMoney(eventRefunds(pastEvent))} refunded</span>
+										{/if}
 									</div>
 								</div>
 
 								<div class="flex items-baseline justify-between">
-									<span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Payout Balance</span>
+									<span class="text-label-badge uppercase tracking-wider text-on-surface-variant">Payout Net of Refunds</span>
 									<span class="font-display text-headline-md text-on-surface font-bold">{formatMoney(evPayout)}</span>
 								</div>
 
@@ -1430,10 +1507,16 @@
 					</div>
 					<div class="my-space-xs">
 						<span class="font-display text-headline-lg-mobile text-on-surface block tracking-tight">{formatMoney(stats?.revenue ?? 0)}</span>
-						<span class="inline-flex items-center gap-1 mt-1 text-accent-emerald">
-							<TrendingUp class="w-3.5 h-3.5" />
-							<span class="text-label-badge">+{stats?.revenueDeltaPct ?? 0}% this week</span>
-						</span>
+						{#if stats?.revenueDeltaPct !== null && stats?.revenueDeltaPct !== undefined}
+							<span class="inline-flex items-center gap-1 mt-1 text-accent-emerald">
+								<TrendingUp class="w-3.5 h-3.5" />
+								<span class="text-label-badge">{stats.revenueDeltaPct >= 0 ? '+' : ''}{stats.revenueDeltaPct}% vs prev 30d</span>
+							</span>
+						{:else}
+							<span class="text-label-badge text-on-surface-variant block mt-1">
+								{stats?.refunded ? `${formatMoney(stats.refunds)} refunded` : 'No prior period to compare'}
+							</span>
+						{/if}
 					</div>
 					<div class="w-full bg-surface-container-highest h-1 rounded-full overflow-hidden mt-1">
 						<div class="bg-accent-emerald h-full rounded-full" style="width: {goalPct ?? 0}%"></div>
@@ -1477,7 +1560,9 @@
 					</div>
 					<div class="my-space-xs">
 						<span class="font-display text-headline-lg-mobile text-on-surface block tracking-tight">{formatMoney(stats?.payout ?? 0)}</span>
-						<span class="text-label-badge text-on-surface-variant block mt-1">Available after event closes</span>
+						<span class="text-label-badge text-on-surface-variant block mt-1">
+							{stats?.held ? `${formatMoney(stats.held)} held until close` : 'Cleared balance'}
+						</span>
 					</div>
 					<div class="mt-1">
 						<PayoutRequestButton
@@ -1579,12 +1664,12 @@
 		<section class="flex flex-col gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
 			<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Settlement Account</h2><span class="inline-flex items-center gap-1 text-label-badge {payoutLinked ? 'text-accent-emerald' : 'text-on-surface-variant'}"><ShieldCheck class="w-3.5 h-3.5 {payoutLinked ? 'text-accent-emerald' : 'text-outline-variant'}" />{payoutLinked ? 'KYC active' : payoutAccountPending ? 'KYC pending' : 'Not verified'}</span></div>
 			{#if payoutLinked}
-				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3"><div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">{payout.bank}</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div><span class="block font-code text-label-badge text-on-surface-variant pt-1">Account: {maskAccountNumber(payout.accountNumber)}</span><div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">Paystack Split Active</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Protocol processing fee</span><span class="text-on-surface">0.00% (Genesis Tier)</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">Tonight at 23:59 WAT</span></div></div></div>
+				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3"><div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">{payout.bank}</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div><span class="block font-code text-label-badge text-on-surface-variant pt-1">Account: {maskAccountNumber(payout.accountNumber)}</span><div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">Paystack Split Active</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Platform commission</span><span class="text-on-surface">₦0 — paid by buyers</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">Tonight at 23:59 WAT</span></div></div></div>
 			{:else}
 				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3">
 					<div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">{payout.bank || 'No payout account linked'}</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div>
 					<span class="block font-code text-label-badge text-on-surface-variant pt-1">{payout.accountNumber ? `Account: ${maskAccountNumber(payout.accountNumber)}` : 'Account: —'}</span>
-					<div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">{payoutLinked ? 'Paystack Split Active' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Protocol processing fee</span><span class="text-on-surface">{payoutLinked ? '0.00% (Genesis Tier)' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">{payoutLinked ? 'Tonight at 23:59 WAT' : '—'}</span></div></div>
+					<div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">{payoutLinked ? 'Paystack Split Active' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Platform commission</span><span class="text-on-surface">{payoutLinked ? '₦0 — paid by buyers' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">{payoutLinked ? 'Tonight at 23:59 WAT' : '—'}</span></div></div>
 					<p class="text-xs text-on-surface-variant mt-3">Verify your payout account in Settings → Verification to enable settlements.</p>
 				</div>
 			{/if}

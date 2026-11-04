@@ -11,16 +11,30 @@ import ScanPage from '../../src/routes/(app)/organizer/scan/+page.svelte';
 import OrganizerPage from '../../src/routes/(app)/organizer/+page.svelte';
 import type { EventItem } from '$lib/types';
 
-const stats = {
-	revenue: 0,
-	revenueDeltaPct: 0,
-	checkedIn: 0,
-	capacity: 0,
-	orders: 0,
-	soldPct: 0,
-	soldLastHour: 0,
-	payout: 0
-};
+/**
+ * The organizer payload the console loads. Built inline (datasource is mocked
+ * here) but complete: every stats money field the console renders must exist.
+ */
+const payloadFor = (events: EventItem[] = []) => ({
+	events,
+	stats: {
+		revenue: 0,
+		netRevenue: 0,
+		refunds: 0,
+		refunded: 0,
+		revenueDeltaPct: null as number | null,
+		checkedIn: 0,
+		capacity: 0,
+		orders: 0,
+		soldPct: 0,
+		soldLastHour: 0,
+		payout: 0,
+		held: 0
+	},
+	settlements: {},
+	checkins: [],
+	orders: []
+});
 
 const gatedEvent = {
 	id: 'e-rooftop',
@@ -61,7 +75,7 @@ afterEach(() => {
 
 describe('gate scanner readiness', () => {
 	it('stays open instead of redirecting when no event exists yet', async () => {
-		source.getOrganizer.mockResolvedValue({ events: [], stats, checkins: [], orders: [] });
+		source.getOrganizer.mockResolvedValue(payloadFor());
 
 		const result = await loadPage();
 
@@ -71,12 +85,7 @@ describe('gate scanner readiness', () => {
 
 	it('prefers the requested event, then an event that has a gate configured', async () => {
 		const withoutGate = { id: 'e-plain', title: 'Plain Event', gates: [] } as unknown as EventItem;
-		source.getOrganizer.mockResolvedValue({
-			events: [withoutGate, gatedEvent],
-			stats,
-			checkins: [],
-			orders: []
-		});
+		source.getOrganizer.mockResolvedValue(payloadFor([withoutGate, gatedEvent]));
 
 		expect((await loadPage()).initialEventId).toBe('e-rooftop');
 
@@ -91,7 +100,7 @@ describe('gate scanner readiness', () => {
 	it('opens the security-token step when there is no event at all', () => {
 		render(ScanPage, {
 			props: {
-				data: { ...layoutData, organizer: { events: [], stats, checkins: [], orders: [] }, initialEventId: '' }
+				data: { ...layoutData, organizer: payloadFor(), initialEventId: '' }
 			}
 		});
 
@@ -107,12 +116,7 @@ describe('gate scanner readiness', () => {
 			props: {
 				data: {
 					...layoutData,
-					organizer: {
-						events: [{ id: 'e-plain', title: 'Plain Event', gates: [] } as unknown as EventItem],
-						stats,
-						checkins: [],
-						orders: []
-					},
+					organizer: payloadFor([{ id: 'e-plain', title: 'Plain Event', gates: [] } as unknown as EventItem]),
 					initialEventId: 'e-plain'
 				}
 			}
@@ -128,7 +132,7 @@ describe('gate scanner readiness', () => {
 			props: {
 				data: {
 					...layoutData,
-					organizer: { events: [gatedEvent], stats, checkins: [], orders: [] },
+					organizer: payloadFor([gatedEvent]),
 					initialEventId: 'e-rooftop'
 				}
 			}
@@ -141,11 +145,11 @@ describe('gate scanner readiness', () => {
 	it('keeps the dashboard scanner entry point usable before any event exists', () => {
 		vi.stubGlobal(
 			'fetch',
-			vi.fn(async () => new Response(JSON.stringify({ events: [], stats, checkins: [], orders: [] })))
+			vi.fn(async () => new Response(JSON.stringify(payloadFor())))
 		);
 
 		render(OrganizerPage, {
-			props: { data: { ...layoutData, payload: { events: [], stats, checkins: [], orders: [] } } }
+			props: { data: { ...layoutData, payload: payloadFor() } }
 		});
 
 		const scannerLinks = screen.getAllByRole('link', { name: /Open Ticket Scanner/i });
@@ -167,12 +171,12 @@ describe('gate scanner readiness', () => {
 				expect(JSON.parse(String(init?.body ?? '{}'))).toEqual({});
 				return new Response(JSON.stringify({ gate: null, code: '424242', expiresAt: new Date().toISOString() }));
 			}
-			return new Response(JSON.stringify({ events: [], stats, checkins: [], orders: [] }));
+			return new Response(JSON.stringify(payloadFor()));
 		});
 		vi.stubGlobal('fetch', fetchMock);
 
 		render(OrganizerPage, {
-			props: { data: { ...layoutData, payload: { events: [], stats, checkins: [], orders: [] } } }
+			props: { data: { ...layoutData, payload: payloadFor() } }
 		});
 
 		const generateButtons = screen.getAllByRole('button', { name: /Generate PIN/i });
@@ -191,11 +195,11 @@ describe('gate scanner readiness', () => {
 	it('points the dashboard scanner entry point at the event that has a gate', () => {
 		vi.stubGlobal(
 			'fetch',
-			vi.fn(async () => new Response(JSON.stringify({ events: [gatedEvent], stats, checkins: [], orders: [] })))
+			vi.fn(async () => new Response(JSON.stringify(payloadFor([gatedEvent]))))
 		);
 
 		render(OrganizerPage, {
-			props: { data: { ...layoutData, payload: { events: [gatedEvent], stats, checkins: [], orders: [] } } }
+			props: { data: { ...layoutData, payload: payloadFor([gatedEvent]) } }
 		});
 
 		const scannerLinks = screen.getAllByRole('link', { name: /Open Ticket Scanner/i });

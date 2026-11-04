@@ -488,21 +488,31 @@ const rooftopCodes = [
 	'EV-RT41-AAAA-0012'
 ];
 
-export const rooftopTickets: Ticket[] = attendeePool.map((name, i) => ({
-	id: `t-roof-${i + 1}`,
-	code: rooftopCodes[i] ?? `EV-RT41-AAAA-${String(i + 1).padStart(4, '0')}`,
-	eventId: 'e-rooftop',
-	eventSlug: 'yaba-rooftop-sessions',
-	eventTitle: 'Yaba Rooftop Sessions',
-	eventStartsAt: rooftopEvent.startsAt,
-	venue: 'Rooftop @44',
-	tierName: i % 4 === 0 ? 'VIP Lounge' : 'General',
-	holder: name,
-	status: i < 6 ? 'used' : 'valid',
-	purchasedAt: at(-2 - (i % 5), 10 + i),
-	price: i % 4 === 0 ? 30_000 : 12_000,
-	cover: rooftopEvent.cover
-}));
+/**
+ * Kunle Adeyemo's VIP pass is the one refund approved in the demo data (order
+ * `ord-4`, ₦30,000), so the organizer console always has a real refund to
+ * reconcile against gross ticket sales.
+ */
+const REFUNDED_HOLDER = 'Kunle Adeyemo';
+
+export const rooftopTickets: Ticket[] = attendeePool.map((name, i) => {
+	const refunded = name === REFUNDED_HOLDER;
+	return {
+		id: `t-roof-${i + 1}`,
+		code: rooftopCodes[i] ?? `EV-RT41-AAAA-${String(i + 1).padStart(4, '0')}`,
+		eventId: 'e-rooftop',
+		eventSlug: 'yaba-rooftop-sessions',
+		eventTitle: 'Yaba Rooftop Sessions',
+		eventStartsAt: rooftopEvent.startsAt,
+		venue: 'Rooftop @44',
+		tierName: refunded || i % 4 === 0 ? 'VIP Lounge' : 'General',
+		holder: name,
+		status: refunded ? 'refunded' : i < 6 ? 'used' : 'valid',
+		purchasedAt: at(-2 - (i % 5), 10 + i),
+		price: refunded || i % 4 === 0 ? 30_000 : 12_000,
+		cover: rooftopEvent.cover
+	};
+});
 
 export const checkins: Checkin[] = rooftopTickets
 	.filter((t) => t.status === 'used')

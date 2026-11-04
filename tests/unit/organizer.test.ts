@@ -83,7 +83,27 @@ describe('computeOrganizer', () => {
 		expect(stats.orders).toBe(100); // sold
 		expect(stats.soldPct).toBe(66.7);
 		expect(stats.checkedIn).toBe(2);
-		expect(stats.payout).toBe(Math.round(stats.revenue * 0.35));
+		// No commission is taken from the organizer: the payout is the full value
+		// of the passes sold, and this open event has nothing cleared yet.
+		expect(stats.netRevenue).toBe(stats.revenue);
+		expect(stats.refunds).toBe(0);
+		expect(stats.payout).toBe(0);
+		expect(stats.held).toBe(stats.netRevenue);
+	});
+
+	it('deducts refunded passes from net revenue and never double counts', () => {
+		const refundedTickets = [
+			{ id: 't1', status: 'used', eventId: 'e1', price: 10_000 },
+			{ id: 't2', status: 'refunded', eventId: 'e1', price: 30_000 }
+		] as Ticket[];
+		const { stats } = computeOrganizer([event], refundedTickets, [], []);
+		expect(stats.refunds).toBe(30_000);
+		expect(stats.refunded).toBe(1);
+		expect(stats.netRevenue).toBe(stats.revenue - 30_000);
+		// payable + held always explains the net figure on screen
+		expect(stats.payout + stats.held).toBe(stats.netRevenue);
+		// refunded passes stop counting as sold
+		expect(stats.orders).toBe(99);
 	});
 
 	it('sorts check-ins newest first', () => {
