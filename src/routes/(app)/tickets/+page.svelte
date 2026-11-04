@@ -5,16 +5,13 @@
 		CalendarPlus,
 		Check,
 		ChevronRight,
-		CloudCheck,
 		Database,
 		Download,
 		History,
 		Lock,
 		QrCode,
-		ScanLine,
 		Search,
 		Send,
-		ShieldCheck,
 		Ticket as TicketIcon,
 		Wallet
 	} from '@lucide/svelte';
@@ -80,25 +77,6 @@ import {
 	const selectedVerified = $derived(selected ? isVerifiedTicket(selected) : false);
 	const selectedActionsDisabled = $derived(!selected || !canUseTicketActions(selected));
 	const refOf = (t: Ticket) => `#${t.code.split('-').slice(-2).join('-')}`;
-	const stampTime = (iso: string) =>
-		`${fmtDate(iso)} • ${new Date(iso).toLocaleTimeString('en-NG', { hour12: false })}`;
-
-	function hexStamp(code: string): string {
-		const dig = (s: string) => {
-			let h1 = 0xdeadbeef ^ s.length;
-			let h2 = 0x41c6ce57 ^ s.length;
-			for (let i = 0; i < s.length; i++) {
-				const ch = s.charCodeAt(i);
-				h1 = Math.imul(h1 ^ ch, 2654435761);
-				h2 = Math.imul(h2 ^ ch, 1597334677);
-			}
-			h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-			h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-			return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(16, '0');
-		};
-		return (dig(code) + dig(code + 'x') + dig(code + 'yy')).slice(0, 40);
-	}
-
 	/* rotating HMAC QR for the selected pass (30s window) */
 	let qrUrl = $state('');
 	let qrSeconds = $state(30);
@@ -134,25 +112,6 @@ import {
 		};
 	});
 
-	const ledger = $derived(
-		selected
-			? [
-					{
-						at: selected.eventStartsAt,
-						type: 'Turnstile Pre-Auth',
-						node: `Gate_02_Scanner • ${selected.code}`,
-						status: 'Authorized'
-					},
-					{ at: selected.purchasedAt, type: 'Offline Key Seeded', node: 'Client IndexedDB', status: 'Secure_Store' },
-					{
-						at: selected.purchasedAt,
-						type: 'Badge Minted & Purchased',
-						node: `Checkout Gateway (${formatMoney(selected.price)})`,
-						status: 'Settled'
-					}
-				]
-			: []
-	);
 </script>
 
 <svelte:head><title>Ticket Wallet • Owltside</title></svelte:head>
@@ -197,7 +156,7 @@ import {
 				<span class="w-1.5 h-1.5 rounded-full bg-primary glow-primary"></span> Cryptographic Vault
 			</span>
 			<h1 class="font-display text-[34px] leading-10 font-bold tracking-tight text-on-surface mt-3">Ticket Wallet & Dynamic Passes</h1>
-			<p class="text-body-md text-on-surface-variant mt-2 max-w-xl">All offline-synced cryptographic credentials, NFC fast-lanes, and active biometric turnstile passes.</p>
+			<p class="text-body-md text-on-surface-variant mt-2 max-w-xl">All your passes in one place — upcoming, past, and archived.</p>
 		</div>
 	</div>
 
@@ -325,16 +284,6 @@ import {
 				</section>
 			{/each}
 
-			<section class="rounded-xl border border-surface-glass-border bg-surface-container p-5 flex items-start gap-3">
-				<ShieldCheck class="w-5 h-5 text-primary shrink-0 mt-0.5" />
-				<div>
-					<p class="text-body-md text-on-surface font-semibold">Zero Connectivity Assurance</p>
-					<p class="text-body-sm text-on-surface-variant mt-1 leading-relaxed">
-						Tickets are locally signed. Cellular outages will not block entry at turnstiles;
-						security nodes sync peer-to-peer over local mesh.
-					</p>
-				</div>
-			</section>
 		</div>
 
 		<!-- right: selected pass detail -->
@@ -346,9 +295,6 @@ import {
 						<div class="absolute inset-0 bg-gradient-to-t from-surface-container via-surface-container/40 to-transparent"></div>
 						<span class="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded {MONO} bg-surface-base/75 backdrop-blur text-on-surface">
 							<TicketIcon class="w-3.5 h-3.5" /> {selected.tierName} • {selectedVerified ? 'Verified' : selected.status === 'valid' ? 'Auth_Active' : ticketStatusChip(selected.status)}
-						</span>
-						<span class="absolute top-3 right-3 px-2.5 py-1 rounded {MONO} bg-surface-base/75 backdrop-blur text-on-surface">
-							Gate 02 • {selected.tierName.split(' ')[0]} Turnstile
 						</span>
 					</div>
 					<div class="px-6 pb-6">
@@ -400,30 +346,7 @@ import {
 							<div class="w-56 h-1 rounded-full bg-surface-container-highest overflow-hidden mt-5">
 								<div class="h-full bg-primary rounded-full transition-all duration-1000" style="width: {(qrSeconds / 30) * 100}%"></div>
 							</div>
-							<span class="{MONO} text-on-surface-variant mt-3">{selectedVerified ? 'Checked in — this QR cannot be used again' : 'Auto-refreshing HMAC signature prevents screenshot fraud'}</span>
-						</div>
-
-						<div class="rounded-lg border border-surface-glass-border bg-surface-container-high/40 p-5 mt-5 flex items-start gap-3">
-							<ScanLine class="w-5 h-5 text-on-surface-variant shrink-0 mt-0.5" />
-							<div>
-								<p class="text-body-md text-on-surface font-semibold">Gate 02 Fast-Pass Turnstile Instructions</p>
-								<p class="text-body-sm text-on-surface-variant mt-1 leading-relaxed">
-									Present this QR at eye level to Turnstile scanner or hold your device near the NFC
-									target zone. Biometric seat verification is enabled at Hall 1 Entry.
-								</p>
-							</div>
-						</div>
-
-						<div class="rounded-lg border border-surface-glass-border bg-surface-container-high/40 px-5 py-4 mt-5">
-							<div class="flex items-center justify-between gap-3">
-								<span class="{MONO} text-on-surface-variant">Cryptographic Hash Stamp</span>
-								<span class="{MONO} text-on-surface">HMAC-SHA-256</span>
-							</div>
-							<p class="font-code text-label-code text-on-surface tracking-wider mt-2 break-all">HMAC-SHA256: {hexStamp(selected.code)}</p>
-							<div class="flex items-center justify-between gap-3 mt-3">
-								<span class="{MONO} text-on-surface-variant">Signature Verifier</span>
-								<span class="{MONO} text-on-surface">{selectedVerified ? 'Verified_OK' : selected.status === 'valid' ? 'Token_Valid_OK' : 'Token_Inactive'}</span>
-							</div>
+							<span class="{MONO} text-on-surface-variant mt-3">{selectedVerified ? 'Checked in — this QR cannot be used again' : 'Scan this code at the entrance'}</span>
 						</div>
 
 						<div class="grid sm:grid-cols-2 gap-3 mt-5">
@@ -443,30 +366,6 @@ import {
 					</div>
 				</section>
 
-				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-6">
-					<div class="flex flex-wrap items-center justify-between gap-3">
-						<span class="flex items-center gap-2.5">
-							<ShieldCheck class="w-5 h-5 text-primary" />
-							<span class="font-display text-headline-md text-on-surface">Gate Security & Scan Ledger</span>
-						</span>
-						<span class="{MONO} text-on-surface-variant">Auto_Syncing_P2P</span>
-					</div>
-					<div class="mt-4 overflow-x-auto">
-						<div class="min-w-[560px]">
-							<div class="grid grid-cols-[1.1fr_1.2fr_1.6fr_0.9fr] gap-3 px-3 pb-2 {MONO} text-on-surface-variant">
-								<span>Timestamp (WAT)</span><span>Event Type</span><span>Checkpoint / Node</span><span class="text-right">Signature Status</span>
-							</div>
-							{#each ledger as row (row.type)}
-								<div class="grid grid-cols-[1.1fr_1.2fr_1.6fr_0.9fr] gap-3 px-3 py-3 rounded-md items-center odd:bg-surface-container-high/40">
-									<span class="{MONO} text-on-surface">{stampTime(row.at)}</span>
-									<span class="text-body-sm text-on-surface">{row.type}</span>
-									<span class="text-body-sm text-on-surface-variant truncate">{row.node}</span>
-									<span class="{MONO} text-on-surface-variant text-right">{row.status}</span>
-								</div>
-							{/each}
-						</div>
-					</div>
-				</section>
 			</div>
 		{/if}
 	</div>
@@ -494,24 +393,6 @@ import {
 
 	<main class="flex flex-col relative w-full  pb-28 md:pb-16 bg-surface min-h-dvh">
 		<div class="flex flex-col w-full px-margin md:max-w-2xl md:mx-auto pb-10 gap-space-md pt-space-sm">
-			<!-- offline pill -->
-			<div class="flex items-center justify-between bg-surface-container-high px-space-md py-2.5 rounded-full shadow-sm">
-				<div class="flex items-center gap-space-sm min-w-0">
-					<span class="relative flex h-2.5 w-2.5">
-						<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75"></span>
-						<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-emerald"></span>
-					</span>
-					<div class="flex flex-col min-w-0">
-						<span class="text-label-badge text-on-surface uppercase tracking-wider font-semibold truncate">Offline Gate Ready</span>
-						<span class="text-body-sm text-on-surface-variant truncate">Cached offline • HMAC keys fresh</span>
-					</div>
-				</div>
-				<span class="flex items-center gap-1.5 bg-surface-container-lowest px-2.5 py-1 rounded-full shrink-0">
-					<CloudCheck class="w-4 h-4 text-accent-emerald" />
-					<span class="text-label-badge text-accent-emerald">SECURE</span>
-				</span>
-			</div>
-
 			<!-- shared three-bucket vault tabs -->
 			<div class="bg-surface-container-lowest p-1 rounded-2xl grid grid-cols-3 gap-1 shadow-inner">
 				<button

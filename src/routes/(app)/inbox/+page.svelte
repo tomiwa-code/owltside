@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { BadgeCheck, MessageSquare, MessageSquarePlus, Search, Bell, Users, Megaphone, Star, Wifi } from '@lucide/svelte';
+	import { BadgeCheck, MessageSquare, MessageSquarePlus, Search, Bell, Users, Megaphone, Star } from '@lucide/svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { goto } from '$app/navigation';
 	import Avatar from '$components/Avatar.svelte';
@@ -194,19 +194,6 @@
 				{/each}
 			</div>
 			{/if}
-		</div>
-
-		<div class="px-space-md pt-space-xs pb-space-sm">
-			<div class="flex items-center justify-between px-space-md py-2.5 rounded-xl bg-surface-container-low shadow-sm">
-				<span class="flex items-center gap-2">
-					<span class="relative flex h-2 w-2">
-						<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75"></span>
-						<span class="relative inline-flex rounded-full h-2 w-2 bg-accent-emerald"></span>
-					</span>
-					<span class="text-body-sm text-on-surface-variant">Live Gateway Sync</span>
-				</span>
-				<span class="text-label-badge text-tertiary flex items-center gap-1"><Wifi class="w-3.5 h-3.5" /> Connected</span>
-			</div>
 		</div>
 
 		{#if inboxView === 'messages'}

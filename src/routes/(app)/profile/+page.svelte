@@ -151,7 +151,6 @@
 	const vaultRows = $derived([
 		{ icon: WifiOff, label: 'Offline Cache', value: 'Enabled' },
 		{ icon: QrCode, label: 'Passes On Device', value: String(data.tickets?.length ?? 0) },
-		{ icon: ShieldCheck, label: 'Gate Biometrics', value: 'Active' },
 		{ icon: RefreshCw, label: 'Last Vault Sync', value: '12m ago' }
 	]);
 

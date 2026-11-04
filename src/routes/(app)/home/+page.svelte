@@ -7,10 +7,7 @@
 		Bell,
 		MessageSquare,
 		ChevronDown,
-		Flame,
-		History,
-				MapPin,
-		QrCode,
+		MapPin,
 		Navigation,
 		Sparkles,
 		TrendingUp,
@@ -266,34 +263,6 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 			</div>
 		{/if}
 
-		<!-- gate teaser -->
-		<div class="rounded-2xl bg-surface-container-low p-space-md flex flex-col gap-space-sm shadow-inner">
-			<div class="flex items-center gap-space-sm">
-				<div class="w-9 h-9 rounded-full bg-tertiary-container text-on-tertiary-container flex items-center justify-center shrink-0">
-					<QrCode class="w-5 h-5" />
-				</div>
-				<div class="flex flex-col min-w-0">
-					<span class="font-display text-headline-md text-on-surface text-[15px]">At a venue door right now?</span>
-					<span class="text-body-sm text-on-surface-variant">Tap your offline pass for frictionless zero-wait entry</span>
-				</div>
-			</div>
-			<div class="flex items-center gap-2 pt-1">
-				<a class="flex-1 h-10 rounded-full bg-surface-container-high hover:bg-surface-container-highest text-on-surface text-body-sm font-semibold flex items-center justify-center gap-1.5 transition-colors" href="/tickets">
-					<Sparkles class="w-4 h-4" />
-					<span>Open Ticket Wallet</span>
-				</a>
-				<a href="/tickets" aria-label="Check-in history" class="h-10 px-4 rounded-full bg-surface-container text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors">
-					<History class="w-4 h-4" />
-				</a>
-			</div>
-		</div>
-
-		{#if list.some((e) => e.live)}
-			<div class="flex items-center gap-2 text-body-sm text-on-surface-variant">
-				<Flame class="w-4 h-4 text-secondary" />
-				<span>Underground Warehouse 04 is live right now — 38 passes left.</span>
-			</div>
-		{/if}
 	</div>
 </main>
 </div>
