@@ -34,7 +34,6 @@
 	import { page } from '$app/state';
 	import { bookmarks, toggleIn } from '$lib/state/prefs.svelte';
 	import { profileAppearance, profileDraft } from '$lib/state/profile.svelte';
-	import { appSettings } from '$lib/state/settings.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { fmtDate, fmtTime } from '$lib/utils/dates';
 	import { hasEventEnded } from '$lib/utils/event-status';
@@ -44,7 +43,7 @@
 	const session = $derived(data.session !== undefined ? data.session : page.data.session);
 	const isDemoMode = $derived(Boolean((data as { demoMode?: boolean }).demoMode ?? page.data.demoMode));
 	const isGuest = $derived(!session);
-	const isFullyVerified = $derived(!isGuest && Object.values(appSettings.value.verification).every(Boolean));
+	const isFullyVerified = $derived(!isGuest && !!data.profile?.verified);
 	const hasProfileDraft = $derived(profileDraft.value.hasChanges && profileDraft.value.ownerId === session?.userId);
 	const name = $derived(hasProfileDraft ? profileDraft.value.name : (data.profile?.name ?? session?.name ?? 'Guest Explorer'));
 	const handle = $derived(hasProfileDraft ? profileDraft.value.username : (data.profile?.handle ?? session?.handle ?? 'guest'));

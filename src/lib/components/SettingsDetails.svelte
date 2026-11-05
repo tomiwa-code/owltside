@@ -25,6 +25,7 @@
 	import { page } from '$app/state';
 	import { appSettings, type AppSettings } from '$lib/state/settings.svelte';
 	import { PAYOUT_BANKS, isValidNuban, maskAccountNumber, normaliseNuban } from '$lib/utils/payout';
+	import { approvedPayoutAccount, latestVerificationRequest, verificationChecks } from '$lib/utils/verification';
 	import { toast } from '$lib/state/toast.svelte';
 	import {
 		disablePushNotifications,
@@ -61,38 +62,29 @@
 		{ key: 'marketing', label: 'News and offers', description: 'Product news and occasional promotions' }
 	];
 
-	/**
-	 * Identity and payout-account checks are decided by an administrator, so the
-	 * stored `verification` flags are only half the story: an approved request
-	 * counts as verified, and a pending one must read as "pending", never "done".
-	 */
-	const latestRequest = (check: string): ApprovalRequest | null =>
-		approvals.find(
-			(request) =>
-				request.kind === 'verification' && (request.payload as { check?: string })?.check === check
-		) ?? null;
-	const identityRequest = $derived(latestRequest('identity'));
-	const payoutRequest = $derived(latestRequest('payoutAccount'));
-	const identityPending = $derived(
-		identityRequest?.status === 'pending' && !appSettings.value.verification.identity
-	);
-	const payoutPending = $derived(
-		payoutRequest?.status === 'pending' && !appSettings.value.verification.payoutAccount
-	);
+	// Keep a successful submission pending immediately, even before page data refreshes.
+	let submitted = $state<ApprovalRequest[]>([]);
+	const requests = $derived([
+		...submitted.filter((item) => !approvals.some((server) => server.id === item.id)),
+		...approvals
+	]);
+	const phoneRequest = $derived(latestVerificationRequest(requests, 'phone'));
+	const identityRequest = $derived(latestVerificationRequest(requests, 'identity'));
+	const payoutRequest = $derived(latestVerificationRequest(requests, 'payoutAccount'));
+	const phonePending = $derived(phoneRequest?.status === 'pending');
+	const identityPending = $derived(identityRequest?.status === 'pending');
+	const payoutPending = $derived(payoutRequest?.status === 'pending');
 	const verification = $derived({
 		...appSettings.value.verification,
-		identity: appSettings.value.verification.identity || identityRequest?.status === 'approved',
-		payoutAccount: appSettings.value.verification.payoutAccount || payoutRequest?.status === 'approved'
+		...verificationChecks(requests)
 	});
 	const isFullyVerified = $derived(Object.values(verification).every(Boolean));
 	const verifiedCount = $derived(Object.values(verification).filter(Boolean).length);
 
 	// --- verification flows ---
 	let phoneOpen = $state(false);
-	let phoneStep = $state<'input' | 'otp'>('input');
 	let phoneNumber = $state('+234');
-	let phoneOtp = $state('');
-	let phoneGenerated = $state('123456');
+	let phoneSubmitting = $state(false);
 	let phoneError = $state('');
 	let identityOpen = $state(false);
 	let identityStep = $state<1 | 2>(1);
@@ -129,66 +121,51 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify(body)
 			});
-			const payload = (await response.json().catch(() => ({}))) as { error?: string };
+			const payload = (await response.json().catch(() => ({}))) as ApprovalRequest & { error?: string };
 			if (!response.ok) return payload.error ?? 'Your request could not be submitted. Please try again.';
-			await invalidateAll();
+			if (payload.id && payload.kind === 'verification') submitted = [payload, ...submitted];
+			await invalidateAll().catch(() => undefined);
 			return null;
 		} catch {
 			return 'Your request could not be submitted. Check your connection and try again.';
 		}
 	}
+	const verifiedPayout = $derived(approvedPayoutAccount(requests));
 	const payoutVerifiedSummary = $derived(
-		verification.payoutAccount && appSettings.value.payout.bank
-			? `${appSettings.value.payout.bank} ${maskAccountNumber(appSettings.value.payout.accountNumber)} verified`
-			: ''
+		verifiedPayout ? `${verifiedPayout.bank} ${maskAccountNumber(verifiedPayout.accountNumber)} verified` : ''
 	);
 
 	function openPhone() {
+		if (verification.phone || phonePending) return;
 		phoneError = '';
-		phoneStep = 'input';
-		phoneOtp = '';
-		phoneGenerated = String(Math.floor(100000 + Math.random() * 900000));
+		phoneNumber = typeof phoneRequest?.payload?.phone === 'string' ? phoneRequest.payload.phone : '+234';
 		phoneOpen = true;
 	}
-	function sendPhoneOtp() {
-		if (!phoneNumber.startsWith('+234')) {
-			phoneError = 'Number must start with +234 (e.g. +2348012345678).';
-			return;
-		}
-		const digits = phoneNumber.replace(/\D/g, '');
-		if (digits.length !== 13 && digits.length !== 14) {
-			// +234 + 10 digits = 13 digits without +, 14 with? Use len check
-			if (!/^\+234[789]\d{9}$/.test(phoneNumber.replace(/\s/g, ''))) {
-				phoneError = 'Enter a valid Nigerian number e.g. +2348031234567';
-				return;
-			}
-		}
-		if (!/^\+234[789]\d{9}$/.test(phoneNumber.replace(/\s/g, ''))) {
+	async function submitPhone() {
+		if (phoneSubmitting || phonePending || verification.phone) return;
+		const phone = phoneNumber.replace(/\s/g, '');
+		if (!/^\+234[789]\d{9}$/.test(phone)) {
 			phoneError = 'Enter a valid Nigerian number e.g. +2348031234567';
 			return;
 		}
 		phoneError = '';
-		phoneGenerated = String(Math.floor(100000 + Math.random() * 900000)).slice(0, 6);
-		phoneStep = 'otp';
-		toast(`OTP ${phoneGenerated} sent via SMS/WhatsApp to ${phoneNumber} (demo)`, 'success');
-	}
-	function confirmPhoneOtp() {
-		if (phoneOtp.trim() !== phoneGenerated) {
-			phoneError = 'Incorrect OTP. Use the code shown in the toast (demo).';
-			return;
-		}
-		appSettings.value.verification.phone = true;
-		phoneOpen = false;
-		phoneError = '';
-		void submitForReview({
+		phoneSubmitting = true;
+		const error = await submitForReview({
 			kind: 'verification',
 			check: 'phone',
-			details: { phone: phoneNumber.replace(/\s/g, '') }
-		}).catch(() => undefined);
-		toast('Phone number verified', 'success');
+			details: { phone }
+		});
+		phoneSubmitting = false;
+		if (error) {
+			phoneError = error;
+			return;
+		}
+		phoneOpen = false;
+		toast('Phone number submitted — pending admin review', 'success');
 	}
 
 	function openIdentity() {
+		if (verification.identity || identityPending) return;
 		identityError = '';
 		identityStep = 1;
 		identityOpen = true;
@@ -260,7 +237,7 @@
 			identityError = 'Upload a clear photo/scan of your ID (front).';
 			return;
 		}
-		if (identitySubmitting) return;
+		if (identitySubmitting || identityPending || verification.identity) return;
 		identitySubmitting = true;
 		const error = await submitForReview({
 			kind: 'verification',
@@ -295,11 +272,14 @@
 	}
 
 	function openPayout() {
+		if (verification.payoutAccount || payoutPending) return;
 		payoutError = '';
 		payoutVerifying = false;
-		// Re-verification starts from the account that is actually live, so the
-		// sheet never looks empty while the card above shows a linked account.
-		const saved = appSettings.value.payout;
+		// Keep the previously submitted details available when an admin asks for updates.
+		const previous = requests.find((item) => item.kind === 'verification' && item.payload?.check === 'payoutAccount' && item.payload?.bank)?.payload;
+		const saved = previous && typeof previous.bank === 'string' && typeof previous.accountNumber === 'string'
+			? { bank: previous.bank, accountNumber: previous.accountNumber }
+			: appSettings.value.payout;
 		payoutBank = saved.bank;
 		payoutAccount = saved.accountNumber;
 		payoutOpen = true;
@@ -318,6 +298,7 @@
 	}
 
 	async function verifyPayout() {
+		if (payoutVerifying || payoutPending || verification.payoutAccount) return;
 		payoutError = '';
 		if (!payoutBank) {
 			payoutError = 'Select your bank.';
@@ -329,9 +310,8 @@
 		}
 		payoutVerifying = true;
 		const account = { bank: payoutBank, accountNumber: payoutAccount };
-		// Kept on the device so the settlement card can show where payouts go, but
-		// the check only flips to verified once the admin console approves it.
-		appSettings.value.payout = account;
+		// Retain entered details as a draft after submission; only the server's
+		// approved record may become a live settlement destination.
 		const error = await submitForReview({
 			kind: 'verification',
 			check: 'payoutAccount',
@@ -342,6 +322,7 @@
 			payoutError = error;
 			return;
 		}
+		appSettings.value.payout = account;
 		toast(`Payout account submitted — pending admin review (${account.bank} ${maskAccountNumber(account.accountNumber)})`, 'success');
 		payoutOpen = false;
 	}
@@ -458,19 +439,22 @@
 					<div class="flex items-start gap-3">
 						<span class="w-9 h-9 rounded-lg bg-surface-container-highest flex items-center justify-center shrink-0 mt-0.5"><Phone class="w-4 h-4 text-primary" /></span>
 						<div>
-							<h3 class="text-body-md font-semibold text-on-surface flex items-center gap-2">1. Phone Number <span class="text-label-badge px-2 py-0.5 rounded-full border {appSettings.value.verification.phone ? 'bg-accent-emerald/10 text-accent-emerald border-accent-emerald/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'}">{appSettings.value.verification.phone ? 'Verified' : 'Not Verified'}</span></h3>
+							<h3 class="text-body-md font-semibold text-on-surface flex items-center gap-2">1. Phone Number <span class="text-label-badge px-2 py-0.5 rounded-full border {verification.phone ? 'bg-accent-emerald/10 text-accent-emerald border-accent-emerald/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'}">{verification.phone ? 'Verified' : phonePending ? 'Pending review' : 'Not Verified'}</span></h3>
 							<p class="text-body-sm text-on-surface-variant mt-1"><span class="font-semibold text-on-surface">Requirement:</span> An active Nigerian phone number (registered under your name).</p>
-							{#if appSettings.value.verification.phone}
-								<p class="text-xs text-accent-emerald mt-1 flex items-center gap-1"><CheckCheck class="w-3 h-3" /> {phoneNumber} verified</p>
+							{#if verification.phone}
+								<p class="text-xs text-accent-emerald mt-1 flex items-center gap-1"><CheckCheck class="w-3 h-3" /> {String(phoneRequest?.payload?.phone ?? 'Phone number')} verified</p>
 							{/if}
 						</div>
 					</div>
-					{#if !appSettings.value.verification.phone}
-						<button type="button" class="h-9 px-4 rounded-full bg-primary text-on-primary text-body-sm font-semibold shrink-0 hover:opacity-90" onclick={openPhone}>Start</button>
-					{:else}
-						<button type="button" class="h-9 px-4 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface text-body-sm font-semibold shrink-0" onclick={openPhone}>Re-verify</button>
+					{#if !verification.phone}
+						<button type="button" aria-label="Submit phone number" class="h-9 px-4 rounded-full bg-primary text-on-primary text-body-sm font-semibold shrink-0 hover:opacity-90 disabled:opacity-50" disabled={phonePending || phoneSubmitting} onclick={openPhone}>{phonePending ? 'In review' : 'Submit'}</button>
 					{/if}
 				</div>
+				{#if !verification.phone && phoneRequest}
+					<div class="mt-3">
+						<ApprovalNotice request={phoneRequest} pendingLabel="Phone number pending admin review" pendingBody="Your phone number is waiting for the review team. It is verified only after approval." />
+					</div>
+				{/if}
 			</div>
 		</div>
 
@@ -481,14 +465,12 @@
 					<div class="flex items-start gap-3">
 						<span class="w-9 h-9 rounded-lg bg-surface-container-highest flex items-center justify-center shrink-0 mt-0.5"><IdCard class="w-4 h-4 text-primary" /></span>
 						<div>
-							<h3 class="text-body-md font-semibold text-on-surface flex items-center gap-2 flex-wrap">2. Identity <span class="text-label-badge px-2 py-0.5 rounded-full border {verification.identity ? 'bg-accent-emerald/10 text-accent-emerald border-accent-emerald/20' : identityPending ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'}">{verification.identity ? 'Verified' : identityPending ? 'Pending review' : 'Not Verified'}</span></h3>
+							<h3 class="text-body-md font-semibold text-on-surface flex items-center gap-2 flex-wrap">2. Identity <span class="text-label-badge px-2 py-0.5 rounded-full border {verification.identity ? 'bg-accent-emerald/10 text-accent-emerald border-accent-emerald/20' : identityPending ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'}">{verification.identity ? 'Verified' : identityPending ? 'Pending review' : identityRequest?.status === 'reverification_required' ? 'Action required' : 'Not Verified'}</span></h3>
 							<p class="text-body-sm text-on-surface-variant mt-1"><span class="font-semibold text-on-surface">Requirement:</span> Official government-issued photo ID and matching personal details.</p>
 						</div>
 					</div>
 					{#if !verification.identity}
 						<button type="button" class="h-9 px-4 rounded-full bg-primary text-on-primary text-body-sm font-semibold shrink-0 hover:opacity-90 disabled:opacity-50" disabled={identityPending} onclick={openIdentity}>{identityPending ? 'In review' : 'Start'}</button>
-					{:else}
-						<button type="button" class="h-9 px-4 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface text-body-sm font-semibold shrink-0" onclick={openIdentity}>Re-verify</button>
 					{/if}
 				</div>
 				{#if !verification.identity && identityRequest}
@@ -514,7 +496,7 @@
 					<div class="flex items-start gap-3">
 						<span class="w-9 h-9 rounded-lg bg-surface-container-highest flex items-center justify-center shrink-0 mt-0.5"><Building2 class="w-4 h-4 text-primary" /></span>
 						<div>
-							<h3 class="text-body-md font-semibold text-on-surface flex items-center gap-2">3. Payout Account <span class="text-label-badge px-2 py-0.5 rounded-full border {verification.payoutAccount ? 'bg-accent-emerald/10 text-accent-emerald border-accent-emerald/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'}">{verification.payoutAccount ? 'Verified' : payoutPending ? 'Pending review' : 'Not Verified'}</span></h3>
+							<h3 class="text-body-md font-semibold text-on-surface flex items-center gap-2">3. Payout Account <span class="text-label-badge px-2 py-0.5 rounded-full border {verification.payoutAccount ? 'bg-accent-emerald/10 text-accent-emerald border-accent-emerald/20' : 'bg-amber-500/10 text-amber-600 border-amber-500/20'}">{verification.payoutAccount ? 'Verified' : payoutPending ? 'Pending review' : payoutRequest?.status === 'reverification_required' ? 'Action required' : 'Not Verified'}</span></h3>
 							<p class="text-body-sm text-on-surface-variant mt-1"><span class="font-semibold text-on-surface">Requirement:</span> A valid, active Nigerian bank account or payment processor account that matches your verified identity name.</p>
 							{#if payoutVerifiedSummary}
 								<p class="text-xs text-accent-emerald mt-1 flex items-center gap-1"><CheckCheck class="w-3 h-3" /> {payoutVerifiedSummary}</p>
@@ -523,8 +505,6 @@
 					</div>
 					{#if !verification.payoutAccount}
 						<button type="button" aria-label="Add payout account" class="h-9 px-4 rounded-full bg-primary text-on-primary text-body-sm font-semibold shrink-0 hover:opacity-90 disabled:opacity-50" disabled={payoutPending} onclick={openPayout}>{payoutPending ? 'In review' : 'Start'}</button>
-					{:else}
-						<button type="button" aria-label="Re-verify payout account" class="h-9 px-4 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface text-body-sm font-semibold shrink-0" onclick={openPayout}>Re-verify</button>
 					{/if}
 				</div>
 				{#if !verification.payoutAccount && payoutRequest}
@@ -563,7 +543,7 @@
 	</section>
 
 	<!-- Phone Sheet -->
-	<Sheet open={phoneOpen} title="Verify Phone Number" close={() => (phoneOpen = false)}>
+	<Sheet open={phoneOpen} title="Verify Phone Number" close={() => { if (!phoneSubmitting) phoneOpen = false; }}>
 		<div class="flex flex-col gap-4">
 			<div class="rounded-lg bg-surface-container-high/40 border border-surface-glass-border p-3 flex items-start gap-3">
 				<Smartphone class="w-5 h-5 text-primary shrink-0 mt-0.5" />
@@ -572,29 +552,14 @@
 					<p class="text-body-sm text-on-surface-variant mt-1">Must be active and registered under your name. Starts with <span class="font-mono text-on-surface">+234</span>.</p>
 				</div>
 			</div>
-			{#if phoneStep === 'input'}
-				<label class="flex flex-col gap-1.5 text-body-sm text-on-surface-variant">
-					Phone number
-					<input type="tel" inputmode="tel" placeholder="+2348031234567" bind:value={phoneNumber} class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline" />
-					<span class="text-xs">Include country code +234, e.g. +2348031234567</span>
-				</label>
-				{#if phoneError}<p class="text-body-sm text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">{phoneError}</p>{/if}
-				<button type="button" class="w-full h-11 rounded-full bg-primary text-on-primary font-semibold text-body-md hover:opacity-90" onclick={sendPhoneOtp}>Send OTP via SMS / WhatsApp</button>
-			{:else}
-				<div class="rounded-lg bg-surface-container-high/40 border border-surface-glass-border p-3">
-					<p class="text-body-sm text-on-surface-variant">OTP sent to <span class="font-semibold text-on-surface">{phoneNumber}</span> via SMS / WhatsApp (demo code: <span class="font-mono font-bold text-primary">{phoneGenerated}</span>)</p>
-				</div>
-				<label class="flex flex-col gap-1.5 text-body-sm text-on-surface-variant">
-					Enter 6-digit OTP
-					<input type="text" inputmode="numeric" maxlength="6" placeholder="123456" bind:value={phoneOtp} class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md tracking-[0.2em] focus:outline-none focus:border-outline" />
-				</label>
-				{#if phoneError}<p class="text-body-sm text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">{phoneError}</p>{/if}
-				<div class="grid grid-cols-2 gap-2">
-					<button type="button" class="h-11 rounded-full border border-surface-glass-border bg-surface-container-high text-on-surface font-semibold" onclick={() => { phoneStep = 'input'; phoneError=''; }}>Change number</button>
-					<button type="button" class="h-11 rounded-full bg-primary text-on-primary font-semibold hover:opacity-90" onclick={confirmPhoneOtp}>Confirm OTP</button>
-				</div>
-				<button type="button" class="text-body-sm text-primary hover:underline self-center" onclick={sendPhoneOtp}>Resend OTP</button>
-			{/if}
+			<p class="text-body-sm text-on-surface-variant">Submit your number for admin approval. No SMS or WhatsApp code is needed.</p>
+			<label class="flex flex-col gap-1.5 text-body-sm text-on-surface-variant">
+				Phone number
+				<input type="tel" inputmode="tel" autocomplete="tel" aria-label="Phone number" placeholder="+2348031234567" bind:value={phoneNumber} disabled={phoneSubmitting} class="h-11 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-outline disabled:opacity-60" />
+				<span class="text-xs">Include country code +234, e.g. +2348031234567</span>
+			</label>
+			{#if phoneError}<p role="alert" class="text-body-sm text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">{phoneError}</p>{/if}
+			<button type="button" class="w-full h-11 rounded-full bg-primary text-on-primary font-semibold text-body-md hover:opacity-90 disabled:opacity-50" disabled={phoneSubmitting} onclick={submitPhone}>{phoneSubmitting ? 'Submitting…' : 'Submit'}</button>
 		</div>
 	</Sheet>
 

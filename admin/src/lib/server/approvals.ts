@@ -271,8 +271,8 @@ export interface ApprovalDecisionResult {
 /**
  * Record a decision. Approving a refund settles the pass
  * (`tickets.status = 'refunded'`) via the `apply_approved_refund` trigger
- * in migration 023. Approving identity + payout verification also updates
- * `profiles.verified = true`.
+ * in migration 023. Migration 030 derives the profile tick from the latest
+ * identity + payout checks in the same database transaction.
  */
 export async function decideApproval(
 	id: string,
@@ -308,25 +308,6 @@ export async function decideApproval(
 		.maybeSingle();
 	if (error) throw new Error(error.message);
 	if (!data) throw new Error('That request has already been decided.');
-
-	if (decision === 'approve' && existing.kind === 'verification' && existing.requester_id) {
-		const { data: approvedVerifications } = await client
-			.from('approval_requests')
-			.select('payload')
-			.eq('requester_id', existing.requester_id)
-			.eq('kind', 'verification')
-			.eq('status', 'approved');
-		const checks = new Set(
-			(approvedVerifications ?? []).map((item: Row) => asText((item.payload ?? {}).check))
-		);
-		if (checks.has('identity') && checks.has('payoutAccount')) {
-			await client
-				.from('profiles')
-				.update({ verified: true })
-				.eq('id', existing.requester_id)
-				.then(() => undefined, () => undefined);
-		}
-	}
 
 	return { id: data.id, status: decision === 'approve' ? 'approved' : 'rejected' };
 }

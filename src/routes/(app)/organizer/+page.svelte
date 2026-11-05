@@ -46,7 +46,7 @@
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
-	import { appSettings } from '$lib/state/settings.svelte';
+	import { approvedPayoutAccount, latestVerificationRequest, verificationChecks } from '$lib/utils/verification';
 	import { maskAccountNumber, payoutAccountLabel } from '$lib/utils/payout';
 	import { useQuery } from '$lib/state/query.svelte';
 	import { subscribeTable } from '$lib/realtime';
@@ -130,13 +130,7 @@
 		const extras = Object.values(submittedPayouts).filter((item) => !serverIds.has(item.id));
 		return [...extras, ...serverApprovals];
 	});
-	const latestRequest = (kind: ApprovalRequest['kind'], check?: string) =>
-		approvals.find(
-			(request) =>
-				request.kind === kind &&
-				(check === undefined || (request.payload as { check?: string })?.check === check)
-		) ?? null;
-	const payoutAccountRequest = $derived(latestRequest('verification', 'payoutAccount'));
+	const payoutAccountRequest = $derived(latestVerificationRequest(approvals, 'payoutAccount'));
 	const payoutAccountPending = $derived(payoutAccountRequest?.status === 'pending');
 
 	// Separate active/upcoming events from closed (past) events.
@@ -362,23 +356,12 @@
 
 	// ── desktop console state ──
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
-	// One source of truth: the payout account verified in Settings (with SSR/approval fallback).
-	const approvedBankFromApproval = $derived.by(() => {
-		if (payoutAccountRequest?.status !== 'approved') return null;
-		const p = (payoutAccountRequest.payload ?? {}) as { bank?: string; accountNumber?: string };
-		return p.bank ? { bank: p.bank, accountNumber: p.accountNumber ?? '' } : null;
-	});
-	const payout = $derived(
-		appSettings.value.payout.bank
-			? appSettings.value.payout
-			: (approvedBankFromApproval ?? appSettings.value.payout)
-	);
-	const payoutAccountApproved = $derived(
-		appSettings.value.verification.payoutAccount || payoutAccountRequest?.status === 'approved'
-	);
-	const payoutLinked = $derived(payoutAccountApproved && !!payout.bank);
+	// Only the current server-approved account is a valid settlement destination.
+	const verifiedPayout = $derived(approvedPayoutAccount(approvals));
+	const payout = $derived(verifiedPayout ?? { bank: '', accountNumber: '' });
+	const payoutLinked = $derived(!!verifiedPayout);
 	const payoutDestination = $derived(payoutLinked ? payoutAccountLabel(payout) : '');
-	const isFullyVerified = $derived(!!page.data.session && Object.values(appSettings.value.verification).every(Boolean));
+	const isFullyVerified = $derived(!!page.data.session && Object.values(verificationChecks(approvals)).every(Boolean));
 	let deskPin = $state('');
 	let deskPinContext = $state<{ eventId: string; gate: string } | null>(null);
 	let pinGateName = $state('');

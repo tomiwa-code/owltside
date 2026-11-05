@@ -56,7 +56,6 @@
 	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 	import { browser } from '$app/environment';
 	import { toast } from '$lib/state/toast.svelte';
-	import { appSettings } from '$lib/state/settings.svelte';
 	import { categories } from '$components/iconMap';
 	import { isValidPromoCode, normalizeEventPromos, normalizePromoCode } from '$lib/utils/promo';
 	import { maskAccountNumber, payoutBankMark } from '$lib/utils/payout';
@@ -67,8 +66,8 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 	let draftHydrated = $state(false);
 	const editingEvent = $derived(data.event ?? null);
 	// Every settlement line in the wizard reads the account verified in Settings.
-	const savedPayout = $derived(appSettings.value.payout);
-	const savedPayoutReady = $derived(appSettings.value.verification.payoutAccount && !!savedPayout.bank);
+	const savedPayout = $derived(data.payoutAccount ?? { bank: '', accountNumber: '' });
+	const savedPayoutReady = $derived(!!data.payoutAccount);
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 	let dateEnd = $state('');

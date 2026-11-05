@@ -41,7 +41,7 @@ export type SpeakerInviteStatus = 'pending' | 'accepted' | 'declined';
  */
 export type ApprovalKind = 'refund' | 'payout' | 'verification';
 
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'reverification_required';
 
 export interface ApprovalRequest {
 	id: string;

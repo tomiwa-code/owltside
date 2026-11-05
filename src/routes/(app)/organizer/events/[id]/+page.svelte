@@ -19,7 +19,7 @@
 	import ApprovalNotice from '$components/ApprovalNotice.svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
-	import { appSettings } from '$lib/state/settings.svelte';
+	import { approvedPayoutAccount, latestVerificationRequest } from '$lib/utils/verification';
 	import { useQuery } from '$lib/state/query.svelte';
 	import { subscribeTable } from '$lib/realtime';
 	import { payoutAccountLabel } from '$lib/utils/payout';
@@ -78,27 +78,10 @@
 		if (serverApprovals.some((a) => a.id === submittedPayout!.id)) return serverApprovals;
 		return [submittedPayout, ...serverApprovals];
 	});
-	const payoutAccountRequest = $derived(
-		mergedApprovals.find(
-			(r) =>
-				r.kind === 'verification' &&
-				(r.payload as { check?: string } | undefined)?.check === 'payoutAccount'
-		) ?? null
-	);
-	const approvedBankFromApproval = $derived.by(() => {
-		if (payoutAccountRequest?.status !== 'approved') return null;
-		const p = (payoutAccountRequest.payload ?? {}) as { bank?: string; accountNumber?: string };
-		return p.bank ? { bank: p.bank, accountNumber: p.accountNumber ?? '' } : null;
-	});
-	const payout = $derived(
-		appSettings.value.payout.bank
-			? appSettings.value.payout
-			: (approvedBankFromApproval ?? appSettings.value.payout)
-	);
-	const payoutLinked = $derived(
-		(appSettings.value.verification.payoutAccount || payoutAccountRequest?.status === 'approved') &&
-			!!payout.bank
-	);
+	const payoutAccountRequest = $derived(latestVerificationRequest(mergedApprovals, 'payoutAccount'));
+	const verifiedPayout = $derived(approvedPayoutAccount(mergedApprovals));
+	const payout = $derived(verifiedPayout ?? { bank: '', accountNumber: '' });
+	const payoutLinked = $derived(!!verifiedPayout);
 	const payoutDestination = $derived(payoutLinked ? payoutAccountLabel(payout) : '');
 	const payoutRequest = $derived(resolveEventPayoutRequest(mergedApprovals, data.event.id));
 

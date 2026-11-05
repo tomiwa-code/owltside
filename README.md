@@ -358,3 +358,22 @@ npm run dev      # http://localhost:5174 — demo admin@owltside.com / owltside-
 The public app links to it from the desktop footer via `PUBLIC_ADMIN_URL`
 (default `http://localhost:5174`), and the admin sidebar links back via
 `PUBLIC_APP_URL`.
+
+### Verification and admin-requested updates
+
+Apply `supabase/sql/030_admin_verification_lifecycle.sql` **after migration 029**
+when upgrading an existing project (also included in `000_full_schema.sql` for
+fresh setups), then deploy both apps against that same database.
+
+- Phone numbers are submitted directly for admin approval; there is no phone OTP.
+- Phone, identity and payout checks use the latest server review record, never
+  device-local verification flags. Approved checks have no self-service re-verify button.
+- In Admin → Users, the profile verification panel shows email confirmation from
+  Supabase Auth's `email_confirmed_at`, separately from identity/KYC status.
+- An admin with mutation privileges can use **Re-verify** on an approved identity
+  or payout-account check and provide a reason. The user is notified and can submit
+  new details in Settings → Verification. Old approvals remain in the history;
+  the selected check and profile tick are reset until fresh details are approved.
+- The new service-role-only RPC and database guard enforce this workflow even for
+  direct API calls. An outstanding admin request is shown as **Awaiting user**, not
+  as a pending submission that could be approved before the user responds.

@@ -29,28 +29,32 @@
 
 	const state = $derived(request?.status ?? 'none');
 	const label = $derived(
-		state === 'pending'
-			? pendingLabel
-			: state === 'approved'
-				? approvedLabel
-				: state === 'rejected'
-					? rejectedLabel
-					: ''
+		state === 'reverification_required'
+			? 'Updated details requested by admin'
+			: state === 'pending'
+				? pendingLabel
+				: state === 'approved'
+					? approvedLabel
+					: state === 'rejected'
+						? rejectedLabel
+						: ''
 	);
 	const body = $derived(
-		state === 'pending'
-			? pendingBody
-			: state === 'approved'
-				? request?.note || approvedBody
-				: state === 'rejected'
-					? request?.note || rejectedBody
-					: ''
+		state === 'reverification_required'
+			? request?.note || 'Please submit your details again for admin review.'
+			: state === 'pending'
+				? pendingBody
+				: state === 'approved'
+					? request?.note || approvedBody
+					: state === 'rejected'
+						? request?.note || rejectedBody
+						: ''
 	);
 </script>
 
-{#if state !== 'none'}
+{#if state !== 'none' && state !== 'cancelled'}
 	<div
-		class="rounded-lg border px-3 py-2.5 text-body-sm flex items-start gap-2.5 {state === 'pending'
+		class="rounded-lg border px-3 py-2.5 text-body-sm flex items-start gap-2.5 {state === 'pending' || state === 'reverification_required'
 			? 'bg-accent-amber/10 border-accent-amber/30 text-on-surface'
 			: state === 'approved'
 				? 'bg-accent-emerald/10 border-accent-emerald/30 text-on-surface'
@@ -63,7 +67,7 @@
 		{:else if state === 'approved'}
 			<CircleCheck class="w-4 h-4 shrink-0 mt-0.5 text-accent-emerald" />
 		{:else}
-			<TriangleAlert class="w-4 h-4 shrink-0 mt-0.5 text-error" />
+			<TriangleAlert class="w-4 h-4 shrink-0 mt-0.5 {state === 'reverification_required' ? 'text-accent-amber' : 'text-error'}" />
 		{/if}
 		<div class="min-w-0">
 			<p class="font-semibold">{label}</p>

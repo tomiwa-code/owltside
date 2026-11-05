@@ -23,6 +23,7 @@
 	import Avatar from '$components/Avatar.svelte';
 	import StatusChip from '$components/StatusChip.svelte';
 	import Sheet from '$components/Sheet.svelte';
+	import UserVerification from '$components/UserVerification.svelte';
 
 	let { data } = $props();
 
@@ -176,6 +177,8 @@
 					{/if}
 				</div>
 			</section>
+
+			<UserVerification {user} canRequest={!!data.admin && data.admin.tier <= 2} />
 
 			<section class="panel overflow-hidden">
 				<header class="panel-head"><p class="mono-label">Unmasked KYC & bank details</p><Fingerprint size={12} class="text-[#8f8f9b]" /></header>

@@ -100,7 +100,7 @@ function buildApproval(
 			return {
 				kind: 'verification',
 				title: 'Phone verification',
-				summary: `Phone number ${phone} verified`,
+				summary: `Phone number ${phone} submitted for review`,
 				subjectLabel: phone,
 				payload: {
 					...requesterMeta,
@@ -179,41 +179,14 @@ export const POST: RequestHandler = async ({ locals, cookies, request }) => {
 		return json({ error: 'Invalid request body.' }, { status: 400 });
 	}
 
+	if (!body || typeof body !== 'object' || Array.isArray(body)) {
+		return json({ error: 'Invalid request body.' }, { status: 400 });
+	}
+
 	const input = buildApproval(body, locals.session);
 	if (typeof input === 'string') return json({ error: input }, { status: 400 });
 
 	const supabase = createSupabase(cookies);
-	// Also mirror phone / bank / KYC metadata into auth user_metadata when signed in
-	// so User & Organizer dossiers in Admin always have immediate access.
-	if (supabase && locals.session && input.kind === 'verification') {
-		const p = (input.payload ?? {}) as Record<string, unknown>;
-		if (p.check === 'phone' && typeof p.phone === 'string') {
-			await supabase.auth
-				.updateUser({ data: { verified_phone: p.phone } })
-				.then(() => undefined, () => undefined);
-		} else if (p.check === 'payoutAccount') {
-			await supabase.auth
-				.updateUser({
-					data: {
-						payout_bank: p.bank,
-						payout_account_number: p.accountNumber,
-						payout_account_holder: p.accountHolder ?? locals.session.name
-					}
-				})
-				.then(() => undefined, () => undefined);
-		} else if (p.check === 'identity') {
-			await supabase.auth
-				.updateUser({
-					data: {
-						kyc_document: p.document,
-						kyc_legal_name: p.legalName,
-						kyc_dob: p.dateOfBirth,
-						kyc_reference: p.fullReference
-					}
-				})
-				.then(() => undefined, () => undefined);
-		}
-	}
 
 	try {
 		const approval = await getSource(supabase).createApproval(

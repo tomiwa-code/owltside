@@ -3,6 +3,8 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import SettingsDetails from '$components/SettingsDetails.svelte';
 import { appSettings } from '$lib/state/settings.svelte';
+import { verificationApproval } from '../fixtures/verification';
+import { queryClient } from '$lib/state/query.svelte';
 import {
 	isValidNuban,
 	maskAccountNumber,
@@ -140,13 +142,36 @@ describe('payout account verification in settings', () => {
 		expect(appSettings.value.payout).toEqual(EMPTY_PAYOUT);
 	});
 
-	it('reopens a verified account prefilled and ready to save again', async () => {
+	it('does not let a user reopen an approved payout account', () => {
 		appSettings.value.verification.payoutAccount = true;
-		appSettings.value.payout = { bank: 'Zenith Bank', accountNumber: '1234567890' };
+		render(SettingsDetails, {
+			category: 'verification',
+			approvals: [verificationApproval('payoutAccount')]
+		});
+		expect(screen.queryByRole('button', { name: /re-verify/i })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Add payout account' })).not.toBeInTheDocument();
+		expect(screen.getByText('GTBank ••••6789 verified')).toBeInTheDocument();
+	});
 
-		render(SettingsDetails, { category: 'verification' });
-		await fireEvent.click(screen.getByRole('button', { name: 'Re-verify payout account' }));
-
+	it('allows updated bank details only after an admin request, prefilled from server history', async () => {
+		appSettings.value.verification.payoutAccount = true; // Stale device data must not win.
+		appSettings.value.payout = { bank: 'Access Bank', accountNumber: '0000000000' };
+		render(SettingsDetails, {
+			category: 'verification',
+			approvals: [
+				verificationApproval('payoutAccount', 'reverification_required', {
+					createdAt: '2026-10-02T10:00:00.000Z',
+					payload: { check: 'payoutAccount' },
+					note: 'Please provide your updated bank details.'
+				}),
+				verificationApproval('payoutAccount', 'approved', {
+					payload: { check: 'payoutAccount', bank: 'Zenith Bank', accountNumber: '1234567890' }
+				})
+			]
+		});
+		expect(screen.getByText('Action required')).toBeInTheDocument();
+		expect(screen.getByText('Please provide your updated bank details.')).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: 'Add payout account' }));
 		expect(screen.getByLabelText('Bank Name')).toHaveValue('Zenith Bank');
 		expect(screen.getByLabelText(/10-digit NUBAN Account Number/)).toHaveValue('1234567890');
 		expect(screen.getByRole('button', { name: 'Verify and save payout account' })).not.toBeDisabled();
@@ -194,12 +219,14 @@ describe('settlement surfaces read the verified account', () => {
 
 	beforeEach(() => {
 		vi.stubGlobal('scrollTo', vi.fn());
+		queryClient.invalidate('');
 		appSettings.value.verification.payoutAccount = true;
 		appSettings.value.payout = { bank: 'GTBank', accountNumber: '0123456789' };
 	});
 
 	afterEach(() => {
 		vi.unstubAllGlobals();
+		queryClient.invalidate('');
 		appSettings.value.verification.payoutAccount = false;
 		appSettings.value.payout = { ...EMPTY_PAYOUT };
 	});
@@ -207,16 +234,32 @@ describe('settlement surfaces read the verified account', () => {
 	it('shows the verified account on the organizer dashboard', async () => {
 		const { default: OrganizerPage } = await import('../../src/routes/(app)/organizer/+page.svelte');
 		const { computeOrganizer } = await import('$lib/server/datasource');
-		render(OrganizerPage, { data: { ...baseData, payload: computeOrganizer([], [], [], []) } });
+		render(OrganizerPage, { data: { ...baseData, payload: computeOrganizer([], [], [], []), approvals: [verificationApproval('payoutAccount')] } });
 
 		const text = document.body.textContent ?? '';
 		expect(text).toContain('Settlement Account');
 		expect(text).toContain('Account: ••••6789');
 	});
 
+	it('does not use a cached bank when an admin requests updated payout details', async () => {
+		const { default: OrganizerPage } = await import('../../src/routes/(app)/organizer/+page.svelte');
+		const { computeOrganizer } = await import('$lib/server/datasource');
+		render(OrganizerPage, { data: {
+			...baseData, payload: computeOrganizer([], [], [], []), approvals: [
+				verificationApproval('payoutAccount', 'reverification_required', {
+					createdAt: '2026-10-02T10:00:00.000Z',
+					note: 'Update your bank details.', payload: { check: 'payoutAccount' }
+				}),
+				verificationApproval('payoutAccount')
+			]
+		} });
+		expect(document.body.textContent).not.toContain('Account: ••••6789');
+		expect(document.body.textContent).toContain('Update your bank details.');
+	});
+
 	it("shows the verified account in the event wizard's Issuance & Settlement", async () => {
 		const { default: CreatePage } = await import('../../src/routes/(app)/organizer/create/+page.svelte');
-		render(CreatePage, { data: { ...baseData, owner: 'u-ada', event }, form: null });
+		render(CreatePage, { data: { ...baseData, owner: 'u-ada', event, payoutAccount: { bank: 'GTBank', accountNumber: '0123456789' } }, form: null });
 		await tick();
 
 		await fireEvent.click(screen.getAllByRole('button', { name: /Next: Step 2/ })[0]);
@@ -230,7 +273,7 @@ describe('settlement surfaces read the verified account', () => {
 		appSettings.value.verification.payoutAccount = false;
 		appSettings.value.payout = { ...EMPTY_PAYOUT };
 		const { default: CreatePage } = await import('../../src/routes/(app)/organizer/create/+page.svelte');
-		render(CreatePage, { data: { ...baseData, owner: 'u-ada', event }, form: null });
+		render(CreatePage, { data: { ...baseData, owner: 'u-ada', event, payoutAccount: null }, form: null });
 		await tick();
 
 		await fireEvent.click(screen.getAllByRole('button', { name: /Next: Step 2/ })[0]);
