@@ -73,6 +73,9 @@ code paths switch to the live backend — no component changes.
      listings and public profiles land as `open`, insert-only RLS (guests may
      report, clients can never read the queue or resolve a report), a duplicate
      guard and a "report received" notification
+   - `031_platform_announcements.sql` — service-role-only, atomic admin
+     announcements: one durable send record plus an unread notification for
+     every public profile
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
@@ -246,6 +249,13 @@ organizer sees how many holders were reached. In live mode this uses
 `broadcast_to_event_holders` — apply `supabase/sql/016_event_broadcast_notifications.sql`
 so the RPC exists; without it the server falls back to inserting the
 notifications directly.
+
+Administrators can also open **Notifications → Send announcement** in the
+separate admin app to deliver a platform-wide update to every public profile.
+Apply `supabase/sql/031_platform_announcements.sql`; its service-role-only RPC
+stores the send history and fans out unread notifications atomically. Every
+platform and organizer announcement in the public Activity Hub ends with
+**Follow for updates** and the shared Instagram, X, and TikTok links.
 
 ### Phone camera scanning
 

@@ -63,6 +63,15 @@ export interface AdminNotificationItem {
 	href: string;
 }
 
+export interface AdminAnnouncement {
+	id: string;
+	title: string;
+	body: string;
+	recipientCount: number;
+	sentBy: string;
+	sentAt: string;
+}
+
 export interface AdminEvent {
 	id: string;
 	ref: string;
@@ -368,7 +377,7 @@ export interface AuditRecord {
 	target: string;
 	reason: string;
 	severity: 'info' | 'warning' | 'critical';
-	entityKind: 'ticket' | 'event' | 'order' | 'user' | 'organizer' | 'settings' | 'staff';
+	entityKind: 'ticket' | 'event' | 'order' | 'user' | 'organizer' | 'settings' | 'staff' | 'announcement';
 	entityId: string;
 	diff?: { field: string; before: string; after: string }[];
 	ip: string;

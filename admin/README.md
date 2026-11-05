@@ -70,6 +70,22 @@ deep link into the public app.
 - Clients get no read or update access to the table: only the service role can
   list or resolve reports.
 
+## Platform-wide announcements
+
+Open **Notifications → Send announcement** to compose and preview an update for
+**all users** of the public web app. Sending calls the service-role-only
+`send_platform_announcement` RPC, which records the title, message, actor,
+recipient count, and timestamp in `platform_announcements`, then inserts one
+unread `announcement` notification per public profile in the same transaction.
+The page also lists recent sends. Read-only auditors can read this history but
+cannot send.
+
+Apply `../supabase/sql/031_platform_announcements.sql` (or the current full
+schema) in the public app's Supabase project. Public and authenticated roles
+cannot execute the RPC or read the admin delivery log. In the public Activity
+Hub, every platform announcement and organizer broadcast automatically ends
+with **Follow for updates** and Owltside's Instagram, X, and TikTok icons.
+
 ## Approval queue (public app → console)
 
 The customer app never approves itself. Refund requests, instant payouts and
@@ -194,6 +210,8 @@ when a page is loaded or revalidated.
 ```
 GET  /api/search?q=                 federated lookup for ⌘K palette
 GET  /api/health                    liveness probe (public)
+GET  /api/announcements             recent platform-wide sends
+POST /api/announcements             send an announcement to every public app user
 POST /api/events                    create draft event
 POST /api/events/[id]/status        approve / reject / suspend / publish
 POST /api/organizers/[id]/status    verify / reject / freeze KYB

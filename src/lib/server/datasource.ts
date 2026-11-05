@@ -165,7 +165,7 @@ const approvalHref = (kind: ApprovalRequest['kind'], subjectId?: string): string
 /** Inbox entry announcing receipt of a request (and, later, the decision). */
 function pushDemoNotification(
 	userId: string,
-	notification: { kind: 'ticket' | 'event' | 'social' | 'system' | 'promo'; title: string; body: string; href?: string }
+	notification: { kind: NotificationItem['kind']; title: string; body: string; href?: string }
 ) {
 	const list = demoPrivateNotifications.get(userId) ?? [];
 	list.unshift({
