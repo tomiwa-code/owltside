@@ -46,6 +46,7 @@ import {
 	normalizedEventStatus
 } from '$lib/utils/event-status';
 import { settleEvent, settleOrganizer } from '$lib/utils/settlement';
+import { latestVerificationRequest, VERIFICATION_CHECKS } from '$lib/utils/verification';
 
 const demoMeId = 'u-ada';
 const demoFollows = new Map<string, Set<string>>();
@@ -182,6 +183,12 @@ function pushDemoNotification(
  * twice — the live path relies on a partial unique index (migration 023).
  */
 function createDemoApproval(userId: string, input: CreateApprovalInput): ApprovalRequest {
+	if (input.kind === 'verification') {
+		const latest = latestVerificationRequest(demoApprovals.filter((item) => item.requesterId === userId), String(input.payload?.check ?? ''));
+		if (latest?.status === 'approved') {
+			throw new Error('This check is already verified. Only an admin can request new verification details.');
+		}
+	}
 	if (input.kind === 'payout') {
 		if (!input.subjectId) {
 			throw new Error('Choose a closed event to request a payout for.');
@@ -252,7 +259,7 @@ const describeDuplicate = (kind: ApprovalKind, check?: string): string =>
 			? 'A refund request for this pass'
 			: check === 'payoutAccount'
 				? 'Your payout account verification'
-				: 'Your identity verification';
+				: check === 'phone' ? 'Your phone verification' : 'Your identity verification';
 
 /** Demo helper mirroring admin `decideApproval` for tests and local verification. */
 export function decideDemoApproval(
@@ -2568,20 +2575,48 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 		},
 		async listApprovals(userId) {
 			if (!isUuid(userId)) return [];
-			const { data, error } = await db
-				.from('approval_requests')
-				.select('*')
-				.eq('requester_id', userId)
-				.order('created_at', { ascending: false })
-				.limit(100);
-			if (error) {
-				if (isMissingApprovalStorageError(error)) return [];
-				throw error;
+			const query = () => db.from('approval_requests').select('*').eq('requester_id', userId)
+				.order('created_at', { ascending: false }).order('id', { ascending: false });
+			// Keep the history bounded, but never lose a current verification just
+			// because the account has since made more than 100 other requests.
+			const results = await Promise.all([
+				query().limit(100),
+				...VERIFICATION_CHECKS.map((check) => query().eq('kind', 'verification').eq('payload->>check', check).limit(1))
+			]);
+			const rows = new Map<string, ApprovalRequest>();
+			for (const { data, error } of results) {
+				if (error) {
+					if (isMissingApprovalStorageError(error)) return [];
+					throw error;
+				}
+				for (const row of (data ?? []) as Row[]) rows.set(row.id, toApproval(row));
 			}
-			return ((data ?? []) as Row[]).map(toApproval);
+			return [...rows.values()].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 		},
 		async createApproval(userId, input) {
 			if (!isUuid(userId)) throw new Error('Sign in to submit a request for approval.');
+			if (input.kind === 'verification') {
+				// Friendly API errors; migration 030 enforces this again under a row
+				// lock, including direct Supabase inserts and concurrent submissions.
+				const { data: latest, error: readError } = await db
+					.from('approval_requests')
+					.select('status')
+					.eq('requester_id', userId)
+					.eq('kind', 'verification')
+					.eq('payload->>check', String(input.payload?.check ?? ''))
+					.order('created_at', { ascending: false })
+					.order('id', { ascending: false })
+					.limit(1)
+					.maybeSingle();
+				if (readError) {
+					if (isMissingApprovalStorageError(readError)) throw approvalStorageError();
+					throw new Error(readError.message);
+				}
+				if (latest?.status === 'approved') {
+					throw new Error('This check is already verified. Only an admin can request new verification details.');
+				}
+				if (latest?.status === 'pending') throw new Error('This request is already awaiting approval.');
+			}
 			if (input.kind === 'payout') {
 				if (!input.subjectId || !isUuid(input.subjectId)) {
 					throw new Error('Choose a closed event to request a payout for.');
@@ -2641,7 +2676,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 					}
 					throw new Error('This request is already awaiting approval. We will let you know once it is reviewed.');
 				}
-				throw error;
+				throw new Error(error.message);
 			}
 			await db.from('notifications').insert({
 				user_id: userId,

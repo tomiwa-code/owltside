@@ -50,7 +50,7 @@ function assertNoError(error: { message: string } | null, resource: string): voi
 
 async function rowsFrom(
 	client: SupabaseClient,
-	table: 'events' | 'profiles' | 'orders' | 'tickets',
+	table: 'events' | 'profiles' | 'orders' | 'tickets' | 'approval_requests',
 	columns: string,
 	configure?: (query: any) => any
 ): Promise<Record<string, any>[]> {
@@ -309,6 +309,7 @@ type DataProfile = Record<string, any>;
 type DataAuthUser = Record<string, any>;
 type UserApprovalSnapshot = {
 	phone?: string;
+	phoneStatus?: string;
 	bank?: string;
 	accountNumber?: string;
 	accountHolder?: string;
@@ -334,18 +335,58 @@ type PeopleBundle = {
 	paidGrossByEvent: Map<string, number>;
 };
 
+/** Newest-first rows: status and document details are resolved independently so
+ * an action-required marker cannot fall back to an old approved status. */
+export function userApprovalSnapshots(rows: Record<string, any>[]): Map<string, UserApprovalSnapshot> {
+	const snapshots = new Map<string, UserApprovalSnapshot>();
+	for (const row of rows) {
+		const uid = String(row.requester_id ?? '');
+		if (!uid) continue;
+		const snap = snapshots.get(uid) ?? {};
+		const payload = (row.payload ?? {}) as Record<string, any>;
+		if (row.kind === 'verification') {
+			const check = String(payload.check ?? 'identity');
+			if (check === 'payoutAccount') {
+				snap.bankStatus ??= String(row.status ?? 'pending');
+				if (!snap.accountNumber && payload.accountNumber) {
+					snap.bank = String(payload.bank ?? '');
+					snap.accountNumber = String(payload.accountNumber);
+					snap.accountHolder = payload.accountHolder ? String(payload.accountHolder) : undefined;
+				}
+			} else if (check === 'phone') {
+				snap.phoneStatus ??= String(row.status ?? 'pending');
+				if (!snap.phone && payload.phone) snap.phone = String(payload.phone);
+			} else if (check === 'identity') {
+				snap.kycStatus ??= String(row.status ?? 'pending');
+				if (!snap.kycDocument && !snap.kycReference && (payload.document || payload.fullReference || payload.reference)) {
+					snap.kycDocument = payload.document ? String(payload.document) : undefined;
+					snap.kycReference = String(payload.fullReference ?? payload.reference ?? '');
+					snap.kycLegalName = payload.legalName ? String(payload.legalName) : undefined;
+					snap.kycDateOfBirth = payload.dateOfBirth ? String(payload.dateOfBirth) : undefined;
+					snap.kycAttachments = extractApprovalAttachments(payload);
+				}
+			}
+		}
+		snapshots.set(uid, snap);
+	}
+	return snapshots;
+}
+
+/** Email confirmation belongs to Supabase Auth, not the KYC/profile tick or
+ * user-editable metadata (and confirmed_at may refer to a phone confirmation). */
+export function authEmailVerification(auth?: DataAuthUser): Pick<AdminUser, 'emailVerified' | 'emailVerifiedAt'> {
+	const confirmedAt = auth?.email && typeof auth.email_confirmed_at === 'string' && auth.email_confirmed_at
+		? auth.email_confirmed_at : undefined;
+	return { emailVerified: !!confirmedAt, emailVerifiedAt: confirmedAt };
+}
+
 async function loadPeopleBundle(client: SupabaseClient): Promise<PeopleBundle> {
 	const [profiles, events, orders, tickets, approvalsRes] = await Promise.all([
 		rowsFrom(client, 'profiles', '*', (q) => q.order('created_at', { ascending: false }).order('id')),
 		loadEvents(client),
 		rowsFrom(client, 'orders', 'id,owner_id,owner_name,event_id,reference,total,items_label,status,gateway,created_at', (q) => q.order('created_at', { ascending: false }).order('id')),
 		rowsFrom(client, 'tickets', 'id,owner_id,event_id,code,event_title,tier_name,holder_name,status,purchased_at,price,cover', (q) => q.order('purchased_at', { ascending: false }).order('id')),
-		client
-			.from('approval_requests')
-			.select('requester_id,kind,status,payload,created_at')
-			.order('created_at', { ascending: false })
-			.limit(1000)
-			.then((res) => res.data ?? [], () => [] as Record<string, any>[])
+		rowsFrom(client, 'approval_requests', 'requester_id,kind,status,payload,created_at', (q) => q.order('created_at', { ascending: false }).order('id', { ascending: false }))
 	]);
 	const authUsers = new Map<string, DataAuthUser>();
 	try {
@@ -362,36 +403,7 @@ async function loadPeopleBundle(client: SupabaseClient): Promise<PeopleBundle> {
 		// Auth endpoint unavailable; continue without auth metadata.
 	}
 
-	const approvalsByUser = new Map<string, UserApprovalSnapshot>();
-	for (const row of approvalsRes as Record<string, any>[]) {
-		const uid = String(row.requester_id ?? '');
-		if (!uid) continue;
-		const snap = approvalsByUser.get(uid) ?? {};
-		const payload = (row.payload ?? {}) as Record<string, any>;
-		if (row.kind === 'verification') {
-			const check = String(payload.check ?? 'identity');
-			if (check === 'payoutAccount' && !snap.accountNumber && payload.accountNumber) {
-				snap.bank = String(payload.bank ?? '');
-				snap.accountNumber = String(payload.accountNumber ?? '');
-				snap.accountHolder = payload.accountHolder ? String(payload.accountHolder) : undefined;
-				snap.bankStatus = String(row.status ?? 'pending');
-			} else if (check === 'phone' && !snap.phone && payload.phone) {
-				snap.phone = String(payload.phone);
-			} else if (check === 'identity' && !snap.kycReference && !snap.kycDocument) {
-				snap.kycDocument = payload.document ? String(payload.document) : undefined;
-				snap.kycReference = String(payload.fullReference ?? payload.reference ?? '');
-				snap.kycLegalName = payload.legalName ? String(payload.legalName) : undefined;
-				snap.kycDateOfBirth = payload.dateOfBirth ? String(payload.dateOfBirth) : undefined;
-				snap.kycStatus = String(row.status ?? 'pending');
-				snap.kycAttachments = extractApprovalAttachments(payload);
-			}
-		} else if (row.kind === 'payout' && !snap.accountNumber && payload.accountNumber) {
-			snap.bank = String(payload.bank ?? '');
-			snap.accountNumber = String(payload.accountNumber ?? '');
-			snap.accountHolder = payload.accountHolder ? String(payload.accountHolder) : undefined;
-		}
-		approvalsByUser.set(uid, snap);
-	}
+	const approvalsByUser = userApprovalSnapshots(approvalsRes);
 
 	const ordersByOwner = new Map<string, Record<string, any>[]>();
 	const ticketsByOwner = new Map<string, Record<string, any>[]>();
@@ -444,13 +456,15 @@ function mapDataUser(profile: DataProfile, auth: DataAuthUser | undefined, bundl
 	const isBlocked = isUserRecordBlocked(profile, auth);
 	const isOrganizer = profile.operating_identity === 'organizer' || bundle.events.some((event) => event.organizerId === profile.id);
 	const role: AdminUser['role'] = isOrganizer ? 'Organizer' : 'Attendee';
-	const phone = String(auth?.phone || meta.verified_phone || meta.phone || snap?.phone || '');
+	const phone = String(snap?.phone || auth?.phone || meta.verified_phone || meta.phone || '');
 	return {
 		id: profile.id,
 		handle: String(profile.handle ?? profile.id.slice(0, 8)),
 		name: String(profile.name ?? 'Owltside user'),
 		email: String(auth?.email ?? ''),
+		...authEmailVerification(auth),
 		phone,
+		phoneStatus: snap?.phoneStatus,
 		bio: profile.bio ? String(profile.bio) : undefined,
 		link: profile.link ? String(profile.link) : undefined,
 		operatingIdentity: profile.operating_identity ? String(profile.operating_identity) : 'attendee',
@@ -580,7 +594,7 @@ export async function listSupabaseUsers(query: UserQuery = {}, selectedId?: stri
 
 export async function getSupabaseUser(id: string): Promise<{ user: AdminUser; tickets: AdminTicket[]; orders: AdminOrder[] } | null> {
 	const result = await listSupabaseUsers({ page: 1, perPage: 1 }, id);
-	if (!result.selected) return null;
+	if (!result.selected || result.selected.id !== id) return null;
 	return { user: result.selected, tickets: result.related.tickets, orders: result.related.orders };
 }
 
@@ -663,7 +677,7 @@ function mapDataOrganizer(profile: DataProfile, auth: DataAuthUser | undefined, 
 	const snap = bundle.approvalsByUser.get(profile.id);
 	const meta = (auth?.user_metadata ?? {}) as Record<string, any>;
 	const isBlocked = isUserRecordBlocked(profile, auth);
-	const phone = String(auth?.phone || meta.verified_phone || meta.phone || snap?.phone || '');
+	const phone = String(snap?.phone || auth?.phone || meta.verified_phone || meta.phone || '');
 	const accountNumber = snap?.accountNumber ?? '';
 	return {
 		id: profile.id,

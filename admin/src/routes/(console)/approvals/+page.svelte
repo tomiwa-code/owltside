@@ -62,6 +62,7 @@
 	function statusChip(row: AdminApproval): { label: string; tone: string } {
 		if (row.status === 'approved') return { label: 'Approved', tone: 'chip-ok' };
 		if (row.status === 'rejected') return { label: 'Rejected', tone: 'chip-danger' };
+		if (row.status === 'reverification_required') return { label: 'Awaiting user', tone: 'chip-warn' };
 		if (row.status === 'cancelled') return { label: 'Cancelled', tone: 'chip' };
 		return { label: 'Pending review', tone: 'chip-warn' };
 	}
@@ -365,8 +366,8 @@
 						</div>
 					{:else}
 						<div class="mt-3 rounded-lg border border-[#2a2a32] p-3 text-[10px]">
-							<p class="mono-label !text-[8px]">Decision</p>
-							<p class="mt-1 text-[#dcdce4]">{selected.status === 'approved' ? 'Approved' : selected.status === 'rejected' ? 'Rejected' : 'Cancelled'}
+							<p class="mono-label !text-[8px]">{selected.status === 'reverification_required' ? 'Admin request' : 'Decision'}</p>
+							<p class="mt-1 text-[#dcdce4]">{chip.label}
 								{#if selected.decidedBy}· {selected.decidedBy}{/if}
 								{#if selected.decidedAt}<span class="text-[#6f6f7b]"> · {relative(selected.decidedAt)}</span>{/if}
 							</p>

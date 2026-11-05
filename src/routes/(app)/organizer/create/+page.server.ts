@@ -1,5 +1,6 @@
 import { validateEventPoster } from '$lib/server/event-poster';
 import { getSource } from '$lib/server/datasource';
+import { approvedPayoutAccount } from '$lib/utils/verification';
 import { createSupabase } from '$lib/server/supabase';
 import { isEventClosed } from '$lib/utils/event-status';
 import { fail, redirect } from '@sveltejs/kit';
@@ -19,7 +20,8 @@ export const load: PageServerLoad = async ({ locals, cookies, url }) => {
 		if (!event) redirect(302, '/organizer');
 		if (isEventClosed(event)) redirect(302, '/organizer?tab=past');
 	}
-	return { owner: locals.session?.userId ?? 'demo', event: event ?? null };
+	const approvals = await getSource(createSupabase(cookies)).listApprovals(locals.session?.userId ?? 'demo').catch(() => []);
+	return { owner: locals.session?.userId ?? 'demo', event: event ?? null, payoutAccount: approvedPayoutAccount(approvals) };
 };
 
 const draftSchema = z.object({

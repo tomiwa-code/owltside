@@ -3,6 +3,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { OPERATING_IDENTITY_COOKIE, isOperatingIdentity } from '$lib/constants/operating-identity';
 import { createSupabase } from '$lib/server/supabase';
 import { getSource } from '$lib/server/datasource';
+import { redactForPublicClient } from '$lib/server/redact-approval';
 import {
 	BIOMETRIC_JUST_AUTHED_COOKIE,
 	BIOMETRIC_UNLOCKED_COOKIE,
@@ -15,7 +16,7 @@ export const load: PageServerLoad = async ({ locals, cookies }) => {
 	const approvals = await getSource(createSupabase(cookies))
 		.listApprovals(locals.session?.userId ?? 'demo')
 		.catch(() => []);
-	return { approvals };
+	return { approvals: approvals.map(redactForPublicClient) };
 };
 
 export const actions: Actions = {

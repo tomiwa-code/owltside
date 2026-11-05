@@ -236,7 +236,7 @@
 									<span class="min-w-0 flex-1">
 										<span class="flex items-center justify-between gap-2">
 											<span class="font-code text-[8px] uppercase tracking-[0.12em] text-[#a998ff]">
-												{kindLabel(item.kind)} · {item.status}
+												{kindLabel(item.kind)} · {item.status === 'reverification_required' ? 'Awaiting user' : item.status}
 											</span>
 											<span class="shrink-0 font-code text-[8.5px] text-[#6f6f7b]">
 												{relative(item.createdAt)}

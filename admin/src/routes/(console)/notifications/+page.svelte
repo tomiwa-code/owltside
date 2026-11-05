@@ -49,6 +49,7 @@
 	}
 
 	function badgeTone(item: AdminNotificationItem): string {
+		if (item.status === 'reverification_required') return 'chip chip-warn';
 		if (!item.actionable) return 'chip chip-ok';
 		if (item.kind === 'report') return 'chip chip-danger';
 		if (item.kind === 'refund' || item.kind === 'payout') return 'chip chip-warn';
@@ -168,7 +169,7 @@
 							</span>
 							<div class="min-w-0">
 								<div class="flex flex-wrap items-center gap-2">
-									<span class={badgeTone(item)}>{item.kind} · {item.status}</span>
+									<span class={badgeTone(item)}>{item.kind} · {item.status === 'reverification_required' ? 'Awaiting user' : item.status}</span>
 									<span class="font-code text-[9.5px] text-[#7f7f8c]">
 										{relative(item.createdAt)} · {dateTime(item.createdAt)}
 									</span>

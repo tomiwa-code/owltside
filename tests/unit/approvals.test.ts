@@ -15,10 +15,10 @@ const jsonRequest = (body: unknown) =>
 		body: JSON.stringify(body)
 	});
 
-const context = (request?: Request) =>
+const context = (request?: Request, userId?: string) =>
 	({
 		request,
-		locals: { session: null, demoMode: true },
+		locals: { session: userId ? { userId, name: 'Member', email: 'member@example.com', handle: 'member', role: 'attendee', demo: true } : null, demoMode: true },
 		cookies: { getAll: () => [], get: () => undefined, set: vi.fn(), delete: vi.fn() }
 	}) as never;
 
@@ -69,7 +69,8 @@ describe('POST /api/approvals', () => {
 					kind: 'verification',
 					check: 'identity',
 					details: { document: 'NIN', reference: '123456784421' }
-				})
+				}),
+				'new-identity-submitter'
 			)
 		);
 		expect(response.status).toBe(201);

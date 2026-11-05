@@ -19,6 +19,8 @@ import { load as createWizardLoad, actions as createWizardActions } from '../../
 import { actions as manageEventActions } from '../../src/routes/(app)/organizer/events/[id]/+page.server';
 import type { ApprovalRequest, EventItem } from '$lib/types';
 
+import { verificationApproval } from '../fixtures/verification';
+
 const EMPTY_PAYOUT = { bank: '', accountNumber: '' };
 
 const baseData = {
@@ -219,7 +221,7 @@ describe('Organizer dashboard payout lifecycle & Past tab', () => {
 	});
 
 	it('renders the Past tab where the ONLY action on past events is Request Payout, and transitions to Payout Requested on click', async () => {
-		let storedApprovals: ApprovalRequest[] = [];
+		let storedApprovals: ApprovalRequest[] = [verificationApproval('payoutAccount')];
 		const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 			if (String(url).includes('/api/approvals') && init?.method === 'POST') {
 				const reqBody = JSON.parse(String(init.body ?? '{}')) as {
@@ -240,7 +242,7 @@ describe('Organizer dashboard payout lifecycle & Past tab', () => {
 					payload: { eventId: reqBody.subjectId },
 					createdAt: new Date().toISOString()
 				};
-				storedApprovals = [created];
+				storedApprovals = [created, verificationApproval('payoutAccount')];
 				return new Response(JSON.stringify(created), { status: 201 });
 			}
 			if (String(url).includes('/api/approvals')) {
@@ -255,7 +257,7 @@ describe('Organizer dashboard payout lifecycle & Past tab', () => {
 				data: {
 					...baseData,
 					payload: computeOrganizer([activeEvent, pastEventA], [], [], []),
-					approvals: []
+					approvals: storedApprovals
 				}
 			}
 		});

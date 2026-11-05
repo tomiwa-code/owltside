@@ -26,12 +26,16 @@
 	} from '@lucide/svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import SettingsDetails from '$components/SettingsDetails.svelte';
+	import SettingsContact from '$components/SettingsContact.svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import CurrencyPill from '$components/CurrencyPill.svelte';
 	import Sheet from '$components/Sheet.svelte';
 	import RoleSwitcher from '$components/RoleSwitcher.svelte';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
+	import { subscribeTable } from '$lib/realtime';
+	import { verificationChecks } from '$lib/utils/verification';
 	import { toast } from '$lib/state/toast.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
 	import {
@@ -72,29 +76,23 @@
 	}
 	const session = $derived(page.data.session);
 	const approvals = $derived(data.approvals ?? []);
-	// Identity and payout checks only count once an admin has approved them.
-	const approvedCheck = (check: string) =>
-		approvals.some(
-			(request) =>
-				request.kind === 'verification' &&
-				request.status === 'approved' &&
-				(request.payload as { check?: string })?.check === check
-		);
 	const isFullyVerified = $derived(
-		!!session &&
-			Object.entries({
-				...appSettings.value.verification,
-				identity: appSettings.value.verification.identity || approvedCheck('identity'),
-				payoutAccount: appSettings.value.verification.payoutAccount || approvedCheck('payoutAccount')
-			}).every(([, done]) => done)
+		!!session && Object.values({
+			...appSettings.value.verification,
+			...verificationChecks(approvals)
+		}).every(Boolean)
 	);
+	$effect(() => {
+		if (!session) return;
+		return subscribeTable('approval_requests', () => { void invalidateAll(); }, `requester_id=eq.${session.userId}`);
+	});
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
 	const role = $derived(data.operatingIdentity ?? 'attendee');
 
 
-	let openCategory = $state<string | null>(null);
+	let openCategory = $state<string | null>(page.url.searchParams.get('category') === 'verification' ? 'verification' : null);
 	let deleteOpen = $state(false);
 	let deleteConfirmation = $state('');
 	let deleteAcknowledged = $state(false);
@@ -220,6 +218,10 @@
 		</div>
 	</div>
 
+	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pb-4">
+		<SettingsContact />
+	</div>
+
 	<footer class="mt-4 border-t border-surface-glass-border">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
 			<span class="flex items-center gap-3">
@@ -324,6 +326,10 @@
 					</button>
 				</div>
 			</section>
+
+			<div class="px-margin">
+				<SettingsContact />
+			</div>
 		</div>
 	</main>
 </div>

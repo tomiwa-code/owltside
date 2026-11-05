@@ -204,6 +204,7 @@ POST /api/reports/[id]/decision     action | dismiss (event listing / profile re
 POST /api/refunds/[id]/decision     approve | reject
 POST /api/refunds/batch             auto-approve eligible queue
 POST /api/users/[id]/status         active | blocked | flagged
+POST /api/users/[id]/reverify       request identity | payoutAccount updates (reason required)
 POST /api/cases/[id]/resolve        warn | dismiss | freeze
 POST /api/staff/invite              issue enrolment link (Super Admin)
 POST /api/staff/[id]/status         suspend / restore administrator
@@ -236,3 +237,14 @@ Build with `npm run build` (Vercel adapter). Set the env vars from
 `.env.example` in the hosting project, keep the admin deployment on a separate
 hostname from the public app, and put it behind your SSO / VPN if the platform
 is not meant to be publicly discoverable.
+
+### User verification
+
+Apply `../supabase/sql/030_admin_verification_lifecycle.sql` after migration 029
+before deploying this workflow. The Users directory and full profile share a
+verification panel with confirmed email, phone, identity and payout statuses.
+Email uses Supabase Auth `email_confirmed_at`, not `profiles.verified` or editable
+user metadata. **Re-verify** is available to mutation-enabled admins for approved
+identity or payout-account checks. It requires a reason, records the actor,
+notifies the user and resets the selected check atomically. Auditors cannot request
+updates. Review the user's new submission in **Approvals** as usual.

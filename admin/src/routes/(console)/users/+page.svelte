@@ -23,6 +23,7 @@
 	import Pagination from '$components/Pagination.svelte';
 	import SearchField from '$components/SearchField.svelte';
 	import Sheet from '$components/Sheet.svelte';
+	import UserVerification from '$components/UserVerification.svelte';
 
 	let { data } = $props();
 
@@ -313,6 +314,9 @@
 
 					{#if tab === 'overview'}
 						<div class="mt-3 space-y-3 text-[10.5px]">
+							{#key selected.id}
+								<UserVerification user={selected} canRequest={!!data.admin && data.admin.tier <= 2} />
+							{/key}
 							<div class="rounded-lg border border-[#2a2a32] p-2.5 space-y-1">
 								<p class="mono-label !text-[7.5px]">Contact & profile</p>
 								<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Email</span><span class="font-code select-all text-[#ededf4]">{selected.email || '—'}</span></p>

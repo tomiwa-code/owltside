@@ -218,7 +218,7 @@ export interface AdminRefund {
 
 /** Everything the public app sends to the console for a decision. */
 export type ApprovalKind = 'refund' | 'payout' | 'verification';
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'reverification_required';
 
 export interface AdminApproval {
 	id: string;
@@ -292,7 +292,10 @@ export interface AdminUser {
 	handle: string;
 	name: string;
 	email: string;
+	emailVerified: boolean;
+	emailVerifiedAt?: string;
 	phone: string;
+	phoneStatus?: string;
 	bio?: string;
 	link?: string;
 	operatingIdentity?: string;
