@@ -5,23 +5,32 @@
 		CalendarDays,
 		ClipboardCheck,
 		Flag,
+		Megaphone,
 		Receipt,
 		RefreshCw,
 		RotateCcw,
 		Search,
+		Send,
+		Users,
 		Wallet
 	} from '@lucide/svelte';
 	import { invalidateAll } from '$app/navigation';
 	import PageHeader from '$components/PageHeader.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
+	import Sheet from '$components/Sheet.svelte';
+	import { toasts } from '$admin/state/toast.svelte';
 	import { dateTime, num, relative } from '$admin/utils/format';
-	import type { AdminNotificationItem } from '$admin/types';
+	import type { AdminAnnouncement, AdminNotificationItem } from '$admin/types';
 
 	let { data } = $props();
 
 	let filter = $state<'all' | 'actionable' | 'verification' | 'payout' | 'refund' | 'report' | 'event' | 'order'>('all');
 	let query = $state('');
 	let refreshing = $state(false);
+	let announcementOpen = $state(false);
+	let announcementTitle = $state('');
+	let announcementBody = $state('');
+	let sendingAnnouncement = $state(false);
 
 	const items = $derived<AdminNotificationItem[]>(data.bundle.items);
 	const counts = $derived(data.bundle.counts);
@@ -48,6 +57,44 @@
 		refreshing = false;
 	}
 
+	function closeAnnouncement() {
+		if (!sendingAnnouncement) announcementOpen = false;
+	}
+
+	async function sendAnnouncement() {
+		if (sendingAnnouncement || !announcementTitle.trim() || !announcementBody.trim()) return;
+		sendingAnnouncement = true;
+		try {
+			const response = await fetch('/api/announcements', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ title: announcementTitle, body: announcementBody })
+			});
+			const payload = (await response.json().catch(() => ({}))) as {
+				message?: string;
+				announcement?: AdminAnnouncement;
+			};
+			if (!response.ok || !payload.announcement) {
+				toasts.error('Announcement not sent', payload.message ?? 'The public app could not be reached.');
+				return;
+			}
+
+			const sent = payload.announcement;
+			announcementOpen = false;
+			announcementTitle = '';
+			announcementBody = '';
+			toasts.ok(
+				'Announcement sent to all users',
+				`Delivered to ${num(sent.recipientCount)} public app user${sent.recipientCount === 1 ? '' : 's'} with the social footer attached.`
+			);
+			await invalidateAll().catch(() => undefined);
+		} catch (cause) {
+			toasts.error('Announcement not sent', cause instanceof Error ? cause.message : 'Try again.');
+		} finally {
+			sendingAnnouncement = false;
+		}
+	}
+
 	function badgeTone(item: AdminNotificationItem): string {
 		if (item.status === 'reverification_required') return 'chip chip-warn';
 		if (!item.actionable) return 'chip chip-ok';
@@ -62,7 +109,7 @@
 <div class="space-y-4">
 	<PageHeader
 		title="Notifications & Submitted Requests"
-		subtitle="Every approval request (KYC ID, payout bank, phone, payout request, ticket refund), content report, event submission, and order submitted from the public app."
+		subtitle="Review requests from the public app, or send a platform announcement to every user’s notification hub."
 		crumbs={['overview', 'notifications']}
 		eyebrow={`${counts.actionable} awaiting review`}
 	>
@@ -70,9 +117,18 @@
 			<button type="button" class="btn btn-sm" disabled={refreshing} onclick={reload}>
 				<RefreshCw size={12} class={refreshing ? 'animate-spin' : ''} /> Refresh feed
 			</button>
-			<a href="/approvals" class="btn btn-sm btn-primary">
+			<a href="/approvals" class="btn btn-sm">
 				<ClipboardCheck size={12} /> Open Approvals Queue
 			</a>
+			<button
+				type="button"
+				class="btn btn-sm btn-primary"
+				disabled={!data.canAnnounce}
+				title={data.canAnnounce ? 'Compose an announcement for every public app user' : 'Read-only auditors cannot send announcements'}
+				onclick={() => (announcementOpen = true)}
+			>
+				<Megaphone size={12} /> Send announcement
+			</button>
 		{/snippet}
 	</PageHeader>
 
@@ -103,6 +159,37 @@
 			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Moderation & status changes</p>
 		</div>
 	</div>
+
+	<section class="panel overflow-hidden" aria-labelledby="sent-announcements-title">
+		<header class="flex flex-wrap items-center justify-between gap-2 border-b border-[#25252d] px-4 py-3">
+			<div class="flex items-center gap-2.5">
+				<span class="flex h-8 w-8 items-center justify-center rounded-lg border border-[#34343d] bg-[#1e1e25] text-[#c6bcff]"><Megaphone size={14} /></span>
+				<div>
+					<h2 id="sent-announcements-title" class="font-display text-[14px] font-semibold text-[#f0f0f5]">Sent announcements</h2>
+					<p class="text-[10px] text-[#6f6f7b]">Recent platform-wide deliveries to the public app.</p>
+				</div>
+			</div>
+			<span class="chip chip-accent"><Users size={10} /> All users</span>
+		</header>
+		{#if data.announcements.length}
+			<div class="divide-y divide-[#23232b]">
+				{#each data.announcements as announcement (announcement.id)}
+					<article class="px-4 py-3.5">
+						<div class="flex flex-wrap items-center justify-between gap-2">
+							<h3 class="text-[13px] font-medium text-[#ededf4]">Announcement · {announcement.title}</h3>
+							<span class="font-code text-[9px] text-[#7f7f8c]">{relative(announcement.sentAt)} · {dateTime(announcement.sentAt)}</span>
+						</div>
+						<p class="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-[#9b9ba8]">{announcement.body}</p>
+						<p class="mt-2 font-code text-[9px] uppercase tracking-[0.06em] text-[#787886]">
+							{num(announcement.recipientCount)} recipient{announcement.recipientCount === 1 ? '' : 's'} · Sent by {announcement.sentBy} · Social footer included
+						</p>
+					</article>
+				{/each}
+			</div>
+		{:else}
+			<p class="px-4 py-5 text-[12px] text-[#8f8f9b]">No platform announcements have been sent yet.</p>
+		{/if}
+	</section>
 
 	<div class="panel overflow-hidden">
 		<div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#25252d] px-3.5 py-2.5">
@@ -190,3 +277,82 @@
 		{/if}
 	</div>
 </div>
+
+<Sheet
+	open={announcementOpen}
+	title="Send announcement"
+	subtitle="Deliver immediately to every public app user’s notification hub."
+	onclose={closeAnnouncement}
+	width="560px"
+>
+	<form id="platform-announcement-form" onsubmit={(event) => { event.preventDefault(); void sendAnnouncement(); }} class="space-y-4">
+		<div class="flex items-center gap-3 rounded-lg border border-[#7c60f6]/25 bg-[#7c60f6]/8 px-3 py-2.5">
+			<Users size={16} class="shrink-0 text-[#c6bcff]" />
+			<div>
+				<p class="text-[12px] font-medium text-[#e4deff]">Audience: all users</p>
+				<p class="text-[10.5px] text-[#9b9ba8]">Every public profile receives an unread announcement.</p>
+			</div>
+		</div>
+
+		<label class="block">
+			<span class="mb-1.5 flex items-center justify-between text-[11px] font-medium text-[#c9c9d4]">
+				<span>Title</span><span class="font-code text-[9px] text-[#6f6f7b]">{announcementTitle.length}/100</span>
+			</span>
+			<input
+				class="input"
+				value={announcementTitle}
+				oninput={(event) => (announcementTitle = event.currentTarget.value)}
+				maxlength="100"
+				required
+				disabled={sendingAnnouncement}
+				placeholder="A new chapter for Owltside"
+				aria-label="Announcement title"
+			/>
+		</label>
+
+		<label class="block">
+			<span class="mb-1.5 flex items-center justify-between text-[11px] font-medium text-[#c9c9d4]">
+				<span>Message</span><span class="font-code text-[9px] text-[#6f6f7b]">{announcementBody.length}/2000</span>
+			</span>
+			<textarea
+				class="input min-h-32 resize-y py-2.5"
+				value={announcementBody}
+				oninput={(event) => (announcementBody = event.currentTarget.value)}
+				maxlength="2000"
+				required
+				disabled={sendingAnnouncement}
+				placeholder="Share the update your community should know about…"
+				aria-label="Announcement message"
+			></textarea>
+		</label>
+
+		<section class="rounded-xl border border-[#2c2c35] bg-[#15151a] p-4" aria-label="Announcement preview">
+			<p class="mono-label !text-[8px]">Public app preview</p>
+			<div class="mt-3 flex items-start gap-3">
+				<span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#34343d] bg-[#1e1e25] text-[#c6bcff]"><Megaphone size={15} /></span>
+				<div class="min-w-0">
+					<h3 class="text-[13px] font-semibold text-[#ededf4]">Announcement · {announcementTitle.trim() || 'Your title'}</h3>
+					<p class="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-[#9b9ba8]">{announcementBody.trim() || 'Your announcement message will appear here.'}</p>
+				</div>
+			</div>
+			<div class="mt-4 border-t border-[#2c2c35] pt-3 text-[10px] text-[#8f8f9b]">
+				<span class="font-medium text-[#c9c9d4]">Follow for updates</span> and the Instagram, X and TikTok icons are automatically placed at the end.
+			</div>
+		</section>
+	</form>
+
+	{#snippet footer()}
+		<div class="flex items-center justify-end gap-2">
+			<button type="button" class="btn btn-sm" disabled={sendingAnnouncement} onclick={closeAnnouncement}>Cancel</button>
+			<button
+				type="submit"
+				form="platform-announcement-form"
+				class="btn btn-sm btn-primary"
+				disabled={sendingAnnouncement || !announcementTitle.trim() || !announcementBody.trim()}
+			>
+				<Send size={12} class={sendingAnnouncement ? 'animate-pulse' : ''} />
+				{sendingAnnouncement ? 'Sending…' : 'Send to all users'}
+			</button>
+		</div>
+	{/snippet}
+</Sheet>

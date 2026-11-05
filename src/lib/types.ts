@@ -288,7 +288,7 @@ export interface Message {
 
 export interface NotificationItem {
 	id: string;
-	kind: 'ticket' | 'event' | 'social' | 'system' | 'promo';
+	kind: 'ticket' | 'event' | 'social' | 'system' | 'promo' | 'announcement';
 	title: string;
 	body: string;
 	href?: string;

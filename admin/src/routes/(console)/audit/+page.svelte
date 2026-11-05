@@ -124,6 +124,7 @@
 				<option value="order" selected={data.filters.kind === 'order'}>Financial</option>
 				<option value="settings" selected={data.filters.kind === 'settings'}>Settings & keys</option>
 				<option value="staff" selected={data.filters.kind === 'staff'}>Staff & access</option>
+				<option value="announcement" selected={data.filters.kind === 'announcement'}>Platform announcements</option>
 			</select>
 			<select name="severity" class="select !h-[32px] !text-[11px]" onchange={change} aria-label="Filter by severity">
 				<option value="all" selected={data.filters.severity === 'all'}>Outcome: All</option>

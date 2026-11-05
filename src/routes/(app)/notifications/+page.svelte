@@ -22,6 +22,7 @@
 		Zap
 	} from '@lucide/svelte';
 	import Avatar from '$components/Avatar.svelte';
+	import AnnouncementFooter from '$components/AnnouncementFooter.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
 	import TopBar from '$components/TopBar.svelte';
 	import { useQuery, queryClient } from '$lib/state/query.svelte';
@@ -33,6 +34,7 @@
 		getPushPermissionState
 	} from '$lib/push.client';
 	import { fmtRelative, fmtTime } from '$lib/utils/dates';
+	import { isAnnouncement } from '$lib/utils/announcements';
 	import type { NotificationItem } from '$lib/types';
 
 	let { data } = $props();
@@ -93,6 +95,7 @@
 		system: 'security',
 		event: 'events',
 		promo: 'events',
+		announcement: 'events',
 		social: 'organizers'
 	};
 
@@ -130,6 +133,11 @@
 			source: 'Marketplace Node',
 			icon: Flame,
 			action: { label: 'Get Tickets', href: '/explore' }
+		},
+		announcement: {
+			code: 'Platform_Announcement',
+			source: 'Owltside Team',
+			icon: Megaphone
 		},
 		system: { code: 'Security_Node', source: 'Mesh Validator', icon: FingerprintPattern }
 	};
@@ -390,7 +398,7 @@
 											{/if}
 										</div>
 										<h3 class="font-display text-[15px] font-bold text-on-surface mt-1.5">{displayTitle(n.title)}</h3>
-										<p class="text-body-sm text-on-surface-variant mt-1">{n.body}</p>
+										<p class="whitespace-pre-wrap text-body-sm text-on-surface-variant mt-1">{n.body}</p>
 										<div class="flex items-center gap-3 mt-3">
 											{#if meta.action}
 												<a
@@ -404,6 +412,9 @@ href={n.href ?? meta.action.href}
 										</div>
 									</div>
 								</div>
+								{#if isAnnouncement(n)}
+									<AnnouncementFooter />
+								{/if}
 							</article>
 						{/each}
 					</div>
@@ -524,13 +535,16 @@ href={n.href ?? meta.action.href}
 									<div class="flex-1 min-w-0">
 										<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-label-badge"><span class="text-on-surface-variant uppercase tracking-wider">{meta.code}</span><span class="text-outline-variant">{meta.source}</span>{#if meta.tag}<span class="text-accent-emerald">· {meta.tag}</span>{/if}</div>
 										<h3 class="font-display text-body-md font-bold text-on-surface mt-1">{displayTitle(n.title)}</h3>
-										<p class="text-body-sm text-on-surface-variant mt-1">{n.body}</p>
+										<p class="whitespace-pre-wrap text-body-sm text-on-surface-variant mt-1">{n.body}</p>
 										<div class="flex items-center justify-between gap-2 mt-3 flex-wrap">
 											{#if meta.action}<a href={n.href ?? meta.action.href} class="h-9 px-3 rounded-lg {meta.action.solid ? 'bg-primary text-on-primary' : 'bg-surface-container-high border border-surface-glass-border text-on-surface'} text-label-badge font-semibold flex items-center">{meta.action.label}</a>{/if}
 											<span class="text-label-badge text-on-surface-variant">{deskTime(n)}</span>
 										</div>
 									</div>
 								</div>
+								{#if isAnnouncement(n)}
+									<AnnouncementFooter />
+								{/if}
 							</article>
 						{/each}
 					</section>
