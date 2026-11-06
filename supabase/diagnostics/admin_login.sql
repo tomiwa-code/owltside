@@ -2,7 +2,8 @@
 -- Run in Supabase SQL Editor in the SAME project configured on the admin host.
 -- Does not reveal password hashes, reset passwords, or grant/restore access.
 -- If admin_accounts does not exist, apply migration 032 first.
--- No rows: the default Auth user has not been created in this project.
+-- If you changed the work email, replace the email filter below with the new one.
+-- No rows: that Auth email does not exist in this project.
 select
   u.id as auth_user_id,
   u.email,

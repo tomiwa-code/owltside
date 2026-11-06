@@ -38,6 +38,7 @@ function session(overrides: Partial<AdminSession> = {}): AdminSession {
 		tier: 0,
 		auth: 'supabase-password',
 		userId: 'auth-user-1',
+		sessionVersion: 1,
 		ip: '127.0.0.1',
 		demo: false,
 		issuedAt: new Date().toISOString(),
@@ -57,7 +58,7 @@ describe('admin authentication', () => {
 	beforeEach(() => {
 		restoreEnv();
 		mocks.signIn.mockReset().mockResolvedValue({ data: { user: { id: 'auth-user-1', email: TEST_EMAIL, email_confirmed_at: '2026-11-01' } }, error: null });
-		mocks.access.mockReset().mockResolvedValue({ user_id: 'auth-user-1', name: 'Review Admin', role: 'Super Admin', tier: 0, is_active: true });
+		mocks.access.mockReset().mockResolvedValue({ user_id: 'auth-user-1', name: 'Review Admin', role: 'Super Admin', tier: 0, is_active: true, work_email: 'admin@owltside.com', session_version: 1 });
 	});
 
 	afterEach(restoreEnv);
@@ -127,12 +128,20 @@ describe('admin authentication', () => {
 
 	it('refreshes role changes and denies removed/suspended access on existing sessions', async () => {
 		const cookies = { get: () => signSession(session()) } as unknown as Cookies;
-		mocks.access.mockResolvedValue({ user_id: 'auth-user-1', name: 'Audit Admin', role: 'Read-only Auditor', tier: 3, is_active: true });
+		mocks.access.mockResolvedValue({ user_id: 'auth-user-1', name: 'Audit Admin', role: 'Read-only Auditor', tier: 3, is_active: true, work_email: 'admin@owltside.com', session_version: 1 });
 		expect(await readSession(cookies)).toMatchObject({ tier: 3, role: 'Read-only Auditor', initials: 'AA' });
 		mocks.access.mockResolvedValue(null);
 		expect(await readSession(cookies)).toBeNull();
 		mocks.access.mockRejectedValue(new Error('outage'));
 		expect(await readSession(cookies)).toBeNull();
+	});
+
+	it('rejects an existing session after a table credential edit increments its version', async () => {
+		const cookies = { get: () => signSession(session()) } as unknown as Cookies;
+		mocks.access.mockResolvedValue({ user_id: 'auth-user-1', name: 'Admin', role: 'Super Admin', tier: 0,
+			is_active: true, work_email: 'changed@example.com', session_version: 2 });
+		expect(await readSession(cookies)).toBeNull();
+		expect(await readSession({ get: () => signSession(session({ sessionVersion: undefined })) } as unknown as Cookies)).toBeNull();
 	});
 
 	it('never upgrades an old environment-based session', async () => {

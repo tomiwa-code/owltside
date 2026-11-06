@@ -119,6 +119,7 @@ export async function authenticate({ email, password, remember, ip }: LoginInput
 		session: {
 			id: randomUUID(),
 			userId: user.id,
+			sessionVersion: identity.session_version,
 			email: user.email,
 			name: identity.name,
 			initials: identity.name
@@ -225,10 +226,10 @@ export async function readSession(cookies: Cookies): Promise<AdminSession | null
 	if (!session?.userId || session.auth !== 'supabase-password') return null;
 	try {
 		const access = await getAdminAccess(session.userId);
-		if (!access) return null;
+		if (!access || session.sessionVersion !== access.session_version) return null;
 		// Refresh permissions on EVERY request so suspensions and demotions take
 		// effect without waiting for the signed cookie to expire. Fail closed.
-		return { ...session, name: access.name, role: access.role, tier: access.tier,
+		return { ...session, email: access.work_email, name: access.name, role: access.role, tier: access.tier,
 			initials: access.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() };
 	} catch {
 		return null;

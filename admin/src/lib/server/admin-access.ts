@@ -28,6 +28,8 @@ export interface AdminAccess {
 	role: AdminRole;
 	tier: AdminTier;
 	is_active: boolean;
+	work_email: string;
+	session_version: number;
 }
 
 export function createAccessClient() {
@@ -43,11 +45,12 @@ export function createAccessClient() {
 export async function getAdminAccess(userId: string): Promise<AdminAccess | null> {
 	const { data, error } = await createAccessClient()
 		.from('admin_accounts')
-		.select('user_id, name, role, tier, is_active')
+		.select('user_id, name, role, tier, is_active, work_email, session_version')
 		.eq('user_id', userId)
 		.maybeSingle();
 	if (error) throw new Error('Admin access lookup failed.');
-	if (!data || !data.is_active || !data.name?.trim() ||
+	if (!data || !data.is_active || !data.name?.trim() || !data.work_email?.trim() ||
+		!Number.isSafeInteger(data.session_version) || data.session_version < 1 ||
 		!Object.prototype.hasOwnProperty.call(ROLE_TIERS, data.role) ||
 		ROLE_TIERS[data.role as AdminRole] !== data.tier) return null;
 	return data as AdminAccess;

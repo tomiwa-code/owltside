@@ -14,6 +14,8 @@ export interface AdminSession {
 	id: string;
 	/** Supabase Auth user ID; absent only on legacy sessions, which cannot sign in. */
 	userId?: string;
+	/** Credential revision in admin_accounts; old revisions are signed out. */
+	sessionVersion?: number;
 	email: string;
 	name: string;
 	initials: string;

@@ -77,6 +77,7 @@ code paths switch to the live backend — no component changes.
      announcements: one durable send record plus an unread notification for
      every public profile
    - `032_admin_accounts.sql` — Supabase Auth-linked admin access list (see `admin/README.md` for first-admin setup)
+   - `033_admin_account_credentials.sql` — editable admin work email and write-only password reset field, synchronized with Auth
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
@@ -397,3 +398,9 @@ and follow [first-admin setup](admin/README.md#admin-accounts-supabase-auth--dat
 Migration 032 bootstraps `admin@owltside.com` with the initial password
 `owltside-admin-2026`. Change this shared default before production use.
 Passwords are managed in Authentication → Users, not stored in the allowlist.
+
+Apply migration 033 before deploying the current admin login. In Table Editor,
+edit `admin_accounts.work_email` to change a login email and enter a new password
+in `security_password` to reset it. The password input clears to NULL after save;
+only its bcrypt hash is retained in Supabase Auth. Credential edits invalidate
+existing admin-console sessions. See `admin/README.md` for restrictions and setup.

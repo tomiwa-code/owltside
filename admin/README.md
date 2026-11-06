@@ -28,7 +28,7 @@ npm run build      # production build (@sveltejs/adapter-vercel)
 There is no environment-based login bypass. Admins sign in with
 **Supabase Auth email/password**. Migration 032 bootstraps the initial account
 listed below; provision individual accounts for your team. Password hashes are
-managed by Supabase in `auth.users`; **never put passwords in a public table**.
+managed by Supabase in `auth.users`; **never retain readable passwords in a public table**.
 `public.admin_accounts` is the separate allowlist of permitted administrators.
 A customer account alone does not grant any admin access.
 
@@ -36,7 +36,9 @@ A customer account alone does not grant any admin access.
 
 1. Run `supabase/sql/032_admin_accounts.sql` in the **same Supabase project's SQL
    Editor** after migration 031. It creates `public.admin_accounts`, visible in
-   Table Editor. New all-in-one schema installs already include this migration.
+   Table Editor. Then run `supabase/sql/033_admin_account_credentials.sql` to
+   enable table-based credential editing. New all-in-one schema installs include
+   both migrations. Apply 033 before deploying the updated admin app.
 2. Migration 032 creates a confirmed Supabase Auth user and email identity with:
    - **Work email address:** `admin@owltside.com`
    - **Security password:** `owltside-admin-2026`
@@ -44,8 +46,8 @@ A customer account alone does not grant any admin access.
 
    The password is stored only as a bcrypt hash in `auth.users`, never in the
    access list. Enable email/password sign-in in Supabase's Email provider.
-3. **Change this publicly known default password immediately through Supabase
-   Auth before production use.** Re-running 032 does not reset an existing
+3. **Change this publicly known default password immediately before production
+   use**, using the write-only table field described below. Re-running 032 does not reset an existing
    user's password or confirmation state, nor does it undo an existing admin's
    suspension or role changes. If that email already exists, use its current
    password or explicitly reset it in Supabase Auth; the migration prints a
@@ -59,6 +61,42 @@ A customer account alone does not grant any admin access.
 5. Restart the admin app and sign in at `/login` with the initial credentials
    above (or the changed password for an existing account). There is no
    `ADMIN_EMAIL` / `ADMIN_PASSWORD` fallback.
+
+### Change work email and security password in Table Editor
+
+After applying **033**, open **Supabase → Table Editor → public.admin_accounts**.
+Select the row for the administrator you want to change:
+
+| Column | How to edit it |
+| --- | --- |
+| `work_email` | Enter the new login email address and save. |
+| `security_password` | Enter a new password and save. It becomes **NULL immediately after save**; that is expected, not a failed update. |
+| `session_version` | Database-managed; do not edit. |
+
+`security_password` is a **write-only reset input**, not a readable password or
+hash. Use at least **16 characters** and at most **72 UTF-8 bytes**; leave it NULL
+to keep the current password. Do not paste a password hash. The trigger hashes
+the supplied value with bcrypt in `auth.users`, updates the Auth email identity,
+and clears the input before the row is stored or returned. Existing email and
+password fields stay linked to the same Auth user ID, role and active status.
+
+Changing either credential signs out existing admin-console sessions on their
+next request. Sign in with the new credentials. A name/role-only change does not
+reset the password. Existing console cookies issued before the 033 app upgrade
+also require a fresh sign-in.
+
+This is a **trusted operator reset**, not self-service signup: changed email
+addresses are confirmed directly without a confirmation email. Verify ownership
+before saving. Only trusted dashboard/SQL operators and the server service role
+can edit these fields; public app users still have no access. Restrict access to
+the Supabase dashboard and SQL/request logs as password-reset submissions may be
+visible there. The input is not a way to retrieve a forgotten password.
+
+Use Table Editor for routine admin credential changes. If a credential is changed
+separately through Supabase Auth, `work_email` is refreshed on the next admin-row
+save; a name/role-only save never restores the old Auth email. Auth recovery does
+not use the table's session-version mechanism, so revoke the allowlist access
+while recovering an account if immediate console sign-out is required.
 
 ### Troubleshooting “Invalid credentials or admin access unavailable”
 
@@ -82,8 +120,8 @@ suspended admin access.
      do not automatically reactivate an account just because login failed.
 3. If all flags are true, use the user's current password. **Migration 032 does
    not replace an existing password with `owltside-admin-2026`.** Explicitly
-   reset the password through Supabase Auth if it is unknown. Supabase provider
-   policies or account restrictions can also reject sign-in; check Auth logs.
+   reset it using the write-only `admin_accounts.security_password` field
+   described above if it is unknown. Supabase provider policies or account restrictions can also reject sign-in; check Auth logs.
 4. After five failed attempts, wait for the 10-minute local lockout to expire.
    The sign-in diagnostics button only checks the browser/session; it does not
    submit credentials or use up another attempt.
@@ -122,9 +160,11 @@ legacy environment-based cookies are rejected after this upgrade.
 
 The current `/staff` invitation/status controls are **in-memory workflow stubs**,
 not this access list. Use Supabase to provision/suspend real accounts; those
-controls do not grant or revoke login access. For password resets, use Supabase
-Auth's recovery workflow; the admin app does not provide a reset page. To revoke
-an existing admin session during recovery, deactivate its allowlist row.
+controls do not grant or revoke login access. Reset passwords through the
+write-only `admin_accounts.security_password` field below or through Supabase
+Auth recovery; the admin app does not provide a reset page. Table-based
+credential edits invalidate existing admin-console sessions. For Auth recovery
+outside the table, deactivate the allowlist row to revoke console access.
 
 This integration uses password authentication, not WebAuthn or TOTP. No Supabase
 access/refresh tokens are exposed to the admin browser. The console issues its
