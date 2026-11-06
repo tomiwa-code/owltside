@@ -3,7 +3,6 @@ import type {
 	AdminEvent,
 	AdminOrder,
 	AdminOrganizer,
-	AdminStaff,
 	AdminTicket,
 	AdminUser,
 	AuditRecord,
@@ -88,11 +87,10 @@ export interface TicketQuery {
  *
  *   • The append-only audit ledger for admin actions taken in this session.
  *   • Mutable platform settings (reflected only until the process restarts).
- *   • The staff roster used for the Administrators screen.
  *
  * Nothing here is seeded demo data — the console must not boot without a
  * reachable Supabase project pointed at by SUPABASE_URL +
- * SUPABASE_SERVICE_ROLE_KEY.
+ * SUPABASE_SERVICE_ROLE_KEY. Administrator roles live on public.profiles.role.
  */
 
 // ── Settings ────────────────────────────────────────────────────────────────
@@ -145,145 +143,13 @@ export function updateSettings(
 	return settingsState;
 }
 
-// ── Staff roster ────────────────────────────────────────────────────────────
-
-/**
- * A small hard-coded roster of administrator identities. The platform does
- * not yet have a dedicated admin_staff table in the public schema, so this
- * list ships with the control plane and is used only for access-tier labels,
- * telemetry and invitation stubs. Real authentication is gated by
- * the server-configured credentials in auth.ts (no login database).
- */
-let staffState: AdminStaff[] = [
-	{
-		id: 'adm-01',
-		name: 'Tomiwa A.',
-		email: 'admin@owltside.com',
-		role: 'Super Admin',
-		tier: 0,
-		auth: 'Passkey + PIN',
-		status: 'active',
-		lastActive: new Date().toISOString(),
-		location: 'Lagos, NG',
-		sessions: 3
-	},
-	{
-		id: 'adm-02',
-		name: 'Adaeze O.',
-		email: 'adaeze@owltside.com',
-		role: 'Trust & Safety Lead',
-		tier: 1,
-		auth: 'FIDO2 WebAuthn',
-		status: 'active',
-		lastActive: new Date(Date.now() - 34 * 60_000).toISOString(),
-		location: 'Lagos, NG',
-		sessions: 1
-	},
-	{
-		id: 'adm-03',
-		name: 'Chinedu K.',
-		email: 'chinedu@owltside.com',
-		role: 'Finance & Treasury',
-		tier: 1,
-		auth: 'FIDO2 WebAuthn',
-		status: 'active',
-		lastActive: new Date(Date.now() - 2 * 3_600_000).toISOString(),
-		location: 'London, UK',
-		sessions: 0
-	},
-	{
-		id: 'adm-04',
-		name: 'Zainab I.',
-		email: 'zainab@owltside.com',
-		role: 'Event Operations',
-		tier: 2,
-		auth: 'Passkey + PIN',
-		status: 'active',
-		lastActive: new Date(Date.now() - 17 * 60_000).toISOString(),
-		location: 'Abuja, NG',
-		sessions: 2
-	},
-	{
-		id: 'adm-05',
-		name: 'Samuel E.',
-		email: 'samuel@owltside.com',
-		role: 'Support Agent',
-		tier: 2,
-		auth: 'TOTP fallback',
-		status: 'active',
-		lastActive: new Date(Date.now() - 4 * 60_000).toISOString(),
-		location: 'Lagos, NG',
-		sessions: 1
-	},
-	{
-		id: 'adm-06',
-		name: 'Folake A.',
-		email: 'folake@owltside.com',
-		role: 'Read-only Auditor',
-		tier: 3,
-		auth: 'Passkey + PIN',
-		status: 'invited',
-		lastActive: new Date(0).toISOString(),
-		location: 'Invite pending',
-		sessions: 0
-	}
-];
-
-export function listStaff(): AdminStaff[] {
-	return [...staffState].sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name));
-}
-
-export function setStaffStatus(id: string, status: AdminStaff['status'], actor: string, reason: string): AdminStaff | null {
-	const member = staffState.find((s) => s.id === id);
-	if (!member) return null;
-	const before = member.status;
-	member.status = status;
-	if (status === 'suspended') member.sessions = 0;
-	logAudit({
-		actor,
-		action: status === 'suspended' ? 'STAFF_SESSION_REVOKED' : 'STAFF_STATUS_CHANGED',
-		kind: 'staff',
-		entityId: member.id,
-		target: `${member.name} · ${member.email}`,
-		reason,
-		severity: status === 'suspended' ? 'critical' : 'info',
-		diff: [{ field: 'status', before, after: status }]
-	});
-	return member;
-}
-
-export function inviteStaff(input: { name: string; email: string; role: AdminStaff['role']; tier: AdminStaff['tier'] }, actor: string): AdminStaff {
-	const staff: AdminStaff = {
-		id: `adm-${staffState.length + 1}-${Date.now().toString(36)}`,
-		name: input.name,
-		email: input.email,
-		role: input.role,
-		tier: input.tier,
-		auth: 'Passkey + PIN',
-		status: 'invited',
-		lastActive: new Date().toISOString(),
-		location: 'Invite pending',
-		sessions: 0
-	};
-	staffState.push(staff);
-	logAudit({
-		actor,
-		action: 'STAFF_INVITE_ISSUED',
-		kind: 'staff',
-		entityId: staff.id,
-		target: `${staff.name} · ${staff.email}`,
-		reason: `Invited as ${staff.role} (Tier ${staff.tier})`,
-		severity: 'info'
-	});
-	return staff;
-}
-
 // ── Audit ledger ────────────────────────────────────────────────────────────
 
 const auditState: AuditRecord[] = [];
 
 export function logAudit(input: {
 	actor: string;
+	actorRole?: string;
 	action: string;
 	kind: AuditRecord['entityKind'];
 	entityId: string;
@@ -299,7 +165,7 @@ export function logAudit(input: {
 		ref: `LOG-${900000 + Math.floor(Math.random() * 99999)}`,
 		at: new Date().toISOString(),
 		actor: input.actor,
-		actorRole: staffState.find((s) => s.name === input.actor)?.role ?? 'Admin',
+		actorRole: input.actorRole ?? 'Admin',
 		action: input.action,
 		target: input.target,
 		reason: input.reason,
@@ -337,12 +203,12 @@ const search = (haystack: (string | undefined)[], needle: string): boolean => {
 	return haystack.some((value) => value?.toLowerCase().includes(q));
 };
 
-export function countAudit(): { total: number; critical: number; verifiedPct: number; activeAdmins: number } {
+export function countAudit(activeAdmins = 0): { total: number; critical: number; verifiedPct: number; activeAdmins: number } {
 	return {
 		total: auditState.length,
 		critical: auditState.filter((a) => a.severity === 'critical').length,
 		verifiedPct: 100,
-		activeAdmins: staffState.filter((s) => s.status === 'active').length
+		activeAdmins
 	};
 }
 

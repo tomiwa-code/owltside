@@ -76,6 +76,9 @@ code paths switch to the live backend — no component changes.
    - `031_platform_announcements.sql` — service-role-only, atomic admin
      announcements: one durable send record plus an unread notification for
      every public profile
+   - `032_profile_admin_roles.sql` — adds `public.profiles.role`
+     (`'user' | 'admin' | 'superadmin'`) with normalization and privilege-escalation
+     guards so the Admin console shares the same Supabase login as the main app
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
@@ -362,7 +365,7 @@ staff access control and platform settings.
 ```bash
 cd admin
 npm install
-npm run dev      # http://localhost:5174 — demo admin@owltside.com / owltside-admin-2026
+npm run dev      # http://localhost:5174
 ```
 
 The public app links to it from the desktop footer via `PUBLIC_ADMIN_URL`
@@ -388,19 +391,19 @@ fresh setups), then deploy both apps against that same database.
   direct API calls. An outstanding admin request is shown as **Awaiting user**, not
   as a pending submission that could be approved before the user responds.
 
-### Admin login (no database)
+### Unified Admin authentication & role management
 
-The separate admin console verifies its single account on the server without
-Supabase Auth or an admin database table:
+The Admin console uses the **same Owltside account login** as the main app
+(Email 6-digit OTP verification code + Google OAuth via Supabase Auth) — there
+are no dummy or fixed admin credentials.
 
-- Work email: `admin@owltside.com`
-- Security password: `owltside-admin-2026`
-
-Optional server-only `ADMIN_EMAIL` / `ADMIN_PASSWORD` overrides replace those
-defaults. Set `ADMIN_SESSION_SECRET` in production. Change the publicly known
-password before exposing the admin console. Supabase is still used for live
-platform data, not login. See [admin setup](admin/README.md#admin-login-no-database).
-
-The former admin-account migration files and their all-in-one schema sections
-have been removed. This does not undo migrations already applied to a live
-project or delete any existing Supabase Auth users/tables/triggers.
+1. Apply `supabase/sql/032_profile_admin_roles.sql` (included in
+   `000_full_schema.sql` for fresh installs).
+2. In Supabase **Table Editor → `public.profiles`**, set your account's `role`
+   column to `superadmin` (typing `super admin` is normalized automatically).
+3. Sign in at `/login` on the Admin app using your main-app email code or Google
+   account. Any account whose `role` is not `admin` or `superadmin` is denied
+   access with an error.
+4. Open **Roles & Admins** (`/staff`) as a Super Admin to assign `Admin` (or
+   `Super Admin`) access to existing or new users. See
+   [admin setup](admin/README.md#unified-admin-authentication--roles).

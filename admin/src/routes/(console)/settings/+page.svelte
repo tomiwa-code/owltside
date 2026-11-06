@@ -183,10 +183,10 @@
 
 					<div class="panel-inset flex items-center justify-between p-2.5">
 						<div>
-							<p class="mono-label !text-[7px]">Hardware keys enrolled</p>
-							<p class="mt-0.5 text-[10px] text-[#dcdce4]">{data.settings.lastHardwareSync}</p>
+							<p class="mono-label !text-[7px]">Admin access enforcement</p>
+							<p class="mt-0.5 text-[10px] text-[#dcdce4]">Supabase role-gated (profiles.role)</p>
 						</div>
-						<span class="font-display text-[12px] font-semibold text-[#ececf1]">12 admins</span>
+						<a href="/staff" class="font-display text-[11.5px] font-semibold text-[#c6bcff] hover:underline">Manage roles →</a>
 					</div>
 
 					<div class="flex items-center justify-between gap-2">

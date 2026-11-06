@@ -1,17 +1,48 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireSuper } from '$admin/server/auth';
-import { setStaffStatus } from '$admin/server/store';
-import type { AdminStaff } from '$admin/types';
-
-const ALLOWED: AdminStaff['status'][] = ['active', 'invited', 'suspended'];
+import {
+	AdminAccessMutationError,
+	AdminSchemaError,
+	parseTargetAdminRole,
+	updateAdminRoleOrAccess
+} from '$admin/server/admin-access';
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
 	const admin = requireSuper(locals.admin);
-	const body = (await request.json().catch(() => ({}))) as { status?: string; reason?: string };
-	if (!body.status || !ALLOWED.includes(body.status as AdminStaff['status'])) error(400, 'Invalid staff status.');
-	if (params.id === 'adm-01' && body.status === 'suspended') error(409, 'You cannot suspend your own Super Admin identity.');
-	const member = setStaffStatus(params.id, body.status as AdminStaff['status'], admin.name, body.reason || 'Access review decision');
-	if (!member) error(404, 'Administrator not found.');
-	return json({ ok: true, staff: { id: member.id, status: member.status } });
+	const body = (await request.json().catch(() => ({}))) as {
+		role?: string;
+		status?: string;
+		reason?: string;
+	};
+
+	let nextRole: 'superadmin' | 'admin' | 'user' | null = null;
+	if (body.role === 'user' || body.status === 'removed' || body.status === 'suspended') {
+		nextRole = 'user';
+	} else if (body.role) {
+		nextRole = parseTargetAdminRole(body.role);
+	} else if (body.status === 'active') {
+		nextRole = 'admin';
+	}
+
+	if (!nextRole) {
+		error(400, 'Specify a valid target role (admin, superadmin, or user).');
+	}
+
+	try {
+		const updated = await updateAdminRoleOrAccess(
+			params.id,
+			{ role: nextRole, reason: body.reason },
+			admin
+		);
+		return json({ ok: true, staff: updated });
+	} catch (cause) {
+		if (cause instanceof AdminAccessMutationError) {
+			error(cause.status, cause.message);
+		}
+		if (cause instanceof AdminSchemaError) {
+			error(503, cause.message);
+		}
+		error(500, cause instanceof Error ? cause.message : 'Could not update administrator role.');
+	}
 };

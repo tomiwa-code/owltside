@@ -1,24 +1,23 @@
 /** Shared view-model types for the Owltside Admin control plane. */
 
-export type AdminRole =
-	| 'Super Admin'
-	| 'Trust & Safety Lead'
-	| 'Finance & Treasury'
-	| 'Event Operations'
-	| 'Support Agent'
-	| 'Read-only Auditor';
+export type DbAdminRole = 'superadmin' | 'admin';
+
+export type AdminRole = 'Super Admin' | 'Admin';
 
 export type AdminTier = 0 | 1 | 2 | 3;
 
 export interface AdminSession {
 	id: string;
+	/** Supabase Auth user ID; required on every active session. */
+	userId?: string;
 	email: string;
 	name: string;
+	handle?: string;
 	initials: string;
 	role: AdminRole;
 	tier: AdminTier;
 	/** How this browser session authenticated. */
-	auth: 'password' | 'webauthn' | 'password+totp';
+	auth: 'supabase-otp' | 'supabase-oauth';
 	issuedAt: string;
 	expiresAt: string;
 	ip: string;
@@ -308,6 +307,7 @@ export interface AdminUser {
 	bio?: string;
 	link?: string;
 	operatingIdentity?: string;
+	adminRole?: DbAdminRole | 'user';
 	disabledReason?: string;
 	role: 'Attendee' | 'Organizer' | 'Speaker' | 'Staff';
 	kycTier: 0 | 1 | 2 | 3;
@@ -356,15 +356,17 @@ export interface AdminCase {
 
 export interface AdminStaff {
 	id: string;
+	handle: string;
 	name: string;
 	email: string;
 	role: AdminRole;
+	dbRole: DbAdminRole;
 	tier: AdminTier;
-	auth: 'FIDO2 WebAuthn' | 'Passkey + PIN' | 'TOTP fallback';
-	status: 'active' | 'invited' | 'suspended';
+	auth: string;
+	status: 'active' | 'suspended';
+	createdAt: string;
 	lastActive: string;
-	location: string;
-	sessions: number;
+	city: string;
 }
 
 export interface AuditRecord {

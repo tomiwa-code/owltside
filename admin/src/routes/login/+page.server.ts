@@ -1,25 +1,22 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import {
-	authenticate,
-	adminIdentity,
+	authenticateWithOtp,
 	isSecureRequest,
+	requestAdminOtp,
+	safeAdminNext,
+	startAdminGoogleSignIn,
 	writeSessionCookie
 } from '$admin/server/auth';
 import type { AdminSession } from '$admin/types';
 
-function safeNext(raw: string | null): string {
-	if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return '/dashboard';
-	if (raw === '/' || raw.startsWith('/?') || raw.startsWith('/#')) return '/dashboard';
-	if (raw.startsWith('/login')) return '/dashboard';
-	return raw;
-}
-
 export const load: PageServerLoad = ({ locals, url }) => {
-	if (locals.admin) redirect(303, safeNext(url.searchParams.get('next')));
+	const next = safeAdminNext(url.searchParams.get('next'));
+	if (locals.admin) redirect(303, next);
+	const urlError = url.searchParams.get('error')?.trim() || null;
 	return {
-		defaultEmail: adminIdentity().email,
-		next: safeNext(url.searchParams.get('next')),
+		next,
+		urlError,
 		year: new Date().getFullYear()
 	};
 };
@@ -32,22 +29,68 @@ function buildSession(
 }
 
 export const actions: Actions = {
-	credentials: async ({ request, cookies, getClientAddress, url }) => {
+	sendCode: async ({ request, getClientAddress, url }) => {
+		const form = await request.formData();
+		const email = String(form.get('email') ?? '').trim().toLowerCase();
+		const resend = form.get('resend') === '1';
+		const next = safeAdminNext(String(form.get('next') ?? '') || url.searchParams.get('next'));
+
+		if (!email) return fail(400, { error: 'Enter your Owltside email address.', email });
+
+		const result = await requestAdminOtp({
+			email,
+			ip: getClientAddress(),
+			redirectTo: `${url.origin}/auth/callback?next=${encodeURIComponent(next)}`
+		});
+
+		if (!result.ok) {
+			return fail(result.status ?? 403, {
+				error: result.error ?? 'Sign in failed.',
+				email
+			});
+		}
+
+		return { codeSent: true, resent: resend, email: result.email ?? email };
+	},
+
+	verifyCode: async ({ request, cookies, getClientAddress, url }) => {
 		const https = isSecureRequest(request, url);
 		const form = await request.formData();
-		const email = String(form.get('email') ?? '').trim();
-		const password = String(form.get('password') ?? '');
+		const email = String(form.get('email') ?? '').trim().toLowerCase();
+		const code = String(form.get('code') ?? '').trim();
 		const remember = form.get('remember') === 'on';
+		const next = safeAdminNext(String(form.get('next') ?? '') || url.searchParams.get('next'));
 
-		if (!email) return fail(400, { error: 'Enter your work email address.', email });
-		if (!password) return fail(400, { error: 'Enter your security passphrase.', email });
+		if (!email) return fail(400, { error: 'Enter your Owltside email address.', email, codeSent: true });
+		if (!code) return fail(400, { error: 'Enter the 6-digit verification code.', email, codeSent: true });
 
-		const result = await authenticate({ email, password, remember, ip: getClientAddress() });
+		const result = await authenticateWithOtp({
+			email,
+			code,
+			remember,
+			ip: getClientAddress()
+		});
+
 		if (!result.ok || !result.session || !result.expiresAt) {
-			return fail(result.status ?? 401, { error: result.error ?? 'Sign in failed.', email });
+			return fail(result.status ?? 401, {
+				error: result.error ?? 'Sign in failed.',
+				email,
+				codeSent: result.status === 401 || result.status === 400
+			});
 		}
 
 		writeSessionCookie(cookies, buildSession(result.session, result.expiresAt), { https });
-		redirect(303, safeNext(url.searchParams.get('next')));
+		redirect(303, next);
+	},
+
+	google: async ({ request, cookies, url }) => {
+		const https = isSecureRequest(request, url);
+		const form = await request.formData().catch(() => null);
+		const next = safeAdminNext(String(form?.get('next') ?? '') || url.searchParams.get('next'));
+		const result = await startAdminGoogleSignIn({ cookies, url, next, https });
+		if (!result.ok) {
+			return fail(result.status, { error: result.error });
+		}
+		redirect(303, result.url);
 	}
 };

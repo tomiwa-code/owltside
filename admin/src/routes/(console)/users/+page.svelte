@@ -93,7 +93,7 @@
 	>
 		{#snippet actions()}
 			<a class="btn btn-sm" href="/api/export/users" download><Download size={12} /> Export CSV Roster</a>
-			<a class="btn btn-sm btn-primary" href="/staff"><UserCheck size={13} /> Invite Staff</a>
+			<a class="btn btn-sm btn-primary" href="/staff"><UserCheck size={13} /> Roles &amp; Admins</a>
 		{/snippet}
 	</PageHeader>
 
@@ -267,6 +267,11 @@
 							<div class="mt-2 flex flex-wrap gap-1">
 								<StatusChip label={userStatus(selected.status).label} tone={userStatus(selected.status).tone} />
 								<span class="chip !h-[16px] !text-[7.5px]">{selected.role}</span>
+								{#if selected.adminRole === 'superadmin' || selected.adminRole === 'admin'}
+									<span class="chip chip-accent !h-[16px] !text-[7.5px]">
+										{selected.adminRole === 'superadmin' ? 'Super Admin' : 'Admin'}
+									</span>
+								{/if}
 								<span class="chip !h-[16px] !text-[7.5px]">{selected.city}</span>
 							</div>
 						</div>

@@ -17,61 +17,60 @@ owltside/admin/      control plane → http://localhost:5174
 cd admin
 npm install
 npx svelte-kit sync # generate route types
-npm run dev        # http://localhost:5174 (login needs no database)
+npm run dev        # http://localhost:5174 (uses shared Supabase Auth + data)
 npm run check      # svelte-check / TypeScript
-npm test           # vitest unit suite (store, auth, export contracts)
+npm test           # vitest unit suite
 npm run build      # production build (@sveltejs/adapter-vercel)
 ```
 
-## Admin login (no database)
+## Unified Admin authentication & roles
 
-The console uses one server-side administrator account. No Supabase Auth user,
-admin-account table, or login migration is required.
+The Admin console shares **one unified login** with the customer-facing Owltside
+app via Supabase Auth (**Email 6-digit OTP** + **Google OAuth**). There are no
+dummy admins, pre-filled emails, or fixed `ADMIN_EMAIL` / `ADMIN_PASSWORD`
+credentials.
 
-Default credentials:
+Only users whose `public.profiles.role` column is `'superadmin'` or `'admin'`
+are allowed to sign in; all other accounts are rejected with an explicit `403`
+access-denied error.
 
-- **Work email address:** `admin@owltside.com`
-- **Security password:** `owltside-admin-2026`
+### Bootstrap your first Super Admin
 
-Sign in at `/login`. The form pre-fills only the email; passwords are never sent
-to the browser as page data. The login handler and session validation do not
-contact Supabase. Supabase configuration is still needed for the console's live
-platform data (events, users, orders, etc.), separate from authentication.
+1. Apply `../supabase/sql/032_profile_admin_roles.sql` in your Supabase SQL
+   Editor (or `000_full_schema.sql` for a fresh database).
+2. Sign up / sign in once on the main Owltside app if you haven't already so
+   your `public.profiles` row exists.
+3. Open **Supabase Table Editor → `public.profiles`**, locate your user row, and
+   update the `role` column from `user` to `superadmin` (values like
+   `super admin` or `super_admin` are normalized automatically by the database
+   trigger).
+4. Configure `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
+   `SUPABASE_SERVICE_ROLE_KEY`, and `ADMIN_SESSION_SECRET` (`openssl rand -hex 32`
+   in production) on the admin deployment.
+5. Sign in at `/login` using the same email OTP code or Google account you use
+   on the main app. For Google sign-in on a separate admin hostname, add
+   `https://<admin-host>/auth/callback` to Supabase **Authentication → URL
+   Configuration → Redirect URLs**.
 
-### Change credentials and deploy safely
+### Assign or revoke Admin access
 
-Copy `.env.example` to `.env` for local development, or set variables on the
-**admin deployment**:
+Once signed in as a **Super Admin**, open **Roles & Admins** (`/staff`) and click
+**Assign Administrator**:
 
-- `ADMIN_EMAIL` / `ADMIN_PASSWORD`: optional server-side overrides. Leaving them
-  unset or empty uses the defaults above. Change the publicly known password
-  before exposing a production console; keep it behind a VPN/access gateway.
-- `ADMIN_NAME`: optional display name (default: Owltside Admin).
-- `ADMIN_SESSION_SECRET`: required in production; generate with
-  `openssl rand -hex 32`. Keep it private and consistent across server instances.
-
-Restart/redeploy after changing configuration. Changing the email, password, or
-signing secret invalidates existing signed console cookies. Sessions last two
-hours, or twelve hours when the device is remembered. Five failed attempts cause
-a ten-minute per-IP lockout on that server process. A shared gateway limiter is
-recommended for multi-instance production deployments.
-
-Existing database-backed admin sessions must sign in again after this upgrade.
-The former admin-account migrations and their sections in the all-in-one schema
-have been removed. **Removing migration files does not undo SQL already run in a
-live Supabase project.** Existing tables, Auth users and triggers are not dropped
-or modified by this change; the new login simply does not read them.
-
-The `/staff` directory and invitation/status controls remain in-memory workflow
-stubs. They do not create additional login accounts or revoke the single admin's
-sessions. For a forgotten password, change `ADMIN_PASSWORD` in server settings
-and redeploy. Browser diagnostics are read-only and do not consume login attempts.
+- Pick any existing Owltside user or enter a new user's email address (which
+  provisions a confirmed Owltside account automatically so the same login works
+  on both the main app and the admin dashboard).
+- Choose **Admin** (operational dashboard access) or **Super Admin** (full
+  governance + managing admins and platform settings).
+- Role changes and removals update `public.profiles.role` immediately and are
+  enforced on every subsequent request without waiting for session cookies to
+  expire.
 
 ## Routes
 
 | Route | Purpose |
 | --- | --- |
-| `/login` | Server-side password sign-in, rate-limited, signed HttpOnly cookie |
+| `/login` | Unified Owltside Email 6-digit OTP + Google OAuth sign-in, role-gated (`admin` / `superadmin`) |
 | `/dashboard` | GMV/settlement KPIs, revenue velocity, review queue, top events, live ledger |
 | `/search` | Federated Search HUD (users, passes, orders, events, organizers, incidents) |
 | `/events`, `/events/[id]` | Organizer submission queue (live Supabase), approve/publish/reject, capacity & compliance |
@@ -85,7 +84,7 @@ and redeploy. Browser diagnostics are read-only and do not consume login attempt
 | `/reports` | Content reports from the public app: event listings and public profiles, action/dismiss with a note |
 | `/moderation` | Incident triage, forensic telemetry, warn / dismiss / freeze sales |
 | `/audit`, `/audit/[id]` | Immutable hash-chained ledger + forensic record dossier |
-| `/staff` | Staff workflow stubs and permission matrix (not login accounts) |
+| `/staff` | Live Roles & Administrators directory (`public.profiles.role`), assign/revoke Admin & Super Admin access |
 | `/settings` | Paystack rails, credential policy, signing keys, integrations |
 
 Every list view supports `?q=`, status filters and pagination; the URL is the
@@ -181,10 +180,8 @@ customer app.
 
 | Tier | Role | Capabilities |
 | --- | --- | --- |
-| 0 | Super Admin | Everything: settings, staff, refunds, exports |
-| 1 | Finance & Treasury / Trust & Safety Lead | Configure rails, approve refunds, KYC decisions |
-| 2 | Event Operations / Support | Mutations: void/reissue passes, moderation actions |
-| 3 | Read-only Auditor | Read + export only |
+| 0 | Super Admin (`superadmin`) | Everything: platform settings, assign/remove admins, approvals, refunds, announcements, exports |
+| 1 | Admin (`admin`) | Operational dashboard access: events, approvals, refunds, users, organizers, reports, moderation, announcements, exports |
 
 Guards live in `src/lib/server/auth.ts` (`requireMutation`, `requireConfigure`,
 `requireSuper`, `requireAudit`) and are enforced **server-side** in every
@@ -282,11 +279,13 @@ cd admin
 npm test
 ```
 
-`tests/auth.test.ts` covers default and server-overridden credentials without
-network access, lockout, cookie signing/expiry, credential rotation, legacy cookie
-rejection and tier guards. `tests/login-response.test.ts` covers SvelteKit action
-response decoding and read-only diagnostics. The remaining admin suites cover
-verification workflows, announcements and UI regressions.
+`tests/auth.test.ts` covers role-gated Email OTP & Google OAuth authentication,
+rejection of non-admin users, lockout, signed session cookies, live role refresh
+and revocation, legacy cookie rejection and tier guards. `tests/login-action.test.ts`
+and `tests/login-response.test.ts` cover login actions, response decoding and
+read-only diagnostics. `../tests/unit/profile-admin-roles-database.test.ts` tests
+`032_profile_admin_roles.sql` in PGlite (normalization of `super admin`,
+blocking client-side role escalation, and main-app profile upsert safety).
 
 ## Deploy
 

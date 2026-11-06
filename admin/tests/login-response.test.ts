@@ -13,14 +13,14 @@ vi.mock('../node_modules/@sveltejs/kit/src/runtime/server/app.js', () => ({
 }));
 import { loginFailureMessage, readLoginResult } from '$admin/utils/login-response';
 
-const message = 'Email or security password is incorrect. 4 attempts left.';
+const message = 'Access denied. Only administrators and super administrators can sign in to the Owltside Admin workspace.';
 
 describe('login action response handling', () => {
-	it('decodes the serialized failure from the screenshot instead of exposing devalue JSON', async () => {
-		const data = JSON.stringify([{ error: 1, email: 2 }, message, 'admin@owltside.com']);
-		const result = await readLoginResult(Response.json({ type: 'failure', status: 401, data }, { status: 401 }));
-		expect(result).toEqual({ type: 'failure', status: 401, data: { error: message, email: 'admin@owltside.com' } });
-		expect(loginFailureMessage(result!, 401)).toBe(message);
+	it('decodes serialized action failures cleanly instead of exposing devalue JSON', async () => {
+		const data = JSON.stringify([{ error: 1, email: 2 }, message, 'user@example.com']);
+		const result = await readLoginResult(Response.json({ type: 'failure', status: 403, data }, { status: 403 }));
+		expect(result).toEqual({ type: 'failure', status: 403, data: { error: message, email: 'user@example.com' } });
+		expect(loginFailureMessage(result!, 403)).toBe(message);
 	});
 
 	it('preserves redirect results for successful sign-in', async () => {
@@ -47,7 +47,8 @@ describe('login action response handling', () => {
 		const diagnostics = source.slice(source.indexOf('async function runDiagnostics()'), source.indexOf('\n\t/**\n\t * Landing back'));
 		expect(diagnostics).not.toContain('POST');
 		expect(diagnostics).not.toContain('FormData');
-		expect(diagnostics).not.toContain('?/credentials');
+		expect(diagnostics).not.toContain('?/sendCode');
+		expect(diagnostics).not.toContain('?/verifyCode');
 		expect(diagnostics).toContain("fetch('/api/session-probe'");
 	});
 });

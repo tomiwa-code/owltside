@@ -5,7 +5,7 @@ import UserProfile from '../src/routes/(console)/users/[id]/+page.svelte';
 import type { AdminSession, AdminUser } from '../src/lib/types';
 
 const admin: AdminSession = {
-	id: 'admin-1', name: 'Review Admin', email: 'admin@example.com', initials: 'RA', role: 'Trust & Safety Lead', tier: 1, auth: 'password+totp', demo: false, ip: '127.0.0.1', issuedAt: '2026-11-01T10:00:00Z', expiresAt: '2026-12-01T10:00:00Z'
+	id: 'admin-1', userId: '22222222-3333-4444-8555-666666666666', name: 'Review Admin', email: 'admin@example.com', initials: 'RA', role: 'Admin', tier: 1, auth: 'supabase-otp', demo: false, ip: '127.0.0.1', issuedAt: '2026-11-01T10:00:00Z', expiresAt: '2026-12-01T10:00:00Z'
 };
 
 const user: AdminUser = {
