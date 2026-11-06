@@ -68,10 +68,6 @@
 
 			</div>
 			<div class="relative flex-1 flex flex-col justify-center gap-6">
-				<div class="flex items-center gap-2">
-					<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
-					<span class="{MONO} text-on-surface-variant">Auth_Protocol // Onboard // NGA-LOS-01</span>
-				</div>
 				<img src="/logo-stacked.png" alt="Owltside" class="w-40 max-h-36 object-contain self-start" />
 				<p class="text-body-lg text-on-surface-variant max-w-md">
 					One account for discovery, instant passes and offline gate entry. Passwordless
@@ -112,7 +108,6 @@
 			<div class="w-full max-w-md flex flex-col gap-6">
 				<div class="flex items-end justify-between gap-4">
 					<div>
-						<span class="{MONO} text-on-surface-variant">Node Access // Sign Up</span>
 						<h2 class="font-display text-headline-lg text-on-surface pt-2">Create your account</h2>
 					</div>
 					<a href={loginHref} class="{MONO} text-primary hover:underline shrink-0 pb-1">Login</a>

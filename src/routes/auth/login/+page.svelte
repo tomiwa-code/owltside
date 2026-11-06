@@ -72,10 +72,6 @@
 
 			</div>
 			<div class="relative flex-1 flex flex-col justify-center gap-6">
-				<div class="flex items-center gap-2">
-					<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
-					<span class="{MONO} text-on-surface-variant">Auth_Protocol // OTP-6 // NGA-LOS-01</span>
-				</div>
 				<h1 class="font-display text-display-hero text-on-surface">Welcome back to the night side.</h1>
 				<p class="text-body-lg text-on-surface-variant max-w-md">
 					Your instant radar for tonight's music arenas, secret sets, and gate tickets.
@@ -109,7 +105,6 @@
 			<div class="w-full max-w-md flex flex-col gap-6">
 				<div class="flex items-end justify-between gap-4">
 					<div>
-						<span class="{MONO} text-on-surface-variant">Node Access // Login</span>
 						<h2 class="font-display text-headline-lg text-on-surface pt-2">Sign in to Owltside</h2>
 					</div>
 					<a href={signupHref} class="{MONO} text-primary hover:underline shrink-0 pb-1">Sign Up</a>
