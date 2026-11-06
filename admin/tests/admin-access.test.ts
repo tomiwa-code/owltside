@@ -29,21 +29,28 @@ describe('trusted database admin access', () => {
 	});
 
 	it.each(Object.entries(ROLE_TIERS))('reads the trusted user ID and validates %s tier %s', async (role, tier) => {
-		const row = { user_id: 'auth-user-1', name: 'Admin', role, tier, is_active: true };
+		const row = { user_id: 'auth-user-1', name: 'Admin', role, tier, is_active: true, work_email: 'admin@owltside.com', session_version: 1 };
 		mocks.maybeSingle.mockResolvedValue({ data: row, error: null });
 		expect(await getAdminAccess('auth-user-1')).toEqual(row);
 		expect(mocks.from).toHaveBeenCalledWith('admin_accounts');
+		expect(mocks.select).toHaveBeenCalledWith('user_id, name, role, tier, is_active, work_email, session_version');
 		expect(mocks.eq).toHaveBeenCalledWith('user_id', 'auth-user-1');
 	});
 
 	it.each([
 		null,
 		{ name: 'Admin', role: 'Super Admin', tier: 0, is_active: false },
-		{ name: 'Admin', role: 'Read-only Auditor', tier: 0, is_active: true },
-		{ name: 'Admin', role: 'invented', tier: 0, is_active: true },
-		{ name: ' ', role: 'Super Admin', tier: 0, is_active: true }
+		{ name: 'Admin', role: 'Read-only Auditor', tier: 0, is_active: true, work_email: 'admin@owltside.com', session_version: 1 },
+		{ name: 'Admin', role: 'invented', tier: 0, is_active: true, work_email: 'admin@owltside.com', session_version: 1 },
+		{ name: ' ', role: 'Super Admin', tier: 0, is_active: true, work_email: 'admin@owltside.com', session_version: 1 }
 	])('rejects missing, inactive, or malformed access: %j', async (data) => {
 		mocks.maybeSingle.mockResolvedValue({ data, error: null });
+		expect(await getAdminAccess('auth-user-1')).toBeNull();
+	});
+
+	it.each([0, -1, undefined, 1.5])('rejects invalid credential session versions: %s', async (session_version) => {
+		mocks.maybeSingle.mockResolvedValue({ data: { user_id: 'auth-user-1', name: 'Admin', role: 'Super Admin', tier: 0,
+			is_active: true, work_email: 'admin@owltside.com', session_version }, error: null });
 		expect(await getAdminAccess('auth-user-1')).toBeNull();
 	});
 
