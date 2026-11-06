@@ -133,9 +133,6 @@
 			<p class="text-body-md text-on-surface-variant mt-2">Operating identity, alert pipelines, on-device pass cache and security posture for this access node.</p>
 		</div>
 		<div class="flex items-center gap-3">
-			<span class="h-10 px-3.5 rounded-lg flex items-center gap-2 {MONO} text-on-surface-variant border border-surface-glass-border">
-				<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> Local Node Synced
-			</span>
 			<button
 				class="h-10 px-4 rounded-lg flex items-center gap-2 bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors"
 				onclick={() => toast('Preferences synced to mesh node 0x7E3', 'success')}

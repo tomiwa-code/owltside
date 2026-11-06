@@ -110,10 +110,6 @@
 	<div class="{WRAP} pt-10 pb-2">
 		<div class="flex items-end justify-between gap-6">
 			<div>
-				<div class="flex items-center gap-2">
-					<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
-					<span class="{MONO} text-on-surface-variant">Regional Feed // NGA-LOS-01</span>
-				</div>
 				<h1 class="font-display text-display-hero text-on-surface pt-3">Live Signals &amp; Gatherings</h1>
 			</div>
 			<div class="hidden lg:flex items-center gap-2 pb-2">

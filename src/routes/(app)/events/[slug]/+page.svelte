@@ -103,7 +103,6 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 		}
 		return [...map.values()];
 	});
-	const sessionId = $derived(`0x${event.id.replace(/[^a-z0-9]/gi, '').slice(0, 5).toUpperCase() || 'P4I5M'}`);
 
 	function contactOrganizer() {
 		if (!session) {
@@ -236,10 +235,6 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 				<span class="text-outline-variant">/</span>
 				<span class="text-on-surface truncate">{event.title}</span>
 			</nav>
-			<span class="flex items-center gap-4 {MONO} text-on-surface-variant">
-				<span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span> Session_ID: {sessionId}</span>
-				<span class="hidden lg:inline">Protocol V4.2_Verified</span>
-			</span>
 		</div>
 	</div>
 
@@ -638,16 +633,6 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 						</span>
 					{/each}
 				</div>
-			</div>
-
-			<div class="rounded-xl border border-surface-glass-border bg-surface-container px-5 py-4 flex items-center gap-3">
-				<span class="flex -space-x-2 shrink-0">
-					<Avatar name="Ada Ugo" size="xs" />
-					<Avatar name="Bola Ken" size="xs" />
-					<span class="w-7 h-7 rounded-full bg-surface-container-high border-2 border-surface-container font-code text-[10px] text-on-surface-variant flex items-center justify-center">+85</span>
-				</span>
-				<span class="flex-1 text-body-sm text-on-surface min-w-0 truncate">84 developers joined today</span>
-				<span class="{MONO} text-on-surface-variant shrink-0">{soldPct}% Cap</span>
 			</div>
 		</aside>
 	</div>
