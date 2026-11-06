@@ -6,7 +6,6 @@
 		Bell,
 		CalendarDays,
 		ChevronDown,
-		Fingerprint,
 		Grid3x3,
 		KeyRound,
 		List,
@@ -57,7 +56,6 @@
 	let maxPrice = $state(Number(params.get('maxPrice') ?? 250_000));
 	let freeOnlyDesk = $state(params.get('freeOnly') === '1' || params.get('free') === '1');
 	let gateQR = $state(params.get('gateQR') !== '0');
-	let gateBio = $state(params.get('gateBio') === '1');
 	let gateTurnstile = $state(params.get('gateTurnstile') === '1');
 	let activeRange = $state<'today' | 'tomorrow' | 'weekend' | 'custom' | null>(null);
 	let visible = $state(6);
@@ -103,9 +101,8 @@
 				return false;
 			const modes = (e.gates ?? []).flatMap((g) => g.modes);
 			const hasQR = modes.includes('QR') || modes.length === 0;
-			const hasNFC = modes.includes('NFC');
 			const hasManual = modes.includes('Manual') || modes.length === 0;
-			return (gateQR && hasQR) || (gateBio && hasNFC) || (gateTurnstile && hasManual);
+			return (gateQR && hasQR) || (gateTurnstile && hasManual);
 		})
 	);
 	const shown = $derived(displayed.slice(0, visible));
@@ -142,14 +139,6 @@
 					apply({ free: null });
 				}
 			});
-		if (gateBio)
-			chips.push({
-				label: 'Biometric gate',
-				clear: () => {
-					gateBio = false;
-					apply({ gateBio: null });
-				}
-			});
 		if (gateTurnstile)
 			chips.push({
 				label: 'Turnstile gate',
@@ -180,7 +169,6 @@
 
 	const cardFeatures: [any, string][] = [
 		[QrCode, 'Instant QR Verification Active'],
-		[Fingerprint, 'Fast-Pass Node Supported'],
 		[BadgeCheck, 'Open Protocol Registration'],
 		[KeyRound, 'Identity Attested Invite'],
 		[Radio, 'Spatial Audio NFC Gateway']
@@ -200,7 +188,6 @@
 	let fZone = $state(zone);
 	let fMaxPrice = $state(maxPrice);
 	let fGateQR = $state(gateQR);
-	let fGateBio = $state(gateBio);
 	let fGateTurnstile = $state(gateTurnstile);
 
 	function syncFilterDrafts() {
@@ -212,7 +199,6 @@
 		fZone = zone;
 		fMaxPrice = maxPrice;
 		fGateQR = gateQR;
-		fGateBio = gateBio;
 		fGateTurnstile = gateTurnstile;
 	}
 
@@ -243,7 +229,6 @@
 			(params.get('sort') ? 1 : 0) +
 			(zone ? 1 : 0) +
 			(maxPrice < 250_000 ? 1 : 0) +
-			(gateBio ? 1 : 0) +
 			(gateTurnstile ? 1 : 0) +
 			(!gateQR ? 1 : 0)
 	);
@@ -269,7 +254,6 @@
 		maxPrice = 250_000;
 		freeOnlyDesk = false;
 		gateQR = true;
-		gateBio = false;
 		gateTurnstile = false;
 		activeRange = null;
 		visible = 6;
@@ -284,7 +268,6 @@
 			zone: null,
 			maxPrice: null,
 			gateQR: null,
-			gateBio: null,
 			gateTurnstile: null,
 			view: null
 		});
@@ -296,7 +279,6 @@
 		maxPrice = fMaxPrice;
 		freeOnlyDesk = fFree;
 		gateQR = fGateQR;
-		gateBio = fGateBio;
 		gateTurnstile = fGateTurnstile;
 		visible = 6;
 		apply({
@@ -308,7 +290,6 @@
 			zone: fZone || null,
 			maxPrice: fMaxPrice >= 250_000 ? null : String(fMaxPrice),
 			gateQR: fGateQR ? null : '0',
-			gateBio: fGateBio ? '1' : null,
 			gateTurnstile: fGateTurnstile ? '1' : null
 		});
 	}
@@ -518,17 +499,15 @@
 				<div class="flex flex-col gap-1 pt-1">
 					{#each [
 						{ key: 'qr', title: 'Instant QR Node', sub: 'Offline cryptographically signed' },
-						{ key: 'bio', title: 'Biometric Fast-Pass', sub: 'Hardware terminal gate sync' },
 						{ key: 'turn', title: 'General Turnstile', sub: 'Standard RFID badge or code' }
 					] as row (row.key)}
 						<label class="flex items-start gap-3 px-2 py-2 rounded-lg hover:bg-surface-container-high/60 cursor-pointer transition-colors">
 							<input
 								type="checkbox"
 								class="accent-[#c0c1ff] w-4 h-4 mt-0.5"
-								checked={row.key === 'qr' ? gateQR : row.key === 'bio' ? gateBio : gateTurnstile}
+								checked={row.key === 'qr' ? gateQR : gateTurnstile}
 								onchange={() => {
 									if (row.key === 'qr') gateQR = !gateQR;
-									else if (row.key === 'bio') gateBio = !gateBio;
 									else gateTurnstile = !gateTurnstile;
 								}}
 							/>
@@ -1032,13 +1011,11 @@
 			<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Gate clearance type</span>
 			{#each [
 				{ key: 'qr', title: 'Instant QR node', sub: 'Offline cryptographically signed' },
-				{ key: 'bio', title: 'Biometric fast-pass', sub: 'Hardware terminal gate sync' },
 				{ key: 'turnstile', title: 'General turnstile', sub: 'Standard RFID badge or code' }
 			] as gate (gate.key)}
 				<label class="flex items-start gap-3 rounded-xl bg-surface-container-low border border-surface-glass-border p-3 cursor-pointer">
-					<input type="checkbox" class="mt-0.5 w-4 h-4 accent-[#c0c1ff]" checked={gate.key === 'qr' ? fGateQR : gate.key === 'bio' ? fGateBio : fGateTurnstile} onchange={() => {
+					<input type="checkbox" class="mt-0.5 w-4 h-4 accent-[#c0c1ff]" checked={gate.key === 'qr' ? fGateQR : fGateTurnstile} onchange={() => {
 						if (gate.key === 'qr') fGateQR = !fGateQR;
-						else if (gate.key === 'bio') fGateBio = !fGateBio;
 						else fGateTurnstile = !fGateTurnstile;
 					}} />
 					<span><span class="block text-body-sm text-on-surface">{gate.title}</span><span class="block text-label-badge text-on-surface-variant pt-0.5">{gate.sub}</span></span>

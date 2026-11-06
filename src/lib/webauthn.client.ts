@@ -40,6 +40,32 @@ export function base64UrlToBuffer(value: string): ArrayBuffer {
 	return bytes.buffer;
 }
 
+/**
+ * Desktop-class browsers (Windows Hello, Mac Touch ID, Linux/ChromeOS) can expose a
+ * platform authenticator, but biometric unlock is a phone/tablet affordance. Biometrics
+ * are therefore removed on desktop-class devices regardless of window width.
+ */
+export function isDesktopClassDevice(): boolean {
+	if (!browser) return false;
+	const ua = navigator.userAgent || '';
+	const touchPoints = navigator.maxTouchPoints ?? 0;
+	// iPadOS 13+ masquerades as desktop Safari ("Macintosh") but still reports touch points.
+	if (/Macintosh/i.test(ua) && touchPoints > 1) return false;
+	if (
+		/Android|iPhone|iPad|iPod|Mobile|Tablet|Silk|Kindle|Opera Mini|IEMobile|Windows Phone/i.test(
+			ua
+		)
+	) {
+		return false;
+	}
+	// Chromium client hints are the most reliable signal where available.
+	const mobileHint = (
+		navigator as Navigator & { userAgentData?: { mobile?: boolean } }
+	).userAgentData?.mobile;
+	if (typeof mobileHint === 'boolean') return !mobileHint;
+	return true;
+}
+
 export function detectBiometricDeviceLabel(): string {
 	if (!browser) return 'Device Biometrics';
 	const ua = navigator.userAgent || '';
@@ -59,6 +85,12 @@ export async function isPlatformBiometricAvailable(): Promise<{
 		return {
 			supported: false,
 			reason: 'Biometrics require a secure connection (HTTPS or localhost).'
+		};
+	}
+	if (isDesktopClassDevice()) {
+		return {
+			supported: false,
+			reason: 'Biometric unlock is available on phones and tablets only.'
 		};
 	}
 	if (typeof window.PublicKeyCredential === 'undefined' || !navigator.credentials) {

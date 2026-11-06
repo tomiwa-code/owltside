@@ -27,8 +27,37 @@ import {
 	clearBiometricSessionUnlocked,
 	consumeJustAuthenticatedCookie,
 	isBiometricSessionUnlocked,
+	isDesktopClassDevice,
+	isPlatformBiometricAvailable,
 	readStoredBiometric
 } from '$lib/webauthn.client';
+
+const IPHONE_UA =
+	'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+const IPAD_DESKTOP_UA =
+	'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15';
+const MAC_DESKTOP_UA =
+	'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+const WINDOWS_DESKTOP_UA =
+	'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+const ANDROID_UA =
+	'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
+
+function setUserAgent(ua: string) {
+	Object.defineProperty(window.navigator, 'userAgent', { configurable: true, get: () => ua });
+}
+
+function setTouchPoints(points: number) {
+	Object.defineProperty(window.navigator, 'maxTouchPoints', {
+		configurable: true,
+		get: () => points
+	});
+}
+
+function resetUserAgent() {
+	delete (window.navigator as { userAgent?: string }).userAgent;
+	delete (window.navigator as { maxTouchPoints?: number }).maxTouchPoints;
+}
 
 const signedInSession = {
 	userId: 'user-ada-001',
@@ -42,7 +71,12 @@ const signedInSession = {
 
 function installWebAuthnMock(options?: {
 	rejectAutomaticOnce?: boolean;
+	desktop?: boolean;
 }) {
+	if (!options?.desktop) {
+		setUserAgent(IPHONE_UA);
+		setTouchPoints(0);
+	}
 	let rejectOnce = Boolean(options?.rejectAutomaticOnce);
 	const rawCredId = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer;
 	const dummyBytes = new Uint8Array([10, 20, 30, 40]).buffer;
@@ -147,6 +181,8 @@ describe('Login, Sign-up, and Post-Splash Biometric Unlock', () => {
 		localStorage.clear();
 		sessionStorage.clear();
 		document.cookie = `${BIOMETRIC_JUST_AUTHED_COOKIE}=; Path=/; Max-Age=0`;
+		setUserAgent(IPHONE_UA);
+		setTouchPoints(0);
 		setPageUrl('http://localhost/');
 		Object.assign(page.data, { session: null });
 	});
@@ -155,6 +191,7 @@ describe('Login, Sign-up, and Post-Splash Biometric Unlock', () => {
 		cleanup();
 		vi.useRealTimers();
 		vi.unstubAllGlobals();
+		resetUserAgent();
 		localStorage.clear();
 		sessionStorage.clear();
 	});
@@ -274,6 +311,62 @@ describe('Login, Sign-up, and Post-Splash Biometric Unlock', () => {
 			expect(gotoMock).toHaveBeenCalledWith('/home', { replaceState: true });
 		});
 		expect(isBiometricSessionUnlocked(signedInSession.userId)).toBe(true);
+	});
+
+	it('removes biometrics on desktop-class devices but keeps them on phones and tablets', async () => {
+		setTouchPoints(0);
+		setUserAgent(MAC_DESKTOP_UA);
+		expect(isDesktopClassDevice()).toBe(true);
+		setUserAgent(WINDOWS_DESKTOP_UA);
+		expect(isDesktopClassDevice()).toBe(true);
+		setUserAgent(IPHONE_UA);
+		expect(isDesktopClassDevice()).toBe(false);
+		setUserAgent(ANDROID_UA);
+		expect(isDesktopClassDevice()).toBe(false);
+		// iPadOS 13+ reports a Macintosh user agent but still exposes touch points.
+		setUserAgent(IPAD_DESKTOP_UA);
+		setTouchPoints(5);
+		expect(isDesktopClassDevice()).toBe(false);
+
+		// Even with a platform authenticator present, desktop-class browsers report biometrics unsupported.
+		setUserAgent(MAC_DESKTOP_UA);
+		setTouchPoints(0);
+		installWebAuthnMock({ desktop: true });
+		await expect(isPlatformBiometricAvailable()).resolves.toEqual({
+			supported: false,
+			reason: 'Biometric unlock is available on phones and tablets only.'
+		});
+
+		setUserAgent(IPHONE_UA);
+		await expect(isPlatformBiometricAvailable()).resolves.toEqual({ supported: true });
+	});
+
+	it('goes straight from the splash screen into the app on desktop without any biometric prompt', async () => {
+		vi.useFakeTimers();
+		setUserAgent(MAC_DESKTOP_UA);
+		setTouchPoints(0);
+		const { createSpy, getSpy } = installWebAuthnMock({ desktop: true });
+
+		setPageUrl('http://localhost/');
+		Object.assign(page.data, { session: signedInSession });
+		render(SplashPage);
+
+		const gate = screen.getByTestId('splash-biometric-gate');
+		expect(gate.getAttribute('data-gate-phase')).toBe('splash');
+		expect(screen.getByText('Everything happening around you.')).toBeInTheDocument();
+
+		// Advance past the splash without ever landing on the biometric screen.
+		await vi.advanceTimersByTimeAsync(2_500);
+		await tick();
+
+		expect(gate.getAttribute('data-gate-phase')).toBe('splash');
+		expect(screen.queryByText(/Welcome back, Ada Obi/i)).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole('button', { name: /Unlock with Fingerprint \/ Face ID/i })
+		).not.toBeInTheDocument();
+		expect(gotoMock).toHaveBeenCalledWith('/home', { replaceState: true });
+		expect(createSpy).not.toHaveBeenCalled();
+		expect(getSpy).not.toHaveBeenCalled();
 	});
 
 	it('consumes just-authenticated email OTP cookie once and requires biometrics again after closing the app', () => {

@@ -6,6 +6,7 @@
 		clearBiometricSessionUnlocked,
 		detectBiometricDeviceLabel,
 		isBiometricUserCancelledError,
+		isDesktopClassDevice,
 		markBiometricSessionUnlocked,
 		readStoredBiometric,
 		verifyOrEnrollBiometrics
@@ -45,6 +46,11 @@
 
 	$effect(() => {
 		if (!startWithSplash) {
+			/* Desktop-class browsers have biometrics removed: enter straight away. */
+			if (isDesktopClassDevice()) {
+				onUnlocked();
+				return;
+			}
 			phase = 'biometric';
 			return;
 		}
@@ -56,7 +62,9 @@
 			if (pct >= 100) {
 				clearInterval(interval);
 				transitionTimer = setTimeout(() => {
-					phase = 'biometric';
+					/* Desktop-class browsers have biometrics removed: enter straight away. */
+					if (isDesktopClassDevice()) onUnlocked();
+					else phase = 'biometric';
 				}, 350);
 			}
 		}, 60);

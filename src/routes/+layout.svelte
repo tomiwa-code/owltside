@@ -12,6 +12,7 @@
 		clearBiometricSessionUnlocked,
 		consumeJustAuthenticatedCookie,
 		isBiometricSessionUnlocked,
+		isDesktopClassDevice,
 		isPlatformBiometricAvailable,
 		markBiometricSessionUnlocked,
 		readStoredBiometric
@@ -56,6 +57,14 @@
 		}
 
 		if (onRootOrAuth) {
+			biometricGateOpen = false;
+			return;
+		}
+
+		/* Biometrics are removed on desktop-class devices — never gate them. */
+		if (isDesktopClassDevice()) {
+			consumeJustAuthenticatedCookie(session.userId);
+			checkedUserId = session.userId;
 			biometricGateOpen = false;
 			return;
 		}
@@ -128,6 +137,9 @@
 			) {
 				return;
 			}
+
+			/* Biometrics are removed on desktop-class devices — no re-lock there. */
+			if (isDesktopClassDevice()) return;
 
 			const isStandalone =
 				Boolean(window.matchMedia?.('(display-mode: standalone)').matches) ||
