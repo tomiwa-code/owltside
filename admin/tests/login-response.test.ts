@@ -13,7 +13,7 @@ vi.mock('../node_modules/@sveltejs/kit/src/runtime/server/app.js', () => ({
 }));
 import { loginFailureMessage, readLoginResult } from '$admin/utils/login-response';
 
-const message = 'Invalid credentials or admin access unavailable. 4 attempts left.';
+const message = 'Email or security password is incorrect. 4 attempts left.';
 
 describe('login action response handling', () => {
 	it('decodes the serialized failure from the screenshot instead of exposing devalue JSON', async () => {

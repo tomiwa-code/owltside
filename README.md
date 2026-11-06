@@ -76,8 +76,6 @@ code paths switch to the live backend — no component changes.
    - `031_platform_announcements.sql` — service-role-only, atomic admin
      announcements: one durable send record plus an unread notification for
      every public profile
-   - `032_admin_accounts.sql` — Supabase Auth-linked admin access list (see `admin/README.md` for first-admin setup)
-   - `033_admin_account_credentials.sql` — editable admin work email and write-only password reset field, synchronized with Auth
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
@@ -390,17 +388,19 @@ fresh setups), then deploy both apps against that same database.
   direct API calls. An outstanding admin request is shown as **Awaiting user**, not
   as a pending submission that could be approved before the user responds.
 
-### Admin login accounts
+### Admin login (no database)
 
-The separate admin console uses Supabase Auth email/password plus the
-`public.admin_accounts` allowlist. Apply `supabase/sql/032_admin_accounts.sql`
-and follow [first-admin setup](admin/README.md#admin-accounts-supabase-auth--database-access-list).
-Migration 032 bootstraps `admin@owltside.com` with the initial password
-`owltside-admin-2026`. Change this shared default before production use.
-Passwords are managed in Authentication → Users, not stored in the allowlist.
+The separate admin console verifies its single account on the server without
+Supabase Auth or an admin database table:
 
-Apply migration 033 before deploying the current admin login. In Table Editor,
-edit `admin_accounts.work_email` to change a login email and enter a new password
-in `security_password` to reset it. The password input clears to NULL after save;
-only its bcrypt hash is retained in Supabase Auth. Credential edits invalidate
-existing admin-console sessions. See `admin/README.md` for restrictions and setup.
+- Work email: `admin@owltside.com`
+- Security password: `owltside-admin-2026`
+
+Optional server-only `ADMIN_EMAIL` / `ADMIN_PASSWORD` overrides replace those
+defaults. Set `ADMIN_SESSION_SECRET` in production. Change the publicly known
+password before exposing the admin console. Supabase is still used for live
+platform data, not login. See [admin setup](admin/README.md#admin-login-no-database).
+
+The former admin-account migration files and their all-in-one schema sections
+have been removed. This does not undo migrations already applied to a live
+project or delete any existing Supabase Auth users/tables/triggers.

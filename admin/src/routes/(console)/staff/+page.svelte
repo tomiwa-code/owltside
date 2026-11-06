@@ -134,9 +134,10 @@
 
 	<div class="panel border border-amber-500/30 p-4 text-[12px] leading-relaxed text-amber-100" role="note">
 		<strong>Workflow preview — not the login access list.</strong>
-		These staff records and controls are in-memory stubs. Manage real accounts in
-		Supabase Authentication → Users and <code>public.admin_accounts</code>.
-		Set <code>is_active = false</code> there to revoke admin access, including existing sessions.
+		These staff records and controls are in-memory stubs, not login accounts.
+		The console uses a single server-configured administrator. Change
+		<code>ADMIN_EMAIL</code> / <code>ADMIN_PASSWORD</code> on the server and restart
+		to update credentials and invalidate existing sessions.
 	</div>
 
 	<div class="grid grid-cols-2 gap-2.5 lg:grid-cols-4">

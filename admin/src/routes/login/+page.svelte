@@ -348,7 +348,7 @@
 					<div>
 						<label class="field-label" for="email">
 							<span>Work email address</span>
-							<span class="!text-[8px] !tracking-[0.12em] text-[#6a6a76]">Supabase Auth</span>
+							<span class="!text-[8px] !tracking-[0.12em] text-[#6a6a76]">Server credentials</span>
 						</label>
 						<div class="relative">
 							<Mail size={14} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#6f6f7b]" />
@@ -368,7 +368,7 @@
 					<div>
 						<label class="field-label" for="password">
 							<span>Security password</span>
-							<span class="!text-[8px] !tracking-[0.12em] text-[#6a6a76]">Supabase Auth</span>
+							<span class="!text-[8px] !tracking-[0.12em] text-[#6a6a76]">Server credentials</span>
 						</label>
 						<div class="relative">
 							<span class="pointer-events-none absolute left-3 top-1/2 flex -translate-y-1/2 items-center gap-0.5 text-[#6f6f7b]">
@@ -462,7 +462,7 @@
 
 				<div class="mt-5 border-t border-[#26262e] pt-4 text-center">
 					<p class="font-code text-[9px] uppercase tracking-[0.12em] text-[#9c9ca8]">
-						Forgot your password? Contact your administrator for Supabase account recovery.
+						Forgot your password? Ask your server administrator to update ADMIN_PASSWORD.
 					</p>
 				</div>
 			</div>

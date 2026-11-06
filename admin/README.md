@@ -17,164 +17,61 @@ owltside/admin/      control plane → http://localhost:5174
 cd admin
 npm install
 npx svelte-kit sync # generate route types
-npm run dev        # http://localhost:5174 (Supabase configuration required)
+npm run dev        # http://localhost:5174 (login needs no database)
 npm run check      # svelte-check / TypeScript
 npm test           # vitest unit suite (store, auth, export contracts)
 npm run build      # production build (@sveltejs/adapter-vercel)
 ```
 
-## Admin accounts: Supabase Auth + database access list
+## Admin login (no database)
 
-There is no environment-based login bypass. Admins sign in with
-**Supabase Auth email/password**. Migration 032 bootstraps the initial account
-listed below; provision individual accounts for your team. Password hashes are
-managed by Supabase in `auth.users`; **never retain readable passwords in a public table**.
-`public.admin_accounts` is the separate allowlist of permitted administrators.
-A customer account alone does not grant any admin access.
+The console uses one server-side administrator account. No Supabase Auth user,
+admin-account table, or login migration is required.
 
-### Set up your first admin
+Default credentials:
 
-1. Run `supabase/sql/032_admin_accounts.sql` in the **same Supabase project's SQL
-   Editor** after migration 031. It creates `public.admin_accounts`, visible in
-   Table Editor. Then run `supabase/sql/033_admin_account_credentials.sql` to
-   enable table-based credential editing. New all-in-one schema installs include
-   both migrations. Apply 033 before deploying the updated admin app.
-2. Migration 032 creates a confirmed Supabase Auth user and email identity with:
-   - **Work email address:** `admin@owltside.com`
-   - **Security password:** `owltside-admin-2026`
-   - **Access:** Super Admin (tier 0) in `public.admin_accounts`.
+- **Work email address:** `admin@owltside.com`
+- **Security password:** `owltside-admin-2026`
 
-   The password is stored only as a bcrypt hash in `auth.users`, never in the
-   access list. Enable email/password sign-in in Supabase's Email provider.
-3. **Change this publicly known default password immediately before production
-   use**, using the write-only table field described below. Re-running 032 does not reset an existing
-   user's password or confirmation state, nor does it undo an existing admin's
-   suspension or role changes. If that email already exists, use its current
-   password or explicitly reset it in Supabase Auth; the migration prints a
-   notice and preserves the existing credentials.
+Sign in at `/login`. The form pre-fills only the email; passwords are never sent
+to the browser as page data. The login handler and session validation do not
+contact Supabase. Supabase configuration is still needed for the console's live
+platform data (events, users, orders, etc.), separate from authentication.
 
-4. Copy `admin/.env.example` to `admin/.env` and configure
-   `PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and
-   `ADMIN_SESSION_SECRET` (generate with `openssl rand -hex 32`). In production,
-   set these in the **admin deployment's environment settings**. Never expose
-   the service-role key to a browser or prefix it with `PUBLIC_`.
-5. Restart the admin app and sign in at `/login` with the initial credentials
-   above (or the changed password for an existing account). There is no
-   `ADMIN_EMAIL` / `ADMIN_PASSWORD` fallback.
+### Change credentials and deploy safely
 
-### Change work email and security password in Table Editor
+Copy `.env.example` to `.env` for local development, or set variables on the
+**admin deployment**:
 
-After applying **033**, open **Supabase → Table Editor → public.admin_accounts**.
-Select the row for the administrator you want to change:
+- `ADMIN_EMAIL` / `ADMIN_PASSWORD`: optional server-side overrides. Leaving them
+  unset or empty uses the defaults above. Change the publicly known password
+  before exposing a production console; keep it behind a VPN/access gateway.
+- `ADMIN_NAME`: optional display name (default: Owltside Admin).
+- `ADMIN_SESSION_SECRET`: required in production; generate with
+  `openssl rand -hex 32`. Keep it private and consistent across server instances.
 
-| Column | How to edit it |
-| --- | --- |
-| `work_email` | Enter the new login email address and save. |
-| `security_password` | Enter a new password and save. It becomes **NULL immediately after save**; that is expected, not a failed update. |
-| `session_version` | Database-managed; do not edit. |
+Restart/redeploy after changing configuration. Changing the email, password, or
+signing secret invalidates existing signed console cookies. Sessions last two
+hours, or twelve hours when the device is remembered. Five failed attempts cause
+a ten-minute per-IP lockout on that server process. A shared gateway limiter is
+recommended for multi-instance production deployments.
 
-`security_password` is a **write-only reset input**, not a readable password or
-hash. Use at least **16 characters** and at most **72 UTF-8 bytes**; leave it NULL
-to keep the current password. Do not paste a password hash. The trigger hashes
-the supplied value with bcrypt in `auth.users`, updates the Auth email identity,
-and clears the input before the row is stored or returned. Existing email and
-password fields stay linked to the same Auth user ID, role and active status.
+Existing database-backed admin sessions must sign in again after this upgrade.
+The former admin-account migrations and their sections in the all-in-one schema
+have been removed. **Removing migration files does not undo SQL already run in a
+live Supabase project.** Existing tables, Auth users and triggers are not dropped
+or modified by this change; the new login simply does not read them.
 
-Changing either credential signs out existing admin-console sessions on their
-next request. Sign in with the new credentials. A name/role-only change does not
-reset the password. Existing console cookies issued before the 033 app upgrade
-also require a fresh sign-in.
-
-This is a **trusted operator reset**, not self-service signup: changed email
-addresses are confirmed directly without a confirmation email. Verify ownership
-before saving. Only trusted dashboard/SQL operators and the server service role
-can edit these fields; public app users still have no access. Restrict access to
-the Supabase dashboard and SQL/request logs as password-reset submissions may be
-visible there. The input is not a way to retrieve a forgotten password.
-
-Use Table Editor for routine admin credential changes. If a credential is changed
-separately through Supabase Auth, `work_email` is refreshed on the next admin-row
-save; a name/role-only save never restores the old Auth email. Auth recovery does
-not use the table's session-version mechanism, so revoke the allowlist access
-while recovering an account if immediate console sign-out is required.
-
-### Troubleshooting “Invalid credentials or admin access unavailable”
-
-This is a rejected sign-in, not a blocked session cookie. The console deliberately
-uses the same message for incorrect passwords, unconfirmed emails, and missing or
-suspended admin access.
-
-1. Check that the admin deployment's `PUBLIC_SUPABASE_URL` and server-only
-   `SUPABASE_SERVICE_ROLE_KEY` point to the same Supabase project where you ran
-   migration 032. Do not share the key in chat or browser diagnostics.
-2. Run `supabase/diagnostics/admin_login.sql` in that project's SQL Editor.
-   It is read-only and returns account/access flags, not password hashes:
-   - No rows: run the revised migration 032 to create the initial account.
-   - `email_confirmed = false` or `password_configured = false`: finish setting
-     up that account in Supabase Auth.
-   - `email_identity_present = false`: repair/provision the email/password
-     account through Supabase Auth's supported admin workflow.
-   - `admin_access_present = false`: grant that exact Auth user ID an allowlist
-     row using the instructions below.
-   - `admin_access_active = false`: have a trusted operator review the suspension;
-     do not automatically reactivate an account just because login failed.
-3. If all flags are true, use the user's current password. **Migration 032 does
-   not replace an existing password with `owltside-admin-2026`.** Explicitly
-   reset it using the write-only `admin_accounts.security_password` field
-   described above if it is unknown. Supabase provider policies or account restrictions can also reject sign-in; check Auth logs.
-4. After five failed attempts, wait for the 10-minute local lockout to expire.
-   The sign-in diagnostics button only checks the browser/session; it does not
-   submit credentials or use up another attempt.
-
-The page decodes action results with SvelteKit's `deserialize()`. A raw string
-such as `[{"error":1,"email":2}, ...]` on a deployed login screen means its
-frontend still needs the response-handling fix deployed. Fixing the presentation
-does not itself reset passwords, apply SQL, or grant account access.
-
-### Add, change, or revoke access
-
-Create each additional user in Supabase Auth, confirm their email, and insert
-an allowlist row using their actual Auth user UUID:
-
-```sql
-insert into public.admin_accounts (user_id, name, role)
-values ('YOUR_AUTH_USER_UUID', 'Your name', 'Read-only Auditor');
-```
-
-`role` accepts the six roles in the authorization ladder below; `tier` is
-computed automatically, so do not insert or edit it. You can manage names,
-roles and `is_active` through Table Editor or trusted SQL:
-
-```sql
--- Suspension immediately blocks the next admin request, including live sessions.
-update public.admin_accounts set is_active = false
-where user_id = 'THE_AUTH_USER_UUID';
--- Restore access with is_active = true; delete the row to remove access entirely.
-```
-
-Only trusted database operators/the server service role can access this table;
-RLS is enabled with no browser-accessible policies. User-editable profiles and
-Auth metadata never grant privileges. Role changes and suspensions are checked
-on every request, not just at sign-in. Database failures deny access. Existing
-legacy environment-based cookies are rejected after this upgrade.
-
-The current `/staff` invitation/status controls are **in-memory workflow stubs**,
-not this access list. Use Supabase to provision/suspend real accounts; those
-controls do not grant or revoke login access. Reset passwords through the
-write-only `admin_accounts.security_password` field below or through Supabase
-Auth recovery; the admin app does not provide a reset page. Table-based
-credential edits invalidate existing admin-console sessions. For Auth recovery
-outside the table, deactivate the allowlist row to revoke console access.
-
-This integration uses password authentication, not WebAuthn or TOTP. No Supabase
-access/refresh tokens are exposed to the admin browser. The console issues its
-own signed, HttpOnly cookie lasting 2 hours (12 hours when remembered).
+The `/staff` directory and invitation/status controls remain in-memory workflow
+stubs. They do not create additional login accounts or revoke the single admin's
+sessions. For a forgotten password, change `ADMIN_PASSWORD` in server settings
+and redeploy. Browser diagnostics are read-only and do not consume login attempts.
 
 ## Routes
 
 | Route | Purpose |
 | --- | --- |
-| `/login` | Supabase email/password sign-in, rate-limited, signed HttpOnly cookie |
+| `/login` | Server-side password sign-in, rate-limited, signed HttpOnly cookie |
 | `/dashboard` | GMV/settlement KPIs, revenue velocity, review queue, top events, live ledger |
 | `/search` | Federated Search HUD (users, passes, orders, events, organizers, incidents) |
 | `/events`, `/events/[id]` | Organizer submission queue (live Supabase), approve/publish/reject, capacity & compliance |
@@ -188,7 +85,7 @@ own signed, HttpOnly cookie lasting 2 hours (12 hours when remembered).
 | `/reports` | Content reports from the public app: event listings and public profiles, action/dismiss with a note |
 | `/moderation` | Incident triage, forensic telemetry, warn / dismiss / freeze sales |
 | `/audit`, `/audit/[id]` | Immutable hash-chained ledger + forensic record dossier |
-| `/staff` | Staff workflow stubs and permission matrix (real access is managed in Supabase) |
+| `/staff` | Staff workflow stubs and permission matrix (not login accounts) |
 | `/settings` | Paystack rails, credential policy, signing keys, integrations |
 
 Every list view supports `?q=`, status filters and pagination; the URL is the
@@ -299,8 +196,8 @@ API routes return `401` when signed out and `403` when the tier is insufficient.
 - Stateless HMAC-signed session cookie (`owl_admin_session`) — session integrity
   only, never attendee passes. `HttpOnly`, `SameSite=Strict`, `Secure` in
   production, 2h TTL (12h when remembered).
-- Supabase Auth verifies passwords; 5 failed attempts per IP per 10 minutes
-  per server process, in addition to Supabase Auth rate limits. For multi-instance
+- Constant-time credential comparison; 5 failed attempts per IP per 10 minutes
+  per server process. For multi-instance
   deployments, add a shared rate limiter at the gateway.
 - `hooks.server.ts` redirects unauthenticated requests, and sets
   `X-Frame-Options: DENY`, `nosniff`, strict referrer policy, `noindex`,
@@ -385,14 +282,11 @@ cd admin
 npm test
 ```
 
-`tests/auth.test.ts` covers Supabase password verification, denied access,
-lockout, refreshed session permissions, cookie signing/expiry and tier guards.
-`tests/admin-access.test.ts` covers server-only client configuration and trusted
-access-row validation. The repository-root
-`tests/unit/admin-accounts-database.test.ts` executes migration 032 in PGlite
-and checks role/tier constraints, foreign keys and client-role access denial.
-The remaining admin suites cover verification workflows, announcements and UI
-regressions.
+`tests/auth.test.ts` covers default and server-overridden credentials without
+network access, lockout, cookie signing/expiry, credential rotation, legacy cookie
+rejection and tier guards. `tests/login-response.test.ts` covers SvelteKit action
+response decoding and read-only diagnostics. The remaining admin suites cover
+verification workflows, announcements and UI regressions.
 
 ## Deploy
 
