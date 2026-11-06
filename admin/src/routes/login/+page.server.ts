@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import {
 	authenticate,
+	adminIdentity,
 	isSecureRequest,
 	writeSessionCookie
 } from '$admin/server/auth';
@@ -17,7 +18,7 @@ function safeNext(raw: string | null): string {
 export const load: PageServerLoad = ({ locals, url }) => {
 	if (locals.admin) redirect(303, safeNext(url.searchParams.get('next')));
 	return {
-		defaultEmail: '',
+		defaultEmail: adminIdentity().email,
 		next: safeNext(url.searchParams.get('next')),
 		year: new Date().getFullYear()
 	};
