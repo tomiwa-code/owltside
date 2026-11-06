@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import { loginFailureMessage, readLoginResult } from '$admin/utils/login-response';
 	import { ArrowRight, Eye, EyeOff, Lock, Mail, ShieldAlert } from '@lucide/svelte';
 
 	let { data, form } = $props();
@@ -20,6 +21,7 @@
 	let diagOpen = $state(false);
 	let diagBusy = $state(false);
 	let diagnostics = $state<string[]>([]);
+	let lastActionSummary = $state<string | null>(null);
 
 	// A failure surfaced by the action itself always wins over local validation.
 	const shownError = $derived(error ?? form?.error ?? null);
@@ -80,7 +82,6 @@
 			return;
 		}
 
-
 		busy = true;
 		status = 'Contacting the control plane…';
 
@@ -98,7 +99,8 @@
 				cache: 'no-store'
 			});
 
-			const payload = await response.json().catch(() => null);
+			const payload = await readLoginResult(response);
+			lastActionSummary = `Last sign-in: HTTP ${response.status} · ${payload?.type ?? 'invalid response'}`;
 
 			if (payload?.type === 'redirect') {
 				status = 'Credentials accepted — checking the session…';
@@ -129,11 +131,7 @@
 			}
 
 			if (payload?.type === 'failure' || payload?.type === 'error') {
-				const message =
-					payload?.data?.error ??
-					(typeof payload?.data === 'string' ? payload.data : null) ??
-					`Sign-in was rejected (HTTP ${response.status}).`;
-				error = message;
+				error = loginFailureMessage(payload, response.status);
 				status = null;
 				return;
 			}
@@ -146,6 +144,10 @@
 			}
 
 			error = 'Unexpected sign-in response. Please try again.';
+			status = null;
+		} catch {
+			error = 'Unable to reach the control plane. Check your connection and try again.';
+			lastActionSummary = 'Last sign-in: request failed before a result was received.';
 			status = null;
 		} finally {
 			// `finally` runs before the redirect navigates away, but it also runs
@@ -182,9 +184,8 @@
 	}
 
 	/**
-	 * Browser-side self test. It answers the questions that cannot be answered
-	 * from the server log: can this tab reach the action, what does the action
-	 * reply, and does the session cookie survive the round trip.
+	 * Read-only browser self test. Never resubmit credentials here: diagnostics
+	 * must not consume failed-login attempts or create an extra session.
 	 */
 	async function runDiagnostics() {
 		diagBusy = true;
@@ -206,28 +207,8 @@
 			push('storage: BLOCKED (sandboxed frame)');
 		}
 
-		const body = new FormData();
-		body.set('email', email.trim());
-		body.set('password', password);
-		body.set('remember', remember ? 'on' : 'off');
-
-		try {
-			const response = await fetch(`${window.location.pathname}?/credentials`, {
-				method: 'POST',
-				body,
-				headers: { accept: 'application/json', 'x-sveltekit-action': 'true' },
-				credentials: 'same-origin',
-				cache: 'no-store'
-			});
-			const payload = await response.json().catch(() => null);
-			push(`action POST: HTTP ${response.status} · ${payload?.type ?? 'non-JSON'}`);
-			if (payload?.type === 'failure') {
-				push(`action says: ${payload?.data?.error ?? 'rejected'}`);
-			}
-			if (payload?.location) push(`redirect target: ${payload.location}`);
-		} catch (cause) {
-			push(`action POST failed: ${(cause as Error).message}`);
-		}
+		push(lastActionSummary ?? 'No sign-in request has been made in this tab.');
+		push('Diagnostics do not submit credentials or consume login attempts.');
 
 		try {
 			const probe = await fetch('/api/session-probe', { credentials: 'same-origin', cache: 'no-store' }).then((r) =>
