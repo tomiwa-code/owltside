@@ -93,6 +93,25 @@ describe('database-enforced admin access list', () => {
 		expect((await db.query('select id from auth.identities')).rows).toHaveLength(0);
 	});
 
+	it('diagnoses the default account without exposing credentials or changing access', async () => {
+		await db.exec(migration);
+		const query = readFileSync('supabase/diagnostics/admin_login.sql', 'utf8');
+		await db.exec('begin read only;');
+		const { rows } = await db.query(query);
+		await db.exec('rollback;');
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({
+			email: 'admin@owltside.com', email_confirmed: true,
+			password_configured: true, email_identity_present: true,
+			admin_access_present: true, admin_access_active: true, role: 'Super Admin', tier: 0
+		});
+		expect(rows[0]).not.toHaveProperty('encrypted_password');
+		await db.exec('update public.admin_accounts set is_active = false');
+		expect((await db.query(query)).rows[0]).toMatchObject({ admin_access_present: true, admin_access_active: false });
+		await db.exec('delete from public.admin_accounts');
+		expect((await db.query(query)).rows[0]).toMatchObject({ admin_access_present: false, admin_access_active: null });
+	});
+
 	it('uses Auth foreign keys and safe auditor defaults', async () => {
 		await db.query('insert into public.admin_accounts (user_id, name) values ($1, $2)', [userId, 'Audit Admin']);
 		expect((await db.query('select role, tier, is_active from public.admin_accounts')).rows[0]).toEqual({ role: 'Read-only Auditor', tier: 3, is_active: true });

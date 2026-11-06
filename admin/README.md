@@ -60,6 +60,39 @@ A customer account alone does not grant any admin access.
    above (or the changed password for an existing account). There is no
    `ADMIN_EMAIL` / `ADMIN_PASSWORD` fallback.
 
+### Troubleshooting “Invalid credentials or admin access unavailable”
+
+This is a rejected sign-in, not a blocked session cookie. The console deliberately
+uses the same message for incorrect passwords, unconfirmed emails, and missing or
+suspended admin access.
+
+1. Check that the admin deployment's `PUBLIC_SUPABASE_URL` and server-only
+   `SUPABASE_SERVICE_ROLE_KEY` point to the same Supabase project where you ran
+   migration 032. Do not share the key in chat or browser diagnostics.
+2. Run `supabase/diagnostics/admin_login.sql` in that project's SQL Editor.
+   It is read-only and returns account/access flags, not password hashes:
+   - No rows: run the revised migration 032 to create the initial account.
+   - `email_confirmed = false` or `password_configured = false`: finish setting
+     up that account in Supabase Auth.
+   - `email_identity_present = false`: repair/provision the email/password
+     account through Supabase Auth's supported admin workflow.
+   - `admin_access_present = false`: grant that exact Auth user ID an allowlist
+     row using the instructions below.
+   - `admin_access_active = false`: have a trusted operator review the suspension;
+     do not automatically reactivate an account just because login failed.
+3. If all flags are true, use the user's current password. **Migration 032 does
+   not replace an existing password with `owltside-admin-2026`.** Explicitly
+   reset the password through Supabase Auth if it is unknown. Supabase provider
+   policies or account restrictions can also reject sign-in; check Auth logs.
+4. After five failed attempts, wait for the 10-minute local lockout to expire.
+   The sign-in diagnostics button only checks the browser/session; it does not
+   submit credentials or use up another attempt.
+
+The page decodes action results with SvelteKit's `deserialize()`. A raw string
+such as `[{"error":1,"email":2}, ...]` on a deployed login screen means its
+frontend still needs the response-handling fix deployed. Fixing the presentation
+does not itself reset passwords, apply SQL, or grant account access.
+
 ### Add, change, or revoke access
 
 Create each additional user in Supabase Auth, confirm their email, and insert
