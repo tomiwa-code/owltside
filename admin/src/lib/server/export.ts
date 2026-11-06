@@ -16,7 +16,7 @@ import {
 } from './supabase-data';
 import { listApprovals } from './approvals';
 import { listReports } from './reports';
-import { listStaff } from './store';
+import { listAdminStaff } from './admin-access';
 
 /** RFC-4180 safe escaping — used for every CSV the control plane emits. */
 export function toCsv(columns: { key: string; label: string }[], rows: Record<string, unknown>[]): string {
@@ -154,17 +154,18 @@ async function reportRows(): Promise<Record<string, unknown>[]> {
 	}));
 }
 
-function staffRows(): Record<string, unknown>[] {
-	return listStaff().map((member) => ({
+async function staffRows(): Promise<Record<string, unknown>[]> {
+	const staff = await listAdminStaff();
+	return staff.map((member) => ({
 		id: member.id,
+		handle: member.handle,
 		name: member.name,
 		email: member.email,
 		role: member.role,
 		tier: member.tier,
 		auth: member.auth,
 		status: member.status,
-		sessions: member.sessions,
-		location: member.location,
+		city: member.city,
 		last_active: member.lastActive
 	}));
 }
@@ -279,9 +280,9 @@ export const REPORTS: Record<string, Report> = {
 		label: 'Administrator manifest',
 		filename: 'owltside-staff.csv',
 		columns: [
-			{ key: 'id', label: 'ID' }, { key: 'name', label: 'Name' }, { key: 'email', label: 'Email' },
-			{ key: 'role', label: 'Role' }, { key: 'tier', label: 'Tier' }, { key: 'auth', label: 'Auth' },
-			{ key: 'status', label: 'Status' }, { key: 'sessions', label: 'Sessions' }, { key: 'location', label: 'Location' },
+			{ key: 'id', label: 'ID' }, { key: 'handle', label: 'Handle' }, { key: 'name', label: 'Name' },
+			{ key: 'email', label: 'Email' }, { key: 'role', label: 'Role' }, { key: 'tier', label: 'Tier' },
+			{ key: 'auth', label: 'Auth' }, { key: 'status', label: 'Status' }, { key: 'city', label: 'City' },
 			{ key: 'last_active', label: 'Last active' }
 		],
 		rows: staffRows

@@ -456,6 +456,11 @@ function mapDataUser(profile: DataProfile, auth: DataAuthUser | undefined, bundl
 	const isBlocked = isUserRecordBlocked(profile, auth);
 	const isOrganizer = profile.operating_identity === 'organizer' || bundle.events.some((event) => event.organizerId === profile.id);
 	const role: AdminUser['role'] = isOrganizer ? 'Organizer' : 'Attendee';
+	const rawAdminRole = typeof profile.role === 'string'
+		? profile.role.trim().toLowerCase().replace(/[\s_-]+/g, '')
+		: '';
+	const adminRole: AdminUser['adminRole'] =
+		rawAdminRole === 'superadmin' ? 'superadmin' : rawAdminRole === 'admin' ? 'admin' : 'user';
 	const phone = String(snap?.phone || auth?.phone || meta.verified_phone || meta.phone || '');
 	return {
 		id: profile.id,
@@ -468,6 +473,7 @@ function mapDataUser(profile: DataProfile, auth: DataAuthUser | undefined, bundl
 		bio: profile.bio ? String(profile.bio) : undefined,
 		link: profile.link ? String(profile.link) : undefined,
 		operatingIdentity: profile.operating_identity ? String(profile.operating_identity) : 'attendee',
+		adminRole,
 		disabledReason:
 			(profile.disabled_reason ? String(profile.disabled_reason) : undefined) ||
 			(meta.disabled_reason ? String(meta.disabled_reason) : undefined),

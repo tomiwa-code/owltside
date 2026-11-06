@@ -1,7 +1,12 @@
 import { deserialize } from '$app/forms';
 import type { ActionResult } from '@sveltejs/kit';
 
-type LoginData = { error?: string; email?: string };
+export type LoginData = {
+	error?: string;
+	email?: string;
+	codeSent?: boolean;
+	resent?: boolean;
+};
 type LoginResult = ActionResult<LoginData, LoginData>;
 
 /** Action data uses SvelteKit/devalue serialization, not ordinary nested JSON. */

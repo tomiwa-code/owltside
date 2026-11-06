@@ -169,6 +169,9 @@
 					<p class="flex items-center justify-between gap-3"><span class="flex items-center gap-1.5 text-[#8f8f9b]"><Phone size={10} /> Phone</span><span class="font-code select-all text-[#ededf4]">{user.phone || '—'}</span></p>
 					<p class="flex items-center justify-between gap-3"><span class="flex items-center gap-1.5 text-[#8f8f9b]"><MapPin size={10} /> City</span><span class="text-[#dcdce4]">{user.city}</span></p>
 					<p class="flex justify-between gap-3"><span class="text-[#8f8f9b]">Role</span><span class="text-[#dcdce4]">{user.role} ({user.operatingIdentity ?? 'attendee'})</span></p>
+					{#if user.adminRole === 'superadmin' || user.adminRole === 'admin'}
+						<p class="flex justify-between gap-3"><span class="text-[#8f8f9b]">Admin access</span><span class="font-code text-[#c6bcff]">{user.adminRole === 'superadmin' ? 'Super Admin' : 'Admin'}</span></p>
+					{/if}
 					<p class="flex justify-between gap-3"><span class="text-[#8f8f9b]">User ID</span><span class="font-code text-[9px] select-all text-[#a0a0ab]">{user.id}</span></p>
 					<p class="flex justify-between gap-3"><span class="text-[#8f8f9b]">Joined</span><span class="text-[#dcdce4]">{relative(user.joinedAt)}</span></p>
 					<p class="flex justify-between gap-3"><span class="text-[#8f8f9b]">Last seen</span><span class="text-[#dcdce4]">{relative(user.lastSeenAt)}</span></p>
