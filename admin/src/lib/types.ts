@@ -12,13 +12,15 @@ export type AdminTier = 0 | 1 | 2 | 3;
 
 export interface AdminSession {
 	id: string;
+	/** Supabase Auth user ID; absent only on legacy sessions, which cannot sign in. */
+	userId?: string;
 	email: string;
 	name: string;
 	initials: string;
 	role: AdminRole;
 	tier: AdminTier;
 	/** How this browser session authenticated. */
-	auth: 'webauthn' | 'password+totp';
+	auth: 'supabase-password' | 'webauthn' | 'password+totp';
 	issuedAt: string;
 	expiresAt: string;
 	ip: string;

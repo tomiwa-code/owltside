@@ -80,7 +80,7 @@
 			toasts.error('Session revocation failed', 'Your primary Super Admin identity is protected.');
 			return;
 		}
-		toasts.ok('Session revoked', `${member.name} signed out of all nodes immediately.`);
+		toasts.ok('Preview updated', `${member.name} marked suspended in the workflow preview only.`);
 		await invalidateAll();
 	}
 
@@ -92,7 +92,7 @@
 			toasts.error('Could not restore access', 'Try again or lodge a security review.');
 			return;
 		}
-		toasts.ok('Access restored', `${member.name} can re-authenticate with a hardware key.`);
+		toasts.ok('Preview updated', `${member.name} marked active in the workflow preview only.`);
 		await invalidateAll();
 	}
 
@@ -131,6 +131,13 @@
 			<button type="button" class="btn btn-sm btn-primary" onclick={() => (inviteOpen = true)}><UserPlus size={13} /> Invite Administrator</button>
 		{/snippet}
 	</PageHeader>
+
+	<div class="panel border border-amber-500/30 p-4 text-[12px] leading-relaxed text-amber-100" role="note">
+		<strong>Workflow preview — not the login access list.</strong>
+		These staff records and controls are in-memory stubs. Manage real accounts in
+		Supabase Authentication → Users and <code>public.admin_accounts</code>.
+		Set <code>is_active = false</code> there to revoke admin access, including existing sessions.
+	</div>
 
 	<div class="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
 		<div class="panel p-4">

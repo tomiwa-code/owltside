@@ -152,7 +152,7 @@ export function updateSettings(
  * not yet have a dedicated admin_staff table in the public schema, so this
  * list ships with the control plane and is used only for access-tier labels,
  * telemetry and invitation stubs. Real authentication is gated by
- * ADMIN_EMAIL / ADMIN_PASSWORD in auth.ts.
+ * Supabase Auth and public.admin_accounts in auth.ts.
  */
 let staffState: AdminStaff[] = [
 	{

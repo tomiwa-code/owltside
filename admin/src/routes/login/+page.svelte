@@ -79,11 +79,7 @@
 			formElement?.querySelector<HTMLInputElement>('#password')?.focus();
 			return;
 		}
-		if (password.length < 16) {
-			error = `The security password must be at least 16 characters (yours is ${password.length}).`;
-			formElement?.querySelector<HTMLInputElement>('#password')?.focus();
-			return;
-		}
+
 
 		busy = true;
 		status = 'Contacting the control plane…';
@@ -274,7 +270,7 @@
 				probeNote = probe.cookieSeen
 					? 'The session cookie reached the server but was rejected — it may have expired. Try signing in again.'
 					: framed === '1'
-						? 'Your browser blocked the session cookie for this embedded preview. Open the preview in its own tab, or use the hardware-key button.'
+						? 'Your browser blocked the session cookie for this embedded preview. Open the preview in its own tab.'
 						: 'Your browser did not store the session cookie. Check that cookies are enabled for this site, then try again.';
 			})
 			.catch(() => undefined);
@@ -371,7 +367,7 @@
 					<div>
 						<label class="field-label" for="email">
 							<span>Work email address</span>
-							<span class="!text-[8px] !tracking-[0.12em] text-[#6a6a76]">SSO / Encrypted</span>
+							<span class="!text-[8px] !tracking-[0.12em] text-[#6a6a76]">Supabase Auth</span>
 						</label>
 						<div class="relative">
 							<Mail size={14} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#6f6f7b]" />
@@ -391,7 +387,7 @@
 					<div>
 						<label class="field-label" for="password">
 							<span>Security password</span>
-							<span class="!text-[8px] !tracking-[0.12em] text-[#6a6a76]">Req: 16+ chars</span>
+							<span class="!text-[8px] !tracking-[0.12em] text-[#6a6a76]">Supabase Auth</span>
 						</label>
 						<div class="relative">
 							<span class="pointer-events-none absolute left-3 top-1/2 flex -translate-y-1/2 items-center gap-0.5 text-[#6f6f7b]">
@@ -404,7 +400,6 @@
 								name="password"
 								type={showPassword ? 'text' : 'password'}
 								required
-								minlength="16"
 								autocomplete="current-password"
 								bind:value={password}
 								class="input !h-[42px] !pl-9 !pr-10 !text-[13px]"
@@ -429,7 +424,7 @@
 						<input type="checkbox" name="remember" class="checkbox mt-0.5" bind:checked={remember} />
 						<span class="text-[11.5px] leading-snug text-[#a7a7b3]">
 							Remember device for 12 hours
-							<span class="text-[#6f6f7b]">(Enforces Hardware Key / 2FA check on subsequent sessions)</span>
+							<span class="text-[#6f6f7b]">(Default session: 2 hours)</span>
 						</span>
 					</label>
 
@@ -485,13 +480,9 @@
 				</div>
 
 				<div class="mt-5 border-t border-[#26262e] pt-4 text-center">
-					<a
-						href="/settings"
-						class="inline-flex items-center gap-1 font-code text-[9px] uppercase tracking-[0.12em] text-[#9c9ca8] transition-colors hover:text-[#c6bcff]"
-					>
-						Forgot administrative passphrase? Contact Security Team
-						<span class="text-[11px]">↗</span>
-					</a>
+					<p class="font-code text-[9px] uppercase tracking-[0.12em] text-[#9c9ca8]">
+						Forgot your password? Contact your administrator for Supabase account recovery.
+					</p>
 				</div>
 			</div>
 

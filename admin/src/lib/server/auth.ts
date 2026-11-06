@@ -1,31 +1,18 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
-import type { AdminRole, AdminSession, AdminTier } from '$admin/types';
+import type { User } from '@supabase/supabase-js';
+import type { AdminSession } from '$admin/types';
+import { createAccessClient, getAdminAccess, type AdminAccess } from './admin-access';
 
-/**
- * Credential + session layer for the admin workspace.
- *
- * Production deployments must set ADMIN_EMAIL, ADMIN_PASSWORD (16+ chars) and
- * ADMIN_SESSION_SECRET. Sessions are stateless signed tokens in an HttpOnly
- * cookie; the signature only guards the admin session, never attendee passes. Hardware-key (WebAuthn) sign-in and SSO
- * can replace `authenticate()` without touching the rest of the app.
+/** Supabase Auth verifies passwords; public.admin_accounts grants admin access.
+ * Only the signed local session is sent to the browser, never Supabase tokens.
  */
-
 export const SESSION_COOKIE = 'owl_admin_session';
 const FALLBACK_SECRET = 'owltside-admin-dev-secret-do-not-use-in-production';
 const SESSION_HOURS = 2;
 const REMEMBER_HOURS = 12;
 const MAX_FAILURES = 5;
 const WINDOW_MINUTES = 10;
-
-/**
- * The admin control plane requires ADMIN_EMAIL + ADMIN_PASSWORD to be set.
- * Credentials are configured server-side; there is no "demo" sign-in that
- * accepts a hard-coded passphrase.
- */
-export function credentialsConfigured(): boolean {
-	return Boolean(process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD);
-}
 
 export function sessionSecret(): string {
 	return process.env.ADMIN_SESSION_SECRET || FALLBACK_SECRET;
@@ -81,28 +68,7 @@ function clearFailures(ip: string) {
 	attempts.delete(ip);
 }
 
-function constantTimeEqual(a: string, b: string): boolean {
-	const left = createHash('sha256').update(a).digest();
-	const right = createHash('sha256').update(b).digest();
-	return timingSafeEqual(left, right);
-}
-
-const DEFAULT_EMAIL = 'admin@owltside.com';
-const DEFAULT_NAME = 'Tomiwa A.';
-const DEFAULT_ROLE: AdminRole = 'Super Admin';
-const DEFAULT_TIER: AdminTier = 0;
-
-export function adminIdentity() {
-	const envEmail = (process.env.ADMIN_EMAIL ?? DEFAULT_EMAIL).trim();
-	return {
-		name: process.env.ADMIN_NAME?.trim() || DEFAULT_NAME,
-		email: envEmail || DEFAULT_EMAIL,
-		role: ((process.env.ADMIN_ROLE as AdminRole | undefined) || DEFAULT_ROLE),
-		tier: (process.env.ADMIN_TIER ? Number(process.env.ADMIN_TIER) : DEFAULT_TIER) as AdminTier
-	};
-}
-
-export function authenticate({ email, password, remember, ip }: LoginInput): LoginResult {
+export async function authenticate({ email, password, remember, ip }: LoginInput): Promise<LoginResult> {
 	const now = Date.now();
 	pruneAttempts(now);
 	const attempt = attempts.get(ip);
@@ -115,17 +81,33 @@ export function authenticate({ email, password, remember, ip }: LoginInput): Log
 		};
 	}
 
-	const identity = adminIdentity();
-	const passwordOk = password.length >= 16 && constantTimeEqual(password, process.env.ADMIN_PASSWORD ?? '');
-	const emailOk = constantTimeEqual(email.trim().toLowerCase(), identity.email.toLowerCase());
+	let identity: AdminAccess | null | undefined;
+	let user: User | undefined;
+	try {
+		// Use a fresh client for password verification: signInWithPassword changes
+		// its auth context. The access lookup uses a separate service-role client.
+		const { data, error } = await createAccessClient().auth.signInWithPassword({
+			email: email.trim().toLowerCase(), password
+		});
+		if (error && error.status && error.status >= 500) throw error;
+		if (error?.status === 429) {
+			return { ok: false, status: 429, error: 'Too many sign-in attempts. Please try again later.' };
+		}
+		if (!error && data.user?.email_confirmed_at) {
+			user = data.user;
+			identity = await getAdminAccess(user.id);
+		}
+	} catch {
+		return { ok: false, status: 503, error: 'Admin sign-in is temporarily unavailable. Contact your administrator.' };
+	}
 
-	if (!passwordOk || !emailOk) {
+	if (!identity || !user?.email) {
 		registerFailure(ip);
 		const remaining = rateLimitRemaining(ip);
 		return {
 			ok: false,
 			status: 401,
-			error: `Email or passphrase is incorrect. ${remaining} attempt${remaining === 1 ? '' : 's'} left.`
+			error: `Invalid credentials or admin access unavailable. ${remaining} attempt${remaining === 1 ? '' : 's'} left.`
 		};
 	}
 
@@ -135,8 +117,9 @@ export function authenticate({ email, password, remember, ip }: LoginInput): Log
 		ok: true,
 		expiresAt: new Date(now + hours * 3_600_000),
 		session: {
-			id: `adm-session-${now.toString(36)}`,
-			email: identity.email,
+			id: randomUUID(),
+			userId: user.id,
+			email: user.email,
 			name: identity.name,
 			initials: identity.name
 				.split(/\s+/)
@@ -146,7 +129,7 @@ export function authenticate({ email, password, remember, ip }: LoginInput): Log
 				.toUpperCase(),
 			role: identity.role,
 			tier: identity.tier,
-			auth: 'password+totp',
+			auth: 'supabase-password',
 			ip,
 			demo: false
 		}
@@ -165,14 +148,17 @@ export function signSession(session: AdminSession): string {
 
 export function verifySession(token: string | undefined): AdminSession | null {
 	if (!token) return null;
-	const [payload, signature] = token.split('.');
+	const [payload, signature, extra] = token.split('.');
+	if (extra !== undefined) return null;
 	if (!payload || !signature) return null;
 	const expected = createHmac('sha256', sessionSecret()).update(payload).digest('base64url');
-	if (expected.length !== signature.length) return null;
-	if (!timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return null;
+	const signatureBytes = Buffer.from(signature);
+	const expectedBytes = Buffer.from(expected);
+	if (expectedBytes.length !== signatureBytes.length) return null;
+	if (!timingSafeEqual(expectedBytes, signatureBytes)) return null;
 	try {
 		const session = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as AdminSession;
-		if (!session?.expiresAt || new Date(session.expiresAt).getTime() < Date.now()) return null;
+		if (!Number.isFinite(Date.parse(session?.expiresAt)) || Date.parse(session.expiresAt) <= Date.now()) return null;
 		return session;
 	} catch {
 		return null;
@@ -233,8 +219,20 @@ export function clearSessionCookie(cookies: Cookies): void {
 	cookies.delete(SESSION_COOKIE, { path: '/' });
 }
 
-export function readSession(cookies: Cookies): AdminSession | null {
-	return verifySession(cookies.get(SESSION_COOKIE));
+export async function readSession(cookies: Cookies): Promise<AdminSession | null> {
+	const session = verifySession(cookies.get(SESSION_COOKIE));
+	// Old environment-based sessions cannot be upgraded into database admins.
+	if (!session?.userId || session.auth !== 'supabase-password') return null;
+	try {
+		const access = await getAdminAccess(session.userId);
+		if (!access) return null;
+		// Refresh permissions on EVERY request so suspensions and demotions take
+		// effect without waiting for the signed cookie to expire. Fail closed.
+		return { ...session, name: access.name, role: access.role, tier: access.tier,
+			initials: access.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() };
+	} catch {
+		return null;
+	}
 }
 
 // ── Authorisation ladder ────────────────────────────────────────────────────

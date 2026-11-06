@@ -1,7 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Cookies } from '@sveltejs/kit';
+
+const mocks = vi.hoisted(() => ({ signIn: vi.fn(), access: vi.fn() }));
+vi.mock('$admin/server/admin-access', () => ({
+	createAccessClient: () => ({ auth: { signInWithPassword: mocks.signIn } }),
+	getAdminAccess: mocks.access
+}));
 import {
 	AuthzError,
 	authenticate,
+	readSession,
 	canConfigure,
 	canMutate,
 	isSecureRequest,
@@ -14,7 +22,7 @@ import {
 } from '$admin/server/auth';
 import type { AdminSession } from '$admin/types';
 
-const ENV_KEYS = ['ADMIN_EMAIL', 'ADMIN_PASSWORD', 'ADMIN_SESSION_SECRET'] as const;
+const ENV_KEYS = ['ADMIN_SESSION_SECRET'] as const;
 const original = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
 const TEST_EMAIL = 'admin@owltside.com';
@@ -28,7 +36,8 @@ function session(overrides: Partial<AdminSession> = {}): AdminSession {
 		initials: 'TA',
 		role: 'Super Admin',
 		tier: 0,
-		auth: 'password+totp',
+		auth: 'supabase-password',
+		userId: 'auth-user-1',
 		ip: '127.0.0.1',
 		demo: false,
 		issuedAt: new Date().toISOString(),
@@ -47,37 +56,89 @@ function restoreEnv() {
 describe('admin authentication', () => {
 	beforeEach(() => {
 		restoreEnv();
-		process.env.ADMIN_EMAIL = TEST_EMAIL;
-		process.env.ADMIN_PASSWORD = TEST_PASSWORD;
+		mocks.signIn.mockReset().mockResolvedValue({ data: { user: { id: 'auth-user-1', email: TEST_EMAIL, email_confirmed_at: '2026-11-01' } }, error: null });
+		mocks.access.mockReset().mockResolvedValue({ user_id: 'auth-user-1', name: 'Review Admin', role: 'Super Admin', tier: 0, is_active: true });
 	});
 
 	afterEach(restoreEnv);
 
-	it('rejects short passphrases and keeps an attempt budget', () => {
-		const weak = authenticate({ email: TEST_EMAIL, password: 'short', remember: false, ip: '10.0.0.1' });
+	it('rejects invalid Supabase credentials and keeps an attempt budget', async () => {
+		mocks.signIn.mockResolvedValue({ data: { user: null }, error: { status: 400 } });
+		const weak = await authenticate({ email: TEST_EMAIL, password: 'short', remember: false, ip: '10.0.0.1' });
 		expect(weak.ok).toBe(false);
 		expect(weak.status).toBe(401);
 
 		for (let attempt = 0; attempt < 5; attempt++) {
-			authenticate({ email: 'intruder@owltside.com', password: 'wrong-passphrase-1234567', remember: false, ip: '10.0.0.2' });
+			await authenticate({ email: 'intruder@owltside.com', password: 'wrong-passphrase-1234567', remember: false, ip: '10.0.0.2' });
 		}
-		const locked = authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: false, ip: '10.0.0.2' });
+		const locked = await authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: false, ip: '10.0.0.2' });
 		expect(locked.ok).toBe(false);
 		expect(locked.status).toBe(429);
 	});
 
-	it('issues a 2h session, extended to 12h when the device is remembered', () => {
-		const short = authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: false, ip: '10.0.0.3' });
+	it('issues a 2h session, extended to 12h when the device is remembered', async () => {
+		const short = await authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: false, ip: '10.0.0.3' });
 		expect(short.ok).toBe(true);
 		expect(short.session?.tier).toBe(0);
 		const shortHours = (short.expiresAt!.getTime() - Date.now()) / 3_600_000;
 		expect(shortHours).toBeGreaterThan(1.9);
 		expect(shortHours).toBeLessThan(2.1);
 
-		const remembered = authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: true, ip: '10.0.0.4' });
+		const remembered = await authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: true, ip: '10.0.0.4' });
 		const rememberedHours = (remembered.expiresAt!.getTime() - Date.now()) / 3_600_000;
 		expect(rememberedHours).toBeGreaterThan(11.9);
 		expect(rememberedHours).toBeLessThan(12.1);
+	});
+
+	it('normalizes email and uses the Auth user ID for access lookup, not metadata', async () => {
+		const result = await authenticate({ email: ' ADMIN@OWLTSIDE.COM ', password: TEST_PASSWORD, remember: false, ip: '10.1.0.1' });
+		expect(mocks.signIn).toHaveBeenCalledWith({ email: TEST_EMAIL, password: TEST_PASSWORD });
+		expect(mocks.access).toHaveBeenCalledWith('auth-user-1');
+		expect(result.session).toMatchObject({ userId: 'auth-user-1', auth: 'supabase-password', tier: 0 });
+		expect(JSON.stringify(result)).not.toContain(TEST_PASSWORD);
+	});
+
+	it('does not grant admin access to an ordinary authenticated customer', async () => {
+		mocks.access.mockResolvedValue(null);
+		const result = await authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: false, ip: '10.1.0.2' });
+		expect(result).toMatchObject({ ok: false, status: 401 });
+		expect(result.session).toBeUndefined();
+	});
+
+	it('rejects unconfirmed emails before checking admin access', async () => {
+		mocks.signIn.mockResolvedValue({ data: { user: { id: 'auth-user-1', email: TEST_EMAIL } }, error: null });
+		expect((await authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: false, ip: '10.1.0.3' })).status).toBe(401);
+		expect(mocks.access).not.toHaveBeenCalled();
+	});
+
+	it('fails closed on unavailable Auth or access lookup without leaking details', async () => {
+		mocks.access.mockRejectedValue(new Error('private database details'));
+		const result = await authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: false, ip: '10.1.0.4' });
+		expect(result).toMatchObject({ ok: false, status: 503 });
+		expect(result.error).not.toContain('private');
+		mocks.signIn.mockRejectedValue(new Error('network'));
+		expect((await authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: false, ip: '10.1.0.5' })).status).toBe(503);
+	});
+
+	it('honors Supabase rate limits without issuing a session', async () => {
+		mocks.signIn.mockResolvedValue({ data: { user: null }, error: { status: 429 } });
+		expect((await authenticate({ email: TEST_EMAIL, password: TEST_PASSWORD, remember: false, ip: '10.1.0.6' })).status).toBe(429);
+	});
+
+	it('refreshes role changes and denies removed/suspended access on existing sessions', async () => {
+		const cookies = { get: () => signSession(session()) } as unknown as Cookies;
+		mocks.access.mockResolvedValue({ user_id: 'auth-user-1', name: 'Audit Admin', role: 'Read-only Auditor', tier: 3, is_active: true });
+		expect(await readSession(cookies)).toMatchObject({ tier: 3, role: 'Read-only Auditor', initials: 'AA' });
+		mocks.access.mockResolvedValue(null);
+		expect(await readSession(cookies)).toBeNull();
+		mocks.access.mockRejectedValue(new Error('outage'));
+		expect(await readSession(cookies)).toBeNull();
+	});
+
+	it('never upgrades an old environment-based session', async () => {
+		const cookies = { get: () => signSession(session({ userId: undefined, auth: 'password+totp' })) } as unknown as Cookies;
+		expect(await readSession(cookies)).toBeNull();
+		expect(mocks.access).not.toHaveBeenCalled();
 	});
 
 	it('round-trips a signed session cookie payload and rejects tampering', () => {
@@ -87,6 +148,8 @@ describe('admin authentication', () => {
 		const [payload, signature] = token.split('.');
 		expect(verifySession(`${payload}.${signature.slice(0, -2)}xx`)).toBeNull();
 		expect(verifySession('garbage')).toBeNull();
+		expect(verifySession(`${token}.extra`)).toBeNull();
+		expect(verifySession(signSession(session({ expiresAt: 'invalid' })))).toBeNull();
 		expect(verifySession(undefined)).toBeNull();
 	});
 

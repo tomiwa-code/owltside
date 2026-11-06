@@ -24,7 +24,7 @@ function decorate(response: Response, pathname: string, signedIn: boolean): Resp
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
-	event.locals.admin = readSession(event.cookies);
+	event.locals.admin = await readSession(event.cookies);
 	event.locals.requestId = randomUUID();
 
 	const { pathname, search } = event.url;

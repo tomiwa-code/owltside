@@ -1,7 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import {
-	adminIdentity,
 	authenticate,
 	isSecureRequest,
 	writeSessionCookie
@@ -17,9 +16,8 @@ function safeNext(raw: string | null): string {
 
 export const load: PageServerLoad = ({ locals, url }) => {
 	if (locals.admin) redirect(303, safeNext(url.searchParams.get('next')));
-	const identity = adminIdentity();
 	return {
-		defaultEmail: identity.email,
+		defaultEmail: '',
 		next: safeNext(url.searchParams.get('next')),
 		year: new Date().getFullYear()
 	};
@@ -43,7 +41,7 @@ export const actions: Actions = {
 		if (!email) return fail(400, { error: 'Enter your work email address.', email });
 		if (!password) return fail(400, { error: 'Enter your security passphrase.', email });
 
-		const result = authenticate({ email, password, remember, ip: getClientAddress() });
+		const result = await authenticate({ email, password, remember, ip: getClientAddress() });
 		if (!result.ok || !result.session || !result.expiresAt) {
 			return fail(result.status ?? 401, { error: result.error ?? 'Sign in failed.', email });
 		}
