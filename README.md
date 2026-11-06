@@ -394,4 +394,6 @@ fresh setups), then deploy both apps against that same database.
 The separate admin console uses Supabase Auth email/password plus the
 `public.admin_accounts` allowlist. Apply `supabase/sql/032_admin_accounts.sql`
 and follow [first-admin setup](admin/README.md#admin-accounts-supabase-auth--database-access-list).
+Migration 032 bootstraps `admin@owltside.com` with the initial password
+`owltside-admin-2026`. Change this shared default before production use.
 Passwords are managed in Authentication → Users, not stored in the allowlist.
