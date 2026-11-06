@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { decideDemoApproval, demoSource } from '$lib/server/datasource';
 import * as demo from '$lib/server/demo/seed';
 import { POST as submitApproval, GET as listMine } from '../../src/routes/api/approvals/+server';
+import { payoutAmountFor } from '$lib/utils/settlement';
 
 /**
  * Everything that needs an administrator decision must reach the admin console
@@ -15,10 +16,10 @@ const jsonRequest = (body: unknown) =>
 		body: JSON.stringify(body)
 	});
 
-const context = (request?: Request, userId?: string) =>
+const context = (request?: Request, userId = 'demo') =>
 	({
 		request,
-		locals: { session: userId ? { userId, name: 'Member', email: 'member@example.com', handle: 'member', role: 'attendee', demo: true } : null, demoMode: true },
+		locals: { session: { userId, name: 'Member', email: 'member@example.com', handle: 'member', role: 'attendee', demo: true }, demoMode: true },
 		cookies: { getAll: () => [], get: () => undefined, set: vi.fn(), delete: vi.fn() }
 	}) as never;
 
@@ -147,7 +148,14 @@ describe('POST /api/approvals', () => {
 		const created = (await ok.json()) as { id: string; kind: string; title: string; amount: number };
 		expect(created.kind).toBe('payout');
 		expect(created.title).toBe(`Payout request · ${demo.pastSessionEvent.title}`);
-		expect(created.amount).toBe(308_000);
+		// The amount is computed from settled passes — the ₦308,000 the client
+		// sent above is ignored, and so is any other number it might send.
+		expect(created.amount).toBe(
+			payoutAmountFor(
+				demo.pastSessionEvent,
+				demo.tickets.filter((ticket) => ticket.eventId === demo.pastSessionEvent.id)
+			)
+		);
 
 		// Once approved by admin, payout cannot be requested again for this event.
 		decideDemoApproval(created.id, 'approved', 'Settled to GTBank');
@@ -175,6 +183,17 @@ describe('POST /api/approvals', () => {
 		const response = await submitApproval(context(jsonRequest({ kind: 'refund', subjectId: 't-1' })));
 		expect(response.status).toBe(400);
 		expect(((await response.json()) as { error: string }).error).toMatch(/cannot be submitted/i);
+	});
+
+	it('rejects anonymous submissions and listings', async () => {
+		const anonymous = {
+			request: jsonRequest({ kind: 'verification', check: 'identity' }),
+			locals: { session: null, demoMode: true },
+			cookies: { getAll: () => [], get: () => undefined, set: vi.fn(), delete: vi.fn() }
+		} as never;
+
+		expect((await submitApproval(anonymous)).status).toBe(401);
+		expect((await listMine(anonymous)).status).toBe(401);
 	});
 
 	it('returns the caller’s pending requests to the public app', async () => {

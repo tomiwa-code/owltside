@@ -2,6 +2,7 @@ import { getSource, type StaffScanContext, type StaffScanResolution } from '$lib
 import { createSupabase } from '$lib/server/supabase';
 import { error, json } from '@sveltejs/kit';
 import { hasOrganizerIdentity } from '$lib/server/organizer-access';
+import { parseTicketToken } from '$lib/server/qr-sign';
 import { z } from 'zod';
 import type { Checkin } from '$lib/types';
 import type { RequestHandler } from './$types';
@@ -54,12 +55,20 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 	if (!parsed.success) error(400, 'Invalid scan request');
 	const { eventId, gate, simulate } = parsed.data;
 
+	// A scanned rotating token must carry a valid server signature. Manual codes
+	// (typed in at the door) are still accepted as bare strings.
+	const scanned = parseTicketToken(parsed.data.code ?? '');
+	if (scanned.signed && !scanned.valid) {
+		error(400, 'This QR code is not a valid Owltside pass');
+	}
+	const scannedCode = scanned.code;
+
 	const staffCheckin = async (context: StaffScanContext): Promise<Response> => {
 		try {
 			const checkin = await source.checkInWithStaffToken({
 				context,
 				staffToken: parsed.data.staffToken,
-				ticketCode: parsed.data.code,
+				ticketCode: scannedCode,
 				simulate
 			});
 			return json(checkin);
@@ -85,7 +94,7 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 				(await source.verifyScannerToken(userId, parsed.data.staffToken));
 			if (!authorized) error(403, 'Gate PIN is invalid or expired');
 
-			let code = parsed.data.code;
+			let code = scannedCode;
 			if (simulate) {
 				const tickets = await source.getEventTickets(eventId);
 				const open = tickets.find((t) => t.status === 'valid') ?? tickets[0];
@@ -131,11 +140,13 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 	// events at all there is nothing to resolve and every code is invalid —
 	// the scanner itself (PIN → camera → verdict) works exactly the same.
 	let ticketEventId: string | undefined;
-	let code = parsed.data.code;
+	let code = scannedCode;
 	let simulatedFallback: { eventId: string; code: string } | undefined;
-	for (const candidate of organizer.events) {
-		const tickets = await source.getEventTickets(candidate.id);
-		if (simulate) {
+
+	if (simulate) {
+		// Simulation still needs a candidate pass to exercise the verdict path.
+		for (const candidate of organizer.events) {
+			const tickets = await source.getEventTickets(candidate.id);
 			const open = tickets.find((t) => t.status === 'valid');
 			if (open) {
 				ticketEventId = candidate.id;
@@ -143,16 +154,17 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 				break;
 			}
 			if (!simulatedFallback && tickets[0]) simulatedFallback = { eventId: candidate.id, code: tickets[0].code };
-		} else if (tickets.some((t) => t.code === code)) {
-			ticketEventId = candidate.id;
-			break;
 		}
+		if (!ticketEventId && simulatedFallback) {
+			ticketEventId = simulatedFallback.eventId;
+			code = simulatedFallback.code;
+		}
+		if (!code) error(409, 'No tickets left to scan');
+	} else if (code) {
+		// Point lookup by code instead of downloading every ticket for every
+		// event the organizer runs on each scan.
+		ticketEventId = (await source.resolveTicketEvent(code)) ?? undefined;
 	}
-	if (simulate && !ticketEventId && simulatedFallback) {
-		ticketEventId = simulatedFallback.eventId;
-		code = simulatedFallback.code;
-	}
-	if (simulate && !code) error(409, 'No tickets left to scan');
 
 	if (ticketEventId && code) {
 		const checkin = await source.checkInTicket(ticketEventId, code, TERMINAL_GATE);

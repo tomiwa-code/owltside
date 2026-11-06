@@ -134,8 +134,8 @@ function buildApproval(
 		const eventId = text(body.subjectId, 60);
 		if (!eventId) return 'Choose a closed event to request a payout for.';
 		const eventTitle = text(body.subjectLabel, 120) || 'Settlement balance';
-		const amount = Number(body.amount);
-		if (!Number.isFinite(amount) || amount <= 0) return 'There is no cleared balance to pay out yet.';
+		// The amount is computed in the database from verified payments; a
+		// client-supplied number is never used for money movement.
 		const destination = text(body.destination, 80);
 		const bank = text(body.bank, 60);
 		const accountNumber = normaliseNuban(text(body.accountNumber, 20));
@@ -144,7 +144,6 @@ function buildApproval(
 			kind: 'payout',
 			title: `Payout request · ${eventTitle}`,
 			summary: `Cleared settlement balance requested${destination ? ` to ${destination}` : ''}`,
-			amount,
 			subjectId: eventId,
 			subjectLabel: eventTitle,
 			payload: {
@@ -163,15 +162,19 @@ function buildApproval(
 }
 
 export const GET: RequestHandler = async ({ locals, cookies }) => {
-	const approvals = await getSource(createSupabase(cookies)).listApprovals(
-		locals.session?.userId ?? 'demo'
-	);
+	if (!locals.session?.userId) {
+		return json({ error: 'Sign in to view your requests.' }, { status: 401 });
+	}
+	const approvals = await getSource(createSupabase(cookies)).listApprovals(locals.session.userId);
 	return json(approvals.map(redactForPublicClient), {
 		headers: { 'cache-control': 'private, max-age=0, no-store' }
 	});
 };
 
 export const POST: RequestHandler = async ({ locals, cookies, request }) => {
+	if (!locals.session?.userId) {
+		return json({ error: 'Sign in to submit a request.' }, { status: 401 });
+	}
 	let body: Record<string, unknown>;
 	try {
 		body = (await request.json()) as Record<string, unknown>;
@@ -189,17 +192,25 @@ export const POST: RequestHandler = async ({ locals, cookies, request }) => {
 	const supabase = createSupabase(cookies);
 
 	try {
-		const approval = await getSource(supabase).createApproval(
-			locals.session?.userId ?? 'demo',
-			input
-		);
+		const approval = await getSource(supabase).createApproval(locals.session.userId, input);
 		return json(redactForPublicClient(approval), {
 			status: 201,
 			headers: { 'cache-control': 'no-store' }
 		});
 	} catch (err) {
-		const message =
-			err instanceof Error ? err.message : 'Your request could not be submitted. Please try again.';
-		return json({ error: message }, { status: 400 });
+		const raw = err instanceof Error ? err.message : '';
+		// Database guards speak in human sentences; driver and schema errors do
+		// not. Pass the former through, and replace the latter so table names,
+		// constraints and stack details never reach the browser.
+		const leaksInternals =
+			/relation \"|column \"|constraint \"|duplicate key|violates |syntax error|permission denied|pg_|PGRST|JWT|schema cache/i.test(
+				raw
+			);
+		const friendly =
+			!raw || leaksInternals
+				? 'Your request could not be submitted. Please try again.'
+				: raw;
+		if (leaksInternals) console.warn('Approval submission rejected', { message: raw });
+		return json({ error: friendly }, { status: 400 });
 	}
 };

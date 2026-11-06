@@ -11,16 +11,47 @@
 	let {
 		code,
 		disabled = false,
-		disabledLabel = 'Not active'
-	}: { code: string; disabled?: boolean; disabledLabel?: string } = $props();
+		disabledLabel = 'Not active',
+		ticketId = '',
+		signed = false
+	}: {
+		code: string;
+		disabled?: boolean;
+		disabledLabel?: string;
+		ticketId?: string;
+		signed?: boolean;
+	} = $props();
 
 	let dataUrl = $state('');
 	let seconds = $state(30);
 	let lastWindow = 0;
 
+	/**
+	 * Real passes are signed server-side with a private secret. The client-side
+	 * signer is a development/demo fallback only — its secret ships in the
+	 * bundle, so it must never be trusted by a production scanner.
+	 */
+	async function serverToken(): Promise<string | null> {
+		if (!ticketId) return null;
+		try {
+			const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/qr`, {
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) return null;
+			const body = (await response.json()) as { token?: unknown };
+			return typeof body.token === 'string' ? body.token : null;
+		} catch {
+			return null;
+		}
+	}
+
 	async function render() {
 		try {
-			const payload = await signToken(code);
+			const payload = signed ? await serverToken() : await signToken(code);
+			if (!payload) {
+				dataUrl = '';
+				return;
+			}
 			dataUrl = await QRCode.toDataURL(payload, {
 				margin: 1,
 				width: 520,

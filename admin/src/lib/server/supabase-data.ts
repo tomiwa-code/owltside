@@ -56,6 +56,9 @@ async function rowsFrom(
 ): Promise<Record<string, any>[]> {
 	const rows: Record<string, any>[] = [];
 	const pageSize = 1000;
+	// A hard ceiling keeps a large tenant from turning an admin page into an
+	// unbounded table scan (and a memory spike on a serverless function).
+	const maxRows = 20_000;
 	for (let offset = 0; ; offset += pageSize) {
 		let query = client.from(table).select(columns);
 		if (configure) query = configure(query);
@@ -64,6 +67,10 @@ async function rowsFrom(
 		const page = (data ?? []) as Record<string, any>[];
 		rows.push(...page);
 		if (page.length < pageSize) break;
+		if (rows.length >= maxRows) {
+			console.warn(`[admin] ${table} read stopped at ${maxRows} rows; narrow the filter or add server-side paging.`);
+			break;
+		}
 	}
 	return rows;
 }

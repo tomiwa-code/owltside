@@ -4,6 +4,7 @@ const source = vi.hoisted(() => ({
 	getOrganizer: vi.fn(),
 	getOrganizerEvent: vi.fn(),
 	getEventTickets: vi.fn(),
+	resolveTicketEvent: vi.fn(),
 	checkInTicket: vi.fn(),
 	checkInWithStaffToken: vi.fn(),
 	verifyGateToken: vi.fn(),
@@ -47,6 +48,7 @@ beforeEach(() => {
 	source.verifyScannerToken.mockResolvedValue(false);
 	source.verifyGateToken.mockResolvedValue(false);
 	source.resolveStaffScanToken.mockResolvedValue(null);
+	source.resolveTicketEvent.mockResolvedValue(null);
 });
 
 describe('standalone scanner terminal API', () => {
@@ -102,9 +104,8 @@ describe('standalone scanner terminal API', () => {
 			checkins: [],
 			orders: []
 		});
-		source.getEventTickets.mockImplementation(async (eventId: string) =>
-			eventId === 'e-2' ? [{ code: 'EV-HIT-0001', status: 'valid' }] : []
-		);
+		// One indexed lookup by code, not a full download of every event's passes.
+		source.resolveTicketEvent.mockResolvedValue('e-2');
 		source.checkInTicket.mockResolvedValue({
 			id: 'ck-1',
 			eventId: 'e-2',
@@ -119,6 +120,8 @@ describe('standalone scanner terminal API', () => {
 		const response = await post(scan as Handler, { staffToken: '424242', code: 'EV-HIT-0001' });
 		const result = await response.json();
 
+		expect(source.resolveTicketEvent).toHaveBeenCalledWith('EV-HIT-0001');
+		expect(source.getEventTickets).not.toHaveBeenCalled();
 		expect(source.checkInTicket).toHaveBeenCalledWith('e-2', 'EV-HIT-0001', 'Terminal');
 		expect(result).toMatchObject({ result: 'verified', eventId: 'e-2' });
 	});

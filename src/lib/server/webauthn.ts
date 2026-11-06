@@ -9,7 +9,6 @@ import {
 	timingSafeEqual
 } from 'node:crypto';
 import { env as privateEnv } from '$env/dynamic/private';
-import { env as publicEnv } from '$env/dynamic/public';
 
 export interface StoredBiometricCredential {
 	credentialId: string;
@@ -30,13 +29,18 @@ export const BIOMETRIC_UNLOCKED_COOKIE = 'owltside_bio_unlocked';
 export const BIOMETRIC_JUST_AUTHED_COOKIE = 'owltside_just_authed';
 
 function resolveSecret(): Buffer {
-	const raw =
-		privateEnv.BIOMETRIC_SECRET ||
-		privateEnv.SUPABASE_JWT_SECRET ||
-		publicEnv.PUBLIC_SUPABASE_ANON_KEY ||
-		privateEnv.SUPABASE_ANON_KEY ||
-		'owltside-biometric-webauthn-secret-key-v1';
-	return createHash('sha256').update(raw).digest();
+	// BIOMETRIC_SECRET is the only acceptable source in production. Chaining to
+	// the anon key was a soft fallback that made an attacker-known public value
+	// sign biometric vault cookies.
+	const explicit = (privateEnv.BIOMETRIC_SECRET || '').trim();
+	if (explicit) return createHash('sha256').update(explicit).digest();
+	if (process.env.NODE_ENV === 'production') {
+		throw new Error(
+			'BIOMETRIC_SECRET is required in production: it encrypts stored passkey vaults. ' +
+				'Generate one with `openssl rand -hex 32`.'
+		);
+	}
+	return createHash('sha256').update('owltside-biometric-webauthn-dev-only').digest();
 }
 
 export function toBase64Url(buf: Buffer | Uint8Array): string {

@@ -39,7 +39,6 @@ import type { ResolvedPromo } from '$lib/types';
 	let promoInput = $state('');
 	let appliedPromo = $state<ResolvedPromo | null>(data.promo ?? null);
 	let promoApplying = $state(false);
-	let paystackReference = $state('');
 	let submitting = $state(false);
 
 	let modal = $state<null | 'verifying' | 'declined'>(null);
@@ -82,35 +81,11 @@ import type { ResolvedPromo } from '$lib/types';
 		`ORD-${([...event.id].reduce((a, c) => a + c.charCodeAt(0), 0) % 9000) + 1000}-NG`
 	);
 
-	type PaystackPopInstance = {
-		setup: (opts: {
-			key: string;
-			email: string;
-			amount: number;
-			currency?: string;
-			ref?: string;
-			metadata?: Record<string, unknown>;
-			callback?: (response: { reference?: string }) => void;
-			onClose?: () => void;
-		}) => { openIframe: () => void };
-	};
-
-	function ensurePaystackInline(): Promise<PaystackPopInstance | null> {
-		if (typeof window === 'undefined') return Promise.resolve(null);
-		const existing = (window as unknown as { PaystackPop?: PaystackPopInstance }).PaystackPop;
-		if (existing) return Promise.resolve(existing);
-		return new Promise((resolve) => {
-			const script = document.createElement('script');
-			script.src = 'https://js.paystack.co/v1/inline.js';
-			script.async = true;
-			script.onload = () => {
-				resolve((window as unknown as { PaystackPop?: PaystackPopInstance }).PaystackPop ?? null);
-			};
-			script.onerror = () => resolve(null);
-			document.head.appendChild(script);
-		});
-	}
-
+	/**
+	 * Payment always starts on the server: the checkout action reserves the
+	 * order, computes the amount and hands off to Paystack. The browser never
+	 * decides what a ticket costs.
+	 */
 	async function onPay() {
 		if (submitting) return;
 		if (!data.holder?.authenticated) {
@@ -118,44 +93,6 @@ import type { ResolvedPromo } from '$lib/types';
 			goto(`/auth/login?next=${encodeURIComponent(`${page.url.pathname}${page.url.search}`)}`);
 			return;
 		}
-
-		// Open Paystack Inline Popup when a Paystack public key is configured and total > 0
-		if (total > 0 && data.paystackPublicKey) {
-			submitting = true;
-			const pop = await ensurePaystackInline();
-			if (pop) {
-				const reference = `OWT-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
-				try {
-					const handler = pop.setup({
-						key: data.paystackPublicKey,
-						email: data.holder.email,
-						amount: Math.round(total * 100),
-						currency: 'NGN',
-						ref: reference,
-						metadata: {
-							custom_fields: [
-								{ display_name: 'Event', variable_name: 'event', value: event.title },
-								{ display_name: 'Tier', variable_name: 'tier', value: tier.name },
-								{ display_name: 'Quantity', variable_name: 'qty', value: String(qty) }
-							]
-						},
-						callback: (response) => {
-							paystackReference = response?.reference || reference;
-							submitForm();
-						},
-						onClose: () => {
-							submitting = false;
-							modal = null;
-						}
-					});
-					handler.openIframe();
-					return;
-				} catch {
-					// Fallback to server-side Paystack initialization
-				}
-			}
-		}
-
 		submitForm();
 	}
 
@@ -203,7 +140,6 @@ import type { ResolvedPromo } from '$lib/types';
 
 <svelte:head>
 	<title>Checkout • Owltside</title>
-	<script src="https://js.paystack.co/v1/inline.js"></script>
 </svelte:head>
 
 <!-- ── desktop (md+) "Checkout Node" composition — same design language as the
@@ -279,7 +215,7 @@ import type { ResolvedPromo } from '$lib/types';
 		<input type="hidden" name="tier" value={tierId} />
 		<input type="hidden" name="qty" value={qty} />
 		<input type="hidden" name="promo" value={appliedPromo?.code ?? ''} />
-		<input type="hidden" name="paystackReference" value={paystackReference} />
+		<input type="hidden" name="checkoutKey" value={data.checkoutKey ?? ''} />
 
 		<!-- left column -->
 		<div class="flex flex-col gap-6 min-w-0">
@@ -556,7 +492,7 @@ import type { ResolvedPromo } from '$lib/types';
 			<input type="hidden" name="tier" value={tierId} />
 			<input type="hidden" name="qty" value={qty} />
 			<input type="hidden" name="promo" value={appliedPromo?.code ?? ''} />
-			<input type="hidden" name="paystackReference" value={paystackReference} />
+			<input type="hidden" name="checkoutKey" value={data.checkoutKey ?? ''} />
 
 			<!-- order summary -->
 			<div class="bg-surface-container rounded-xl border border-surface-glass-border overflow-hidden relative p-space-md flex flex-col gap-space-sm">
