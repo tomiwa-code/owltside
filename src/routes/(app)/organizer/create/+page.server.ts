@@ -29,7 +29,7 @@ const draftSchema = z.object({
 	title: z.string().trim().min(3, 'Give the event a title').max(80),
 	category: z.string().trim().min(2, 'Choose a category').max(48),
 	tags: z.array(z.string().min(1).max(48)).max(1).default([]),
-	security: z.object({ allowOverride: z.boolean().default(true), allowOffline: z.boolean().default(true), restrictGates: z.boolean().default(true), hmacRotation: z.boolean().default(true), offlineKeyring: z.boolean().default(true), biometricFast: z.boolean().default(true), conflictPolicy: z.enum(['strict', 'flexible']).default('strict') }).default({ allowOverride: true, allowOffline: true, restrictGates: true, hmacRotation: true, offlineKeyring: true, biometricFast: true, conflictPolicy: 'strict' }),
+	security: z.object({ allowOverride: z.boolean().default(true), allowOffline: z.boolean().default(true), restrictGates: z.boolean().default(true), hmacRotation: z.boolean().default(true), offlineKeyring: z.boolean().default(true), conflictPolicy: z.enum(['strict', 'flexible']).default('strict') }).default({ allowOverride: true, allowOffline: true, restrictGates: true, hmacRotation: true, offlineKeyring: true, conflictPolicy: 'strict' }),
 	distribution: z.object({ publishExplore: z.boolean().default(true), broadcast: z.boolean().default(true), launchMode: z.enum(['now', 'staged']).default('now') }).default({ publishExplore: true, broadcast: true, launchMode: 'now' }),
 	speakers: z.array(z.object({
 		id: z.string().optional(),

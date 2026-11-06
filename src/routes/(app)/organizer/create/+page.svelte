@@ -212,7 +212,6 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 	let restrictGates = $state(true);
 	let hmacRotation = $state(true);
 	let offlineKeyring = $state(true);
-	let biometricFast = $state(true);
 	let conflictPolicy = $state('strict');
 	const draftJson = $derived(
 		JSON.stringify({
@@ -227,7 +226,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 			venue: venue.trim(),
 			city: city.trim() || 'Lagos',
 			description: description.trim(),
-			security: { allowOverride, allowOffline, restrictGates, hmacRotation, offlineKeyring, biometricFast, conflictPolicy },
+			security: { allowOverride, allowOffline, restrictGates, hmacRotation, offlineKeyring, conflictPolicy },
 			distribution: { publishExplore, broadcast, launchMode },
 			tiers: tiers.map(({ editing: _e, ...t }) => ({
 				...t,
@@ -260,7 +259,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 	const sessionTypes = ['Keynote', 'Deep Dive', 'Showcase', 'Workshop'];
 	const gateSubs = [
 		'General Admission West Entry • NFC Contactless & High-Density Barcode Array',
-		'Hall A North Annex • Zero-Knowledge Biometric Turnstile & Dynamic QR',
+		'Hall A North Annex • Dynamic QR & Contactless Validation Array',
 		'Service & Press Corridor • Manual Verify Lane with Hardware Nonce Check'
 	];
 
@@ -322,7 +321,6 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 		restrictGates = security.restrictGates ?? true;
 		hmacRotation = security.hmacRotation ?? true;
 		offlineKeyring = security.offlineKeyring ?? true;
-		biometricFast = security.biometricFast ?? true;
 		conflictPolicy = security.conflictPolicy ?? 'strict';
 		const distribution = draft.distribution ?? {};
 		publishExplore = distribution.publishExplore ?? true;
@@ -1402,8 +1400,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 					</div>
 					{#each [
 						{ key: 'hmac', title: 'Dynamic 30s HMAC QR Rotation', sub: 'Prevents ticket scalpers sharing screenshots or replays' },
-						{ key: 'keyring', title: 'Offline Verification Keyring', sub: 'Pre-seed turnstiles with validator public keys for zero latency' },
-						{ key: 'bio', title: 'Biometric Turnstile Fast-Pass', sub: 'Enables voluntary on-device zero-knowledge face hashing' }
+						{ key: 'keyring', title: 'Offline Verification Keyring', sub: 'Pre-seed turnstiles with validator public keys for zero latency' }
 					] as row (row.key)}
 						<div class="rounded-lg border border-surface-glass-border bg-surface-container-low px-4 py-3 flex items-center justify-between gap-4">
 							<span class="min-w-0">
@@ -1414,18 +1411,17 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 								type="button"
 								role="switch"
 								aria-label={row.title}
-								aria-checked={row.key === 'hmac' ? hmacRotation : row.key === 'keyring' ? offlineKeyring : biometricFast}
+								aria-checked={row.key === 'hmac' ? hmacRotation : offlineKeyring}
 								onclick={() => {
 									if (row.key === 'hmac') hmacRotation = !hmacRotation;
-									else if (row.key === 'keyring') offlineKeyring = !offlineKeyring;
-									else biometricFast = !biometricFast;
+									else offlineKeyring = !offlineKeyring;
 								}}
 								class="w-11 h-6 rounded-full relative shrink-0 transition-colors
-									{row.key === 'hmac' ? (hmacRotation ? 'bg-primary' : 'bg-surface-container-highest') : row.key === 'keyring' ? (offlineKeyring ? 'bg-primary' : 'bg-surface-container-highest') : biometricFast ? 'bg-primary' : 'bg-surface-container-highest'}"
+									{row.key === 'hmac' ? (hmacRotation ? 'bg-primary' : 'bg-surface-container-highest') : offlineKeyring ? 'bg-primary' : 'bg-surface-container-highest'}"
 							>
 								<span
 									class="absolute top-0.5 w-5 h-5 rounded-full bg-surface-base transition-all
-										{row.key === 'hmac' ? (hmacRotation ? 'left-[22px]' : 'left-0.5') : row.key === 'keyring' ? (offlineKeyring ? 'left-[22px]' : 'left-0.5') : biometricFast ? 'left-[22px]' : 'left-0.5'}"
+										{row.key === 'hmac' ? (hmacRotation ? 'left-[22px]' : 'left-0.5') : offlineKeyring ? 'left-[22px]' : 'left-0.5'}"
 								></span>
 							</button>
 						</div>
@@ -2231,8 +2227,8 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-space-sm">
 					<div class="flex items-center justify-between gap-2"><span class="font-display text-headline-md text-on-surface">Anti-Fraud Safeguards</span><span class="text-label-badge text-on-surface-variant">Zero-knowledge</span></div>
-					{#each [{ title: 'Dynamic 30s HMAC QR rotation', sub: 'Stops screenshot reuse and replay attempts', bind: 'hmac', value: hmacRotation }, { title: 'Offline verification keyring', sub: 'Pre-seed turnstiles for zero-latency validation', bind: 'keyring', value: offlineKeyring }, { title: 'Biometric turnstile fast-pass', sub: 'Optional on-device identity verification', bind: 'bio', value: biometricFast }] as safeguard (safeguard.bind)}
-						<label class="flex items-start justify-between gap-3 rounded-xl border border-surface-glass-border bg-surface-container-low p-3"><span><span class="block text-body-sm font-semibold text-on-surface">{safeguard.title}</span><span class="block text-label-badge text-on-surface-variant pt-1">{safeguard.sub}</span></span><input type="checkbox" checked={safeguard.value} onchange={() => { if (safeguard.bind === 'hmac') hmacRotation = !hmacRotation; else if (safeguard.bind === 'keyring') offlineKeyring = !offlineKeyring; else biometricFast = !biometricFast; }} class="w-4 h-4 accent-[#c0c1ff] shrink-0" /></label>
+					{#each [{ title: 'Dynamic 30s HMAC QR rotation', sub: 'Stops screenshot reuse and replay attempts', bind: 'hmac', value: hmacRotation }, { title: 'Offline verification keyring', sub: 'Pre-seed turnstiles for zero-latency validation', bind: 'keyring', value: offlineKeyring }] as safeguard (safeguard.bind)}
+						<label class="flex items-start justify-between gap-3 rounded-xl border border-surface-glass-border bg-surface-container-low p-3"><span><span class="block text-body-sm font-semibold text-on-surface">{safeguard.title}</span><span class="block text-label-badge text-on-surface-variant pt-1">{safeguard.sub}</span></span><input type="checkbox" checked={safeguard.value} onchange={() => { if (safeguard.bind === 'hmac') hmacRotation = !hmacRotation; else offlineKeyring = !offlineKeyring; }} class="w-4 h-4 accent-[#c0c1ff] shrink-0" /></label>
 					{/each}
 					<label class="flex flex-col gap-1 text-label-badge text-on-surface-variant">Duplicate-entry policy<select bind:value={conflictPolicy} class="h-11 px-3 rounded-lg bg-surface-container-low border border-surface-glass-border text-body-sm text-on-surface"><option value="strict">Strict rejection &amp; log</option><option value="quarantine">Quarantine for re-verification</option><option value="warn">Warn and notify security</option></select></label>
 					<p class="text-label-badge text-on-surface-variant">Triggered if a checked-in ticket tries to enter again within 120 minutes.</p>
