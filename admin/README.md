@@ -16,22 +16,81 @@ owltside/admin/      control plane → http://localhost:5174
 ```bash
 cd admin
 npm install
-npm run dev        # http://localhost:5174  (demo mode, zero config)
+npx svelte-kit sync # generate route types
+npm run dev        # http://localhost:5174 (Supabase configuration required)
 npm run check      # svelte-check / TypeScript
 npm test           # vitest unit suite (store, auth, export contracts)
 npm run build      # production build (@sveltejs/adapter-vercel)
 ```
 
-Demo credentials are pre-filled on the sign-in screen:
-`admin@owltside.com` / `owltside-admin-2026`. The hardware-key button simulates a
-FIDO2 assertion. Copy `.env.example` → `.env` and set `ADMIN_EMAIL`,
-`ADMIN_PASSWORD` (16+ chars) and `ADMIN_SESSION_SECRET` to leave demo mode.
+## Admin accounts: Supabase Auth + database access list
+
+There are no demo credentials or environment-based admin logins. Each admin
+uses their own **Supabase Auth email/password**. Password hashes are managed by
+Supabase in `auth.users`; **never put passwords in a public table**.
+`public.admin_accounts` is the separate allowlist of permitted administrators.
+A customer account alone does not grant any admin access.
+
+### Set up your first admin
+
+1. Run `supabase/sql/032_admin_accounts.sql` in the **same Supabase project's SQL
+   Editor** after migration 031. It creates `public.admin_accounts`, visible in
+   Table Editor. New all-in-one schema installs already include this migration.
+2. In **Authentication → Users**, create an email/password user (or use an
+   existing one). Ensure their email is confirmed. Enable the Email provider's
+   password sign-in in Supabase. Use a strong, unique password; the project's
+   Supabase password policy applies.
+3. Copy that user's ID, then run the following in SQL Editor, replacing the
+   example ID and name with the actual Auth user ID and administrator name:
+
+   ```sql
+   insert into public.admin_accounts (user_id, name, role)
+   values ('YOUR_AUTH_USER_UUID', 'Your name', 'Super Admin');
+   ```
+
+4. Copy `admin/.env.example` to `admin/.env` and configure
+   `PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and
+   `ADMIN_SESSION_SECRET` (generate with `openssl rand -hex 32`). In production,
+   set these in the **admin deployment's environment settings**. Never expose
+   the service-role key to a browser or prefix it with `PUBLIC_`.
+5. Restart the admin app and sign in at `/login` with that Auth user's email
+   and password. There is no `ADMIN_EMAIL` / `ADMIN_PASSWORD` fallback.
+
+### Add, change, or revoke access
+
+Create each additional user in Supabase Auth and insert their own allowlist
+row. `role` accepts the six roles in the authorization ladder below; `tier` is
+computed automatically, so do not insert or edit it. You can manage names,
+roles and `is_active` through Table Editor or trusted SQL:
+
+```sql
+-- Suspension immediately blocks the next admin request, including live sessions.
+update public.admin_accounts set is_active = false
+where user_id = 'THE_AUTH_USER_UUID';
+-- Restore access with is_active = true; delete the row to remove access entirely.
+```
+
+Only trusted database operators/the server service role can access this table;
+RLS is enabled with no browser-accessible policies. User-editable profiles and
+Auth metadata never grant privileges. Role changes and suspensions are checked
+on every request, not just at sign-in. Database failures deny access. Existing
+legacy environment-based cookies are rejected after this upgrade.
+
+The current `/staff` invitation/status controls are **in-memory workflow stubs**,
+not this access list. Use Supabase to provision/suspend real accounts; those
+controls do not grant or revoke login access. For password resets, use Supabase
+Auth's recovery workflow; the admin app does not provide a reset page. To revoke
+an existing admin session during recovery, deactivate its allowlist row.
+
+This integration uses password authentication, not WebAuthn or TOTP. No Supabase
+access/refresh tokens are exposed to the admin browser. The console issues its
+own signed, HttpOnly cookie lasting 2 hours (12 hours when remembered).
 
 ## Routes
 
 | Route | Purpose |
 | --- | --- |
-| `/login` | Credential + WebAuthn sign-in, rate-limited, signed HttpOnly cookie |
+| `/login` | Supabase email/password sign-in, rate-limited, signed HttpOnly cookie |
 | `/dashboard` | GMV/settlement KPIs, revenue velocity, review queue, top events, live ledger |
 | `/search` | Federated Search HUD (users, passes, orders, events, organizers, incidents) |
 | `/events`, `/events/[id]` | Organizer submission queue (live Supabase), approve/publish/reject, capacity & compliance |
@@ -45,7 +104,7 @@ FIDO2 assertion. Copy `.env.example` → `.env` and set `ADMIN_EMAIL`,
 | `/reports` | Content reports from the public app: event listings and public profiles, action/dismiss with a note |
 | `/moderation` | Incident triage, forensic telemetry, warn / dismiss / freeze sales |
 | `/audit`, `/audit/[id]` | Immutable hash-chained ledger + forensic record dossier |
-| `/staff` | Administrators, permission matrix, hardware-key enrolment, telemetry |
+| `/staff` | Staff workflow stubs and permission matrix (real access is managed in Supabase) |
 | `/settings` | Paystack rails, credential policy, signing keys, integrations |
 
 Every list view supports `?q=`, status filters and pagination; the URL is the
@@ -156,7 +215,9 @@ API routes return `401` when signed out and `403` when the tier is insufficient.
 - Stateless HMAC-signed session cookie (`owl_admin_session`) — session integrity
   only, never attendee passes. `HttpOnly`, `SameSite=Strict`, `Secure` in
   production, 2h TTL (12h when remembered).
-- Constant-time credential comparison; 5 failed attempts per IP per 10 minutes.
+- Supabase Auth verifies passwords; 5 failed attempts per IP per 10 minutes
+  per server process, in addition to Supabase Auth rate limits. For multi-instance
+  deployments, add a shared rate limiter at the gateway.
 - `hooks.server.ts` redirects unauthenticated requests, and sets
   `X-Frame-Options: DENY`, `nosniff`, strict referrer policy, `noindex`,
   COOP, a restrictive permissions policy, HSTS in production, and `no-store`
@@ -240,14 +301,14 @@ cd admin
 npm test
 ```
 
-`tests/store.test.ts` exercises the mutation invariants (settled-only refunds,
-void/re-issue epoch handling, audit chain integrity, pagination clamping);
-`tests/auth.test.ts` covers demo/live auth, lockout, cookie signing/expiry and
-the tier ladder; `tests/export.test.ts` locks the CSV contract and every export
-link referenced in the UI; `tests/approvals.test.ts` locks the approval queue
-(reason required to reject, approve-refund settles the pass, no double
-decisions); `tests/reports.test.ts` locks the content report queue (both target
-types, mandatory review note, no double reviews).
+`tests/auth.test.ts` covers Supabase password verification, denied access,
+lockout, refreshed session permissions, cookie signing/expiry and tier guards.
+`tests/admin-access.test.ts` covers server-only client configuration and trusted
+access-row validation. The repository-root
+`tests/unit/admin-accounts-database.test.ts` executes migration 032 in PGlite
+and checks role/tier constraints, foreign keys and client-role access denial.
+The remaining admin suites cover verification workflows, announcements and UI
+regressions.
 
 ## Deploy
 

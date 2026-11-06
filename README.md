@@ -76,6 +76,7 @@ code paths switch to the live backend — no component changes.
    - `031_platform_announcements.sql` — service-role-only, atomic admin
      announcements: one durable send record plus an unread notification for
      every public profile
+   - `032_admin_accounts.sql` — Supabase Auth-linked admin access list (see `admin/README.md` for first-admin setup)
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 
@@ -387,3 +388,10 @@ fresh setups), then deploy both apps against that same database.
 - The new service-role-only RPC and database guard enforce this workflow even for
   direct API calls. An outstanding admin request is shown as **Awaiting user**, not
   as a pending submission that could be approved before the user responds.
+
+### Admin login accounts
+
+The separate admin console uses Supabase Auth email/password plus the
+`public.admin_accounts` allowlist. Apply `supabase/sql/032_admin_accounts.sql`
+and follow [first-admin setup](admin/README.md#admin-accounts-supabase-auth--database-access-list).
+Passwords are managed in Authentication → Users, not stored in the allowlist.
