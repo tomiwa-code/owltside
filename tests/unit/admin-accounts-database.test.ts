@@ -14,15 +14,30 @@ beforeAll(async () => {
 		create role authenticated;
 		create role service_role bypassrls;
 		create schema auth;
-		create table auth.users (id uuid primary key);
+		create table auth.users (
+			id uuid primary key, instance_id uuid, aud text, role text,
+			email text unique, encrypted_password text, email_confirmed_at timestamptz,
+			raw_app_meta_data jsonb, raw_user_meta_data jsonb,
+			confirmation_token text, recovery_token text, email_change_token_new text,
+			email_change text, email_change_token_current text, reauthentication_token text,
+			created_at timestamptz, updated_at timestamptz
+		);
+		create table auth.identities (
+			id uuid primary key,
+			user_id uuid not null references auth.users(id) on delete cascade,
+			provider_id text not null, provider text not null, identity_data jsonb not null,
+			created_at timestamptz, updated_at timestamptz,
+			unique (provider_id, provider)
+		);
 		grant usage on schema public to anon, authenticated, service_role;
 	`);
 	await db.exec(migration);
-	await db.query('insert into auth.users values ($1)', [userId]);
+	await db.query('insert into auth.users (id) values ($1)', [userId]);
 }, 30_000);
 
 beforeEach(async () => {
-	await db.exec('reset role; truncate public.admin_accounts;');
+	await db.exec('reset role; truncate auth.users cascade;');
+	await db.query('insert into auth.users (id) values ($1)', [userId]);
 });
 
 afterAll(async () => { await db.close(); });
@@ -33,6 +48,49 @@ describe('database-enforced admin access list', () => {
 		expect(readFileSync('supabase/sql/000_full_schema.sql', 'utf8')).toContain(migration);
 		const { rows } = await db.query<{ relrowsecurity: boolean }>("select relrowsecurity from pg_class where oid = 'public.admin_accounts'::regclass");
 		expect(rows[0].relrowsecurity).toBe(true);
+	});
+
+	it('bootstraps the confirmed default login with an email identity and Super Admin access', async () => {
+		await db.exec(migration);
+		const { rows } = await db.query<{
+			id: string; email: string; encrypted_password: string; email_confirmed_at: string;
+			role: string; tier: number; is_active: boolean;
+		}>(`select u.id, u.email, u.encrypted_password, u.email_confirmed_at,
+		         a.role, a.tier, a.is_active
+		    from auth.users u join public.admin_accounts a on a.user_id = u.id
+		   where u.email = 'admin@owltside.com'`);
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({ email: 'admin@owltside.com', role: 'Super Admin', tier: 0, is_active: true });
+		expect(rows[0].email_confirmed_at).toBeTruthy();
+		expect(rows[0].encrypted_password).toMatch(/^\$2b\$12\$/);
+		expect(rows[0].encrypted_password).not.toContain('owltside-admin-2026');
+		const identities = await db.query('select user_id, provider_id, provider, identity_data from auth.identities');
+		expect(identities.rows).toEqual([{
+			user_id: rows[0].id, provider_id: rows[0].id, provider: 'email',
+			identity_data: { sub: rows[0].id, email: 'admin@owltside.com', email_verified: true, phone_verified: false }
+		}]);
+	});
+
+	it('does not reset passwords or undo suspensions/demotions on rerun', async () => {
+		await db.exec(migration);
+		await db.exec(`update auth.users set encrypted_password = 'rotated-hash' where email = 'admin@owltside.com';
+		              update public.admin_accounts set is_active = false, role = 'Read-only Auditor';`);
+		await db.exec(migration);
+		const users = await db.query("select encrypted_password from auth.users where email = 'admin@owltside.com'");
+		expect(users.rows).toEqual([{ encrypted_password: 'rotated-hash' }]);
+		expect((await db.query('select is_active, role, tier from public.admin_accounts')).rows)
+			.toEqual([{ is_active: false, role: 'Read-only Auditor', tier: 3 }]);
+		expect((await db.query('select id from auth.identities')).rows).toHaveLength(1);
+	});
+
+	it('reuses an existing email case-insensitively without replacing credentials', async () => {
+		await db.query(`insert into auth.users (id, email, encrypted_password)
+		               values ($1, 'ADMIN@OWLTSIDE.COM', 'existing-password-hash')`, [randomUUID()]);
+		await db.exec(migration);
+		const { rows } = await db.query(`select u.encrypted_password, u.email_confirmed_at, a.role
+		                                from auth.users u join public.admin_accounts a on a.user_id = u.id`);
+		expect(rows).toEqual([{ encrypted_password: 'existing-password-hash', email_confirmed_at: null, role: 'Super Admin' }]);
+		expect((await db.query('select id from auth.identities')).rows).toHaveLength(0);
 	});
 
 	it('uses Auth foreign keys and safe auditor defaults', async () => {
@@ -70,7 +128,7 @@ describe('database-enforced admin access list', () => {
 		expect((await db.query('select is_active, tier from public.admin_accounts')).rows[0]).toEqual({ is_active: false, tier: 3 });
 		await db.exec('reset role;');
 		const temporaryId = randomUUID();
-		await db.query('insert into auth.users values ($1)', [temporaryId]);
+		await db.query('insert into auth.users (id) values ($1)', [temporaryId]);
 		await db.query("insert into public.admin_accounts (user_id, name) values ($1, 'Temporary')", [temporaryId]);
 		await db.query('delete from auth.users where id = $1', [temporaryId]);
 		expect((await db.query('select * from public.admin_accounts where user_id = $1', [temporaryId])).rows).toHaveLength(0);

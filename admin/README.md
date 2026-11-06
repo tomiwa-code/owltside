@@ -25,9 +25,10 @@ npm run build      # production build (@sveltejs/adapter-vercel)
 
 ## Admin accounts: Supabase Auth + database access list
 
-There are no demo credentials or environment-based admin logins. Each admin
-uses their own **Supabase Auth email/password**. Password hashes are managed by
-Supabase in `auth.users`; **never put passwords in a public table**.
+There is no environment-based login bypass. Admins sign in with
+**Supabase Auth email/password**. Migration 032 bootstraps the initial account
+listed below; provision individual accounts for your team. Password hashes are
+managed by Supabase in `auth.users`; **never put passwords in a public table**.
 `public.admin_accounts` is the separate allowlist of permitted administrators.
 A customer account alone does not grant any admin access.
 
@@ -36,30 +37,40 @@ A customer account alone does not grant any admin access.
 1. Run `supabase/sql/032_admin_accounts.sql` in the **same Supabase project's SQL
    Editor** after migration 031. It creates `public.admin_accounts`, visible in
    Table Editor. New all-in-one schema installs already include this migration.
-2. In **Authentication → Users**, create an email/password user (or use an
-   existing one). Ensure their email is confirmed. Enable the Email provider's
-   password sign-in in Supabase. Use a strong, unique password; the project's
-   Supabase password policy applies.
-3. Copy that user's ID, then run the following in SQL Editor, replacing the
-   example ID and name with the actual Auth user ID and administrator name:
+2. Migration 032 creates a confirmed Supabase Auth user and email identity with:
+   - **Work email address:** `admin@owltside.com`
+   - **Security password:** `owltside-admin-2026`
+   - **Access:** Super Admin (tier 0) in `public.admin_accounts`.
 
-   ```sql
-   insert into public.admin_accounts (user_id, name, role)
-   values ('YOUR_AUTH_USER_UUID', 'Your name', 'Super Admin');
-   ```
+   The password is stored only as a bcrypt hash in `auth.users`, never in the
+   access list. Enable email/password sign-in in Supabase's Email provider.
+3. **Change this publicly known default password immediately through Supabase
+   Auth before production use.** Re-running 032 does not reset an existing
+   user's password or confirmation state, nor does it undo an existing admin's
+   suspension or role changes. If that email already exists, use its current
+   password or explicitly reset it in Supabase Auth; the migration prints a
+   notice and preserves the existing credentials.
 
 4. Copy `admin/.env.example` to `admin/.env` and configure
    `PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and
    `ADMIN_SESSION_SECRET` (generate with `openssl rand -hex 32`). In production,
    set these in the **admin deployment's environment settings**. Never expose
    the service-role key to a browser or prefix it with `PUBLIC_`.
-5. Restart the admin app and sign in at `/login` with that Auth user's email
-   and password. There is no `ADMIN_EMAIL` / `ADMIN_PASSWORD` fallback.
+5. Restart the admin app and sign in at `/login` with the initial credentials
+   above (or the changed password for an existing account). There is no
+   `ADMIN_EMAIL` / `ADMIN_PASSWORD` fallback.
 
 ### Add, change, or revoke access
 
-Create each additional user in Supabase Auth and insert their own allowlist
-row. `role` accepts the six roles in the authorization ladder below; `tier` is
+Create each additional user in Supabase Auth, confirm their email, and insert
+an allowlist row using their actual Auth user UUID:
+
+```sql
+insert into public.admin_accounts (user_id, name, role)
+values ('YOUR_AUTH_USER_UUID', 'Your name', 'Read-only Auditor');
+```
+
+`role` accepts the six roles in the authorization ladder below; `tier` is
 computed automatically, so do not insert or edit it. You can manage names,
 roles and `is_active` through Table Editor or trusted SQL:
 
