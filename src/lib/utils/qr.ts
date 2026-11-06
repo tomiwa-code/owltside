@@ -1,11 +1,15 @@
 import { tokenWindow } from './dates';
 
 /**
- * Rotating, tamper-evident ticket tokens.
- * Payload: owltside://t/<code>?s=<hmac over code+30s window>
- * The signature rotates every 30 s so screenshots expire quickly.
- * Server-side (Supabase edge / gate scanner) recomputes the same HMAC with the
- * shared secret; in demo mode the client holds a dev secret.
+ * Client-side rotating ticket tokens — DEMO ONLY.
+ *
+ * Payload: owltside://t/<code>?s=<hmac over code+30s window>.
+ *
+ * `DEMO_QR_SECRET` ships inside the browser bundle, so anyone can mint a valid
+ * signature with it. Real passes are signed by `/api/tickets/[id]/qr` using
+ * `$lib/server/qr-sign.ts` (private `QR_SIGNING_SECRET`), and the scanner
+ * validates that signature. This module exists so the demo/seeded sandbox can
+ * render a rotating code without a server round-trip.
  */
 export const DEMO_QR_SECRET = 'owltside-demo-signing-secret';
 

@@ -24,6 +24,49 @@ export interface WebPushPayload {
 	silent?: boolean;
 }
 
+/**
+ * Only real browser push services may be contacted.
+ *
+ * `endpoint` is supplied by the client and later POSTed by the server, which
+ * made it a blind SSRF primitive: an attacker could point it at internal
+ * addresses (cloud metadata, localhost services) and have the server call them
+ * with a VAPID Authorization header. An allowlist of push hosts removes the
+ * primitive entirely.
+ */
+const DEFAULT_PUSH_HOSTS = [
+	'fcm.googleapis.com',
+	'android.googleapis.com',
+	'push.services.mozilla.com',
+	'notify.windows.com',
+	'push.apple.com',
+	'push.yandex.ru'
+];
+
+function pushHostAllowlist(): string[] {
+	const extra = (privateEnv.PUSH_ENDPOINT_ALLOWLIST || '')
+		.split(',')
+		.map((entry) => entry.trim().toLowerCase())
+		.filter(Boolean);
+	return [...DEFAULT_PUSH_HOSTS, ...extra];
+}
+
+export function isAllowedPushEndpoint(raw: unknown): boolean {
+	if (typeof raw !== 'string' || raw.length === 0 || raw.length > 2048) return false;
+	let url: URL;
+	try {
+		url = new URL(raw);
+	} catch {
+		return false;
+	}
+	if (url.protocol !== 'https:') return false;
+	if (url.username || url.password) return false;
+	const host = url.hostname.toLowerCase().replace(/\.$/, '');
+	if (!host || host === 'localhost' || host.includes(':')) return false;
+	if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return false;
+	if (host.startsWith('[') || host.endsWith('.local') || host.endsWith('.internal')) return false;
+	return pushHostAllowlist().some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
 // In-process fallback subscription cache for single-instance/demo environments
 // when SUPABASE_SERVICE_ROLE_KEY is not configured in the public web app.
 const memorySubscriptions = new Map<string, Map<string, PushSubscriptionRecord>>();
@@ -256,6 +299,9 @@ export async function sendWebPushToUser(
 	} catch {
 		return 0;
 	}
+	// Defence in depth: never dial an endpoint that is not a known push host,
+	// even if a row predates the allowlist.
+	subs = subs.filter((sub) => isAllowedPushEndpoint(sub.endpoint));
 	if (subs.length === 0) return 0;
 
 	const vapid = resolveVapidKeys();

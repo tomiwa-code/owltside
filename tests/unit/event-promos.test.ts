@@ -131,21 +131,20 @@ describe('checkout promo handling', () => {
 		expect(source.createOrder).not.toHaveBeenCalled();
 	});
 
-	it('carries the promo through the hosted-payment success callback', async () => {
+	it('ignores tier, quantity and promo supplied to the success callback', async () => {
+		// The gateway return URL is attacker-controllable, so fulfilment must be
+		// driven by the reference alone (the amount lives on the pending order).
 		await expect(
 			checkoutSuccessLoad({
-				url: new URL('http://localhost/checkout/success?ref=ref-1&slug=promo-night&tier=tier-1&qty=2&promo=early-bird'),
+				url: new URL(
+					'http://localhost/checkout/success?ref=ref-1&slug=promo-night&tier=tier-1&qty=6&promo=early-bird'
+				),
 				cookies: { getAll: () => [] },
-				locals: { session: { userId } }
+				locals: { session: { userId }, demoMode: true }
 			} as never)
-		).rejects.toMatchObject({ status: 303, location: '/tickets/ticket-1?new=1' });
+		).rejects.toMatchObject({ status: 303, location: '/tickets' });
 
-		expect(source.createOrder).toHaveBeenCalledWith(
-			userId,
-			'promo-night',
-			[{ tierId: 'tier-1', qty: 2 }],
-			'EARLY-BIRD'
-		);
+		expect(source.createOrder).not.toHaveBeenCalled();
 	});
 });
 
@@ -164,30 +163,44 @@ describe('Supabase event promo datasource', () => {
 		});
 	});
 
-	it('passes the promo to create_order and falls back only for unpromoted legacy orders', async () => {
+	it('creates a pending order with the promo and idempotency key', async () => {
 		const rpc = vi.fn().mockResolvedValue({
-			data: { orderId: 'order-1', reference: 'OWT-1', total: 8_000, tickets: [] },
+			data: {
+				orderId: 'order-1',
+				reference: 'OWT-1',
+				total: 8_000,
+				amountKobo: 880_000,
+				currency: 'NGN',
+				status: 'pending',
+				reused: false
+			},
 			error: null
 		});
 		const dbSource = supabaseSource({ rpc } as unknown as SupabaseClient);
-		await dbSource.createOrder(userId, 'promo-night', [{ tierId: 'tier-1', qty: 1 }], 'EARLY-BIRD');
-		expect(rpc).toHaveBeenCalledWith('create_order', expect.objectContaining({ p_promo_code: 'EARLY-BIRD' }));
+		const intent = await dbSource.createPendingOrder(
+			userId,
+			'promo-night',
+			[{ tierId: 'tier-1', qty: 1 }],
+			'EARLY-BIRD',
+			'form-key'
+		);
 
-		rpc
-			.mockResolvedValueOnce({
-				data: null,
-				error: { code: 'PGRST202', message: 'Could not find the function public.create_order' }
-			})
-			.mockResolvedValueOnce({
-				data: { orderId: 'order-2', reference: 'OWT-2', total: 10_000, tickets: [] },
-				error: null
-			});
-		await dbSource.createOrder(userId, 'promo-night', [{ tierId: 'tier-1', qty: 1 }]);
-		expect(rpc).toHaveBeenLastCalledWith('create_order', {
-			p_owner: userId,
+		expect(rpc).toHaveBeenCalledWith('create_pending_order', {
 			p_event_slug: 'promo-night',
-			p_items: [{ tierId: 'tier-1', qty: 1 }]
+			p_items: [{ tierId: 'tier-1', qty: 1 }],
+			p_promo_code: 'EARLY-BIRD',
+			p_idempotency_key: 'form-key'
 		});
+		expect(intent).toMatchObject({ reference: 'OWT-1', amountKobo: 880_000, status: 'pending' });
+	});
+
+	it('refuses direct order creation — tickets only come from verified payments', async () => {
+		const rpc = vi.fn();
+		const dbSource = supabaseSource({ rpc } as unknown as SupabaseClient);
+		await expect(
+			dbSource.createOrder(userId, 'promo-night', [{ tierId: 'tier-1', qty: 1 }], null)
+		).rejects.toThrow(/disabled/i);
+		expect(rpc).not.toHaveBeenCalled();
 	});
 
 	it('inserts normalized promo rows after creating an event', async () => {

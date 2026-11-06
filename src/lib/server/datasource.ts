@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { env as privateEnv } from '$env/dynamic/private';
 import type {
 	ApprovalKind,
 	ApprovalRequest,
@@ -24,6 +25,7 @@ import type {
 	WizardPayload
 } from '$lib/types';
 import * as demo from './demo/seed';
+import { payoutAmountFor } from '$lib/utils/settlement';
 import { isOperatingIdentity, type OperatingIdentity } from '$lib/constants/operating-identity';
 import {
 	isValidReportCategory,
@@ -72,7 +74,15 @@ const demoUserTickets = new Map<string, Ticket[]>();
 const demoGateTokens = new Map<string, { code: string; expiresAt: string }>();
 /** Standalone terminal PINs, keyed by organizer — the scanner arms with one even before any event exists. */
 const demoScannerTokens = new Map<string, { code: string; expiresAt: string }>();
-const gateTokenHash = (code: string) => createHash('sha256').update(code).digest('hex');
+/**
+ * Staff PINs are stored as a keyed hash. The pepper lives in the environment
+ * (never in the database), so a leaked table of hashes cannot be reversed with
+ * a six-digit rainbow table. Rotating it invalidates outstanding PINs, which
+ * are short-lived by design.
+ */
+const staffPinPepper = () => (privateEnv.STAFF_PIN_PEPPER || '').trim();
+const gateTokenHash = (code: string) =>
+	createHash('sha256').update(`${staffPinPepper()}${code}`).digest('hex');
 
 /*
  * Approval queue (demo). Every action that needs an administrator decision —
@@ -308,6 +318,27 @@ export interface OrderResult {
 	tickets: Ticket[];
 }
 
+/** A checkout attempt that has reserved capacity but has not been paid yet. */
+export interface PendingOrderResult {
+	orderId: string;
+	reference: string;
+	total: number;
+	amountKobo: number;
+	currency: string;
+	status: string;
+	reused: boolean;
+	discount?: number;
+}
+
+/** The outcome of attempting to settle a referenced payment. */
+export interface FulfilmentResult {
+	ok: boolean;
+	orderId: string;
+	tickets: Ticket[];
+	reused: boolean;
+	reason?: string;
+}
+
 /**
  * What a scanner PIN unlocks. Gate and terminal PINs are bearer credentials
  * an organizer can hand to door staff, so resolution deliberately does not
@@ -340,12 +371,36 @@ export interface DataSource {
 	respondToMessageRequest(organizerId: string, requestId: string, accept: boolean): Promise<MessageRequest>;
 	/** Validate a buyer-entered code for one event without exposing the event's other codes. */
 	resolvePromoCode(eventSlug: string, code: string): Promise<ResolvedPromo | null>;
+	/**
+	 * Demo only. Real purchases always go through createPendingOrder() followed
+	 * by a verified server-side gateway confirmation; the Supabase implementation
+	 * intentionally refuses to mint tickets directly.
+	 */
 	createOrder(
 		userId: string,
 		eventSlug: string,
 		items: CheckoutItem[],
 		promoCode?: string | null
 	): Promise<OrderResult>;
+	/** Reserve capacity and create a `pending` order for the signed-in buyer. */
+	createPendingOrder(
+		userId: string,
+		eventSlug: string,
+		items: CheckoutItem[],
+		promoCode?: string | null,
+		idempotencyKey?: string | null
+	): Promise<PendingOrderResult>;
+	/** Fulfil a zero-value order (free pass / 100% promo) for its owner. */
+	claimFreeOrder(userId: string, reference: string): Promise<FulfilmentResult>;
+	/** Record an already-verified gateway payment against its order. */
+	confirmPaidOrder(
+		userId: string,
+		reference: string,
+		amountKobo: number,
+		currency: string
+	): Promise<FulfilmentResult>;
+	/** Which event owns this ticket code, for organizer terminal scans. */
+	resolveTicketEvent(code: string): Promise<string | null>;
 	sendMessage(conversationId: string, senderId: string, body: string): Promise<Message>;
 	/** Clear the caller's own unread counter — opening a chat only acknowledges it for the reader. */
 	markConversationRead(conversationId: string, readerId: string): Promise<void>;
@@ -795,6 +850,21 @@ export const demoSource: DataSource = {
 			tickets: created
 		};
 	},
+	// Demo checkout mints locally through createOrder(); the pending/confirm flow
+	// only exists so a real gateway payment can be bound to an order.
+	async createPendingOrder() {
+		throw new Error('Paid checkout is only available with Supabase and Paystack configured');
+	},
+	async claimFreeOrder() {
+		throw new Error('Paid checkout is only available with Supabase and Paystack configured');
+	},
+	async confirmPaidOrder() {
+		throw new Error('Paid checkout is only available with Supabase and Paystack configured');
+	},
+	async resolveTicketEvent(code) {
+		if (!code) return null;
+		return allDemoTickets().find((ticket) => ticket.code === code)?.eventId ?? null;
+	},
 	async sendMessage(conversationId, senderId, body) {
 		const msg: Message = {
 			id: `m-${Math.random().toString(36).slice(2, 8)}`,
@@ -1186,6 +1256,16 @@ export const demoSource: DataSource = {
 	},
 	async createApproval(userId, input) {
 		const uid = userId === 'demo' ? demoMeId : userId;
+		// Payout totals are computed, not supplied. There is no database to ask
+		// in demo mode, so derive them from the same settlement helper the
+		// organizer dashboard uses (the Supabase arm asks `event_payable_amount`).
+		if (input.kind === 'payout' && input.subjectId) {
+			const event = demo.events.find((item) => item.id === input.subjectId && item.organizer.id === uid);
+			if (event) {
+				const tickets = allDemoTickets().filter((ticket) => ticket.eventId === event.id);
+				input = { ...input, amount: payoutAmountFor(event, tickets) };
+			}
+		}
 		return createDemoApproval(uid, input);
 	},
 	async requestTicketRefund(userId, ticketId, request) {
@@ -1739,11 +1819,21 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 		async listEvents(filters = {}) {
 			// Public feeds only ever show approved events. Organizer dashboards use
 			// getOrganizer(), which deliberately keeps every status visible.
+			// Filters and paging run in Postgres: loading the whole catalogue and
+			// sorting it in JS does not survive a real events calendar.
+			const limit = Math.min(Math.max(Number(filters.limit ?? 120) || 120, 1), 300);
+			const offset = Math.max(Number(filters.offset ?? 0) || 0, 0);
 			const query = () => {
-				let q = db.from('events').select('*, organizer:profiles(*)').order('starts_at');
+				let q = db
+					.from('events')
+					.select('*, organizer:profiles(*)')
+					.order('starts_at')
+					.range(offset, offset + limit - 1);
 				if (filters.category && filters.category !== 'all') q = q.eq('category', filters.category);
 				// Apply the same text, venue, date, and price semantics as demo mode below.
 				if (filters.dateFrom) q = q.gte('starts_at', filters.dateFrom);
+				if (filters.dateTo) q = q.lte('starts_at', filters.dateTo);
+				if (filters.query) q = q.ilike('title', `%${filters.query.replace(/[%_]/g, '')}%`);
 				return q;
 			};
 			let { data, error } = await query().eq('status', 'published');
@@ -2017,47 +2107,79 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			}
 			return globalPromoForCode(code);
 		},
-		async createOrder(userId, eventSlug, items, promoCodeInput) {
+		async createOrder() {
+			// Deliberately unreachable: minting tickets without a verified payment is
+			// the vulnerability this flow was rebuilt to remove.
+			throw new Error(
+				'Direct ticket creation is disabled. Use the verified checkout flow instead.'
+			);
+		},
+		async createPendingOrder(userId, eventSlug, items, promoCodeInput, idempotencyKey) {
 			if (!isUuid(userId)) throw new Error('Sign in required to purchase tickets');
-			if (typeof db.from === 'function') {
-				const { data: eventCheck } = await db
-					.from('events')
-					.select('starts_at,ends_at,status')
-					.eq('slug', eventSlug)
-					.maybeSingle();
-				if (
-					eventCheck &&
-					hasEventEnded({ startsAt: eventCheck.starts_at, endsAt: eventCheck.ends_at })
-				) {
-					throw new Error('This event has ended — ticket sales are closed');
-				}
-			}
-			const promoCode = normalizePromoCode(promoCodeInput);
-			let { data, error } = await db.rpc('create_order', {
-				p_owner: userId,
+			const { data, error } = await db.rpc('create_pending_order', {
 				p_event_slug: eventSlug,
 				p_items: items,
-				p_promo_code: promoCode || null
+				p_promo_code: normalizePromoCode(promoCodeInput) || null,
+				p_idempotency_key: idempotencyKey || null
 			});
-			if (error && isMissingFunctionError(error)) {
-				if (promoCode) throw promoStorageError();
-				// Databases that have not received migration 020 still accept
-				// ordinary orders through the original three-argument RPC.
-				const retry = await db.rpc('create_order', {
-					p_owner: userId,
-					p_event_slug: eventSlug,
-					p_items: items
-				});
-				data = retry.data;
-				error = retry.error;
+			if (error) {
+				if (isMissingFunctionError(error)) {
+					throw new Error(
+						'Payment security migration 033 is not installed. Apply supabase/sql/033_payment_integrity.sql, then try again.'
+					);
+				}
+				throw new Error(error.message || 'Could not start checkout');
 			}
-			if (error) throw error;
+			const row = (data ?? {}) as Row;
 			return {
-				orderId: data.orderId,
-				reference: data.reference,
-				total: Number(data.total ?? 0),
-				tickets: (data.tickets ?? []).map((t: Row) => (t.event_id ? toTicket(t) : (t as Ticket)))
+				orderId: String(row.orderId ?? ''),
+				reference: String(row.reference ?? ''),
+				total: Number(row.total ?? 0),
+				amountKobo: Number(row.amountKobo ?? 0),
+				currency: String(row.currency ?? 'NGN'),
+				status: String(row.status ?? 'pending'),
+				reused: row.reused === true,
+				discount: Number(row.discount ?? 0)
 			};
+		},
+		async claimFreeOrder(userId, reference) {
+			if (!isUuid(userId)) throw new Error('Sign in required to claim this pass');
+			const { data, error } = await db.rpc('claim_free_order', { p_reference: reference });
+			if (error) throw new Error(error.message || 'Could not issue the free pass');
+			const row = (data ?? {}) as Row;
+			return {
+				ok: true,
+				orderId: String(row.orderId ?? ''),
+				reused: row.reused === true,
+				tickets: ((row.tickets ?? []) as Row[]).map((ticket) => toTicket(ticket))
+			};
+		},
+		async confirmPaidOrder(userId, reference, amountKobo, currency) {
+			if (!isUuid(userId)) throw new Error('Sign in required to complete this order');
+			const { data, error } = await db.rpc('confirm_paid_order', {
+				p_reference: reference,
+				p_amount_kobo: amountKobo,
+				p_currency: currency
+			});
+			if (error) throw new Error(error.message || 'Payment could not be recorded');
+			const row = (data ?? {}) as Row;
+			return {
+				ok: row.ok === true,
+				reason: typeof row.reason === 'string' ? row.reason : undefined,
+				orderId: String(row.orderId ?? ''),
+				reused: row.duplicate === true,
+				tickets: ((row.tickets ?? []) as Row[]).map((ticket) => toTicket(ticket))
+			};
+		},
+		async resolveTicketEvent(code) {
+			if (!code || typeof db.from !== 'function') return null;
+			const { data } = await db
+				.from('tickets')
+				.select('event_id')
+				.eq('code', code)
+				.limit(1)
+				.maybeSingle();
+			return (data as Row | null)?.event_id ?? null;
 		},
 		async sendMessage(conversationId, senderId, body) {
 			const { data, error } = await db
@@ -2169,34 +2291,22 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			return (data ?? []).map(toCheckin);
 		},
 		async checkInTicket(eventId, code, gate) {
-			const { data: ticket } = await db
-				.from('tickets')
-				.select('*')
-				.eq('event_id', eventId)
-				.eq('code', code)
-				.maybeSingle();
-			const at = new Date().toISOString();
-			const holder = ticket?.holder_name ?? 'Unknown pass';
-			const tier = ticket?.tier_name ?? '—';
-			const base = {
-				eventId,
-				ticketCode: code,
-				gate,
-				at,
-				holder,
-				tier
-			};
-			if (!ticket) {
-				await db.from('checkins').insert({ event_id: eventId, ticket_code: code, gate, at, holder, tier, result: 'invalid' });
-				return { id: `ck-${code}`, ...base, result: 'invalid' as const };
+			// Atomic in the database: a conditional UPDATE means only one of two
+			// concurrent scanners can flip a pass from `valid` to `used`.
+			const { data, error } = await db.rpc('organizer_check_in_ticket', {
+				p_event_id: eventId,
+				p_gate: gate,
+				p_ticket_code: code
+			});
+			if (error) {
+				if (isMissingFunctionError(error)) {
+					throw new Error(
+						'Check-in security migration 033 is not installed. Apply supabase/sql/033_payment_integrity.sql, then try again.'
+					);
+				}
+				throw new Error(error.message || 'Scan could not be verified');
 			}
-			if (ticket.status === 'used') {
-				await db.from('checkins').insert({ event_id: eventId, ticket_code: code, gate, at, holder, tier, result: 'duplicate' });
-				return { id: `ck-${code}`, ...base, result: 'duplicate' as const };
-			}
-			await db.from('tickets').update({ status: 'used' }).eq('id', ticket.id);
-			await db.from('checkins').insert({ event_id: eventId, ticket_code: code, gate, at, holder, tier, result: 'verified' });
-			return { id: `ck-${code}`, ...base, result: 'verified' as const };
+			return toCheckin(data as Row);
 		},
 		async createEvent(userId, payload) {
 			const slug = payload.title

@@ -304,6 +304,10 @@ export interface EventFilters {
 	dateFrom?: string;
 	dateTo?: string;
 	sort?: 'date' | 'popular' | 'price_asc' | 'price_desc';
+	/** Maximum rows to fetch (server-side pagination guard). */
+	limit?: number;
+	/** Rows to skip, for paginated feeds. */
+	offset?: number;
 }
 
 export interface CheckoutItem {

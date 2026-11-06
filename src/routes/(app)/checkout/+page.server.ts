@@ -4,11 +4,8 @@ import {
 	paystackConfigured,
 	paystackSecretConfigured,
 	resolvePaystackPublicKey,
-	initializeTransaction,
-	verifyTransaction
+	initializeTransaction
 } from '$lib/server/paystack';
-import { toKobo } from '$lib/utils/money';
-import { env as publicEnv } from '$env/dynamic/public';
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -40,6 +37,9 @@ export const load: PageServerLoad = async ({ url, locals, cookies }) => {
 		tierId: tier.id,
 		qty,
 		promo,
+		/* Stable per-render key so a double submit resumes the same order
+		   instead of opening a second chargeable transaction. */
+		checkoutKey: crypto.randomUUID(),
 		paystack: paystackConfigured(),
 		paystackPublicKey: resolvePaystackPublicKey() || null,
 		demoMode: locals.demoMode,
@@ -59,13 +59,15 @@ export const actions: Actions = {
 		const qty = Math.max(1, Math.min(6, Number(form.get('qty') ?? 1)));
 		const promoCode = normalizePromoCode(String(form.get('promo') ?? '')) || null;
 		const scenario = String(form.get('scenario') ?? 'approve');
-		const paystackReference = String(form.get('paystackReference') ?? '').trim();
+		const pageKey = String(form.get('checkoutKey') ?? '').trim();
 
 		const source = getSource(createSupabase(cookies));
 		if (!locals.session?.userId) {
 			const backToCheckout = `/checkout?event=${encodeURIComponent(slug)}&tier=${encodeURIComponent(tierId)}&qty=${qty}${promoCode ? `&promo=${encodeURIComponent(promoCode)}` : ''}`;
 			redirect(303, `/auth/login?next=${encodeURIComponent(backToCheckout)}`);
 		}
+		const userId = locals.session.userId;
+
 		const event = await source.getEvent(slug);
 		if (!event) return fail(404, { error: 'Event not found' });
 		if (hasEventEnded(event) || event.status === 'closed') {
@@ -83,46 +85,75 @@ export const actions: Actions = {
 		}
 		const totals = computeTotals(tier.price, qty, resolvedPromo);
 
-		// 1. If the client completed payment via Paystack Inline Popup, verify (if secret key present) and mint ticket
-		if (paystackReference) {
-			if (paystackSecretConfigured()) {
-				const paid = await verifyTransaction(paystackReference);
-				if (!paid) {
-					return fail(402, { error: 'Payment could not be verified with Paystack.', totals });
-				}
+		/* Demo mode has no gateway: it mints a local ticket so the sandbox flow
+		   still works end to end. Nothing here touches real money. */
+		if (source.mode === 'demo') {
+			if (scenario === 'decline') {
+				return fail(402, { error: 'declined', totals });
 			}
-			const order = await source.createOrder(
-				locals.session?.userId ?? 'demo',
-				slug,
-				[{ tierId, qty }],
-				promoCode
-			);
+			const order = await source.createOrder(userId, slug, [{ tierId, qty }], promoCode);
 			redirect(303, `/tickets/${order.tickets[0].id}?new=1`);
 		}
 
-		// 2. Real gateway hosted checkout fallback (when Paystack secret key is active and ticket is paid)
-		if (paystackSecretConfigured() && totals.total > 0) {
-			const reference = `OWT-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
-			const init = await initializeTransaction({
-				email: locals.session?.email ?? 'guest@owltside.app',
-				amountKobo: toKobo(totals.total),
-				reference,
-				callbackUrl: `${publicEnv.PUBLIC_APP_URL || url.origin}/checkout/success?ref=${reference}&slug=${encodeURIComponent(slug)}&tier=${encodeURIComponent(tierId)}&qty=${qty}${promoCode ? `&promo=${encodeURIComponent(promoCode)}` : ''}`
+		/* 1. Reserve capacity and create a pending order on the server. The
+		      order carries the amount; nothing about money comes from the client. */
+		const idempotencyKey = `${pageKey || 'checkout'}:${slug}:${tierId}:${qty}:${promoCode ?? '-'}`.slice(0, 180);
+
+		let intent;
+		try {
+			intent = await source.createPendingOrder(userId, slug, [{ tierId, qty }], promoCode, idempotencyKey);
+		} catch (cause) {
+			const message = cause instanceof Error ? cause.message : 'Could not start checkout. Please try again.';
+			console.error('Checkout intent failed', { slug, message });
+			return fail(400, { error: message, totals });
+		}
+
+		/* 2. Free passes (or a 100% promo) need no gateway. */
+		if (intent.amountKobo <= 0) {
+			let freeTicketId: string | undefined;
+			try {
+				const fulfilment = await source.claimFreeOrder(userId, intent.reference);
+				freeTicketId = fulfilment.tickets[0]?.id;
+			} catch (cause) {
+				console.error('Free pass fulfilment failed', {
+					reference: intent.reference,
+					message: cause instanceof Error ? cause.message : String(cause)
+				});
+			}
+			if (!freeTicketId) return fail(400, { error: 'Could not issue your pass. Please try again.', totals });
+			redirect(303, `/tickets/${freeTicketId}?new=1`);
+		}
+
+		/* 3. Hand off to Paystack with the server-computed amount and reference. */
+		if (!paystackSecretConfigured()) {
+			return fail(503, {
+				error: 'Card payments are temporarily unavailable. Please try again shortly.',
+				totals
 			});
-			redirect(303, init.authorizationUrl);
 		}
 
-		// 3. Demo sandbox decline simulation
-		if (source.mode === 'demo' && scenario === 'decline') {
-			return fail(402, { error: 'declined', totals });
+		const callbackUrl = `${(url.origin || '').replace(/\/$/, '')}/checkout/success?ref=${encodeURIComponent(intent.reference)}`;
+		let authorizationUrl: string;
+		try {
+			const init = await initializeTransaction({
+				email: locals.session.email || 'guest@owltside.app',
+				amountKobo: intent.amountKobo,
+				reference: intent.reference,
+				callbackUrl,
+				metadata: {
+					event: event.title,
+					tier: tier.name,
+					qty: String(qty),
+					orderId: intent.orderId
+				}
+			});
+			authorizationUrl = init.authorizationUrl;
+		} catch (cause) {
+			const message = cause instanceof Error ? cause.message : 'The payment gateway could not be reached.';
+			console.error('Paystack initialization failed', { reference: intent.reference, message });
+			return fail(502, { error: 'The payment gateway could not be reached. Please try again.', totals });
 		}
-
-		const order = await source.createOrder(
-			locals.session?.userId ?? 'demo',
-			slug,
-			[{ tierId, qty }],
-			promoCode
-		);
-		redirect(303, `/tickets/${order.tickets[0].id}?new=1`);
+		// Outside the try: SvelteKit's redirect is a thrown control-flow object.
+		redirect(303, authorizationUrl);
 	}
 };

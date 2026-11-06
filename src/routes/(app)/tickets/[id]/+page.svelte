@@ -297,7 +297,7 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 						<div class="inline-flex items-center gap-2 bg-surface-container-highest px-3 py-1.5 rounded-full shadow-sm">
 							<span class="text-label-badge text-on-surface font-semibold tracking-wide">{verified ? 'Verified • Checked in' : 'Scan this code at the entrance'}</span>
 						</div>
-						<QrPass code={ticket.code} disabled={!active} disabledLabel={verified ? 'Verified' : 'Not active'} />
+						<QrPass code={ticket.code} ticketId={ticket.id} signed={page.data.demoMode !== true} disabled={!active} disabledLabel={verified ? 'Verified' : 'Not active'} />
 						<div class="mt-4 flex items-center gap-2 bg-surface-container-high px-3 py-1.5 rounded-lg w-full max-w-[300px] justify-between">
 							<div class="flex flex-col min-w-0"><span class="text-label-badge text-on-surface-variant uppercase">Manual Gate Code</span><span class="font-code text-label-code text-on-surface font-semibold tracking-wider">{ticket.code}</span></div>
 							<button aria-label="Copy Ticket Code" onclick={copyCode} class="w-8 h-8 rounded-full bg-surface-container-highest hover:bg-primary-container hover:text-on-primary-container flex items-center justify-center text-on-surface transition-colors"><Copy class="w-4 h-4" /></button>
@@ -373,7 +373,7 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 						{verified ? 'Verified • Checked in' : 'Scan this code at the entrance'}
 					</span>
 				</div>
-				<QrPass code={ticket.code} disabled={!active} disabledLabel={verified ? 'Verified' : 'Not active'} />
+				<QrPass code={ticket.code} ticketId={ticket.id} signed={page.data.demoMode !== true} disabled={!active} disabledLabel={verified ? 'Verified' : 'Not active'} />
 				<div class="mt-4 flex items-center gap-2 bg-surface-container-high px-3 py-1.5 rounded-lg w-full max-w-[260px] justify-between">
 					<div class="flex flex-col min-w-0">
 						<span class="text-label-badge text-on-surface-variant uppercase">Manual Gate Code</span>

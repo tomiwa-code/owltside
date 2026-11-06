@@ -1,22 +1,151 @@
 import { isAuthReturn } from '$lib/server/oauth';
 import { createSupabase, supabaseConfigured } from '$lib/server/supabase';
+import { demoModeEnabled } from '$lib/server/demo-mode';
+import { clientKey, rateLimit } from '$lib/server/rate-limit';
 import { demo } from '$lib/server/demo-index';
 import { fillEmptyProfileFields, providerProfile } from '$lib/server/profile-sync';
 import { OPERATING_IDENTITY_COOKIE, isOperatingIdentity } from '$lib/constants/operating-identity';
-import type { Handle } from '@sveltejs/kit';
+import type { Handle, ServerInit } from '@sveltejs/kit';
+import { env as publicEnv } from '$env/dynamic/public';
+
+const PRODUCTION = process.env.NODE_ENV === 'production';
+
+/**
+ * Refuse to start a production deployment that has no database. Previously a
+ * missing Supabase key silently switched the app into demo mode, where any
+ * six-digit code signs a visitor in and every payment "verifies".
+ */
+export const init: ServerInit = () => {
+	if (PRODUCTION && !supabaseConfigured() && !demoModeEnabled()) {
+		throw new Error(
+			'Supabase is not configured. Set PUBLIC_SUPABASE_URL and PUBLIC_SUPABASE_ANON_KEY ' +
+				'before serving the Owltside app in production (or DEMO_MODE=true for a sandbox).'
+		);
+	}
+};
+
+function supabaseOrigin(): string {
+	const raw = (publicEnv.PUBLIC_SUPABASE_URL || '').trim();
+	if (!raw) return '';
+	try {
+		return new URL(raw).origin;
+	} catch {
+		return '';
+	}
+}
+
+function contentSecurityPolicy(): string {
+	const supabase = supabaseOrigin();
+	const connect = ["'self'", 'https://api.paystack.co'];
+	if (supabase) {
+		connect.push(supabase, supabase.replace('https://', 'wss://'));
+	}
+	const frameAncestors = PRODUCTION ? "'none'" : "'self'";
+	return [
+		"default-src 'self'",
+		// The theme bootstrap in app.html is an inline script; everything else
+		// is served from our own origin.
+		"script-src 'self' 'unsafe-inline'",
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data: blob: https:",
+		"font-src 'self' data:",
+		`connect-src ${connect.join(' ')}`,
+		"frame-src 'self'",
+		"media-src 'self' blob:",
+		"object-src 'none'",
+		"base-uri 'self'",
+		"form-action 'self' https://checkout.paystack.com",
+		`frame-ancestors ${frameAncestors}`,
+		...(PRODUCTION ? ['upgrade-insecure-requests'] : [])
+	].join('; ');
+}
+
+function decorate(response: Response): Response {
+	response.headers.set('x-content-type-options', 'nosniff');
+	response.headers.set('referrer-policy', 'strict-origin-when-cross-origin');
+	response.headers.set('permissions-policy', 'camera=(self), microphone=(), geolocation=(), payment=()');
+	response.headers.set('cross-origin-opener-policy', 'same-origin');
+	response.headers.set('content-security-policy', contentSecurityPolicy());
+	if (PRODUCTION) {
+		response.headers.set('strict-transport-security', 'max-age=31536000; includeSubDomains; preload');
+		response.headers.set('x-frame-options', 'DENY');
+	}
+	return response;
+}
+
+interface LimitRule {
+	pattern: RegExp;
+	max: number;
+	windowMs: number;
+	/** Only apply to these methods (defaults to every method). */
+	methods?: string[];
+}
+
+const LIMIT_RULES: LimitRule[] = [
+	// Scanner PINs are bearer credentials; the database also caps attempts.
+	{ pattern: /^\/api\/scan(\/|$)/, max: 40, windowMs: 60_000 },
+	// A promo endpoint is a discount-code oracle.
+	{ pattern: /^\/api\/events\/[^/]+\/promo$/, max: 30, windowMs: 60_000 },
+	// Login/signup/OTP are the classic enumeration + email-bomb targets.
+	{ pattern: /^\/auth\/(login|signup|verify)$/, max: 15, windowMs: 60_000, methods: ['POST'] },
+	{ pattern: /^\/api\/paystack\/webhook$/, max: 600, windowMs: 60_000, methods: ['POST'] },
+	{ pattern: /^\/api\//, max: 240, windowMs: 60_000 }
+];
+
+function rateLimited(event: Parameters<Handle>[0]['event']): Response | null {
+	const method = event.request.method;
+	let ip = 'unknown';
+	try {
+		ip = event.getClientAddress();
+	} catch {
+		ip = clientKey(event.request, 'unknown');
+	}
+
+	for (const rule of LIMIT_RULES) {
+		if (!rule.pattern.test(event.url.pathname)) continue;
+		if (rule.methods && !rule.methods.includes(method)) continue;
+		const result = rateLimit(`route:${rule.pattern.source}:${ip}`, {
+			max: rule.max,
+			windowMs: rule.windowMs
+		});
+		if (result.ok) continue;
+		const body = event.url.pathname.startsWith('/api/')
+			? JSON.stringify({ error: 'Too many requests. Please slow down and try again.' })
+			: 'Too many requests. Please slow down and try again.';
+		return new Response(body, {
+			status: 429,
+			headers: {
+				'content-type': event.url.pathname.startsWith('/api/')
+					? 'application/json'
+					: 'text/plain; charset=utf-8',
+				'retry-after': String(result.retryAfterSeconds),
+				'cache-control': 'no-store'
+			}
+		});
+	}
+	return null;
+}
 
 export const handle: Handle = async ({ event, resolve }) => {
-	event.locals.demoMode = !supabaseConfigured();
+	// Synthetic events (unit tests, internal calls) carry no real Request; the
+	// limiter only makes sense for traffic that actually arrived over HTTP.
+	const limited = event?.request ? rateLimited(event) : null;
+	if (limited) return decorate(limited);
+
+	const isDemo = demoModeEnabled();
+	event.locals.demoMode = isDemo;
 	event.locals.session = null;
+
 	// Exchange the PKCE code before validating/refreshing an old session.
 	// A failed old-session refresh may otherwise remove the in-flight verifier.
 	if (isAuthReturn(event.url)) {
-		const response = await resolve(event);
+		const response = decorate(await resolve(event));
 		response.headers.set('cache-control', 'private, no-store');
 		response.headers.set('referrer-policy', 'no-referrer');
 		return response;
 	}
-	const db = createSupabase(event.cookies);
+
+	const db = isDemo ? null : createSupabase(event.cookies);
 
 	if (db) {
 		try {
@@ -39,14 +168,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 							(typeof profile?.disabled_reason === 'string' && profile.disabled_reason) ||
 							(typeof meta.disabled_reason === 'string' && meta.disabled_reason) ||
 							'Your account has been disabled by an administrator.';
-						return new Response(null, {
-							status: 303,
-							headers: {
-								location: `/auth/login?error=${encodeURIComponent(reason)}`
-							}
-						});
+						return decorate(
+							new Response(null, {
+								status: 303,
+								headers: {
+									location: `/auth/login?error=${encodeURIComponent(reason)}`
+								}
+							})
+						);
 					}
-					return resolve(event);
+					return decorate(await resolve(event));
 				}
 				if (!profile) {
 					const rawHandle =
@@ -71,9 +202,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 						if (updated) profile = updated;
 					}
 				}
-				const identity: 'attendee' | 'organizer' | 'guest' = isOperatingIdentity(String(meta.operating_identity ?? ''))
+				// The database column (guarded, server-owned) wins over
+				// `user_metadata`, which the account holder can rewrite at will.
+				const storedIdentity = isOperatingIdentity(String(profile?.operating_identity ?? ''))
+					? (profile?.operating_identity as 'attendee' | 'organizer' | 'guest')
+					: null;
+				const metaIdentity = isOperatingIdentity(String(meta.operating_identity ?? ''))
 					? (meta.operating_identity as 'attendee' | 'organizer' | 'guest')
-					: 'attendee';
+					: null;
+				const identity: 'attendee' | 'organizer' | 'guest' =
+					storedIdentity ?? metaIdentity ?? 'attendee';
 				// Keep the public profile's operating identity in step with the
 				// private auth preference so other users see the current choice
 				// under this user's name. Runs only when the column exists (017)
@@ -100,7 +238,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		} catch {
 			// Leave session null if upstream auth/profile lookup fails after retries
 		}
-	} else if (event.cookies.get('owltside_demo_session')) {
+	} else if (isDemo && event.cookies.get('owltside_demo_session')) {
 		const me = demo.me;
 		let demoProfile: { name?: string; username?: string; usernameChangedAt?: string | null } = {};
 		try {
@@ -120,5 +258,5 @@ export const handle: Handle = async ({ event, resolve }) => {
 		};
 	}
 
-	return resolve(event);
+	return decorate(await resolve(event));
 };

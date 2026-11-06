@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { createSupabase } from '$lib/server/supabase';
 import {
 	forgetPushSubscription,
+	isAllowedPushEndpoint,
 	rememberPushSubscription,
 	resolveVapidKeys
 } from '$lib/server/webpush';
@@ -29,6 +30,14 @@ export const POST: RequestHandler = async ({ request, locals, cookies }) => {
 	if (!body.endpoint || !body.keys?.p256dh || !body.keys?.auth) {
 		return json(
 			{ error: 'Push subscription endpoint and encryption keys are required.' },
+			{ status: 400 }
+		);
+	}
+
+	// The server later POSTs to this URL, so it must be a real push service.
+	if (!isAllowedPushEndpoint(body.endpoint)) {
+		return json(
+			{ error: 'That notification endpoint is not a recognised push service.' },
 			{ status: 400 }
 		);
 	}

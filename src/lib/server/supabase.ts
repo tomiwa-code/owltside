@@ -1,29 +1,36 @@
 import { createServerClient } from '@supabase/ssr';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Cookies } from '@sveltejs/kit';
 import { env as privateEnv } from '$env/dynamic/private';
-import { env as publicEnv } from '$env/dynamic/public';
+import {
+	resolveSupabaseAnonKey,
+	resolveSupabaseUrl,
+	supabaseConfigured
+} from './env';
 
-function resolveSupabaseUrl(): string {
-	return (
-		publicEnv.PUBLIC_SUPABASE_URL ||
-		privateEnv.SUPABASE_URL ||
-		privateEnv.VITE_SUPABASE_URL ||
-		''
-	).trim();
-}
+export { supabaseConfigured };
 
-function resolveSupabaseAnonKey(): string {
-	return (
-		publicEnv.PUBLIC_SUPABASE_ANON_KEY ||
-		privateEnv.SUPABASE_ANON_KEY ||
-		privateEnv.VITE_SUPABASE_ANON_KEY ||
-		''
-	).trim();
-}
+/**
+ * Service-role client for narrow, server-only operations that no RLS policy can
+ * express — confirming a gateway payment and reading push subscriptions.
+ *
+ * Never use this to answer a user request directly: it bypasses every policy.
+ * Callers must validate input and authorization before touching it.
+ */
+let adminClient: SupabaseClient | null | undefined;
 
-export function supabaseConfigured(): boolean {
-	return Boolean(resolveSupabaseUrl() && resolveSupabaseAnonKey());
+export function createSupabaseAdmin(): SupabaseClient | null {
+	if (adminClient !== undefined) return adminClient;
+	const url = resolveSupabaseUrl();
+	const key = (privateEnv.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+	if (!url || !key) {
+		adminClient = null;
+		return adminClient;
+	}
+	adminClient = createClient(url, key, {
+		auth: { persistSession: false, autoRefreshToken: false }
+	});
+	return adminClient;
 }
 
 const UNDICI_GLOBAL_DISPATCHER = Symbol.for('undici.globalDispatcher.1');
