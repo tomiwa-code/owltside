@@ -4,11 +4,7 @@ import { OPERATING_IDENTITY_COOKIE, isOperatingIdentity } from '$lib/constants/o
 import { createSupabase } from '$lib/server/supabase';
 import { getSource } from '$lib/server/datasource';
 import { redactForPublicClient } from '$lib/server/redact-approval';
-import {
-	BIOMETRIC_JUST_AUTHED_COOKIE,
-	BIOMETRIC_UNLOCKED_COOKIE,
-	BIOMETRIC_VAULT_COOKIE
-} from '$lib/server/webauthn';
+import { clearRetiredBiometricCookies } from '$lib/server/biometrics-disabled';
 
 export const load: PageServerLoad = async ({ locals, cookies }) => {
 	// Verification and payout checks wait for an admin decision, so the page needs
@@ -87,9 +83,7 @@ export const actions: Actions = {
 
 		cookies.delete('owltside_demo_session', { path: '/' });
 		cookies.delete(OPERATING_IDENTITY_COOKIE, { path: '/' });
-		cookies.delete(BIOMETRIC_VAULT_COOKIE, { path: '/' });
-		cookies.delete(BIOMETRIC_UNLOCKED_COOKIE, { path: '/' });
-		cookies.delete(BIOMETRIC_JUST_AUTHED_COOKIE, { path: '/' });
+		clearRetiredBiometricCookies(cookies);
 		redirect(303, '/');
 	},
 	signout: async ({ cookies }) => {
@@ -99,8 +93,7 @@ export const actions: Actions = {
 		}
 		cookies.delete('owltside_demo_session', { path: '/' });
 		cookies.delete(OPERATING_IDENTITY_COOKIE, { path: '/' });
-		cookies.delete(BIOMETRIC_UNLOCKED_COOKIE, { path: '/' });
-		cookies.delete(BIOMETRIC_JUST_AUTHED_COOKIE, { path: '/' });
+		clearRetiredBiometricCookies(cookies);
 		redirect(303, '/');
 	}
 };

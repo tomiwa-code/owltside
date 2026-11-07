@@ -1,17 +1,7 @@
-import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Checkin, EventItem, NotificationItem, Order, Ticket } from '$lib/types';
-import {
-	decryptBiometricVault,
-	encryptBiometricVault,
-	fromBase64Url,
-	issueWebAuthnChallenge,
-	toBase64Url,
-	verifyWebAuthnAssertion,
-	verifyWebAuthnChallengeToken
-} from '$lib/server/webauthn';
 import { notifyUnreadStreamItems } from '$lib/push.client';
 import { appSettings } from '$lib/state/settings.svelte';
 import { computeOrganizer } from '$lib/server/datasource';
@@ -188,74 +178,6 @@ describe('Organizer event switcher (multiple events)', () => {
 		expect(document.body.textContent).toContain('Founder Table');
 		expect(document.body.textContent).toContain('Bola BetaGuest');
 		expect(document.body.textContent).toContain('Transcorp Hilton');
-	});
-});
-
-describe('WebAuthn Biometrics cryptographic verification & encrypted vault', () => {
-	it('issues and validates signed challenges, rejects tampered tokens, and encrypts/decrypts biometric vault', () => {
-		const issued = issueWebAuthnChallenge('register', 'user-123');
-		const verified = verifyWebAuthnChallengeToken(issued.challengeToken, 'register');
-		expect(verified.challenge).toBe(issued.challenge);
-		expect(verified.userId).toBe('user-123');
-
-		expect(() => verifyWebAuthnChallengeToken(`${issued.challengeToken}tampered`, 'register')).toThrow();
-		expect(() => verifyWebAuthnChallengeToken(issued.challengeToken, 'authenticate')).toThrow();
-
-		const vault = encryptBiometricVault([
-			{
-				credentialId: 'cred-1',
-				publicKey: 'pk-spki',
-				algorithm: -7,
-				counter: 1,
-				deviceLabel: 'iPhone Face ID',
-				userId: 'user-123',
-				userName: 'Ada Obi',
-				createdAt: '2026-10-31T00:00:00.000Z'
-			}
-		]);
-		const restored = decryptBiometricVault(vault);
-		expect(restored).toHaveLength(1);
-		expect(restored[0].credentialId).toBe('cred-1');
-		expect(restored[0].deviceLabel).toBe('iPhone Face ID');
-	});
-
-	it('verifies an ES256 (P-256) WebAuthn assertion signature over authenticatorData + sha256(clientDataJSON)', () => {
-		const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-		const spki = publicKey.export({ format: 'der', type: 'spki' });
-
-		const issued = issueWebAuthnChallenge('authenticate', 'user-bio');
-		const origin = 'https://owltside.com';
-		const rpId = 'owltside.com';
-
-		const clientData = JSON.stringify({
-			type: 'webauthn.get',
-			challenge: issued.challenge,
-			origin
-		});
-		const clientDataB64 = toBase64Url(Buffer.from(clientData, 'utf8'));
-
-		const rpHash = createHash('sha256').update(rpId, 'utf8').digest();
-		const flags = Buffer.from([0x05]); // UP (0x01) | UV (0x04)
-		const counter = Buffer.alloc(4);
-		counter.writeUInt32BE(7, 0);
-		const authData = Buffer.concat([rpHash, flags, counter]);
-		const authDataB64 = toBase64Url(authData);
-
-		const clientHash = createHash('sha256').update(fromBase64Url(clientDataB64)).digest();
-		const signedPayload = Buffer.concat([authData, clientHash]);
-		const derSignature = sign('sha256', signedPayload, privateKey);
-
-		const result = verifyWebAuthnAssertion({
-			authenticatorData: authDataB64,
-			clientDataJSON: clientDataB64,
-			signature: toBase64Url(derSignature),
-			expectedChallenge: issued.challenge,
-			expectedOrigin: origin,
-			publicKeySpki: toBase64Url(spki)
-		});
-
-		expect(result.counter).toBe(7);
-		expect(result.userVerified).toBe(true);
 	});
 });
 

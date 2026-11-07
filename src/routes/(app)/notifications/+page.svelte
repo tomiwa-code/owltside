@@ -5,7 +5,6 @@
 	import {
 		Bell,
 		CheckCheck,
-		FingerprintPattern,
 		Flame,
 		Mail,
 		Megaphone,
@@ -139,7 +138,7 @@
 			source: 'Owltside Team',
 			icon: Megaphone
 		},
-		system: { code: 'Security_Node', source: 'Mesh Validator', icon: FingerprintPattern }
+		system: { code: 'Security_Node', source: 'Mesh Validator', icon: ShieldCheck }
 	};
 
 	const deskItems = $derived((items.data ?? []).filter((n) => !dismissed.includes(n.id)));

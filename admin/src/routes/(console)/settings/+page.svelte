@@ -168,16 +168,16 @@
 							<p class="text-[10px] text-[#6f6f7b]">Admin identity and webhook integrity controls.</p>
 						</div>
 					</div>
-					<span class="chip !h-[17px] !text-[7.5px]">FIDO2</span>
+					<span class="chip !h-[17px] !text-[7.5px]">Email OTP</span>
 				</header>
 				<div class="space-y-3 p-4">
 					<div class="panel-inset p-2.5">
 						<div class="flex items-center justify-between">
-							<p class="mono-label !text-[7px]">Admin step-up authentication</p>
-							<span class="chip chip-ok !h-[16px] !text-[7px]">Enforced</span>
+							<p class="mono-label !text-[7px]">Admin sign-in</p>
+							<span class="chip chip-ok !h-[16px] !text-[7px]">Role-gated</span>
 						</div>
 						<p class="mt-1.5 text-[10px] leading-relaxed text-[#a0a0ab]">
-							Tier 0–1 accounts must present a hardware WebAuthn key for refunds, key rotation and policy changes.
+							Administrators sign in with Supabase email codes. Refunds, key rotation and policy changes require the appropriate admin role.
 						</p>
 					</div>
 

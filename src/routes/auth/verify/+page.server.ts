@@ -1,6 +1,5 @@
 import { safeAuthNext } from '$lib/server/oauth';
 import { createSupabase, supabaseConfigured } from '$lib/server/supabase';
-import { BIOMETRIC_JUST_AUTHED_COOKIE } from '$lib/server/webauthn';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -14,12 +13,6 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
 	if (db && pkceCode) {
 		const { error } = await db.auth.exchangeCodeForSession(pkceCode);
 		if (!error) {
-			cookies.set(BIOMETRIC_JUST_AUTHED_COOKIE, '1', {
-				path: '/',
-				httpOnly: false,
-				sameSite: 'lax',
-				maxAge: 60
-			});
 			redirect(303, next);
 		}
 	} else if (db && tokenHash) {
@@ -28,12 +21,6 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
 			type: otpType || 'email'
 		});
 		if (!error) {
-			cookies.set(BIOMETRIC_JUST_AUTHED_COOKIE, '1', {
-				path: '/',
-				httpOnly: false,
-				sameSite: 'lax',
-				maxAge: 60
-			});
 			redirect(303, next);
 		}
 	}
@@ -79,12 +66,6 @@ export const actions: Actions = {
 				maxAge: 60 * 60 * 24 * 30
 			});
 		}
-		cookies.set(BIOMETRIC_JUST_AUTHED_COOKIE, '1', {
-			path: '/',
-			httpOnly: false,
-			sameSite: 'lax',
-			maxAge: 60
-		});
 		redirect(303, next);
 	},
 

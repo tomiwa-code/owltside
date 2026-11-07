@@ -31,7 +31,6 @@ export interface AppSettings {
 		personalization: boolean;
 	};
 	security: {
-		biometricLogin: boolean;
 		twoFactor: boolean;
 	};
 	payout: {
@@ -66,7 +65,7 @@ const defaults: AppSettings = {
 	},
 	privacy: { privateProfile: false, showAttendedEvents: true, personalizedAds: false },
 	cookies: { analytics: false, personalization: false },
-	security: { biometricLogin: true, twoFactor: true },
+	security: { twoFactor: true },
 	payout: { bank: '', accountNumber: '' },
 	accessibility: {
 		appearance: 'light',
@@ -137,3 +136,7 @@ export const appSettings = settings;
 if (settings.value.accessibility.appearance !== 'light' && settings.value.accessibility.appearance !== 'dark') {
 	settings.value.accessibility.appearance = initialAppearance;
 }
+
+// Biometrics are disabled. Discard legacy opt-ins without resetting other settings.
+settings.value.security ??= { ...defaults.security };
+delete (settings.value.security as AppSettings['security'] & { biometricLogin?: boolean }).biometricLogin;
