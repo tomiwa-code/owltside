@@ -236,6 +236,46 @@ function friendlyWebAuthnError(err: unknown, fallback: string): string {
 	return err instanceof Error && err.message ? err.message : fallback;
 }
 
+interface BiometricChallenge {
+	challenge: string;
+	challengeToken: string;
+	allowCredentialIds?: string[];
+	user?: { id: string; name: string; displayName: string };
+}
+
+async function requestBiometricChallenge(purpose: 'register' | 'authenticate'): Promise<BiometricChallenge> {
+	let response: Response;
+	try {
+		response = await fetch('/api/auth/biometric/challenge', {
+			method: 'POST',
+			credentials: 'same-origin',
+			cache: 'no-store',
+			headers: { 'content-type': 'application/json', accept: 'application/json' },
+			body: JSON.stringify({ purpose })
+		});
+	} catch {
+		throw new Error('Unable to reach the biometric service. Check your connection and try again, or sign out and use an email code.');
+	}
+	const data = await response.json().catch(() => null) as Partial<BiometricChallenge> & { error?: unknown } | null;
+	if (response.status === 401) {
+		throw new Error('Your sign-in session has expired. Sign out and use an email code to continue.');
+	}
+	if (!response.ok) {
+		if (typeof data?.error === 'string' && data.error.trim()) throw new Error(data.error);
+		if (response.status === 429) {
+			throw new Error('Too many biometric attempts. Wait a moment and try again.');
+		}
+		throw new Error(`The biometric service is unavailable (HTTP ${response.status}). Try again or sign out and use an email code.`);
+	}
+	if (typeof data?.challenge !== 'string' || !data.challenge ||
+		typeof data.challengeToken !== 'string' || !data.challengeToken ||
+		(data.allowCredentialIds !== undefined && (!Array.isArray(data.allowCredentialIds) ||
+			!data.allowCredentialIds.every((id) => typeof id === 'string')))) {
+		throw new Error('The biometric service returned an invalid challenge. Reload and try again, or sign out and use an email code.');
+	}
+	return data as BiometricChallenge;
+}
+
 export async function enrollBiometricPasskey(
 	expectedUserId?: string
 ): Promise<LocalBiometricMetadata> {
@@ -244,20 +284,7 @@ export async function enrollBiometricPasskey(
 		throw new Error(check.reason ?? 'Biometrics are not supported on this device.');
 	}
 
-	const challengeRes = await fetch('/api/auth/biometric/challenge', {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ purpose: 'register' })
-	});
-	const challengeData = (await challengeRes.json().catch(() => ({}))) as {
-		challenge?: string;
-		challengeToken?: string;
-		user?: { id: string; name: string; displayName: string };
-		error?: string;
-	};
-	if (!challengeRes.ok || !challengeData.challenge || !challengeData.challengeToken) {
-		throw new Error(challengeData.error ?? 'Could not start biometric setup.');
-	}
+	const challengeData = await requestBiometricChallenge('register');
 
 	const resolvedUserId = challengeData.user?.id ?? expectedUserId;
 	const userBytes = new TextEncoder().encode(resolvedUserId ?? 'owltside-user');
@@ -355,20 +382,7 @@ export async function authenticateWithBiometrics(expectedUserId?: string): Promi
 		throw new Error(check.reason ?? 'Biometrics are not supported on this device.');
 	}
 
-	const challengeRes = await fetch('/api/auth/biometric/challenge', {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ purpose: 'authenticate' })
-	});
-	const challengeData = (await challengeRes.json().catch(() => ({}))) as {
-		challenge?: string;
-		challengeToken?: string;
-		allowCredentialIds?: string[];
-		error?: string;
-	};
-	if (!challengeRes.ok || !challengeData.challenge || !challengeData.challengeToken) {
-		throw new Error(challengeData.error ?? 'Could not initiate biometric check.');
-	}
+	const challengeData = await requestBiometricChallenge('authenticate');
 
 	const stored = readStoredBiometric(expectedUserId);
 	const candidateIds = new Set<string>(challengeData.allowCredentialIds ?? []);

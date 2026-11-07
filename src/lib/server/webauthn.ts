@@ -28,6 +28,10 @@ export const BIOMETRIC_VAULT_COOKIE = 'owltside_bio_vault';
 export const BIOMETRIC_UNLOCKED_COOKIE = 'owltside_bio_unlocked';
 export const BIOMETRIC_JUST_AUTHED_COOKIE = 'owltside_just_authed';
 
+export class BiometricConfigurationError extends Error {
+	name = 'BiometricConfigurationError';
+}
+
 function resolveSecret(): Buffer {
 	// BIOMETRIC_SECRET is the only acceptable source in production. Chaining to
 	// the anon key was a soft fallback that made an attacker-known public value
@@ -35,7 +39,7 @@ function resolveSecret(): Buffer {
 	const explicit = (privateEnv.BIOMETRIC_SECRET || '').trim();
 	if (explicit) return createHash('sha256').update(explicit).digest();
 	if (process.env.NODE_ENV === 'production') {
-		throw new Error(
+		throw new BiometricConfigurationError(
 			'BIOMETRIC_SECRET is required in production: it encrypts stored passkey vaults. ' +
 				'Generate one with `openssl rand -hex 32`.'
 		);

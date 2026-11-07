@@ -80,11 +80,45 @@ code paths switch to the live backend — no component changes.
      (`'user' | 'admin' | 'superadmin'`) with normalization and privilege-escalation
      guards so the Admin console shares the same Supabase login as the main app
 3. Set env vars (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`,
-   `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
+   `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`, `BIOMETRIC_SECRET`) and redeploy.
 
 Auth is email OTP (`signInWithOtp` + `verifyOtp`) via `@supabase/ssr` cookies. Google sign-in uses Supabase OAuth; enable the Google provider and add `/auth/callback` to the allowed redirect URLs.
 Chat uses **Supabase Realtime channels** on `messages` inserts (no separate
 socket server); demo mode falls back to `useQuery(refetchInterval)` polling.
+
+## Face ID / Touch ID: biometric service setup and recovery
+
+The mobile unlock gate first requests a signed challenge from
+`POST /api/auth/biometric/challenge`. A failure there happens **before** the
+browser asks Face ID/Touch ID to verify you; it does not mean the device's sensor
+is broken.
+
+- Set a private, persistent **`BIOMETRIC_SECRET` on the customer-facing/public
+  app deployment**, not just the separate admin project. Generate a value with
+  `openssl rand -hex 32` and save it in the host's protected environment settings.
+  Enable it for the environment you are testing (production or preview), then
+  redeploy. Never paste it into chat or use a `PUBLIC_` prefix.
+- Keep the same value across server instances and redeployments. Do not replace
+  an already configured secret merely to troubleshoot: rotating it invalidates
+  existing challenge tokens and encrypted passkey-vault cookies.
+- Apply `supabase/sql/026_biometrics_push_and_admin_controls.sql` (or use the
+  all-in-one schema) so `biometric_credentials` and its RLS policies exist.
+- Use HTTPS and the same hostname on which the passkey was enrolled. Different
+  preview domains do not share a relying-party identity with production.
+
+If the unlock gate reports a service error, inspect the challenge request's HTTP
+status/JSON code and the public app's server logs:
+
+| Status / code | Action |
+| --- | --- |
+| 503 / `BIOMETRIC_NOT_CONFIGURED` | Set the missing private secret and redeploy the public app. |
+| 503 / `BIOMETRIC_STORE_UNAVAILABLE` | Check Supabase availability and migration 026; no passkeys are deleted automatically. |
+| 401 / `SESSION_REQUIRED` | Use **Sign out & use email code** to sign in again. |
+| Non-JSON 5xx or a network failure | Check the deployment/network, retry, or use email-code sign-in. |
+
+Challenges and error responses are never cached. A failed request never marks
+the gate unlocked, skips signature verification, or automatically re-enrolls a
+saved passkey. The email-code button remains the explicit recovery path.
 
 ## Approvals (actions an admin must decide)
 
