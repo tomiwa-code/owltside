@@ -1,3 +1,4 @@
+import { browser } from '$app/environment';
 import { persisted } from './persist.svelte';
 
 export interface AppSettings {
@@ -68,7 +69,7 @@ const defaults: AppSettings = {
 	security: { biometricLogin: true, twoFactor: true },
 	payout: { bank: '', accountNumber: '' },
 	accessibility: {
-		appearance: 'dark',
+		appearance: 'light',
 		reduceMotion: false,
 		screenReaderLabels: true,
 		pageSize: 100
@@ -76,7 +77,18 @@ const defaults: AppSettings = {
 	storage: { offlineMode: true, autoDownloadTickets: true }
 };
 
-const settings = persisted<AppSettings>('owltside.settings.v1', defaults);
+// Preserve the old appearance-only cache when full settings have not been saved.
+let initialAppearance: 'light' | 'dark' = 'light';
+if (browser) {
+	try {
+		const cached = localStorage.getItem('owltside.theme');
+		if (cached === 'light' || cached === 'dark') initialAppearance = cached;
+	} catch { /* blocked storage — use light */ }
+}
+const settings = persisted<AppSettings>('owltside.settings.v1', {
+	...defaults,
+	accessibility: { ...defaults.accessibility, appearance: initialAppearance }
+});
 
 // Upgrade the previous text-size preference without resetting any other saved preferences.
 const stored = settings.value as AppSettings & {
@@ -120,3 +132,8 @@ if (!oldAccessibility || !Number.isFinite(oldAccessibility.pageSize)) {
 }
 
 export const appSettings = settings;
+
+// Partial/invalid legacy settings should not accidentally select dark mode.
+if (settings.value.accessibility.appearance !== 'light' && settings.value.accessibility.appearance !== 'dark') {
+	settings.value.accessibility.appearance = initialAppearance;
+}

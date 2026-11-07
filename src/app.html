@@ -1,33 +1,36 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en" data-theme="light">
 	<head>
 		<meta charset="utf-8" />
 		<meta
 			name="viewport"
 			content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
 		/>
-		<meta name="theme-color" content="#1A1A1A" />
+		<meta name="theme-color" content="#f8f9ff" />
 		<!-- Apply the saved appearance before first paint so the toggle never flashes. -->
 		<script>
 			(function () {
+				var theme = 'light';
 				try {
-					var raw = localStorage.getItem('owltside.settings.v1');
-					var theme = localStorage.getItem('owltside.theme');
-					if (!theme && raw) {
-						var saved = JSON.parse(raw);
-						theme = saved && saved.accessibility && saved.accessibility.appearance;
-					}
-					if (theme === 'light' || theme === 'dark') {
-						document.documentElement.dataset.theme = theme;
-						document.documentElement.classList.toggle('dark', theme === 'dark');
-					}
+					var savedTheme;
+					try {
+						var raw = localStorage.getItem('owltside.settings.v1');
+						var saved = raw && JSON.parse(raw);
+						savedTheme = saved && saved.accessibility && saved.accessibility.appearance;
+					} catch (error) { /* corrupt settings — try the appearance cache */ }
+					var cachedTheme = localStorage.getItem('owltside.theme');
+					if (savedTheme === 'light' || savedTheme === 'dark') theme = savedTheme;
+					else if (cachedTheme === 'light' || cachedTheme === 'dark') theme = cachedTheme;
 				} catch (error) {
-					/* first visit or blocked storage — the dark default stands */
+					/* first visit or blocked storage — use the light default */
 				}
+				document.documentElement.dataset.theme = theme;
+				document.documentElement.classList.toggle('dark', theme === 'dark');
+				document.querySelector('meta[name="theme-color"]').setAttribute('content', theme === 'light' ? '#f8f9ff' : '#1A1A1A');
 			})();
 		</script>
 		<meta name="mobile-web-app-capable" content="yes" />
-		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 		<meta name="description" content="Owltside — event discovery, instant ticketing and live gate check-in." />
 		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
 		<link rel="icon" type="image/png" href="%sveltekit.assets%/icons/icon-192.png" />
