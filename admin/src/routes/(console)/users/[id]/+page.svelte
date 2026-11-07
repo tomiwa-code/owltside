@@ -6,7 +6,7 @@
 		Check,
 		Download,
 		FileText,
-		Fingerprint,
+		ShieldCheck,
 		Mail,
 		MapPin,
 		Phone,
@@ -184,7 +184,7 @@
 			<UserVerification {user} canRequest={!!data.admin && data.admin.tier <= 2} />
 
 			<section class="panel overflow-hidden">
-				<header class="panel-head"><p class="mono-label">Unmasked KYC & bank details</p><Fingerprint size={12} class="text-[#8f8f9b]" /></header>
+				<header class="panel-head"><p class="mono-label">Unmasked KYC & bank details</p><ShieldCheck size={12} class="text-[#8f8f9b]" /></header>
 				<div class="space-y-1.5 p-3.5 text-[10.5px]">
 					<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Profile verified</span><span class="font-code text-[#dcdce4]">{user.kycTier === 1 ? 'Yes' : 'No'}</span></p>
 					<p class="flex justify-between gap-2"><span class="text-[#8f8f9b]">Legal name</span><span class="font-code select-all text-[#ededf4]">{user.kycLegalName || user.name}</span></p>
@@ -231,7 +231,7 @@
 			</section>
 
 			<div class="panel p-3.5 text-[9.5px] leading-relaxed text-[#6f6f7b]">
-				Disabling an account terminates active sessions on the public app and prevents OTP/OAuth/passkey login until re-enabled. {num(user.ticketsCount)} passes · {money(user.spendNgn)} lifetime.
+				Disabling an account terminates active sessions on the public app and prevents OTP/OAuth login until re-enabled. {num(user.ticketsCount)} passes · {money(user.spendNgn)} lifetime.
 			</div>
 		</div>
 	</div>

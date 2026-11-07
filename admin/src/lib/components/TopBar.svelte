@@ -307,7 +307,7 @@
 						<ShieldCheck size={13} /> Roles & access control
 					</a>
 					<a href="/settings" class="flex items-center gap-2 px-3.5 py-2.5 text-[11.5px] text-[#c1c1cc] hover:bg-[#1e1e25]">
-						<KeyRound size={13} /> Security & hardware keys
+						<KeyRound size={13} /> Security & sessions
 					</a>
 					<div class="border-t border-[#2a2a32] p-1.5">
 						<form method="POST" action="/logout">

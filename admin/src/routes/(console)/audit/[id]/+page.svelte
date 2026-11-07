@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowLeft, Bug, Clock, FileJson, Fingerprint, Server, ShieldCheck, User } from '@lucide/svelte';
+	import { ArrowLeft, Bug, Clock, FileJson, Server, ShieldCheck, User } from '@lucide/svelte';
 	import { toasts } from '$admin/state/toast.svelte';
 	import { money, num, relative } from '$admin/utils/format';
 	import PageHeader from '$components/PageHeader.svelte';
@@ -100,7 +100,7 @@
 
 		<div class="space-y-3">
 			<section class="panel overflow-hidden">
-				<header class="panel-head"><p class="mono-label">Cryptographic proof</p><Fingerprint size={12} class="text-[#6f6f7b]" /></header>
+				<header class="panel-head"><p class="mono-label">Cryptographic proof</p><ShieldCheck size={12} class="text-[#6f6f7b]" /></header>
 				<div class="space-y-2.5 p-4">
 					<div>
 						<p class="mono-label !text-[7.5px]">Record SHA-256 hash (signed)</p>

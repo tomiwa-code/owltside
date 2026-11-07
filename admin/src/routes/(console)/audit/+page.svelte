@@ -9,8 +9,7 @@
 		ScrollText,
 		ShieldCheck,
 		ShieldAlert,
-		Filter,
-		Fingerprint
+		Filter
 	} from '@lucide/svelte';
 	import { page } from '$app/state';
 	import { toasts } from '$admin/state/toast.svelte';
@@ -107,9 +106,9 @@
 			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">{lastVerified ? `Re-checked ${relative(lastVerified)}` : 'SHA-256 hash chain valid · 0 breaks'}</p>
 		</div>
 		<div class="panel p-4">
-			<div class="flex items-center justify-between"><p class="mono-label">Active admin sessions</p><span class="chip !h-[17px] !text-[7.5px]">FIDO2</span></div>
+			<div class="flex items-center justify-between"><p class="mono-label">Active admin sessions</p><span class="chip !h-[17px] !text-[7.5px]">Email OTP</span></div>
 			<p class="mt-2 flex items-baseline gap-2 font-display text-[clamp(17px,2.5vw,25px)] font-semibold leading-none text-[#f1f1f6]">{data.counts.activeAdmins} <span class="font-code text-[9px] font-normal text-[#8f8f9b]">staff</span></p>
-			<p class="mt-1.5 flex items-center gap-1 text-[10.5px] text-[#8f8f9b]"><Check size={10} class="text-emerald-400" /> Hardware WebAuthn tokens active</p>
+			<p class="mt-1.5 flex items-center gap-1 text-[10.5px] text-[#8f8f9b]"><Check size={10} class="text-emerald-400" /> Supabase admin sessions</p>
 		</div>
 	</div>
 
@@ -186,7 +185,7 @@
 		<section class="panel overflow-hidden">
 			<header class="flex flex-wrap items-center justify-between gap-2 border-b border-[#26262e] px-4 py-2.5">
 				<div class="flex items-center gap-2">
-					<Fingerprint size={13} class="text-[#8f8f9b]" />
+					<ShieldCheck size={13} class="text-[#8f8f9b]" />
 					<h2 class="font-display text-[13.5px] font-semibold text-[#f0f0f5]">Forensic record {selected.ref}</h2>
 					<a href={`/audit/${selected.id}`} class="chip !h-[18px] !text-[8px] hover:!text-[#dcd6ff]">Open full dossier <ArrowUpRight size={9} /></a>
 				</div>
@@ -210,7 +209,7 @@
 							<p class="flex justify-between gap-3"><span class="text-[#6f6f7b]">Role / privileges</span><span class="font-code text-[#dcdce4]">{selected.actorRole.toUpperCase()}</span></p>
 							<p class="flex justify-between gap-3"><span class="text-[#6f6f7b]">Session token</span><span class="font-code text-[#dcdce4]">tok_ng_live_{selected.id.slice(-8)}</span></p>
 							<p class="flex justify-between gap-3"><span class="text-[#6f6f7b]">Source IP</span><span class="font-code text-[#dcdce4]">{selected.ip} · Lagos, NG</span></p>
-							<p class="flex justify-between gap-3"><span class="text-[#6f6f7b]">MFA verification</span><span class="font-code text-emerald-300">FIDO2 WebAuthn / YubiKey</span></p>
+							<p class="flex justify-between gap-3"><span class="text-[#6f6f7b]">Authentication</span><span class="font-code text-emerald-300">Supabase email OTP</span></p>
 						</div>
 					</div>
 

@@ -1,3 +1,4 @@
+import { clearRetiredBiometricCookies } from '$lib/server/biometrics-disabled';
 import { isAuthReturn } from '$lib/server/oauth';
 import { createSupabase, supabaseConfigured } from '$lib/server/supabase';
 import { demoModeEnabled } from '$lib/server/demo-mode';
@@ -127,6 +128,7 @@ function rateLimited(event: Parameters<Handle>[0]['event']): Response | null {
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
+	clearRetiredBiometricCookies(event.cookies);
 	// Synthetic events (unit tests, internal calls) carry no real Request; the
 	// limiter only makes sense for traffic that actually arrived over HTTP.
 	const limited = event?.request ? rateLimited(event) : null;

@@ -57,7 +57,7 @@
 		<footer
 			class="mx-auto flex w-full max-w-[1580px] flex-col gap-1.5 border-t border-[#22222a] px-4 py-4 font-code text-[8.5px] uppercase tracking-[0.12em] text-[#54545f] sm:flex-row sm:items-center sm:justify-between sm:px-7"
 		>
-			<span>Owltside control plane · FIDO2 enforced · SOC-2 Type II</span>
+			<span>Owltside control plane · Role-gated access · SOC-2 Type II</span>
 			<span class="flex items-center gap-2">
 				<span>TLS 1.3</span><span class="text-[#33333d]">•</span>
 				<span>Build 4.18.2-prod</span><span class="text-[#33333d]">•</span>

@@ -4,7 +4,6 @@
 		Download,
 		Eye,
 		FileJson,
-		Fingerprint,
 		Printer,
 		QrCode,
 		RefreshCw,
@@ -122,7 +121,7 @@
 			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Share of the live ledger</p>
 		</div>
 		<div class="panel p-4">
-			<div class="flex items-center justify-between"><p class="mono-label">Pass value</p><Fingerprint size={13} class="text-[#6f6f7b]" /></div>
+			<div class="flex items-center justify-between"><p class="mono-label">Pass value</p><ShieldCheck size={13} class="text-[#6f6f7b]" /></div>
 			<p class="mt-2 font-display text-[clamp(18px,2.6vw,26px)] font-semibold leading-none text-[#f1f1f6]">{money(data.counts.valueNgn)}</p>
 			<p class="mt-1.5 text-[10.5px] text-[#8f8f9b]">Face value · avg {money(data.counts.avgPriceNgn)}</p>
 		</div>

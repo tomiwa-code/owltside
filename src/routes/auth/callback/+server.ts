@@ -1,7 +1,6 @@
 import { authFailure, readOAuthContext, safeAuthNext } from '$lib/server/oauth';
 import { createSupabase } from '$lib/server/supabase';
 import { fillEmptyProfileFields, providerProfile } from '$lib/server/profile-sync';
-import { BIOMETRIC_JUST_AUTHED_COOKIE } from '$lib/server/webauthn';
 import { isRedirect, redirect, type RequestHandler } from '@sveltejs/kit';
 
 export const GET: RequestHandler = async ({ url, cookies }) => {
@@ -82,11 +81,5 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 		// Auth cookies have already been written. The request hook can retry profile sync.
 	}
 	const next = safeAuthNext(url.searchParams.get('next') ?? context.next);
-	cookies.set?.(BIOMETRIC_JUST_AUTHED_COOKIE, '1', {
-		path: '/',
-		httpOnly: false,
-		sameSite: 'lax',
-		maxAge: 60
-	});
 	redirect(303, next);
 };

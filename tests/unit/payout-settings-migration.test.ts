@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
 
 /**
  * Older builds stored a looked-up `accountName` alongside the payout account.
@@ -25,7 +26,7 @@ describe('payout settings migration', () => {
 				},
 				privacy: { privateProfile: false, showAttendedEvents: true, personalizedAds: false },
 				cookies: { analytics: false, personalization: false },
-				security: { biometricLogin: false, twoFactor: true },
+				security: { biometricLogin: true, twoFactor: true },
 				payments: { savedMethods: [] },
 				payout: { bank: 'Zenith Bank', accountNumber: '1234567890', accountName: 'ADA OBI' },
 				accessibility: { appearance: 'dark', reduceMotion: false, screenReaderLabels: true, pageSize: 100 },
@@ -39,5 +40,9 @@ describe('payout settings migration', () => {
 		expect(appSettings.value.payout).toEqual({ bank: 'Zenith Bank', accountNumber: '1234567890' });
 		expect('accountName' in appSettings.value.payout).toBe(false);
 		expect(appSettings.value.verification.payoutAccount).toBe(true);
+		expect(appSettings.value.security).toEqual({ twoFactor: true });
+		expect(appSettings.value.accessibility.appearance).toBe('dark');
+		await tick();
+		expect(JSON.parse(localStorage.getItem('owltside.settings.v1')!).security).toEqual({ twoFactor: true });
 	});
 });
