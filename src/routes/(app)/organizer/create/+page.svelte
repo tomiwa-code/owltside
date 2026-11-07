@@ -594,7 +594,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 						<div class="flex flex-col gap-2">
 							<span class="{MONO} text-on-surface-variant">Timestamp Begin (UTC+1 WAT)</span>
 							<div class="relative">
-								<input type="date" aria-label="Start date" bind:value={date} class="w-full h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md [color-scheme:dark] focus:outline-none focus:border-primary/50" />
+								<input type="date" aria-label="Start date" bind:value={date} class="w-full h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50" />
 								<CalendarDays class="w-4 h-4 text-on-surface-variant absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
 							</div>
 						</div>
@@ -602,11 +602,11 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 							<span class="{MONO} text-on-surface-variant">Timestamp Conclude — Date &amp; Time (UTC+1 WAT)</span>
 							<div class="grid grid-cols-[1fr_132px] gap-2">
 								<div class="relative min-w-0">
-									<input type="date" aria-label="End date" bind:value={dateEnd} class="w-full h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md [color-scheme:dark] focus:outline-none focus:border-primary/50" />
+									<input type="date" aria-label="End date" bind:value={dateEnd} class="w-full h-12 px-4 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50" />
 									<CalendarDays class="w-4 h-4 text-on-surface-variant absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
 								</div>
 								<div class="relative min-w-0">
-									<input type="time" aria-label="End time" bind:value={timeEnd} class="w-full h-12 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md [color-scheme:dark] focus:outline-none focus:border-primary/50" />
+									<input type="time" aria-label="End time" bind:value={timeEnd} class="w-full h-12 px-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-md focus:outline-none focus:border-primary/50" />
 									<Clock class="w-4 h-4 text-on-surface-variant absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
 								</div>
 							</div>
@@ -1967,13 +1967,13 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 				<div class="grid grid-cols-1 gap-space-sm">
 					<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md flex flex-col gap-2">
 						<span class="text-body-sm text-on-surface-variant">Start date · WAT</span>
-						<input type="date" aria-label="Start date" bind:value={date} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-sm [color-scheme:dark]" />
+						<input type="date" aria-label="Start date" bind:value={date} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-sm" />
 					</div>
 					<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md flex flex-col gap-2">
 						<span class="text-body-sm text-on-surface-variant">End date &amp; time · WAT</span>
 						<div class="grid grid-cols-[1fr_118px] gap-2">
-							<input type="date" aria-label="End date" bind:value={dateEnd} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-sm [color-scheme:dark]" />
-							<input type="time" aria-label="End time" bind:value={timeEnd} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-sm [color-scheme:dark]" />
+							<input type="date" aria-label="End date" bind:value={dateEnd} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-sm" />
+							<input type="time" aria-label="End time" bind:value={timeEnd} class="w-full px-3 py-3 rounded-lg bg-surface-base border border-surface-glass-border text-on-surface text-body-sm" />
 						</div>
 						<span class="text-label-badge text-on-surface-variant">Event closes when it reaches this end date and time.</span>
 					</div>

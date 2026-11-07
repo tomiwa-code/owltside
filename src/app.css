@@ -152,6 +152,7 @@
 
 @layer base {
 	html {
+		color-scheme: dark;
 		font-family: var(--font-body);
 		background-color: var(--color-surface-base);
 		color: var(--color-on-surface);

@@ -32,6 +32,17 @@ afterEach(() => {
 });
 
 describe('one-tap theme toggle', () => {
+	it('allows switching from the light default to dark mode and back', async () => {
+		appSettings.value.accessibility.appearance = 'light';
+		render(ThemeToggle);
+		await fireEvent.click(screen.getByRole('button', { name: 'Switch to dark mode' }));
+		expect(appSettings.value.accessibility.appearance).toBe('dark');
+		expect(localStorage.getItem('owltside.theme')).toBe('dark');
+		await fireEvent.click(screen.getByRole('button', { name: 'Switch to light mode' }));
+		expect(appSettings.value.accessibility.appearance).toBe('light');
+		expect(localStorage.getItem('owltside.theme')).toBe('light');
+	});
+
 	it('switches to light mode from the app chrome and stores the choice', async () => {
 		render(ThemeToggle);
 		const button = screen.getByRole('button', { name: 'Switch to light mode' });

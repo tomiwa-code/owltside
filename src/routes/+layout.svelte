@@ -35,7 +35,8 @@
 		document.documentElement.dataset.theme = preferences.appearance;
 		// Keep the `dark` class and the pre-paint cache in step with the preference
 		// so a reload never paints the wrong theme first.
-		document.documentElement.classList.toggle('dark', preferences.appearance !== 'light');
+		document.documentElement.classList.toggle('dark', preferences.appearance === 'dark');
+		document.querySelector('meta[name="theme-color"]')?.setAttribute('content', preferences.appearance === 'dark' ? '#1A1A1A' : '#f8f9ff');
 		try {
 			localStorage.setItem('owltside.theme', preferences.appearance);
 		} catch {
