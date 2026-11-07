@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import Toasts from '$components/Toasts.svelte';
+	import NavigationLoading from '$components/NavigationLoading.svelte';
 	import { AlertTriangle, RotateCw } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 
@@ -11,6 +12,8 @@
 	<title>Owltside Admin</title>
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
+
+<NavigationLoading />
 
 <!--
 	Last line of defence. A render or mount crash inside a page must never leave
