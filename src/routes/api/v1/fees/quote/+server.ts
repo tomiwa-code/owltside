@@ -50,7 +50,13 @@ export const POST: RequestHandler = async ({ request, cookies, locals }) => {
 		else console.info('Demo fee quote audit', { quote: unit, quantity, organizerId: loggedOrganizerId, eventId: loggedEventId, idempotencyKey });
 		return json({ currency: unit.currency, quantity, unit, totals: total }, { headers: { 'cache-control': 'no-store' } });
 	} catch (error) {
+		const detail = error instanceof Error ? error.message : '';
 		console.error('Fee quote failed', error);
-		return json({ error: error instanceof Error ? error.message : 'Could not calculate fees' }, { status: 503 });
+		const setupIssue = /SUPABASE_SERVICE_ROLE_KEY|fee_rules|platform_settings|fee_quote_audit|fee_bearer|schema cache|does not exist/i.test(detail);
+		return json({
+			error: setupIssue
+				? 'Fee pricing is not initialized. Apply Supabase migrations 034 and 035, and configure SUPABASE_SERVICE_ROLE_KEY.'
+				: 'Could not calculate fees. Please retry.'
+		}, { status: 503 });
 	}
 };

@@ -16,6 +16,9 @@ export async function requestFeeQuote(input: {
 		method: 'POST', headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(input)
 	});
-	if (!response.ok) throw new Error('Fees could not be loaded');
+	if (!response.ok) {
+		const body = await response.json().catch(() => null);
+		throw new Error(typeof body?.error === 'string' ? body.error : 'Fees could not be loaded');
+	}
 	return response.json();
 }

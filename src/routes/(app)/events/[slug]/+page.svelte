@@ -91,7 +91,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 	const base = $derived(tier.price * qty);
 	let feeQuote = $state<{ unit: ClientFeeQuote; totals: { ticketPriceKobo: number; platformFeeKobo: number; processingFeeKobo: number; buyerTotalKobo: number; organizerNetKobo: number } } | null>(null);
 	let feeQuoteLoading = $state(false);
-	let feeQuoteError = $state(false);
+	let feeQuoteError = $state('');
 	$effect(() => {
 		const ticketPriceKobo = Math.round(Number(tier.price) * 100);
 		const quantity = qty;
@@ -100,10 +100,10 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 		let cancelled = false;
 		feeQuote = null;
 		feeQuoteLoading = true;
-		feeQuoteError = false;
+		feeQuoteError = '';
 		requestFeeQuote({ ticketPriceKobo, quantity, eventId, feeBearer })
 			.then((quote) => { if (!cancelled) feeQuote = quote; })
-			.catch(() => { if (!cancelled) { feeQuote = null; feeQuoteError = true; } })
+			.catch((error) => { if (!cancelled) { feeQuote = null; feeQuoteError = error instanceof Error ? error.message : 'Could not load fee details'; } })
 			.finally(() => { if (!cancelled) feeQuoteLoading = false; });
 		return () => { cancelled = true; };
 	});
@@ -622,6 +622,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 					</div>
 					{#if tier.price > 0 && ((feeQuote?.totals.platformFeeKobo ?? 0) > 0 || (event.feeBearer ?? 'PASS') === 'PASS')}<div class="flex items-center justify-between gap-3"><span class="text-body-sm text-on-surface-variant">Service fee{feeQuote?.unit.feeBearer === 'ABSORB' || (!feeQuote && event.feeBearer === 'ABSORB') ? ' (covered by organizer)' : ''}</span><span class="font-code text-body-sm text-on-surface">{feeQuote ? formatMoney(fee, currency.value) : feeQuoteLoading ? 'Calculating…' : feeQuoteError ? 'Unavailable' : '—'}</span></div>{/if}
 					{#if feeQuote && feeQuote.totals.processingFeeKobo > 0}<div class="flex items-center justify-between gap-3"><span class="text-body-sm text-on-surface-variant">Payment processing fee{feeQuote.unit.processingFeeBearer === 'ABSORB' ? ' (covered by organizer)' : ''}</span><span class="font-code text-body-sm text-on-surface">{formatMoney(processingFee, currency.value)}</span></div>{/if}
+					{#if feeQuoteError}<p class="text-label-badge text-error" role="status">{feeQuoteError}</p>{/if}
 					{#if discount > 0}
 						<div class="flex items-center justify-between gap-3">
 							<span class="text-body-sm text-on-surface-variant">Partner Pass Incentive</span>
@@ -974,6 +975,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 					<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">{qty}× {tier.name}</span><span class="font-code text-on-surface">{formatMoney(base, currency.value)}</span></div>
 					{#if tier.price > 0 && ((feeQuote?.totals.platformFeeKobo ?? 0) > 0 || (event.feeBearer ?? 'PASS') === 'PASS')}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Service fee{feeQuote?.unit.feeBearer === 'ABSORB' || (!feeQuote && event.feeBearer === 'ABSORB') ? ' (covered by organizer)' : ''}</span><span class="font-code text-on-surface">{feeQuote ? formatMoney(fee, currency.value) : feeQuoteLoading ? 'Calculating…' : feeQuoteError ? 'Unavailable' : '—'}</span></div>{/if}
 					{#if feeQuote && feeQuote.totals.processingFeeKobo > 0}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Payment processing fee{feeQuote.unit.processingFeeBearer === 'ABSORB' ? ' (covered by organizer)' : ''}</span><span class="font-code text-on-surface">{formatMoney(processingFee, currency.value)}</span></div>{/if}
+					{#if feeQuoteError}<p class="text-label-badge text-error" role="status">{feeQuoteError}</p>{/if}
 					{#if discount > 0}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Partner pass incentive</span><span class="font-code font-bold text-accent-emerald">−{formatMoney(discount, currency.value)}</span></div>{/if}
 					<div class="flex items-center justify-between gap-2 border-t border-surface-glass-border pt-3"><span class="text-body-md font-semibold text-on-surface">Total payable</span><span class="font-display text-headline-md font-bold text-on-surface">{formatMoney(totalPayable, currency.value)}</span></div>
 				</div>
