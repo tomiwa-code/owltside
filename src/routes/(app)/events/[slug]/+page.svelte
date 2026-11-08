@@ -790,12 +790,6 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 						referrerpolicy="no-referrer-when-downgrade"
 						class="absolute inset-0 w-full h-full border-0"
 					></iframe>
-					<div class="pointer-events-none absolute bottom-2 left-2 right-2 px-3 py-1.5 rounded-lg bg-surface-base/85 backdrop-blur-md flex items-center text-on-surface shadow-md">
-						<span class="flex items-center gap-1.5 min-w-0">
-							<span class="w-2 h-2 rounded-full bg-accent-emerald animate-ping"></span>
-							<span class="font-code text-label-code truncate">{event.venue}</span>
-						</span>
-					</div>
 				</div>
 			</div>
 

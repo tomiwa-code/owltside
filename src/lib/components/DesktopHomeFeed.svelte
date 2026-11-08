@@ -30,12 +30,33 @@
 	import { categories } from './iconMap';
 	import { bookmarks, currency, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
+	import { page } from '$app/state';
 	import { env as publicEnv } from '$env/dynamic/public';
 	import { fmtDate, fmtTime, fmtDateFull } from '$lib/utils/dates';
 	import { formatMoney } from '$lib/utils/money';
+	import {
+		resolveUserLocation,
+		selectVerifiedOrganizers,
+		type VerifiedOrganizerSummary
+	} from '$lib/utils/organizers';
 	import type { CategoryId, EventItem } from '$lib/types';
 
-	let { events }: { events: EventItem[] } = $props();
+	let {
+		events,
+		userLocation,
+		verifiedOrganizers
+	}: {
+		events: EventItem[];
+		userLocation?: string;
+		verifiedOrganizers?: VerifiedOrganizerSummary[];
+	} = $props();
+
+	const resolvedLocation = $derived(
+		userLocation ??
+			resolveUserLocation({
+				profileCity: page.data.currentProfile?.city
+			})
+	);
 
 	const WRAP = 'mx-auto w-full max-w-[1400px] px-6 xl:px-10';
 	/** Internal control plane — operators only; exposed as a discreet footer link. */
@@ -65,25 +86,9 @@
 	const curatedSlice = $derived(curated.slice(curatedPage * 3, curatedPage * 3 + 3));
 	const curatedPages = $derived(Math.max(1, Math.ceil(curated.length / 3)));
 
-	const organizers = $derived(() => {
-		const map = new Map<string, { name: string; handle: string; avatarColor: string; avatarUrl?: string | null; events: number; attended: number; id: string }>();
-		for (const e of events) {
-			if (!e.organizer.verified) continue;
-			const cur = map.get(e.organizer.id) ?? {
-				id: e.organizer.id,
-				handle: e.organizer.handle,
-				name: e.organizer.name,
-				avatarColor: e.organizer.avatarColor,
-				avatarUrl: e.organizer.avatarUrl,
-				events: 0,
-				attended: 0
-			};
-			cur.events += 1;
-			cur.attended += e.attendees;
-			map.set(e.organizer.id, cur);
-		}
-		return [...map.values()].sort((a, b) => b.events - a.events).slice(0, 3);
-	});
+	const organizers = $derived(
+		() => verifiedOrganizers ?? selectVerifiedOrganizers(events, resolvedLocation, 5)
+	);
 
 	/* ── helpers ────────────────────────────────────────────────────────── */
 	const minPrice = (e: EventItem) => Math.min(...e.tiers.map((t) => t.price));
@@ -362,7 +367,7 @@
 			<div class="rounded-2xl border border-surface-glass-border bg-surface-container p-5">
 				<div class="flex items-center justify-between gap-3">
 					<h3 class="font-display text-headline-md text-on-surface">Verified Organizers</h3>
-					<span class="{MONO} text-on-surface-variant">Lagos</span>
+					<span class="{MONO} text-on-surface-variant">{resolvedLocation}</span>
 				</div>
 				<div class="flex flex-col gap-4 pt-4">
 					{#each organizers() as org (org.id)}

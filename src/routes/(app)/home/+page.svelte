@@ -26,11 +26,46 @@
 import Avatar from '$components/Avatar.svelte';
 import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 	import { categories } from '$components/iconMap';
+	import { profileDraft } from '$lib/state/profile.svelte';
 	import { useQuery } from '$lib/state/query.svelte';
 	import { toast } from '$lib/state/toast.svelte';
+	import {
+		resolveNearestLocation,
+		resolveUserLocation,
+		selectVerifiedOrganizers
+	} from '$lib/utils/organizers';
 	import type { CategoryId, EventItem } from '$lib/types';
 
 	let { data } = $props();
+
+	let geoCity = $state<string | null>(null);
+	const session = $derived(page.data.session);
+	const draftCity = $derived(
+		profileDraft.value.hasChanges && profileDraft.value.ownerId === session?.userId
+			? profileDraft.value.city
+			: null
+	);
+	const userLocation = $derived(
+		resolveUserLocation({
+			geoCity,
+			draftCity,
+			profileCity: page.data.currentProfile?.city,
+			detectedCity: data.detectedLocation
+		})
+	);
+
+	$effect(() => {
+		if (typeof navigator === 'undefined' || !navigator.geolocation?.getCurrentPosition) return;
+		navigator.geolocation.getCurrentPosition(
+			(pos) => {
+				geoCity = resolveNearestLocation(pos.coords.latitude, pos.coords.longitude);
+			},
+			() => {
+				/* keep profile or server-detected fallback if geolocation is declined */
+			},
+			{ maximumAge: 300_000, timeout: 8_000 }
+		);
+	});
 
 	const events = useQuery<EventItem[]>(
 		'events:all',
@@ -53,25 +88,7 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 	const curated = $derived(
 		[...list].sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt)).slice(0, 4)
 	);
-	const verifiedOrganizers = $derived.by(() => {
-		const map = new Map<string, { id: string; handle: string; name: string; avatarColor: string; avatarUrl?: string | null; events: number; attended: number }>();
-		for (const event of list) {
-			if (!event.organizer.verified) continue;
-			const current = map.get(event.organizer.id) ?? {
-				id: event.organizer.id,
-				handle: event.organizer.handle,
-				name: event.organizer.name,
-				avatarColor: event.organizer.avatarColor,
-				avatarUrl: event.organizer.avatarUrl,
-				events: 0,
-				attended: 0
-			};
-			current.events += 1;
-			current.attended += event.attendees;
-			map.set(event.organizer.id, current);
-		}
-		return [...map.values()].sort((a, b) => b.events - a.events).slice(0, 3);
-	});
+	const verifiedOrganizers = $derived(selectVerifiedOrganizers(list, userLocation, 5));
 	const compact = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
 
 	let category = $state<CategoryId>('all');
@@ -112,7 +129,7 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 <svelte:head><title>Home • Owltside</title></svelte:head>
 
 <!-- desktop (md+) composition — see DesktopHomeFeed; mobile feed below is unchanged -->
-<DesktopHomeFeed events={list} />
+<DesktopHomeFeed events={list} {userLocation} {verifiedOrganizers} />
 
 <div class="md:hidden">
 
@@ -125,7 +142,7 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 				<div class="flex items-center gap-space-xs">
 					<Navigation class="w-5 h-5 text-primary" fill="currentColor" fill-opacity="0.2" />
 					<button class="flex items-center gap-1 text-on-surface text-body-sm hover:text-primary transition-colors" onclick={() => toast('Location picker ships with the map view', 'info')}>
-						<span class="font-semibold">Lagos</span>
+						<span class="font-semibold">{userLocation}</span>
 						<ChevronDown class="w-4 h-4 text-on-surface-variant" />
 					</button>
 				</div>
@@ -244,7 +261,7 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 			<div class="rounded-2xl border border-surface-glass-border bg-surface-container p-space-md">
 				<div class="flex items-center justify-between gap-2">
 					<h2 class="font-display text-headline-md text-on-surface">Verified Organizers</h2>
-					<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Lagos</span>
+					<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">{userLocation}</span>
 				</div>
 				<div class="flex flex-col gap-3 pt-space-sm">
 					{#each verifiedOrganizers as org (org.id)}
