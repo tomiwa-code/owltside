@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 /**
- * End-to-end database checks for the payment-integrity migration (033).
+ * End-to-end database checks for payment integrity and tiered-fee migrations (033–035).
  *
  * These run the same consolidated schema the app is deployed with, so they
  * assert the *contracts* money depends on:
@@ -113,6 +113,8 @@ beforeAll(async () => {
 		alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
 	`);
 	await db.exec(seed);
+	await db.exec(readFileSync('supabase/sql/034_tiered_fee_engine.sql', 'utf8'));
+	await db.exec(readFileSync('supabase/sql/035_fee_checkout_integration.sql', 'utf8'));
 	await asRole('postgres');
 }, 60_000);
 
@@ -120,7 +122,8 @@ beforeEach(async () => {
 	await asRole('postgres');
 	await db.exec(`
 		truncate public.tickets, public.checkins, public.payments, public.order_items,
-		         public.orders, public.notifications, public.scan_attempts, public.checkins;
+		         public.orders, public.notifications, public.scan_attempts, public.checkins,
+		         public.fee_quote_audit;
 		delete from public.events where id = '${eventId}';
 		delete from public.profiles where id in ('${organizer}', '${buyer}', '${other}');
 		delete from auth.users where id in ('${organizer}', '${buyer}', '${other}');
@@ -168,8 +171,8 @@ describe('checkout is priced and reserved by the database', () => {
 	it('derives the charge from the tier price instead of the request', async () => {
 		const order = await pendingOrder(buyer, [{ tierId: 'ga', qty: 2 }]);
 
-		// 2 × ₦5,000 = ₦10,000 gross, platform fee = 5% + ₦100/pass = ₦700.
-		expect(order.amountKobo).toBe(1_070_000);
+		// Two mid-tier tickets: platform fee ₦400 each, processing ₦175 each.
+		expect(order.amountKobo).toBe(1_115_000);
 		expect(order.total).toBe(10_000);
 		expect(order.status).toBe('pending');
 		expect(order.reference).toMatch(/^OWT-[A-F0-9]{24}$/);
@@ -179,9 +182,23 @@ describe('checkout is priced and reserved by the database', () => {
 			'select amount_kobo, status, total from public.orders where reference = $1',
 			[order.reference]
 		);
-		expect(rows[0]).toMatchObject({ amount_kobo: 1_070_000, status: 'pending' });
+		expect(rows[0]).toMatchObject({ amount_kobo: 1_115_000, status: 'pending' });
 		// `total` is the organiser's net, not what the buyer is charged.
 		expect(Number(rows[0].total)).toBe(10_000);
+		await asRole('postgres');
+		const audit = await db.query<{ quote: Json }>('select quote from public.fee_quote_audit where event_id = $1', [eventId]);
+		expect(audit.rows[0].quote).toMatchObject({
+			platformFeeKobo: 80_000, processingFeeKobo: 35_000,
+			buyerTotalKobo: 1_115_000, organizerNetKobo: 1_000_000, feeBearer: 'PASS'
+		});
+	});
+
+	it('deducts the platform fee from organizer proceeds when the event absorbs it', async () => {
+		await asRole('postgres');
+		await db.query("update public.events set fee_bearer = 'ABSORB' where id = $1", [eventId]);
+		const order = await pendingOrder(buyer, [{ tierId: 'ga', qty: 1 }]);
+		expect(order.amountKobo).toBe(517_500);
+		expect(order.total).toBe(4_600);
 	});
 
 	it('reuses the pending order for a repeated idempotency key', async () => {
@@ -200,8 +217,8 @@ describe('checkout is priced and reserved by the database', () => {
 
 	it('applies a valid promo code server-side', async () => {
 		const order = await pendingOrder(buyer, [{ tierId: 'ga', qty: 2 }], 'OWL10');
-		// ₦1,000 off + ₦700 fee.
-		expect(order.amountKobo).toBe(970_000);
+		// ₦1,000 off the tickets, plus tiered platform and processing fees.
+		expect(order.amountKobo).toBe(1_015_000);
 		expect(order.discount).toBe(1000);
 	});
 
@@ -219,7 +236,7 @@ describe('checkout is priced and reserved by the database', () => {
 describe('payment confirmation is amount-bound and single-use', () => {
 	it('refuses to mint when the paid amount does not match', async () => {
 		const order = await pendingOrder(buyer, [{ tierId: 'ga', qty: 1 }]);
-		// Real order is ₦5,000 + ₦350 = ₦5,350 = 535,000 kobo.
+		// Real order is ₦5,000 + ₦400 platform + ₦175 processing = ₦5,575.
 		const result = await confirmWebhook(String(order.reference), 500_000);
 
 		expect(result.ok).toBe(false);

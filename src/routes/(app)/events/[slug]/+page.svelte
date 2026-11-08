@@ -36,7 +36,8 @@
 	import { countdownLabel, fmtDate, fmtDateFull, fmtTime } from '$lib/utils/dates';
 	import { hasEventEnded } from '$lib/utils/event-status';
 	import { buildDirectionsUrl, buildMapEmbedUrl, formatMapQuery, isAppleMobileNavigator } from '$lib/utils/maps';
-	import { addFee, formatMoney } from '$lib/utils/money';
+	import { formatMoney } from '$lib/utils/money';
+	import { requestFeeQuote, type ClientFeeQuote } from '$lib/utils/fee-quote-client';
 	import { currency } from '$lib/state/prefs.svelte';
 	import { promoDiscount } from '$lib/utils/promo';
 import { requestEventPromo } from '$lib/utils/promo-client';
@@ -88,9 +89,21 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 	let agendaDayIdx = $state(0);
 
 	const base = $derived(tier.price * qty);
-	const fee = $derived(addFee(base, qty));
+	let feeQuote = $state<{ unit: ClientFeeQuote; totals: { ticketPriceKobo: number; platformFeeKobo: number; processingFeeKobo: number; buyerTotalKobo: number; organizerNetKobo: number } } | null>(null);
+	$effect(() => {
+		const ticketPriceKobo = Math.round(Number(tier.price) * 100);
+		const quantity = qty;
+		const eventId = event.id;
+		const feeBearer = event.feeBearer ?? 'PASS';
+		let cancelled = false;
+		feeQuote = null;
+		requestFeeQuote({ ticketPriceKobo, quantity, eventId, feeBearer }).then((quote) => { if (!cancelled) feeQuote = quote; }).catch(() => { if (!cancelled) feeQuote = null; });
+		return () => { cancelled = true; };
+	});
 	const discount = $derived(promoDiscount(base, appliedPromo));
-	const totalPayable = $derived(Math.max(0, base + fee - discount));
+	const fee = $derived(feeQuote?.unit.feeBearer === 'PASS' ? feeQuote.totals.platformFeeKobo / 100 : 0);
+	const processingFee = $derived(feeQuote?.unit.processingFeeBearer === 'PASS' ? feeQuote.totals.processingFeeKobo / 100 : 0);
+	const totalPayable = $derived(Math.max(0, (feeQuote?.totals.buyerTotalKobo ?? Math.round(base * 100)) / 100 - discount));
 	const soldPct = $derived.by(() => {
 		const cap = event.tiers.reduce((s, t) => s + t.capacity, 0);
 		const sold = event.tiers.reduce((s, t) => s + t.sold, 0);
@@ -600,12 +613,8 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 						<span class="text-body-sm text-on-surface-variant">{qty}x {tier.name}</span>
 						<span class="font-code text-body-sm text-on-surface">{formatMoney(base, currency.value)}</span>
 					</div>
-					{#if fee > 0}
-						<div class="flex items-center justify-between gap-3">
-							<span class="text-body-sm text-on-surface-variant">Service Fee (5% + ₦100/ticket)</span>
-							<span class="font-code text-body-sm text-on-surface">{formatMoney(fee, currency.value)}</span>
-						</div>
-					{/if}
+					{#if feeQuote && feeQuote.totals.platformFeeKobo > 0}<div class="flex items-center justify-between gap-3"><span class="text-body-sm text-on-surface-variant">Service fee{feeQuote.unit.feeBearer === 'ABSORB' ? ' (covered by organizer)' : ''}</span><span class="font-code text-body-sm text-on-surface">{formatMoney(fee, currency.value)}</span></div>{/if}
+					{#if feeQuote && feeQuote.totals.processingFeeKobo > 0}<div class="flex items-center justify-between gap-3"><span class="text-body-sm text-on-surface-variant">Payment processing fee{feeQuote.unit.processingFeeBearer === 'ABSORB' ? ' (covered by organizer)' : ''}</span><span class="font-code text-body-sm text-on-surface">{formatMoney(processingFee, currency.value)}</span></div>{/if}
 					{#if discount > 0}
 						<div class="flex items-center justify-between gap-3">
 							<span class="text-body-sm text-on-surface-variant">Partner Pass Incentive</span>
@@ -956,7 +965,8 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 				{/if}
 				<div class="flex flex-col gap-2 border-t border-surface-glass-border pt-3">
 					<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">{qty}× {tier.name}</span><span class="font-code text-on-surface">{formatMoney(base, currency.value)}</span></div>
-					{#if fee > 0}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Service fee (5% + ₦100/ticket)</span><span class="font-code text-on-surface">{formatMoney(fee, currency.value)}</span></div>{/if}
+					{#if feeQuote && feeQuote.totals.platformFeeKobo > 0}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Service fee{feeQuote.unit.feeBearer === 'ABSORB' ? ' (covered by organizer)' : ''}</span><span class="font-code text-on-surface">{formatMoney(fee, currency.value)}</span></div>{/if}
+					{#if feeQuote && feeQuote.totals.processingFeeKobo > 0}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Payment processing fee{feeQuote.unit.processingFeeBearer === 'ABSORB' ? ' (covered by organizer)' : ''}</span><span class="font-code text-on-surface">{formatMoney(processingFee, currency.value)}</span></div>{/if}
 					{#if discount > 0}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Partner pass incentive</span><span class="font-code font-bold text-accent-emerald">−{formatMoney(discount, currency.value)}</span></div>{/if}
 					<div class="flex items-center justify-between gap-2 border-t border-surface-glass-border pt-3"><span class="text-body-md font-semibold text-on-surface">Total payable</span><span class="font-display text-headline-md font-bold text-on-surface">{formatMoney(totalPayable, currency.value)}</span></div>
 				</div>

@@ -57,6 +57,7 @@ const draftSchema = z.object({
 	venue: z.string().trim().min(2, 'Add a venue').max(160),
 	city: z.enum(NIGERIAN_STATES).default('Lagos'),
 	description: z.string().trim().min(10, 'Describe your event in at least 10 characters').max(600),
+	feeBearer: z.enum(['ABSORB', 'PASS']).default('PASS'),
 	tiers: z
 		.array(
 			z.object({
@@ -202,6 +203,7 @@ export const actions: Actions = {
 				description: d.description,
 				cover: poster ? { from: '#2b2a3f', to: '#14131f', icon: 'image', src: poster } : existing!.cover,
 				tiers: d.tiers,
+				feeBearer: d.feeBearer,
 				promos: d.promos,
 				agenda: d.days.flatMap((day) => day.sessions.map((session) => ({ start: `${day.label} ${session.time}`, title: session.title, location: session.stage }))),
 				speakers,

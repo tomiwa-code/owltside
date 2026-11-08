@@ -453,7 +453,6 @@ export interface SettlementsData {
 }
 
 export interface SettingsData {
-	platformFeePct: number;
 	escoowDisputePct: number;
 	disbursementWindow: string;
 	webhookEndpoint: string;

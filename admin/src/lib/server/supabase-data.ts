@@ -1004,9 +1004,8 @@ export interface SettlementsAnalytics {
 	batchWindow: string;
 }
 
-// Money model (matches src/lib/utils/settlement.ts): organizers are paid the full
-// value of the passes they sold. The platform's 5% + ₦100-per-pass service fee is
-// charged to the buyer at checkout, so no cut of ticket revenue is withheld here.
+// Fee-bearing checkout writes the organizer's configured net proceeds to orders.total.
+// The platform fee engine separately records platform and processing components.
 
 function initialsFrom(name: string): string {
 	return name
@@ -1065,10 +1064,8 @@ export async function getSupabaseSettlements(): Promise<SettlementsAnalytics> {
 	const refundedNgn = inLast30.filter(isRefunded).reduce((s, o) => s + numberValue(o.total), 0);
 	const priorGross = prior30.filter((o) => isSettled(o) || isPending(o)).reduce((s, o) => s + numberValue(o.total), 0);
 	const grossDelta = priorGross ? ((grossNgn - priorGross) / priorGross) * 100 : 0;
-	// Ticket revenue is not the platform's revenue: the service fee is collected
-	// from buyers at checkout (5% + ₦100 per pass), so no commission is withheld
-	// from what an organizer earns. Payouts therefore release the full settled
-	// amount and the console reports a 0% take rate.
+	// Commission currently rolls up from fee_quote_audit separately; order totals
+	// represent organizer net proceeds after their configured absorbed fees.
 	const commissionNgn = 0;
 	const commissionRate = 0;
 	const settledPct = grossNgn ? Math.round((settledNgn / grossNgn) * 1000) / 10 : 0;

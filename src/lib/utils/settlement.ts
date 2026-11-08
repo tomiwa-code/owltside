@@ -9,9 +9,8 @@ import { isEventClosed } from './event-status';
  * was a hard-coded `revenue * 0.35` that existed nowhere in the product. That is
  * why the dashboard showed ₦6,360,000 gross next to a ₦2,226,000 payout with no
  * explanation. There is no organizer commission in the product: the platform is
- * paid by buyers through the service fee added at checkout (see `addFee` in
- * ./money), so the organizer is owed the full value of the passes they sold,
- * minus anything refunded.
+ * according to the server-side fee engine. Organizer earnings are the ticket
+ * value less the event's configured absorbed fees and any refunds.
  *
  *   gross   = Σ sold × tier price         value of every pass sold
  *   refunds = Σ price of refunded passes  value returned to buyers
