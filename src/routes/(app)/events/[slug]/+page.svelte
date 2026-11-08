@@ -90,6 +90,8 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 
 	const base = $derived(tier.price * qty);
 	let feeQuote = $state<{ unit: ClientFeeQuote; totals: { ticketPriceKobo: number; platformFeeKobo: number; processingFeeKobo: number; buyerTotalKobo: number; organizerNetKobo: number } } | null>(null);
+	let feeQuoteLoading = $state(false);
+	let feeQuoteError = $state(false);
 	$effect(() => {
 		const ticketPriceKobo = Math.round(Number(tier.price) * 100);
 		const quantity = qty;
@@ -97,7 +99,12 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 		const feeBearer = event.feeBearer ?? 'PASS';
 		let cancelled = false;
 		feeQuote = null;
-		requestFeeQuote({ ticketPriceKobo, quantity, eventId, feeBearer }).then((quote) => { if (!cancelled) feeQuote = quote; }).catch(() => { if (!cancelled) feeQuote = null; });
+		feeQuoteLoading = true;
+		feeQuoteError = false;
+		requestFeeQuote({ ticketPriceKobo, quantity, eventId, feeBearer })
+			.then((quote) => { if (!cancelled) feeQuote = quote; })
+			.catch(() => { if (!cancelled) { feeQuote = null; feeQuoteError = true; } })
+			.finally(() => { if (!cancelled) feeQuoteLoading = false; });
 		return () => { cancelled = true; };
 	});
 	const discount = $derived(promoDiscount(base, appliedPromo));
@@ -344,7 +351,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 				<div class="flex gap-3 p-5">
 					<Clock class="w-4.5 h-4.5 text-primary shrink-0 mt-0.5" />
 					<div class="min-w-0">
-						<span class="{MONO} text-on-surface-variant block">Summit Hours</span>
+						<span class="{MONO} text-on-surface-variant block">Hours</span>
 						<span class="text-body-md font-semibold text-on-surface block pt-1">{fmtTime(event.startsAt)} – {event.endsAt ? fmtTime(event.endsAt) : 'Late'}</span>
 						<span class="text-body-sm text-on-surface-variant block pt-0.5">West Africa Time (WAT)</span>
 					</div>
@@ -352,7 +359,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 				<div class="flex gap-3 p-5">
 					<MapPin class="w-4.5 h-4.5 text-primary shrink-0 mt-0.5" />
 					<div class="min-w-0">
-						<span class="{MONO} text-on-surface-variant block">Physical Hub</span>
+						<span class="{MONO} text-on-surface-variant block">Venue</span>
 						<span class="text-body-md font-semibold text-on-surface block pt-1 truncate">{event.venue}</span>
 						<span class="text-body-sm text-on-surface-variant block pt-0.5 truncate">{event.city}</span>
 					</div>
@@ -613,7 +620,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 						<span class="text-body-sm text-on-surface-variant">{qty}x {tier.name}</span>
 						<span class="font-code text-body-sm text-on-surface">{formatMoney(base, currency.value)}</span>
 					</div>
-					{#if feeQuote && feeQuote.totals.platformFeeKobo > 0}<div class="flex items-center justify-between gap-3"><span class="text-body-sm text-on-surface-variant">Service fee{feeQuote.unit.feeBearer === 'ABSORB' ? ' (covered by organizer)' : ''}</span><span class="font-code text-body-sm text-on-surface">{formatMoney(fee, currency.value)}</span></div>{/if}
+					{#if tier.price > 0 && ((feeQuote?.totals.platformFeeKobo ?? 0) > 0 || (event.feeBearer ?? 'PASS') === 'PASS')}<div class="flex items-center justify-between gap-3"><span class="text-body-sm text-on-surface-variant">Service fee{feeQuote?.unit.feeBearer === 'ABSORB' || (!feeQuote && event.feeBearer === 'ABSORB') ? ' (covered by organizer)' : ''}</span><span class="font-code text-body-sm text-on-surface">{feeQuote ? formatMoney(fee, currency.value) : feeQuoteLoading ? 'Calculating…' : feeQuoteError ? 'Unavailable' : '—'}</span></div>{/if}
 					{#if feeQuote && feeQuote.totals.processingFeeKobo > 0}<div class="flex items-center justify-between gap-3"><span class="text-body-sm text-on-surface-variant">Payment processing fee{feeQuote.unit.processingFeeBearer === 'ABSORB' ? ' (covered by organizer)' : ''}</span><span class="font-code text-body-sm text-on-surface">{formatMoney(processingFee, currency.value)}</span></div>{/if}
 					{#if discount > 0}
 						<div class="flex items-center justify-between gap-3">
@@ -737,8 +744,8 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 			<!-- compact version of the desktop date, time and venue metadata -->
 			<div class="rounded-xl border border-surface-glass-border bg-surface-container divide-y divide-surface-glass-border">
 				<div class="flex items-start gap-3 p-3.5"><CalendarClock class="w-4.5 h-4.5 text-primary mt-0.5 shrink-0" /><span><span class="block text-label-badge uppercase tracking-wider text-on-surface-variant">Date &amp; duration</span><span class="block text-body-sm font-semibold text-on-surface pt-1">{fmtDate(event.startsAt)} – {fmtDate(event.endsAt ?? event.startsAt)} · {agendaDays.length} day{agendaDays.length === 1 ? '' : 's'}</span></span></div>
-				<div class="flex items-start gap-3 p-3.5"><Clock class="w-4.5 h-4.5 text-primary mt-0.5 shrink-0" /><span><span class="block text-label-badge uppercase tracking-wider text-on-surface-variant">Summit hours</span><span class="block text-body-sm font-semibold text-on-surface pt-1">{fmtTime(event.startsAt)} – {event.endsAt ? fmtTime(event.endsAt) : 'Late'} · West Africa Time</span></span></div>
-				<div class="flex items-start gap-3 p-3.5"><MapPin class="w-4.5 h-4.5 text-primary mt-0.5 shrink-0" /><span class="min-w-0"><span class="block text-label-badge uppercase tracking-wider text-on-surface-variant">Physical hub</span><span class="block text-body-sm font-semibold text-on-surface pt-1 truncate">{event.venue}, {event.city}</span></span></div>
+				<div class="flex items-start gap-3 p-3.5"><Clock class="w-4.5 h-4.5 text-primary mt-0.5 shrink-0" /><span><span class="block text-label-badge uppercase tracking-wider text-on-surface-variant">Hours</span><span class="block text-body-sm font-semibold text-on-surface pt-1">{fmtTime(event.startsAt)} – {event.endsAt ? fmtTime(event.endsAt) : 'Late'} · West Africa Time</span></span></div>
+				<div class="flex items-start gap-3 p-3.5"><MapPin class="w-4.5 h-4.5 text-primary mt-0.5 shrink-0" /><span class="min-w-0"><span class="block text-label-badge uppercase tracking-wider text-on-surface-variant">Venue</span><span class="block text-body-sm font-semibold text-on-surface pt-1 truncate">{event.venue}, {event.city}</span></span></div>
 			</div>
 
 			<!-- host -->
@@ -965,7 +972,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 				{/if}
 				<div class="flex flex-col gap-2 border-t border-surface-glass-border pt-3">
 					<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">{qty}× {tier.name}</span><span class="font-code text-on-surface">{formatMoney(base, currency.value)}</span></div>
-					{#if feeQuote && feeQuote.totals.platformFeeKobo > 0}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Service fee{feeQuote.unit.feeBearer === 'ABSORB' ? ' (covered by organizer)' : ''}</span><span class="font-code text-on-surface">{formatMoney(fee, currency.value)}</span></div>{/if}
+					{#if tier.price > 0 && ((feeQuote?.totals.platformFeeKobo ?? 0) > 0 || (event.feeBearer ?? 'PASS') === 'PASS')}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Service fee{feeQuote?.unit.feeBearer === 'ABSORB' || (!feeQuote && event.feeBearer === 'ABSORB') ? ' (covered by organizer)' : ''}</span><span class="font-code text-on-surface">{feeQuote ? formatMoney(fee, currency.value) : feeQuoteLoading ? 'Calculating…' : feeQuoteError ? 'Unavailable' : '—'}</span></div>{/if}
 					{#if feeQuote && feeQuote.totals.processingFeeKobo > 0}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Payment processing fee{feeQuote.unit.processingFeeBearer === 'ABSORB' ? ' (covered by organizer)' : ''}</span><span class="font-code text-on-surface">{formatMoney(processingFee, currency.value)}</span></div>{/if}
 					{#if discount > 0}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Partner pass incentive</span><span class="font-code font-bold text-accent-emerald">−{formatMoney(discount, currency.value)}</span></div>{/if}
 					<div class="flex items-center justify-between gap-2 border-t border-surface-glass-border pt-3"><span class="text-body-md font-semibold text-on-surface">Total payable</span><span class="font-display text-headline-md font-bold text-on-surface">{formatMoney(totalPayable, currency.value)}</span></div>
