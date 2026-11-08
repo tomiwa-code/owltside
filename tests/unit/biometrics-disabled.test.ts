@@ -85,10 +85,17 @@ describe('no mobile or desktop biometric gate', () => {
 	});
 
 	it.each(['/tickets', '//outside.example', '/', '/auth/login'])('sends signed-in splash visitors straight to a safe destination: %s', async (next) => {
+		vi.useFakeTimers();
 		page.data.session = session;
 		page.url = new URL(`https://owltside.example/?next=${encodeURIComponent(next)}`) as typeof page.url;
 		render(SplashPage);
 		await tick();
+		expect(screen.getByRole('progressbar', { name: 'Loading Owltside' })).toHaveAttribute('aria-valuenow', '0');
+		await vi.advanceTimersByTimeAsync(180);
+		const midNow = Number(screen.getByRole('progressbar', { name: 'Loading Owltside' }).getAttribute('aria-valuenow'));
+		expect(midNow).toBeGreaterThan(0);
+		await vi.advanceTimersByTimeAsync(4_000);
+		expect(screen.getByRole('progressbar', { name: 'Loading Owltside' })).toHaveAttribute('aria-valuenow', '100');
 		expect(mocks.goto).toHaveBeenCalledWith(next === '/tickets' ? '/tickets' : '/home', { replaceState: true });
 		expect(screen.queryByText(/Face ID|fingerprint/i)).not.toBeInTheDocument();
 		expect(fetch).not.toHaveBeenCalled();

@@ -51,7 +51,7 @@ function contentSecurityPolicy(): string {
 		"img-src 'self' data: blob: https:",
 		"font-src 'self' data:",
 		`connect-src ${connect.join(' ')}`,
-		"frame-src 'self'",
+		"frame-src 'self' https://www.google.com https://maps.google.com",
 		"media-src 'self' blob:",
 		"object-src 'none'",
 		"base-uri 'self'",

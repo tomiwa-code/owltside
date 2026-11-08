@@ -35,6 +35,7 @@
 	import { toast } from '$lib/state/toast.svelte';
 	import { countdownLabel, fmtDate, fmtDateFull, fmtTime } from '$lib/utils/dates';
 	import { hasEventEnded } from '$lib/utils/event-status';
+	import { buildDirectionsUrl, buildMapEmbedUrl, formatMapQuery, isAppleMobileNavigator } from '$lib/utils/maps';
 	import { addFee, formatMoney } from '$lib/utils/money';
 	import { currency } from '$lib/state/prefs.svelte';
 	import { promoDiscount } from '$lib/utils/promo';
@@ -44,6 +45,10 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 
 	let { data } = $props();
 	const event = $derived(data.event);
+	const mapQuery = $derived(formatMapQuery(event.venue, event.city));
+	const mapEmbedUrl = $derived(buildMapEmbedUrl(event.venue, event.city));
+	const appleMobile = $derived(isAppleMobileNavigator());
+	const directionsUrl = $derived(buildDirectionsUrl(event.venue, event.city));
 	const isClosed = $derived(hasEventEnded(event) || event.status === 'closed');
 	const categoryLabel = $derived(
 		categories.find((category) => category.id === event.category)?.label ?? event.category.replaceAll('_', ' ')
@@ -344,17 +349,21 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 			<!-- map -->
 			<div class="rounded-xl border border-surface-glass-border bg-surface-container overflow-hidden">
 				<div class="relative h-56 bg-surface-container-low">
-					<div
-						class="absolute inset-0 opacity-60"
-						style="background-image: linear-gradient(rgba(192,193,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(192,193,255,0.07) 1px, transparent 1px), radial-gradient(circle at 65% 35%, rgba(76,215,246,0.12) 0, transparent 45%); background-size: 28px 28px, 28px 28px, 100% 100%;"
-					></div>
-					<div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-						<span class="absolute -inset-4 rounded-full border border-primary/30 animate-ping"></span>
-						<span class="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center"><MapPin class="w-4 h-4" /></span>
-					</div>
-					<button type="button" onclick={() => toast('Directions open in your maps node', 'info')} class="{MONO} absolute top-3 right-3 bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded hover:text-primary transition-colors flex items-center gap-1.5">
+					<iframe
+						title="Map of {mapQuery}"
+						src={mapEmbedUrl}
+						loading="lazy"
+						referrerpolicy="no-referrer-when-downgrade"
+						class="absolute inset-0 w-full h-full border-0"
+					></iframe>
+					<a
+						href={directionsUrl}
+						target={appleMobile ? undefined : '_blank'}
+						rel="noopener noreferrer"
+						class="{MONO} absolute top-3 right-3 z-10 bg-surface-base/85 backdrop-blur-md border border-surface-glass-border text-on-surface px-2.5 py-1 rounded hover:text-primary transition-colors flex items-center gap-1.5"
+					>
 						<Navigation class="w-3.5 h-3.5" /> Get Directions
-					</button>
+					</a>
 				</div>
 				<div class="px-5 py-3 border-t border-surface-glass-border">
 					<span class="{MONO} text-on-surface-variant block">Primary Campus</span>
@@ -764,19 +773,28 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 							<span class="text-body-sm text-on-surface-variant">{event.city}</span>
 						</div>
 					</div>
-					<button class="px-3 py-1.5 rounded-full bg-surface-container-highest text-tertiary text-label-badge flex items-center gap-1 flex-shrink-0 active:scale-95" onclick={() => toast('Directions open in your maps node', 'info')}>
+					<a
+						href={directionsUrl}
+						target={appleMobile ? undefined : '_blank'}
+						rel="noopener noreferrer"
+						class="px-3 py-1.5 rounded-full bg-surface-container-highest text-tertiary text-label-badge flex items-center gap-1 flex-shrink-0 active:scale-95"
+					>
 						<span>Directions</span><Navigation class="w-3.5 h-3.5" />
-					</button>
+					</a>
 				</div>
-				<div class="relative w-full h-36 rounded-lg overflow-hidden shadow-inner" style="background: linear-gradient(160deg, var(--color-surface-container), var(--color-surface-base) 75%);">
-					<div class="absolute inset-0 opacity-30" style="background-image: linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px); background-size: 28px 28px;"></div>
-					<span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-primary ring-4 ring-primary/25"></span>
-					<div class="absolute bottom-2 left-2 right-2 px-3 py-1.5 rounded-lg bg-surface-base/85 backdrop-blur-md flex items-center justify-between text-on-surface shadow-md">
+				<div class="relative w-full h-44 rounded-lg overflow-hidden shadow-inner bg-surface-container-low">
+					<iframe
+						title="Map of {mapQuery}"
+						src={mapEmbedUrl}
+						loading="lazy"
+						referrerpolicy="no-referrer-when-downgrade"
+						class="absolute inset-0 w-full h-full border-0"
+					></iframe>
+					<div class="pointer-events-none absolute bottom-2 left-2 right-2 px-3 py-1.5 rounded-lg bg-surface-base/85 backdrop-blur-md flex items-center text-on-surface shadow-md">
 						<span class="flex items-center gap-1.5 min-w-0">
 							<span class="w-2 h-2 rounded-full bg-accent-emerald animate-ping"></span>
 							<span class="font-code text-label-code truncate">{event.venue}</span>
 						</span>
-						<span class="text-body-sm text-tertiary underline cursor-pointer">Indoor Nav</span>
 					</div>
 				</div>
 			</div>
