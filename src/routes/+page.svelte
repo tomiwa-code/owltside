@@ -15,18 +15,14 @@
 	});
 
 	$effect(() => {
-		if (session) {
-			void goto(nextHref, { replaceState: true });
-			return;
-		}
-
+		const target = session ? nextHref : '/auth/login';
 		let redirectTimer: ReturnType<typeof setTimeout> | undefined;
 		const interval = setInterval(() => {
 			pct = Math.min(100, pct + 4 + Math.round(Math.random() * 6));
 			if (pct >= 100) {
 				clearInterval(interval);
 				redirectTimer = setTimeout(
-					() => goto('/auth/login', { replaceState: true }),
+					() => goto(target, { replaceState: true }),
 					350
 				);
 			}
