@@ -1005,6 +1005,7 @@ export const demoSource: DataSource = {
 			}),
 			agenda: payload.agenda.map((a, i) => ({ id: `ag-${i}`, ...a })),
 			tiers: payload.tiers.map((t, i) => ({ id: `tier-${i}`, sold: 0, ...t })),
+			feeBearer: payload.feeBearer ?? 'PASS',
 			promos: normalizeEventPromos(payload.promos).map((promo) => ({ ...promo, uses: 0 })),
 			faqs: [],
 			policies: [],
@@ -1127,6 +1128,7 @@ export const demoSource: DataSource = {
 		if (updates.city) event.city = updates.city;
 		if (updates.description !== undefined) event.description = updates.description;
 		if (updates.category !== undefined) event.category = updates.category;
+		if (updates.feeBearer !== undefined) event.feeBearer = updates.feeBearer;
 		if (updates.tags !== undefined) event.tags = updates.tags;
 		if (updates.startsAt !== undefined) event.startsAt = updates.startsAt;
 		if (updates.endsAt !== undefined) event.endsAt = updates.endsAt;
@@ -1784,6 +1786,7 @@ const toEvent = (r: Row, organizer: Profile): EventItem => ({
 	speakers: (r.speakers ?? []).map((speaker: Row, index: number) => toEventSpeaker(speaker, index)),
 	agenda: r.agenda ?? [],
 	tiers: r.tiers ?? [],
+	feeBearer: r.fee_bearer === 'ABSORB' ? 'ABSORB' : 'PASS',
 	gates: r.gates ?? [],
 	faqs: r.faqs ?? [],
 	policies: r.policies ?? [],
@@ -2334,6 +2337,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				})),
 				agenda: payload.agenda.map((a, i) => ({ id: `ag-${i}`, ...a })),
 				tiers: payload.tiers.map((t, i) => ({ id: `tier-${i}`, sold: 0, ...t })),
+				fee_bearer: payload.feeBearer ?? 'PASS',
 				gates: payload.gates,
 				live: payload.live ?? true
 			};
@@ -2468,6 +2472,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (updates.cover !== undefined) patch.cover = updates.cover;
 			if (updates.speakers !== undefined) patch.speakers = updates.speakers.map((speaker) => ({ ...speaker, inviteStatus: speaker.invited ? (speaker.inviteStatus ?? 'pending') : undefined }));
 			if (updates.agenda !== undefined) patch.agenda = updates.agenda.map((item, index) => ({ id: `ag-${index}`, ...item }));
+			if (updates.feeBearer !== undefined) patch.fee_bearer = updates.feeBearer;
 			if (updates.tiers !== undefined) {
 				const { data: current } = await db.from('events').select('tiers').eq('id', eventId).eq('organizer_id', userId).maybeSingle();
 				patch.tiers = updates.tiers.map((tier, index) => ({ id: current?.tiers?.[index]?.id ?? `tier-${index}`, sold: current?.tiers?.[index]?.sold ?? 0, ...tier, capacity: Math.max(tier.capacity, current?.tiers?.[index]?.sold ?? 0) }));

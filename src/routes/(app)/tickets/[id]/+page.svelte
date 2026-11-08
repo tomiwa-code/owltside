@@ -39,8 +39,8 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 	const refundDeadlineLabel = $derived(new Intl.DateTimeFormat('en-NG', {
 		month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Africa/Lagos'
 	}).format(refundDeadline));
-	// Refunds return the ticket price. The 5% + ₦100/ticket service fee is a
-	// separate buyer-side charge, so it is not deducted from the refund.
+	// Refund requests use the immutable ticket price; charged fee components are
+	// kept distinct from the ticket amount for the refund workflow.
 	const refundAmount = $derived(Math.max(0, ticket.price));
 	const refundEligible = $derived(ticket.status === 'valid' && Date.now() < refundDeadline.getTime());
 	const verified = $derived(isVerifiedTicket(ticket));

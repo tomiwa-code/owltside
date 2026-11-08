@@ -193,6 +193,7 @@ export interface EventItem {
 	speakers: EventSpeaker[];
 	agenda: AgendaItem[];
 	tiers: TicketTier[];
+	feeBearer?: 'ABSORB' | 'PASS';
 	faqs: { q: string; a: string }[];
 	policies: string[];
 	featured?: boolean;
@@ -430,6 +431,7 @@ export interface WizardPayload {
 	description: string;
 	cover: CoverArt;
 	tiers: Array<{ name: string; price: number; capacity: number; benefits?: string }>;
+	feeBearer?: 'ABSORB' | 'PASS';
 	promos?: Array<{ code: string; percent: number; maxUses: number }>;
 	agenda: Array<{ start: string; title: string; location?: string }>;
 	speakers: WizardSpeaker[];

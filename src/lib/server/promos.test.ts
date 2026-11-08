@@ -12,17 +12,17 @@ describe('checkout promo totals', () => {
 		expect(computeTotals(10_000, 2, 'OWL10')).toMatchObject({
 			base: 20_000,
 			discount: 2_000,
-			total: 19_200 // 20,000 + (1,000 + 200) − 2,000
+			total: 19_900 // 20,000 + (700 + 250) × 2 − 2,000
 		});
 	});
 
-	it('charges 5% + ₦100 per paid ticket and nothing on free passes', () => {
-		expect(computeTotals(10_000, 1, null)).toMatchObject({ base: 10_000, fee: 600, total: 10_600 });
-		expect(computeTotals(10_000, 3, null)).toMatchObject({ base: 30_000, fee: 1_800, total: 31_800 });
+	it('uses the configured tier and processing fees and leaves free passes fee-free', () => {
+		expect(computeTotals(10_000, 1, null)).toMatchObject({ base: 10_000, fee: 950, total: 10_950 });
+		expect(computeTotals(10_000, 3, null)).toMatchObject({ base: 30_000, fee: 2_850, total: 32_850 });
 		expect(computeTotals(0, 4, null)).toMatchObject({ base: 0, fee: 0, total: 0 });
 	});
 
-	it('applies a server-resolved event promo on top of the service fee', () => {
+	it('applies a server-resolved event promo on top of configured fees', () => {
 		expect(
 			computeTotals(10_000, 2, {
 				code: 'EARLY-BIRD',
@@ -30,6 +30,6 @@ describe('checkout promo totals', () => {
 				value: 20,
 				source: 'event'
 			})
-		).toMatchObject({ base: 20_000, fee: 1_200, discount: 4_000, total: 17_200 });
+		).toMatchObject({ base: 20_000, fee: 1_900, discount: 4_000, total: 17_900 });
 	});
 });

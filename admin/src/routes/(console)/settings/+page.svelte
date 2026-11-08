@@ -10,13 +10,15 @@
 
 	let { data } = $props();
 
-	let fee = $state(untrack(() => data.settings.platformFeePct));
 	let dispute = $state(untrack(() => data.settings.escoowDisputePct));
 	let window_ = $state(untrack(() => data.settings.disbursementWindow));
 	let webhookEndpoint = $state(untrack(() => data.settings.webhookEndpoint));
 	let webhookHealthy = $state(untrack(() => data.settings.webhookHealthy));
 
-	let tab = $state<'financial' | 'security' | 'integrations'>('financial');
+	let tab = $state<'financial' | 'security' | 'integrations' | 'fees'>('financial');
+	let feeRules = $state(data.feeRules ?? []);
+	let feePolicy = $state(data.feePolicy);
+	let feeBusy = $state(false);
 	let busy = $state(false);
 	let revealKey = $state(false);
 
@@ -28,7 +30,6 @@
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({
-				platformFeePct: fee,
 				escoowDisputePct: dispute,
 				disbursementWindow: window_,
 				webhookEndpoint,
@@ -42,6 +43,19 @@
 		}
 		toasts.ok('Policy saved', 'Changes pushed to the edge mesh and appended to the ledger.');
 		await invalidateAll();
+	}
+
+	async function saveFees() {
+		if (!feePolicy) return;
+		feeBusy = true;
+		try {
+			const response = await fetch('/api/fees', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rules: feeRules, policy: feePolicy }) });
+			if (!response.ok) throw new Error((await response.json().catch(() => null))?.message ?? 'Fee settings could not be saved');
+			toasts.ok('Fee policy saved', 'Tier rules and processing fees are now active.');
+			await invalidateAll();
+		} catch (error) {
+			toasts.error('Fee settings not saved', error instanceof Error ? error.message : 'Check the fee policy and retry.');
+		} finally { feeBusy = false; }
 	}
 
 	function downloadConfig() {
@@ -73,7 +87,7 @@
 
 	<div class="flex flex-col gap-2 border-b border-[#26262e] pb-2 lg:flex-row lg:items-center">
 		<div class="flex flex-wrap gap-1">
-			{#each [{ key: 'financial', label: 'Paystack & financial rails' }, { key: 'security', label: 'Security & credentials' }, { key: 'integrations', label: `Integration health (${integrations.length} channels)` }] as item}
+			{#each [{ key: 'financial', label: 'Paystack & financial rails' }, { key: 'fees', label: 'Ticket fee rules' }, { key: 'security', label: 'Security & credentials' }, { key: 'integrations', label: `Integration health (${integrations.length} channels)` }] as item}
 				<button type="button" class="tab !text-[10.5px]" data-active={tab === item.key} onclick={() => (tab = item.key as typeof tab)}>{item.label}</button>
 			{/each}
 		</div>
@@ -100,14 +114,9 @@
 
 					<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
 						<div class="panel-inset p-2.5">
-							<p class="mono-label !text-[7px]">Buyer service fee</p>
-							<div class="mt-1 flex items-center gap-1">
-								<input type="number" min="0" max="25" step="0.5" class="input !h-[28px] !w-[64px] !px-2 !text-[12px]" bind:value={fee} aria-label="Buyer service fee percentage" />
-								<span class="font-code text-[11px] text-[#8f8f9b]">%</span>
-							</div>
-							<p class="mt-1 text-[9px] text-[#6f6f7b]">
-							Service fee charged to buyers at checkout (5% + ₦100 per pass). Organizers keep 100% of ticket revenue on their ledger.
-						</p>
+							<p class="mono-label !text-[7px]">Ticket fee engine</p>
+							<p class="mt-1 text-[9px] text-[#8f8f9b]">Tiered service fees and processing fees are configured centrally in the Ticket fee rules tab.</p>
+							<button type="button" class="mt-2 font-code text-[8px] uppercase tracking-[0.06em] text-[#c6bcff] hover:underline" onclick={() => tab = 'fees'}>Edit ticket fees →</button>
 						</div>
 						<div class="panel-inset p-2.5">
 							<p class="mono-label !text-[7px]">Escrow dispute reserve</p>
@@ -212,6 +221,37 @@
 				<div class="grid grid-cols-1 gap-2.5 p-3.5 sm:grid-cols-2 xl:grid-cols-4">
 					{@render integrationCards()}
 				</div>
+			</section>
+		</div>
+	{:else if tab === 'fees'}
+		<div class="space-y-3">
+			<section class="panel overflow-hidden">
+				<header class="panel-head flex items-center justify-between"><div><p class="mono-label">Ticket price tiers · integer kobo</p><p class="mt-1 text-[9px] text-[#6f6f7b]">Rates are basis points (100 bps = 1%). Updates apply to new quotes and checkouts.</p></div><button type="button" class="btn btn-sm btn-primary" disabled={feeBusy || !feePolicy} onclick={saveFees}><Check size={11} />{feeBusy ? 'Saving…' : 'Save fee configuration'}</button></header>
+				{#if data.feeConfigError}<p class="m-4 rounded border border-amber-500/30 bg-amber-500/5 p-3 text-[10px] text-amber-200">{data.feeConfigError}</p>{:else}
+					<div class="divide-y divide-[#24242c]">
+						{#each feeRules as rule, index (rule.id)}
+							<div class="grid grid-cols-2 gap-2 p-3 lg:grid-cols-8">
+								<label class="col-span-2 text-[8px] text-[#8f8f9b] lg:col-span-2">Rule name<input class="input mt-1 !h-8 !text-[10px]" bind:value={rule.name} /></label>
+								<label class="text-[8px] text-[#8f8f9b]">Minimum (kobo)<input class="input mt-1 !h-8 !text-[10px]" type="number" min="0" step="1" bind:value={rule.minPriceKobo} /></label>
+								<label class="text-[8px] text-[#8f8f9b]">Maximum (kobo)<input class="input mt-1 !h-8 !text-[10px]" type="number" min="0" step="1" placeholder="No max" bind:value={rule.maxPriceKobo} /></label>
+								<label class="text-[8px] text-[#8f8f9b]">Rate (bps)<input class="input mt-1 !h-8 !text-[10px]" type="number" min="0" step="1" bind:value={rule.percentageBps} /></label>
+								<label class="text-[8px] text-[#8f8f9b]">Fixed (kobo)<input class="input mt-1 !h-8 !text-[10px]" type="number" min="0" step="1" bind:value={rule.fixedFeeKobo} /></label>
+								<label class="text-[8px] text-[#8f8f9b]">Fee cap (kobo)<input class="input mt-1 !h-8 !text-[10px]" type="number" min="0" step="1" placeholder="No cap" bind:value={rule.capKobo} /></label>
+								<label class="text-[8px] text-[#8f8f9b]">Priority<input class="input mt-1 !h-8 !text-[10px]" type="number" step="1" bind:value={rule.priority} /></label>
+							</div>
+						{/each}
+					</div>
+					{#if feePolicy}
+						<div class="grid grid-cols-2 gap-2 border-t border-[#26262e] p-3 md:grid-cols-3 xl:grid-cols-6">
+							<label class="text-[8px] text-[#8f8f9b]">Processing rate (bps)<input class="input mt-1 !h-8 !text-[10px]" type="number" min="0" bind:value={feePolicy.processingBps} /></label>
+							<label class="text-[8px] text-[#8f8f9b]">Processing fixed (kobo)<input class="input mt-1 !h-8 !text-[10px]" type="number" min="0" bind:value={feePolicy.processingFixedKobo} /></label>
+							<label class="text-[8px] text-[#8f8f9b]">Processing cap (kobo)<input class="input mt-1 !h-8 !text-[10px]" type="number" min="0" bind:value={feePolicy.processingCapKobo} /></label>
+							<label class="text-[8px] text-[#8f8f9b]">Free ticket processing (kobo)<input class="input mt-1 !h-8 !text-[10px]" type="number" min="0" bind:value={feePolicy.freeTicketProcessingFeeKobo} /></label>
+							<label class="text-[8px] text-[#8f8f9b]">Processing fee bearer<select class="input mt-1 !h-8 !text-[10px]" bind:value={feePolicy.processingFeeBearer}><option value="PASS">Buyer pays</option><option value="ABSORB">Organizer absorbs</option></select></label>
+							<div class="self-end text-[8px] text-[#6f6f7b]">Currency: NGN</div>
+						</div>
+					{/if}
+				{/if}
 			</section>
 		</div>
 	{:else if tab === 'security'}

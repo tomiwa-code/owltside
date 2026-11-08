@@ -131,6 +131,9 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 	const categoryOptions = categories.filter((category) => category.id !== 'all');
 
 	let tiers = $state<Array<{ name: string; price: number; capacity: number; benefits: string; editing: boolean }>>([]);
+	let feeBearer = $state<'ABSORB' | 'PASS'>('PASS');
+	let feePreview = $state<Array<{ tierId: string; tierName: string; ticketPriceKobo: number; platformFeeKobo: number; processingFeeKobo: number; buyerTotalKobo: number; organizerNetKobo: number }>>([]);
+	let feePreviewLoading = $state(false);
 	let promos = $state<Array<{ code: string; percent: number; maxUses: number; uses?: number }>>([]);
 	const activePromoCount = $derived(promos.filter((promo) => (promo.uses ?? 0) < promo.maxUses).length);
 	let promoCode = $state('');
@@ -228,6 +231,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 			description: description.trim(),
 			security: { allowOverride, allowOffline, restrictGates, hmacRotation, offlineKeyring, conflictPolicy },
 			distribution: { publishExplore, broadcast, launchMode },
+			feeBearer,
 			tiers: tiers.map(({ editing: _e, ...t }) => ({
 				...t,
 				price: Number(t.price ?? 0),
@@ -242,6 +246,25 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 			gates
 		})
 	);
+	$effect(() => {
+		const inputs = tiers.map((tier, index) => ({ tierId: String(index), tierName: tier.name || `Ticket ${index + 1}`, price: Math.max(0, Math.round(Number(tier.price) * 100)) }));
+		const bearer = feeBearer;
+		if (!draftHydrated || inputs.length === 0) { feePreview = []; return; }
+		let cancelled = false;
+		feePreviewLoading = true;
+		Promise.all(inputs.map(async (item) => {
+			const response = await fetch('/api/v1/fees/quote', {
+				method: 'POST', headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ticketPriceKobo: item.price, quantity: 1, feeBearer: bearer })
+			});
+			if (!response.ok) throw new Error('Fee quote unavailable');
+			const result = await response.json();
+			return { tierId: item.tierId, tierName: item.tierName, ...result.unit };
+		})).then((quotes) => { if (!cancelled) feePreview = quotes; })
+			.catch(() => { if (!cancelled) feePreview = []; })
+			.finally(() => { if (!cancelled) feePreviewLoading = false; });
+		return () => { cancelled = true; };
+	});
 	const totalCapacity = $derived(tiers.reduce((s, t) => s + t.capacity, 0));
 	const minTierPrice = $derived(tiers.length ? Math.min(...tiers.map((t) => t.price)) : 0);
 	const totalGross = $derived(tiers.reduce((s, t) => s + t.price * t.capacity, 0));
@@ -310,6 +333,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 		venue = draft.venue ?? '';
 		city = draft.city ?? 'Lagos';
 		description = draft.description ?? '';
+		feeBearer = draft.feeBearer === 'ABSORB' ? 'ABSORB' : 'PASS';
 		tiers = (draft.tiers ?? []).map((tier: any) => ({ name: tier.name ?? '', price: Number(tier.price ?? 0), capacity: Number(tier.capacity ?? 0), benefits: tier.benefits ?? '', editing: false }));
 		days = (draft.days ?? []).map((day: any) => ({ label: day.label ?? 'Day 1', sessions: (day.sessions ?? []).map((session: any) => ({ time: session.time ?? '12:00', title: session.title ?? '', stage: session.stage ?? '' })) }));
 		roster = (draft.speakers ?? []).map((speaker: any) => ({ ...speaker }));
@@ -345,7 +369,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 				dateEnd: watDateInputValue(editingEvent.endsAt ?? editingEvent.startsAt),
 				timeEnd: watTimeInputValue(editingEvent.endsAt, '23:59'),
 				venue: editingEvent.venue, city: editingEvent.city, description: editingEvent.description,
-				tiers: editingEvent.tiers, promos: editingEvent.promos ?? [], days: [...sessionsByDay].map(([label, sessions]) => ({ label, sessions })),
+				feeBearer: editingEvent.feeBearer ?? 'PASS', tiers: editingEvent.tiers, promos: editingEvent.promos ?? [], days: [...sessionsByDay].map(([label, sessions]) => ({ label, sessions })),
 				speakers: editingEvent.speakers, gates: (editingEvent.gates ?? []).map((gate) => ({ name: gate.name, staff: gate.staff.length })),
 				distribution: { launchMode: editingEvent.live ? 'now' : 'staged' }
 			});
@@ -909,7 +933,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 							<span class="{MONO} text-on-surface-variant">Settlement &amp; Payout Terms</span>
 							{#each [
 								{ icon: BadgeCheck, title: 'Zero Upfront Listing Fee', sub: 'You only pay when attendees finalize checkouts. No recurring server charge.' },
-								{ icon: Landmark, title: 'Buyer-Paid Service Fee', sub: 'Attendees pay 5% + ₦100 per paid ticket at checkout; free tickets carry no fee. Payouts settle to your verified Nigerian bank account within T+1 rolling hours.' },
+								{ icon: Landmark, title: 'Buyer-Paid Service Fee', sub: 'Tiered platform and processing fees follow your fee-bearer selection; free tickets carry no platform fee. Payouts settle to your verified Nigerian bank account.' },
 								{ icon: ShieldCheck, title: 'Cryptographic Turnstile Signature', sub: 'Anti-scalping non-fungible proof generated on every successful transaction.' }
 							] as row (row.title)}
 								<div class="flex gap-3">
@@ -1781,7 +1805,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 						<Info class="w-4 h-4 text-on-surface-variant shrink-0 mt-0.5" />
 						<p class="text-body-sm text-on-surface-variant leading-relaxed">
 							<span class="text-on-surface font-semibold">Fee Policy:</span> ₦0 upfront creation fee. Buyers pay a
-							5% + ₦100 per-ticket service fee at checkout. Free tickets carry no fee.
+							Configurable tiered service fee and payment-processing fee. Free tickets carry no platform fee.
 						</p>
 					</div>
 				</div>
@@ -2032,6 +2056,17 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 					<span class="rounded-full bg-surface-container-high border border-outline-variant/30 px-2.5 py-1 text-label-badge text-on-surface-variant">NGN (₦) • Paystack</span>
 					<span class="text-body-sm text-on-surface-variant">{totalCapacity.toLocaleString()} total capacity</span>
 				</div>
+				<section class="rounded-xl bg-surface-container border border-primary/30 p-4 flex flex-col gap-3" aria-label="Fee bearer and live fee preview">
+					<div><h3 class="text-body-md font-semibold text-on-surface">Who pays the platform service fee?</h3><p class="text-body-sm text-on-surface-variant mt-1">Choose before publishing. Changing this after sales begin may confuse buyers.</p></div>
+					<div class="grid sm:grid-cols-2 gap-2">
+						<button type="button" aria-pressed={feeBearer === 'PASS'} onclick={() => feeBearer = 'PASS'} class="rounded-lg border p-3 text-left {feeBearer === 'PASS' ? 'border-primary bg-primary/10' : 'border-surface-glass-border bg-surface-base'}"><span class="block text-body-sm font-semibold text-on-surface">PASS to buyer</span><span class="block text-label-badge text-on-surface-variant mt-1">Buyer pays ticket + service fee + processing.</span></button>
+						<button type="button" aria-pressed={feeBearer === 'ABSORB'} onclick={() => feeBearer = 'ABSORB'} class="rounded-lg border p-3 text-left {feeBearer === 'ABSORB' ? 'border-primary bg-primary/10' : 'border-surface-glass-border bg-surface-base'}"><span class="block text-body-sm font-semibold text-on-surface">ABSORB as organizer</span><span class="block text-label-badge text-on-surface-variant mt-1">Buyer sees ticket price + processing; platform fee comes from your proceeds.</span></button>
+					</div>
+					{#if feePreviewLoading}<p class="text-label-badge text-on-surface-variant">Updating live fee preview…</p>{/if}
+					{#if feePreview.length}
+						<div class="overflow-x-auto"><table class="w-full text-left text-label-badge"><thead class="text-on-surface-variant"><tr><th class="py-2">Ticket</th><th class="py-2">Platform</th><th class="py-2">Processing</th><th class="py-2">Buyer pays</th><th class="py-2">You receive</th></tr></thead><tbody>{#each feePreview as quote (quote.tierId)}<tr class="border-t border-surface-glass-border text-on-surface"><td class="py-2">{quote.tierName} · {formatMoney(quote.ticketPriceKobo / 100)}</td><td>{formatMoney(quote.platformFeeKobo / 100)}</td><td>{formatMoney(quote.processingFeeKobo / 100)}</td><td class="font-semibold">{formatMoney(quote.buyerTotalKobo / 100)}</td><td class="font-semibold">{formatMoney(quote.organizerNetKobo / 100)}</td></tr>{/each}</tbody></table></div>
+					{:else if !feePreviewLoading}<p class="text-label-badge text-on-surface-variant">Fee preview will appear when the pricing service is available.</p>{/if}
+				</section>
 				{#each tiers as tier, i (i)}
 					<div class="rounded-xl bg-surface-container border border-outline-variant/30 p-space-md flex flex-col gap-2">
 						{#if tier.editing}
@@ -2121,7 +2156,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-space-sm">
 					<h3 class="font-display text-headline-md text-on-surface">Issuance &amp; Settlement</h3>
 					<div class="grid grid-cols-3 gap-2"><div class="rounded-lg bg-surface-container-high p-2.5"><span class="block text-label-badge text-on-surface-variant">Starting at</span><span class="block text-body-sm font-bold text-on-surface pt-1">{minTierPrice === 0 ? 'Free' : formatMoney(minTierPrice)}</span></div><div class="rounded-lg bg-surface-container-high p-2.5"><span class="block text-label-badge text-on-surface-variant">Capacity</span><span class="block text-body-sm font-bold text-on-surface pt-1">{totalCapacity.toLocaleString()}</span></div><div class="rounded-lg bg-surface-container-high p-2.5"><span class="block text-label-badge text-on-surface-variant">Gross cap</span><span class="block text-body-sm font-bold text-on-surface pt-1">{formatMoney(totalGross)}</span></div></div>
-					<div class="flex items-start gap-2 rounded-lg bg-surface-container-low border border-surface-glass-border p-3"><Landmark class="w-4 h-4 text-primary shrink-0 mt-0.5" /><p class="text-body-sm text-on-surface-variant">{#if savedPayoutReady}<span class="text-on-surface font-semibold">{savedPayout.bank} · {maskAccountNumber(savedPayout.accountNumber)}</span><br />Paystack split gateway · KYC Tier 3{:else}<span class="text-on-surface font-semibold">No payout account linked</span><br />Add your payout account in Settings → Verification{/if}<br />T+2 rolling settlement · buyers pay 5% + ₦100/ticket · no upfront listing charge.</p></div>
+					<div class="flex items-start gap-2 rounded-lg bg-surface-container-low border border-surface-glass-border p-3"><Landmark class="w-4 h-4 text-primary shrink-0 mt-0.5" /><p class="text-body-sm text-on-surface-variant">{#if savedPayoutReady}<span class="text-on-surface font-semibold">{savedPayout.bank} · {maskAccountNumber(savedPayout.accountNumber)}</span><br />Paystack split gateway · KYC Tier 3{:else}<span class="text-on-surface font-semibold">No payout account linked</span><br />Add your payout account in Settings → Verification{/if}<br />T+2 rolling settlement · buyer fee handling follows the selected fee-bearer setting · no upfront listing charge.</p></div>
 				</section>
 			</div>
 
@@ -2300,7 +2335,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 					<div class="flex items-center justify-between gap-2"><span class="font-display text-headline-md text-on-surface">Settlement &amp; Payouts</span><button type="button" onclick={() => toast('Update your payout account in Settings → Verification', 'info')} class="text-label-badge text-primary underline">Change</button></div>
 					<div class="rounded-xl bg-surface-container-low border border-surface-glass-border p-3 flex items-center gap-3"><span class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center font-code text-label-badge font-bold text-on-surface">{savedPayoutReady ? payoutBankMark(savedPayout.bank) : '—'}</span><span class="min-w-0"><span class="block text-body-sm font-semibold text-on-surface">{savedPayoutReady ? savedPayout.bank : 'No payout account linked'}</span><span class="block text-label-badge text-on-surface-variant pt-1">{savedPayoutReady ? `${maskAccountNumber(savedPayout.accountNumber)} · NGN Main · Verified` : 'Add payout in Settings → Verification'}</span></span></div>
 					<div class="flex flex-col gap-2 text-label-badge"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Account status</span><span class="text-on-surface text-right">{savedPayoutReady ? 'Verified' : 'Not linked'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Gateway</span><span class="text-on-surface text-right">Paystack Split · KYC Tier 3</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Payout frequency</span><span class="text-on-surface text-right">T+2 rolling</span></div></div>
-					<div class="rounded-lg bg-surface-container-low p-3 flex items-start gap-2"><Info class="w-4 h-4 text-primary shrink-0 mt-0.5" /><p class="text-label-badge text-on-surface-variant">No upfront listing fee. Buyers pay a 5% + ₦100/ticket service fee at checkout; free tickets are fee-free.</p></div>
+					<div class="rounded-lg bg-surface-container-low p-3 flex items-start gap-2"><Info class="w-4 h-4 text-primary shrink-0 mt-0.5" /><p class="text-label-badge text-on-surface-variant">No upfront listing fee. Tiered platform and processing fees are shown in the live preview; free tickets have no platform fee.</p></div>
 				</section>
 
 				<section class="rounded-xl border border-surface-glass-border bg-surface-container p-space-md flex flex-col gap-space-sm">
