@@ -64,7 +64,7 @@ function contentSecurityPolicy(): string {
 function decorate(response: Response): Response {
 	response.headers.set('x-content-type-options', 'nosniff');
 	response.headers.set('referrer-policy', 'strict-origin-when-cross-origin');
-	response.headers.set('permissions-policy', 'camera=(self), microphone=(), geolocation=(), payment=()');
+	response.headers.set('permissions-policy', 'camera=(self), microphone=(), geolocation=(self), payment=()');
 	response.headers.set('cross-origin-opener-policy', 'same-origin');
 	response.headers.set('content-security-policy', contentSecurityPolicy());
 	if (PRODUCTION) {

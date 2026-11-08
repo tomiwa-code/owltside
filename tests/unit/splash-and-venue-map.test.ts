@@ -4,8 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from '$app/state';
 import SplashPage from '../../src/routes/+page.svelte';
 import EventPage from '../../src/routes/(app)/events/[slug]/+page.svelte';
-import { events as demoEvents } from '$lib/server/demo/seed';
+import HomePage from '../../src/routes/(app)/home/+page.svelte';
+import { events as demoEvents, people } from '$lib/server/demo/seed';
 import { buildDirectionsUrl, buildMapEmbedUrl, formatMapQuery, isAppleMobileNavigator } from '$lib/utils/maps';
+import {
+	detectHeaderLocation,
+	resolveNearestLocation,
+	resolveUserLocation,
+	selectVerifiedOrganizers
+} from '$lib/utils/organizers';
 
 const mocks = vi.hoisted(() => ({ goto: vi.fn() }));
 vi.mock('$app/navigation', async (original) => ({
@@ -29,6 +36,7 @@ const layoutData = {
 	unread: 0,
 	inboxUnread: 0,
 	currentProfile: null,
+	detectedLocation: undefined as string | undefined,
 	followingIds: [] as string[],
 	followLoadError: false
 };
@@ -37,12 +45,43 @@ beforeEach(() => {
 	mocks.goto.mockReset();
 	Object.assign(page.data, layoutData);
 	page.url = new URL('https://owltside.example/') as typeof page.url;
+	vi.stubGlobal(
+		'matchMedia',
+		vi.fn().mockImplementation((query: string) => ({
+			matches: false,
+			media: query,
+			onchange: null,
+			addListener: vi.fn(),
+			removeListener: vi.fn(),
+			addEventListener: vi.fn(),
+			removeEventListener: vi.fn(),
+			dispatchEvent: vi.fn()
+		}))
+	);
+	vi.stubGlobal(
+		'IntersectionObserver',
+		class {
+			observe() {}
+			unobserve() {}
+			disconnect() {}
+		}
+	);
+	vi.stubGlobal(
+		'ResizeObserver',
+		class {
+			observe() {}
+			unobserve() {}
+			disconnect() {}
+		}
+	);
 });
 
 afterEach(() => {
 	cleanup();
 	vi.useRealTimers();
+	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
+	delete (navigator as { geolocation?: unknown }).geolocation;
 	Object.assign(page.data, layoutData);
 });
 
@@ -102,7 +141,7 @@ describe('venue map and directions', () => {
 		);
 	});
 
-	it('renders the location map iframe, links Directions to the phone map app, and removes Indoor Nav', () => {
+	it('renders the location map iframe without the bottom location overlay bar, links Directions to the phone map app, and removes Indoor Nav', () => {
 		vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
 			'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
 		);
@@ -132,6 +171,11 @@ describe('venue map and directions', () => {
 			);
 		}
 
+		// The mobile map container only has the iframe (no floating bottom location bar)
+		const mobileMapContainer = maps[maps.length - 1].parentElement!;
+		expect(mobileMapContainer.children).toHaveLength(1);
+		expect(mobileMapContainer.textContent?.trim()).toBe('');
+
 		const directionsLinks = screen.getAllByRole('link', { name: /Directions/i });
 		expect(directionsLinks.length).toBeGreaterThanOrEqual(2);
 		for (const link of directionsLinks) {
@@ -142,5 +186,69 @@ describe('venue map and directions', () => {
 		}
 
 		expect(screen.queryByText(/Indoor Nav/i)).not.toBeInTheDocument();
+	});
+});
+
+describe('verified organizers and user location', () => {
+	it('selects at most 5 verified organizers randomly and prioritizes the user location', () => {
+		const manyEvents = Array.from({ length: 8 }, (_, idx) => ({
+			...demoEvents[0],
+			id: `ev-${idx}`,
+			slug: `ev-${idx}`,
+			city: idx < 6 ? 'Abuja' : 'Lagos',
+			organizer: {
+				...people.segun,
+				id: `org-${idx}`,
+				handle: `org_${idx}`,
+				name: `Organizer ${idx}`,
+				city: idx < 6 ? 'Abuja' : 'Lagos',
+				verified: true
+			}
+		}));
+
+		const pickA = selectVerifiedOrganizers(manyEvents, 'Abuja', 5, () => 0.15);
+		const pickB = selectVerifiedOrganizers(manyEvents, 'Abuja', 5, () => 0.85);
+
+		expect(pickA).toHaveLength(5);
+		expect(pickB).toHaveLength(5);
+		expect(pickA.every((org) => org.city === 'Abuja')).toBe(true);
+		expect(pickA.map((org) => org.id)).not.toEqual(pickB.map((org) => org.id));
+	});
+
+	it('resolves the user location from geolocation, profile, and request headers and displays it in Verified Organizers', async () => {
+		expect(resolveNearestLocation(9.0765, 7.3986)).toBe('Abuja');
+		expect(resolveNearestLocation(4.8156, 7.0498)).toBe('Rivers');
+		expect(
+			detectHeaderLocation(new Headers({ 'x-vercel-ip-city': 'Port%20Harcourt' }))
+		).toBe('Port Harcourt');
+		expect(
+			resolveUserLocation({
+				geoCity: null,
+				draftCity: null,
+				profileCity: 'Abuja',
+				detectedCity: 'Lagos'
+			})
+		).toBe('Abuja');
+
+		Object.defineProperty(navigator, 'geolocation', {
+			configurable: true,
+			value: {
+				getCurrentPosition: (success: (pos: { coords: { latitude: number; longitude: number } }) => void) => {
+					success({ coords: { latitude: 9.0765, longitude: 7.3986 } });
+				}
+			}
+		});
+
+		render(HomePage, {
+			props: {
+				data: {
+					...layoutData,
+					events: demoEvents
+				}
+			}
+		});
+		await tick();
+
+		expect(screen.getAllByText('Abuja').length).toBeGreaterThanOrEqual(2);
 	});
 });
