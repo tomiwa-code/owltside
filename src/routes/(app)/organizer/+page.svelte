@@ -92,7 +92,7 @@
 	const org = useQuery<OrganizerPayload>(
 		'organizer:me',
 		async () => (await fetch('/api/organizer')).json(),
-		{ staleTime: 8_000, refetchInterval: 10_000 },
+		{ staleTime: 45_000, refetchInterval: 120_000 },
 		data.payload
 	);
 	const payload = $derived(org.data);
@@ -104,7 +104,7 @@
 			const response = await fetch('/api/approvals');
 			return response.ok ? await response.json() : [];
 		},
-		{ staleTime: 5_000, refetchInterval: 10_000, enabled: !!page.data.session },
+		{ staleTime: 45_000, refetchInterval: 120_000, enabled: !!page.data.session },
 		(data as { approvals?: ApprovalRequest[] }).approvals
 	);
 	$effect(() => {

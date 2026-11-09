@@ -2,6 +2,13 @@ import type { OperatingIdentity } from './constants/operating-identity';
 
 export type Currency = 'NGN' | 'USD';
 
+/** Unread counters for the header badges — no row payload. */
+export interface BadgeCounts {
+	unread: number;
+	inboxUnread: number;
+	requests: number;
+}
+
 export interface Session {
 	userId: string;
 	email: string;

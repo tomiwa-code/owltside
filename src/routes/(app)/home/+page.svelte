@@ -73,7 +73,10 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 			const res = await fetch('/api/events');
 			return res.json();
 		},
-		{ staleTime: 20_000 },
+		// The catalogue changes when an organizer publishes, not per page view.
+		// Keep it in memory for five minutes and mirror it to localStorage so a
+		// reload (or a cold PWA start) renders without re-downloading it.
+		{ staleTime: 300_000, persist: { maxAge: 6 * 60 * 60 * 1000 } },
 		data.events
 	);
 

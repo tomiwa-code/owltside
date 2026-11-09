@@ -9,5 +9,7 @@ export const GET: RequestHandler = async ({ locals, cookies }) => {
 	const payload = await getSource(createSupabase(cookies)).getOrganizer(
 		locals.session?.userId ?? 'demo'
 	);
-	return json(payload, { headers: { 'cache-control': 'private, max-age=5, stale-while-revalidate=15' } });
+	// The console polls every 2 minutes; mirror that with a private browser cache
+	// (it also absorbs a remount or a back-navigation without a round trip).
+	return json(payload, { headers: { 'cache-control': 'private, max-age=60, stale-while-revalidate=120' } });
 };

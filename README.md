@@ -190,10 +190,19 @@ expire. In live mode the signature is computed/verified server-side
 
 `src/lib/state/query.svelte.ts` is a tiny TanStack-Query-style cache:
 stale-while-revalidate (`staleTime`), polling (`refetchInterval`),
-`invalidate(prefix)` with automatic refetch of active queries, and deduped
-in-flight requests. Effects are guarded so they always converge (no infinite
-`$effect` loops). SSR loaders render first paint; the cache refreshes on the
-client. API routes add HTTP `cache-control: max-age … stale-while-revalidate`.
+`invalidate(prefix)` with automatic refetch of active queries, deduped
+in-flight requests, and optional `localStorage` mirroring (`persist`). Polling is
+egress-aware: it pauses while the tab is hidden, skips fresh entries, and backs
+off exponentially after a failure. Effects are guarded so they always converge
+(no infinite `$effect` loops). SSR loaders render first paint; the cache
+refreshes on the client. API routes add HTTP `cache-control: max-age …
+stale-while-revalidate` (plus ETags on the public feeds).
+
+**Data-transfer budget:** the public feeds return card-sized rows (no agendas,
+FAQs or inline images), every collection is paged, and inline profile/event
+images are served from cacheable `/api/media/*` routes. See
+[`EGRESS_AUDIT.md`](./EGRESS_AUDIT.md) for the original incident, the fixes and
+the verification checklist.
 
 ## Structure
 

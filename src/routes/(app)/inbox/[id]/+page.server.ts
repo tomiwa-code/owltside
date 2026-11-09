@@ -8,7 +8,10 @@ export const load: PageServerLoad = async ({ params, locals, cookies }) => {
 	const source = getSource(createSupabase(cookies));
 	const userId = locals.session?.userId ?? 'demo';
 	const conversations = await source.getConversations(userId);
-	const conversation = conversations.find((c) => c.id === params.id);
+	// The inbox list is paged (newest 50), so an older thread is loaded by id
+	// instead of being reported as missing.
+	const conversation =
+		conversations.find((c) => c.id === params.id) ?? (await source.getConversation(userId, params.id));
 	if (!conversation) error(404, 'Conversation not found');
 	const messages = await source.getMessages(params.id);
 	return { conversation, messages, conversations };

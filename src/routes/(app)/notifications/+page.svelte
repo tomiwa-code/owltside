@@ -43,7 +43,7 @@
 	const items = useQuery<NotificationItem[]>(
 		'notifications:mine',
 		async () => (await fetch('/api/notifications')).json(),
-		{ staleTime: 15_000, refetchInterval: 30_000 },
+		{ staleTime: 60_000, refetchInterval: 300_000 },
 		data.items
 	);
 

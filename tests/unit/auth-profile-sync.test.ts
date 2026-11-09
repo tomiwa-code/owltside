@@ -13,7 +13,7 @@ vi.mock('$lib/server/supabase', () => ({
 	supabaseConfigured: () => true
 }));
 
-import { handle } from '../../src/hooks.server';
+import { handle, resetSessionProfileCache } from '../../src/hooks.server';
 import { GET } from '../../src/routes/auth/callback/+server';
 
 type ProfileRow = { id: string; handle: string; name: string; avatar_url: string | null };
@@ -115,6 +115,8 @@ const existing = (over: Partial<ProfileRow> = {}): ProfileRow => ({
 
 beforeEach(() => {
 	state.db = null;
+	// The per-request profile memo is process-wide; each case gets a fresh fake.
+	resetSessionProfileCache();
 });
 
 describe('auth callback — Google details only fill empty profile fields', () => {

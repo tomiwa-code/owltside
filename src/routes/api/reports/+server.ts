@@ -1,5 +1,7 @@
 import { getSource } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
+import { clientKey } from '$lib/server/rate-limit';
+import { CAPTCHA_FAILURE_MESSAGE, verifyCaptcha } from '$lib/server/captcha';
 import { json } from '@sveltejs/kit';
 import {
 	isReportTargetType,
@@ -50,6 +52,13 @@ export const POST: RequestHandler = async ({ locals, cookies, request }) => {
 	// The label is a convenience for reviewers; the server caps it and never
 	// trusts it as an identifier (targetId is the join key).
 	const targetLabel = clean(body.targetLabel, 160) || targetId;
+
+	// Guests can file reports, which makes this the classic spam target. The
+	// challenge is checked before any database write.
+	const captcha = await verifyCaptcha(body.captchaToken, clientKey(request, 'unknown'));
+	if (!captcha.ok) {
+		return json({ error: CAPTCHA_FAILURE_MESSAGE }, { status: 403, headers: { 'cache-control': 'no-store' } });
+	}
 
 	try {
 		const report = await getSource(createSupabase(cookies)).reportContent(

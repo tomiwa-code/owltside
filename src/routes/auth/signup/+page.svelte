@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import ThemeToggle from '$components/ThemeToggle.svelte';
+	import Turnstile from '$components/Turnstile.svelte';
 	import {
 		ArrowLeft,
 		AtSign,
@@ -203,6 +204,9 @@
 							Continue with Google
 						{/if}
 					</button>
+				
+					
+					<Turnstile />
 				</form>
 
 				<a href="/home" class="w-full h-12 rounded-lg bg-surface-container border border-surface-glass-border hover:border-primary/40 transition-colors text-on-surface-variant flex items-center justify-between px-4">
@@ -352,7 +356,10 @@
 					Continue with Google
 				{/if}
 			</button>
-		</form>
+		
+					
+					<Turnstile />
+				</form>
 
 		<div class="flex flex-col items-center justify-center gap-1 text-center pt-space-md">
 			<p class="text-body-md text-on-surface-variant">

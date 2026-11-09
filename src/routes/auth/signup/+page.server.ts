@@ -1,5 +1,7 @@
 import { safeAuthNext, startGoogleSignIn } from '$lib/server/oauth';
 import { createSupabase } from '$lib/server/supabase';
+import { clientKey } from '$lib/server/rate-limit';
+import { CAPTCHA_FAILURE_MESSAGE, verifyCaptcha } from '$lib/server/captcha';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
 
@@ -20,6 +22,9 @@ export const actions: Actions = {
 		if (!/^\S+@\S+\.\S+$/.test(email)) return fail(400, { error: 'Enter a valid email address', email, name, username });
 		if (!termsAccepted) return fail(400, { error: 'Please agree to the Terms and Privacy Policy', email, name, username });
 		if (!ageConfirmed) return fail(400, { error: 'You must confirm that you are 18 or older', email, name, username });
+
+		const captcha = await verifyCaptcha(form.get('captchaToken'), clientKey(request, 'unknown'));
+		if (!captcha.ok) return fail(403, { error: CAPTCHA_FAILURE_MESSAGE, email, name, username });
 
 		const db = createSupabase(cookies);
 		if (db) {

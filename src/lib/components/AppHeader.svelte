@@ -7,7 +7,7 @@
 	import { profileAppearance } from '$lib/state/profile.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { queryClient, useQuery } from '$lib/state/query.svelte';
-	import { subscribeIncomingMessages, subscribeTable } from '$lib/realtime';
+	import { publicSupabase, subscribeIncomingMessages, subscribeTable } from '$lib/realtime';
 	import {
 		notifyIncomingDirectMessage,
 		notifyUnreadInboxItems,
@@ -15,7 +15,7 @@
 		syncPushSubscriptionIfGranted
 	} from '$lib/push.client';
 	import { UNREAD_BADGE_CLASS, formatCount } from '$lib/utils/badges';
-	import type { Conversation, MessageRequest, NotificationItem } from '$lib/types';
+	import type { BadgeCounts, Conversation, MessageRequest, NotificationItem } from '$lib/types';
 	let search = $state('');
 	const profile = $derived(page.data.currentProfile);
 	const session = $derived(page.data.session);
@@ -26,19 +26,42 @@
 		await goto(search.trim() ? `/explore?q=${encodeURIComponent(search.trim())}` : '/explore');
 	}
 
-	// Live badge counts — poll the same keys used by the dedicated pages so the
-	// header stays in sync without extra backend calls. Fall back to the
-	// SSR-provided page.data values until the first fetch resolves.
+	// ── Egress-aware header data ──────────────────────────────────────────────
+	// Realtime is the primary transport when Supabase is configured: a socket
+	// event triggers one refetch. Polling is only a fallback (demo mode, or a
+	// dropped socket), so the cadence is minutes, not seconds, and it pauses
+	// while the tab is hidden (see useQuery's `refetchInterval`).
+	const realtimeConnected = publicSupabase() !== null;
+	const POLL_FALLBACK_MS = realtimeConnected ? 300_000 : 60_000;
+
+	// Three numbers, ~60 bytes. This is what the header actually needs to poll.
+	const badges = useQuery<BadgeCounts>(
+		'badges:mine',
+		async () => {
+			const response = await fetch('/api/badges');
+			if (!response.ok) throw new Error('Badge counters are unavailable');
+			const payload = (await response.json()) as Partial<BadgeCounts>;
+			if (typeof payload?.unread !== 'number' || typeof payload?.inboxUnread !== 'number') {
+				throw new Error('Badge counters are unavailable');
+			}
+			return { unread: payload.unread, inboxUnread: payload.inboxUnread, requests: payload.requests ?? 0 };
+		},
+		{ staleTime: 60_000, refetchInterval: 60_000, enabled: !!page.data.session },
+		undefined
+	);
+
+	// The full lists are shared with the dedicated pages (same cache keys), so
+	// opening the inbox/hub reuses whatever is already cached.
 	const notificationsQuery = useQuery<NotificationItem[]>(
 		'notifications:mine',
 		async () => (await fetch('/api/notifications')).json(),
-		{ staleTime: 10_000, refetchInterval: 20_000, enabled: !!page.data.session },
+		{ staleTime: 60_000, refetchInterval: POLL_FALLBACK_MS, enabled: !!page.data.session },
 		undefined
 	);
 	const conversationsQuery = useQuery<Conversation[]>(
 		'conversations:mine',
 		async () => (await fetch('/api/conversations')).json(),
-		{ staleTime: 5_000, refetchInterval: 8_000, enabled: !!page.data.session },
+		{ staleTime: 60_000, refetchInterval: POLL_FALLBACK_MS, enabled: !!page.data.session },
 		undefined
 	);
 	const requestsQuery = useQuery<MessageRequest[]>(
@@ -47,9 +70,34 @@
 			const r = await fetch('/api/message-requests');
 			return r.ok ? await r.json() : [];
 		},
-		{ staleTime: 5_000, refetchInterval: 10_000, enabled: !!page.data.session },
+		{ staleTime: 60_000, refetchInterval: POLL_FALLBACK_MS, enabled: !!page.data.session },
 		undefined
 	);
+
+	// A cheap counter that is ahead of the cached list means the list is stale:
+	// refresh it once (with a cooldown so a mismatch can never become a loop).
+	let lastBadgeSync = 0;
+	$effect(() => {
+		if (!page.data.session || !badges.data) return;
+		const unreadFromList = Array.isArray(notificationsQuery.data)
+			? notificationsQuery.data.filter((n) => !n.read).length
+			: undefined;
+		const inboxFromLists =
+			Array.isArray(conversationsQuery.data) && Array.isArray(requestsQuery.data)
+				? conversationsQuery.data.reduce((sum, c) => sum + (c.unread ?? 0), 0) + requestsQuery.data.length
+				: undefined;
+		if (Date.now() - lastBadgeSync < 60_000) return;
+		const notificationsStale =
+			unreadFromList !== undefined && badges.data.unread > unreadFromList;
+		const inboxStale = inboxFromLists !== undefined && badges.data.inboxUnread > inboxFromLists;
+		if (!notificationsStale && !inboxStale) return;
+		lastBadgeSync = Date.now();
+		if (notificationsStale) void notificationsQuery.refetch();
+		if (inboxStale) {
+			void conversationsQuery.refetch();
+			void requestsQuery.refetch();
+		}
+	});
 
 	// A failed API call can resolve with an error object; never let that wipe a
 	// real count (or crash the header) — fall back to the SSR numbers instead.
@@ -58,7 +106,9 @@
 	const requests = $derived(Array.isArray(requestsQuery.data) ? requestsQuery.data : undefined);
 
 	const unreadCount = $derived(
-		notifications ? notifications.filter((n) => !n.read).length : (page.data.unread ?? 0)
+		notifications
+			? notifications.filter((n) => !n.read).length
+			: (badges.data?.unread ?? page.data.unread ?? 0)
 	);
 	// The inbox badge is the sum of every chat's own count plus pending message
 	// requests. Opening the inbox list changes nothing; only opening a chat (or
@@ -68,7 +118,7 @@
 			const convoUnread = (conversations ?? []).reduce((sum, c) => sum + (c.unread ?? 0), 0);
 			return convoUnread + (requests?.length ?? 0);
 		}
-		return page.data.inboxUnread ?? 0;
+		return badges.data?.inboxUnread ?? page.data.inboxUnread ?? 0;
 	});
 
 	// Ensure already-authorized devices sync their W3C PushSubscription in the background.

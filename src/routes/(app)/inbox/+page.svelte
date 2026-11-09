@@ -22,7 +22,7 @@
 	const conversations = useQuery<Conversation[]>(
 		'conversations:mine',
 		async () => (await fetch('/api/conversations')).json(),
-		{ staleTime: 15_000, refetchInterval: 20_000 },
+		{ staleTime: 60_000, refetchInterval: 300_000 },
 		data.conversations
 	);
 
@@ -32,7 +32,7 @@
 			const response = await fetch('/api/message-requests');
 			return response.ok ? response.json() : [];
 		},
-		{ staleTime: 10_000, refetchInterval: 20_000 },
+		{ staleTime: 60_000, refetchInterval: 300_000 },
 		data.messageRequests ?? []
 	);
 

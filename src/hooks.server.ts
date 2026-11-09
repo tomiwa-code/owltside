@@ -37,7 +37,7 @@ function supabaseOrigin(): string {
 
 function contentSecurityPolicy(): string {
 	const supabase = supabaseOrigin();
-	const connect = ["'self'", 'https://api.paystack.co'];
+	const connect = ["'self'", 'https://api.paystack.co', 'https://challenges.cloudflare.com'];
 	if (supabase) {
 		connect.push(supabase, supabase.replace('https://', 'wss://'));
 	}
@@ -46,12 +46,14 @@ function contentSecurityPolicy(): string {
 		"default-src 'self'",
 		// The theme bootstrap in app.html is an inline script; everything else
 		// is served from our own origin.
-		"script-src 'self' 'unsafe-inline'",
+		// challenges.cloudflare.com is Cloudflare Turnstile (bot protection on
+		// the public forms). It is only loaded when a site key is configured.
+		"script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
 		"style-src 'self' 'unsafe-inline'",
 		"img-src 'self' data: blob: https:",
 		"font-src 'self' data:",
 		`connect-src ${connect.join(' ')}`,
-		"frame-src 'self' https://www.google.com https://maps.google.com",
+		"frame-src 'self' https://www.google.com https://maps.google.com https://challenges.cloudflare.com",
 		"media-src 'self' blob:",
 		"object-src 'none'",
 		"base-uri 'self'",
@@ -74,6 +76,58 @@ function decorate(response: Response): Response {
 	return response;
 }
 
+/**
+ * Session lookups run on every navigation *and* every API call. Reading the
+ * whole profile row (`select('*')`) shipped bios, banners and inline image
+ * data with each one; this is the only subset the session needs.
+ */
+const SESSION_PROFILE_COLUMNS =
+	'id,handle,name,avatar_url,disabled,disabled_reason,operating_identity,username_changed_at,role';
+
+/** 10 s memo so a burst of requests from one tab reads the profile once. */
+const SESSION_PROFILE_TTL_MS = 10_000;
+
+interface SessionProfileRow {
+	id: string;
+	handle: string | null;
+	name: string | null;
+	avatar_url: string | null;
+	disabled: boolean | null;
+	disabled_reason: string | null;
+	operating_identity: string | null;
+	username_changed_at: string | null;
+	role: string | null;
+}
+
+const sessionProfileCache = new Map<string, { at: number; value: SessionProfileRow | null }>();
+
+async function sessionProfile(
+	db: ReturnType<typeof createSupabase>,
+	userId: string
+): Promise<SessionProfileRow | null> {
+	if (!db) return null;
+	const hit = sessionProfileCache.get(userId);
+	if (hit && Date.now() - hit.at < SESSION_PROFILE_TTL_MS) return hit.value;
+	const { data } = await db
+		.from('profiles')
+		.select(SESSION_PROFILE_COLUMNS)
+		.eq('id', userId)
+		.maybeSingle();
+	const value = (data as SessionProfileRow | null) ?? null;
+	// Never memoise "no profile": an account created milliseconds ago must be
+	// visible to its very next request (the hook creates the row itself).
+	if (value) {
+		if (sessionProfileCache.size > 5_000) sessionProfileCache.clear();
+		sessionProfileCache.set(userId, { at: Date.now(), value });
+	}
+	return value;
+}
+
+/** Test helper: the memo is process-wide, so suites can drop it between cases. */
+export function resetSessionProfileCache(): void {
+	sessionProfileCache.clear();
+}
+
 interface LimitRule {
 	pattern: RegExp;
 	max: number;
@@ -87,11 +141,33 @@ const LIMIT_RULES: LimitRule[] = [
 	{ pattern: /^\/api\/scan(\/|$)/, max: 40, windowMs: 60_000 },
 	// A promo endpoint is a discount-code oracle.
 	{ pattern: /^\/api\/events\/[^/]+\/promo$/, max: 30, windowMs: 60_000 },
+	// Public form posts (reports, message requests, push subscriptions).
+	{ pattern: /^\/api\/(reports|message-requests|push\/subscribe)$/, max: 10, windowMs: 60_000, methods: ['POST'] },
 	// Login/signup/OTP are the classic enumeration + email-bomb targets.
 	{ pattern: /^\/auth\/(login|signup|verify)$/, max: 15, windowMs: 60_000, methods: ['POST'] },
 	{ pattern: /^\/api\/paystack\/webhook$/, max: 600, windowMs: 60_000, methods: ['POST'] },
-	{ pattern: /^\/api\//, max: 240, windowMs: 60_000 }
+	// Profile typeahead is the cheapest way to enumerate accounts.
+	{ pattern: /^\/api\/profiles\/search$/, max: 30, windowMs: 60_000 },
+	// The catalogue is now CDN/browser cached; direct hits stay cheap but capped.
+	{ pattern: /^\/api\/events$/, max: 60, windowMs: 60_000 },
+	// Header badge counters: one call a minute per tab, so this is generous.
+	{ pattern: /^\/api\/(badges|notifications|conversations|message-requests)$/, max: 120, windowMs: 60_000 },
+	// Inline-image endpoints are fetched once per device (`immutable` cache), so
+	// a feed load can legitimately request dozens at once.
+	{ pattern: /^\/api\/media\//, max: 600, windowMs: 60_000 },
+	// Anonymous page views (home/explore/event pages) — scraper guard. The
+	// responses are cacheable, so a crawler that respects cache-control never
+	// reaches this ceiling.
+	{ pattern: /^\/(home|explore|events\/|users\/)/, max: 180, windowMs: 60_000 },
+	{ pattern: /^\/api\/(?!media\/)/, max: 120, windowMs: 60_000 }
 ];
+
+/**
+ * Framework assets never need a session lookup, a database round trip or CSP
+ * decoration — serving them used to run `auth.getUser()` + a profile read for
+ * every JS/CSS chunk request.
+ */
+const STATIC_ASSET = /^\/(?:_app\/|icons\/|favicon\.ico|robots\.txt|manifest\.webmanifest|sw\.js|logo|owl-icon|logo-stacked)/;
 
 function rateLimited(event: Parameters<Handle>[0]['event']): Response | null {
 	const method = event.request.method;
@@ -128,11 +204,17 @@ function rateLimited(event: Parameters<Handle>[0]['event']): Response | null {
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
+	if (STATIC_ASSET.test(event.url.pathname)) return resolve(event);
 	clearRetiredBiometricCookies(event.cookies);
 	// Synthetic events (unit tests, internal calls) carry no real Request; the
 	// limiter only makes sense for traffic that actually arrived over HTTP.
 	const limited = event?.request ? rateLimited(event) : null;
 	if (limited) return decorate(limited);
+
+	// Image routes read one column with the anonymous client. Running the
+	// session/profile lookup for them would add an auth round trip and a
+	// profile read per image — the exact cost this change removes.
+	if (event.url.pathname.startsWith('/api/media/')) return decorate(await resolve(event));
 
 	const isDemo = demoModeEnabled();
 	event.locals.demoMode = isDemo;
@@ -160,7 +242,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 				const isBanned =
 					(bannedUntil ? Date.parse(bannedUntil) > Date.now() : false) ||
 					meta.account_disabled === true;
-				let { data: profile } = await db.from('profiles').select('*').eq('id', user.id).maybeSingle();
+				let profile = await sessionProfile(db, user.id);
 				if (isBanned || profile?.disabled === true) {
 					await db.auth.signOut().catch(() => undefined);
 					event.locals.session = null;
@@ -193,15 +275,24 @@ export const handle: Handle = async ({ event, resolve }) => {
 					const { data: created } = await db
 						.from('profiles')
 						.upsert({ id: user.id, handle: finalHandle, name: rawName, avatar_url: provider.avatarUrl ?? null }, { onConflict: 'id' })
-						.select('*')
+						.select(SESSION_PROFILE_COLUMNS)
 						.maybeSingle();
-					profile = created;
+					profile = (created as SessionProfileRow | null) ?? null;
+					sessionProfileCache.set(user.id, { at: Date.now(), value: profile });
 				} else {
 					// Provider (Google) details only fill gaps; they never replace what the user already has.
 					const updates = fillEmptyProfileFields(profile, meta);
 					if (Object.keys(updates).length > 0) {
-						const { data: updated } = await db.from('profiles').update(updates).eq('id', user.id).select('*').maybeSingle();
-						if (updated) profile = updated;
+						const { data: updated } = await db
+							.from('profiles')
+							.update(updates)
+							.eq('id', user.id)
+							.select(SESSION_PROFILE_COLUMNS)
+							.maybeSingle();
+						if (updated) {
+							profile = updated as SessionProfileRow;
+							sessionProfileCache.set(user.id, { at: Date.now(), value: profile });
+						}
 					}
 				}
 				// The database column (guarded, server-owned) wins over
@@ -223,9 +314,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 						.from('profiles')
 						.update({ operating_identity: identity })
 						.eq('id', user.id)
-						.select('*')
+						.select(SESSION_PROFILE_COLUMNS)
 						.maybeSingle();
-					if (synced) profile = synced;
+					if (synced) {
+						profile = synced as SessionProfileRow;
+						sessionProfileCache.set(user.id, { at: Date.now(), value: profile });
+					}
 				}
 				event.locals.session = {
 					userId: user.id,

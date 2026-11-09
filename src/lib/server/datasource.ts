@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { env as privateEnv } from '$env/dynamic/private';
 import type {
 	ApprovalKind,
+	BadgeCounts,
 	ApprovalRequest,
 	Checkin,
 	ContentReport,
@@ -49,6 +50,66 @@ import {
 } from '$lib/utils/event-status';
 import { settleEvent, settleOrganizer } from '$lib/utils/settlement';
 import { latestVerificationRequest, VERIFICATION_CHECKS } from '$lib/utils/verification';
+import { mediaHref } from './media';
+
+/**
+ * ── Egress guardrails ───────────────────────────────────────────────────────
+ * Every public read below names its columns instead of `select('*')`. The
+ * profile/event rows contain long text (bio, description, agendas, FAQs) and
+ * image data URLs; shipping those on every feed render, poll and navigation was
+ * the single largest source of database egress.
+ */
+const PROFILE_CARD_COLUMNS =
+	'id,handle,name,avatar_color,avatar_url,city,operating_identity,verified,followers,following';
+const PROFILE_FULL_COLUMNS = `${PROFILE_CARD_COLUMNS},bio,link,banner_url,interests,username_changed_at`;
+/** Everything a card needs; no description/agenda/faqs/policies/gates/blobs. */
+const EVENT_CARD_COLUMNS =
+	'id,slug,title,category,tags,starts_at,ends_at,venue,city,cover,tiers,fee_bearer,featured,trending_rank,views_today,attendees,status,submitted_at,moderation_note,live,gates';
+/** The full detail payload, reserved for the event page and organizer editing. */
+const EVENT_DETAIL_COLUMNS = `${EVENT_CARD_COLUMNS},description,speakers,agenda,faqs,policies`;
+const NOTIFICATION_COLUMNS = 'id,kind,title,body,href,at,read';
+const CONVERSATION_COLUMNS = 'id,user_id,peer_id,last_message,last_at,unread,peer_unread,event_id';
+const MESSAGE_COLUMNS = 'id,conversation_id,sender_id,body,sent_at';
+const TICKET_COLUMNS =
+	'id,code,event_id,event_slug,event_title,event_starts_at,venue,tier_name,holder_name,status,purchased_at,price,cover';
+const ORDER_COLUMNS = 'id,reference,event_id,owner_name,items_label,total,status,created_at';
+const CHECKIN_COLUMNS = 'id,event_id,ticket_code,holder,tier,gate,at,result';
+/** Message requests embed two profiles; keep them to card size. */
+const MESSAGE_REQUEST_COLUMNS = `id,event_id,event_slug,event_title,body,created_at,status,conversation_id,requester:profiles!message_requests_requester_id_fkey(${PROFILE_CARD_COLUMNS}), organizer:profiles!message_requests_organizer_id_fkey(${PROFILE_CARD_COLUMNS}), event:events!message_requests_event_id_fkey(slug,title)`;
+
+/** Threads/notifications a single screen can render; the rest are paginated. */
+const LIST_PAGE_SIZE = 50;
+
+/**
+ * Short-lived in-process memo for the *public* event catalogue.
+ *
+ * The home/explore feeds are identical for every visitor and change only when
+ * an organizer edits an event, so re-reading the whole catalogue from Postgres
+ * on every page view is pure egress. 30 s keeps the UI honest while collapsing
+ * a burst of traffic into one query.
+ */
+const PUBLIC_CACHE_TTL_MS = 30_000;
+const publicCache = new Map<string, { expires: number; value: unknown }>();
+
+function cached<T>(key: string, load: () => Promise<T>, ttlMs = PUBLIC_CACHE_TTL_MS): Promise<T> {
+	const hit = publicCache.get(key);
+	if (hit && hit.expires > Date.now()) return Promise.resolve(hit.value as T);
+	return load().then((value) => {
+		publicCache.set(key, { expires: Date.now() + ttlMs, value });
+		// Keep the memo bounded; entries are small and cheap to rebuild.
+		if (publicCache.size > 64) {
+			for (const [k, entry] of publicCache) {
+				if (entry.expires <= Date.now()) publicCache.delete(k);
+			}
+		}
+		return value;
+	});
+}
+
+/** Drop memoised public reads after a write so the next view is never stale. */
+export function invalidatePublicCache(): void {
+	publicCache.clear();
+}
 
 const demoMeId = 'u-ada';
 const demoFollows = new Map<string, Set<string>>();
@@ -350,14 +411,31 @@ export type StaffScanContext =
 
 export type StaffScanResolution = StaffScanContext | { kind: 'ambiguous' };
 
+export type { BadgeCounts } from '$lib/types';
+
 export interface DataSource {
 	mode: 'demo' | 'supabase';
 	listEvents(filters?: EventFilters): Promise<EventItem[]>;
 	getEvent(slug: string): Promise<EventItem | undefined>;
 	getTickets(userId: string): Promise<Ticket[]>;
 	getConversations(userId: string): Promise<Conversation[]>;
-	getMessages(conversationId: string): Promise<Message[]>;
-	getNotifications(userId: string): Promise<NotificationItem[]>;
+	/** One thread by id (the chat page must not depend on the inbox page size). */
+	getConversation(userId: string, conversationId: string): Promise<Conversation | undefined>;
+	/** Newest page of a thread, oldest-first. `before` pages backwards. */
+	getMessages(
+		conversationId: string,
+		options?: { limit?: number; before?: string }
+	): Promise<Message[]>;
+	getNotifications(
+		userId: string,
+		options?: { limit?: number; offset?: number }
+	): Promise<NotificationItem[]>;
+	/**
+	 * Badge counters only — a few bytes instead of three full lists. The
+	 * request layout uses this so every navigation does not re-download the
+	 * notification stream and every conversation.
+	 */
+	getBadgeCounts(userId: string): Promise<BadgeCounts>;
 	getProfile(handle: string): Promise<Profile | undefined>;
 	searchProfiles(handlePrefix: string): Promise<Profile[]>;
 	getFollowingIds(userId: string): Promise<string[]>;
@@ -489,6 +567,19 @@ function sortEvents(list: EventItem[], sort: EventFilters['sort']): EventItem[] 
 	}
 }
 
+/**
+ * Apply the shared public-feed semantics to an already-loaded catalogue.
+ * Used by the explore page so one Postgres read can answer both "what matches
+ * these filters" and "what are the category counts" (it used to run the full
+ * query twice and download the catalogue twice).
+ */
+export function filterEventList(list: EventItem[], filters: EventFilters = {}): EventItem[] {
+	return sortEvents(
+		list.filter((event) => isPubliclyVisible(event) && matches(event, filters)),
+		filters.sort
+	);
+}
+
 export function minPrice(e: EventItem): number {
 	return Math.min(...e.tiers.map((t) => t.price));
 }
@@ -578,7 +669,16 @@ export const demoSource: DataSource = {
 			demo.events
 				// Pending submissions are only visible to their organizer (dashboard).
 				.filter((e) => isPubliclyVisible(e) && matches(e, filters))
-				.map(publicEvent),
+				.map(publicEvent)
+				// Mirror the production feed shape (see EVENT_CARD_COLUMNS) so demo
+				// mode exercises the same card payload the real catalogue ships.
+				.map((event) => ({
+					...event,
+					description: event.description.slice(0, 280),
+					speakers: [],
+					agenda: [],
+					faqs: []
+				})),
 			filters.sort
 		);
 	},
@@ -608,13 +708,32 @@ export const demoSource: DataSource = {
 			}));
 		return [...seeded, ...dynamic].sort((a, b) => +new Date(b.lastAt) - +new Date(a.lastAt));
 	},
-	async getMessages(conversationId) {
+	async getConversation(userId, conversationId) {
+		const list = await demoSource.getConversations(userId);
+		return list.find((conversation) => conversation.id === conversationId);
+	},
+	async getMessages(conversationId, _options = {}) {
 		return [...(demo.messages[conversationId] ?? [])];
 	},
-	async getNotifications(userId = 'demo') {
+	async getNotifications(userId = 'demo', options = {}) {
 		const uid = userId === 'demo' ? demoMeId : userId;
+		const limit = options.limit ?? LIST_PAGE_SIZE;
+		const offset = options.offset ?? 0;
 		return [...demo.notifications, ...(demoPrivateNotifications.get(uid) ?? [])]
-			.sort((a, b) => +new Date(b.at) - +new Date(a.at));
+			.sort((a, b) => +new Date(b.at) - +new Date(a.at))
+			.slice(offset, offset + limit);
+	},
+	async getBadgeCounts(userId = 'demo') {
+		const uid = userId === 'demo' ? demoMeId : userId;
+		const notifications = await demoSource.getNotifications(uid, { limit: 100 });
+		const conversations = await demoSource.getConversations(uid);
+		const requests = await demoSource.getIncomingMessageRequests(uid);
+		return {
+			unread: notifications.filter((n) => !n.read).length,
+			inboxUnread:
+				conversations.reduce((sum, c) => sum + (c.unread ?? 0), 0) + requests.length,
+			requests: requests.length
+		};
 	},
 	async getProfile(handle) {
 		const profile = Object.values(demo.people).find((p) => p.handle === handle);
@@ -1560,7 +1679,10 @@ async function fetchEventPromos(
 ): Promise<Map<string, EventPromo[]>> {
 	const byEvent = new Map<string, EventPromo[]>();
 	if (eventIds.length === 0) return byEvent;
-	const { data, error } = await db.from('event_promos').select('*').in('event_id', eventIds);
+	const { data, error } = await db
+		.from('event_promos')
+		.select('event_id,code,percent,max_uses,uses')
+		.in('event_id', eventIds);
 	if (error) {
 		// Organizer screens should keep working on a database that has not
 		// received migration 020 yet; saving a new promo fails explicitly.
@@ -1606,7 +1728,7 @@ async function replaceEventPromos(
 	const desired = normalizeEventPromos(definitions);
 	const { data: existingRows, error: fetchError } = await db
 		.from('event_promos')
-		.select('*')
+		.select('event_id,code,percent,max_uses,uses')
 		.eq('event_id', eventId);
 	if (fetchError) {
 		if (isMissingPromoStorageError(fetchError)) {
@@ -1704,16 +1826,21 @@ const rowOperatingIdentity = (r: Row): OperatingIdentity | undefined => {
 	return typeof raw === 'string' && isOperatingIdentity(raw) ? raw : undefined;
 };
 
+/**
+ * Map a profile row. Inline (`data:`) images are rewritten to cacheable
+ * `/api/media/...` URLs — a base64 avatar is downloaded once per device, not
+ * re-transferred inside every conversation/event/notification payload.
+ */
 const toProfile = (r: Row): Profile => ({
 	id: r.id,
 	handle: r.handle,
 	name: r.name,
 	avatarColor: r.avatar_color ?? '#8083ff',
-	avatarUrl: r.avatar_url,
+	avatarUrl: mediaHref('avatar', r.handle ?? r.id, r.avatar_url),
 	bio: r.bio,
 	link: r.link,
 	city: r.city,
-	bannerUrl: r.banner_url,
+	bannerUrl: mediaHref('banner', r.handle ?? r.id, r.banner_url),
 	interests: r.interests ?? [],
 	usernameChangedAt: r.username_changed_at,
 	operatingIdentity: rowOperatingIdentity(r),
@@ -1753,7 +1880,7 @@ const toMessageRequest = (r: Row): MessageRequest => ({
 	conversationId: r.conversation_id ?? undefined
 });
 
-const toCoverArt = (value: unknown): EventItem['cover'] => {
+const toCoverArt = (value: unknown, posterRef?: string): EventItem['cover'] => {
 	let raw: Record<string, unknown> = {};
 	if (typeof value === 'string') {
 		try { raw = JSON.parse(value) as Record<string, unknown>; }
@@ -1761,16 +1888,31 @@ const toCoverArt = (value: unknown): EventItem['cover'] => {
 	} else if (value && typeof value === 'object' && !Array.isArray(value)) {
 		raw = value as Record<string, unknown>;
 	}
-	const src = [raw.src, raw.url, raw.imageUrl, raw.image_url, raw.poster].find((candidate) => typeof candidate === 'string' && candidate.trim());
+	const found = [raw.src, raw.url, raw.imageUrl, raw.image_url, raw.poster].find((candidate) => typeof candidate === 'string' && candidate.trim());
+	const src = typeof found === 'string' ? found : undefined;
 	return {
-		...(typeof src === 'string' ? { src } : {}),
+		// Inline posters are served from a cacheable route instead of riding
+		// along (as base64) inside every feed response.
+		...(src ? { src: posterRef ? mediaHref('poster', posterRef, src) ?? src : src } : {}),
 		from: typeof raw.from === 'string' ? raw.from : '#312e81',
 		to: typeof raw.to === 'string' ? raw.to : '#0b1326',
 		icon: typeof raw.icon === 'string' ? raw.icon : 'music'
 	};
 };
 
-const toEvent = (r: Row, organizer: Profile): EventItem => ({
+/**
+ * Map an event row.
+ *
+ * `mode: 'card'` (the default) is what feeds, search and profile lists use: it
+ * drops the heavy detail columns (full description, speakers, agenda, FAQs,
+ * policies) and truncates the teaser, which keeps a catalogue response small
+ * enough to cache and to poll. The event page passes `mode: 'detail'`.
+ */
+const toEvent = (
+	r: Row,
+	organizer: Profile,
+	mode: 'card' | 'profile' | 'detail' = 'card'
+): EventItem => ({
 	id: r.id,
 	slug: r.slug,
 	title: r.title,
@@ -1780,16 +1922,33 @@ const toEvent = (r: Row, organizer: Profile): EventItem => ({
 	endsAt: r.ends_at,
 	venue: r.venue,
 	city: r.city,
-	cover: toCoverArt(r.cover),
-	description: r.description ?? '',
+	cover: toCoverArt(r.cover, r.slug),
+	description: mode === 'detail' ? (r.description ?? '') : (r.description ?? '').slice(0, 280),
 	organizer,
-	speakers: (r.speakers ?? []).map((speaker: Row, index: number) => toEventSpeaker(speaker, index)),
-	agenda: r.agenda ?? [],
+	// `profile` keeps a slim speaker list (id/handle/name/role) because the
+	// profile pages label each event with the viewer's role and filter by it.
+	// Inline speaker images are dropped rather than repeated in every row.
+	speakers:
+		mode === 'detail'
+			? (r.speakers ?? []).map((speaker: Row, index: number) => toEventSpeaker(speaker, index))
+			: mode === 'profile'
+				? (r.speakers ?? []).map((speaker: Row, index: number) => {
+						const mapped = toEventSpeaker(speaker, index);
+						const avatar = mapped.avatarUrl;
+						return {
+							...mapped,
+							bio: undefined,
+							city: null,
+							avatarUrl: typeof avatar === 'string' && avatar.startsWith('data:') ? null : avatar
+						};
+					})
+				: [],
+	agenda: mode === 'detail' ? (r.agenda ?? []) : [],
 	tiers: r.tiers ?? [],
 	feeBearer: r.fee_bearer === 'ABSORB' ? 'ABSORB' : 'PASS',
 	gates: r.gates ?? [],
-	faqs: r.faqs ?? [],
-	policies: r.policies ?? [],
+	faqs: mode === 'detail' ? (r.faqs ?? []) : [],
+	policies: mode === 'detail' ? (r.policies ?? []) : [],
 	featured: !!r.featured,
 	trendingRank: r.trending_rank,
 	viewsToday: r.views_today ?? 0,
@@ -1816,6 +1975,40 @@ const toTicket = (r: Row): Ticket => ({
 	cover: r.cover
 });
 
+const CONVERSATION_SELECT = `${CONVERSATION_COLUMNS}, user:profiles!conversations_user_id_fkey(${PROFILE_CARD_COLUMNS}), peer:profiles!conversations_peer_id_fkey(${PROFILE_CARD_COLUMNS})`;
+
+/** Shared mapping for the inbox list and the single-thread lookup. */
+async function mapConversations(
+	db: SupabaseClient,
+	rows: Row[],
+	userId: string
+): Promise<Conversation[]> {
+	// Resolve the event each chat is about (added in 015_conversation_events).
+	// event_id is read defensively so an un-migrated database still lists threads.
+	const eventIds = [...new Set(rows.map((r: Row) => r.event_id).filter(Boolean))] as string[];
+	const eventRefs = new Map<string, { id: string; slug: string; title: string }>();
+	if (eventIds.length) {
+		const { data: events, error: eventError } = await db
+			.from('events')
+			.select('id,slug,title')
+			.in('id', eventIds);
+		if (!eventError) {
+			for (const ev of events ?? []) eventRefs.set(ev.id, { id: ev.id, slug: ev.slug, title: ev.title });
+		}
+	}
+	return rows.map((r: Row) => ({
+		id: r.id,
+		peer: toProfile(r.user_id === userId ? r.peer : r.user),
+		lastMessage: r.last_message ?? '',
+		lastAt: r.last_at,
+		// Read state is per participant (021): `unread` counts what the row owner
+		// has not opened, `peer_unread` what the other side has not. peer_unread is
+		// read defensively so an un-migrated database lists 0.
+		unread: r.user_id === userId ? (r.unread ?? 0) : (r.peer_unread ?? 0),
+		event: r.event_id ? (eventRefs.get(r.event_id) ?? null) : null
+	}));
+}
+
 export function supabaseSource(db: SupabaseClient): DataSource {
 	return {
 		mode: 'supabase',
@@ -1824,12 +2017,15 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			// getOrganizer(), which deliberately keeps every status visible.
 			// Filters and paging run in Postgres: loading the whole catalogue and
 			// sorting it in JS does not survive a real events calendar.
-			const limit = Math.min(Math.max(Number(filters.limit ?? 120) || 120, 1), 300);
+			const limit = Math.min(Math.max(Number(filters.limit ?? 60) || 60, 1), 200);
 			const offset = Math.max(Number(filters.offset ?? 0) || 0, 0);
+			// A card payload: no full description, agenda, speakers, FAQs or
+			// policies. That alone cuts a feed response by an order of magnitude.
+			const columns = `${EVENT_CARD_COLUMNS}, organizer:profiles(${PROFILE_CARD_COLUMNS})`;
 			const query = () => {
 				let q = db
 					.from('events')
-					.select('*, organizer:profiles(*)')
+					.select(columns)
 					.order('starts_at')
 					.range(offset, offset + limit - 1);
 				if (filters.category && filters.category !== 'all') q = q.eq('category', filters.category);
@@ -1839,37 +2035,56 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				if (filters.query) q = q.ilike('title', `%${filters.query.replace(/[%_]/g, '')}%`);
 				return q;
 			};
-			let { data, error } = await query().eq('status', 'published');
-			if (error && isMissingEventStatusError(error)) {
-				// Database predates migration 022: treat the catalogue as published.
-				({ data, error } = await query());
-			}
-			if (error) throw error;
-			return sortEvents(
-				(data ?? [])
-					.map((r) => toEvent(r, toProfile(r.organizer)))
-					.filter((event) => isPubliclyVisible(event) && matches(event, filters)),
-				filters.sort
-			);
+			// The public catalogue is identical for every visitor and only changes
+			// on an organizer/admin write, so a 30 s memo collapses a burst of
+			// page views (and bot crawls) into a single database read.
+			const key = `events:list:${limit}:${offset}:${JSON.stringify(filters)}`;
+			return cached(key, async () => {
+				let { data, error } = await query().eq('status', 'published');
+				if (error && isMissingEventStatusError(error)) {
+					// Database predates migration 022: treat the catalogue as published.
+					({ data, error } = await query());
+				}
+				if (error) throw error;
+				return sortEvents(
+					(data ?? [])
+						.map((r) => toEvent(r, toProfile(r.organizer)))
+						.filter((event) => isPubliclyVisible(event) && matches(event, filters)),
+					filters.sort
+				);
+			});
 		},
 		async getEvent(slug) {
 			const load = (approvedOnly: boolean) => {
-				let q = db.from('events').select('*, organizer:profiles(*)').eq('slug', slug);
+				let q = db
+					.from('events')
+					.select(`${EVENT_DETAIL_COLUMNS}, organizer:profiles(${PROFILE_FULL_COLUMNS})`)
+					.eq('slug', slug);
 				if (approvedOnly) q = q.eq('status', 'published');
 				return q.maybeSingle();
 			};
-			let { data, error } = await load(true);
-			if (error && isMissingEventStatusError(error)) ({ data, error } = await load(false));
-			if (error) throw error;
-			return data ? toEvent(data, toProfile(data.organizer)) : undefined;
+			// Detail pages are the most-linked URL on the site; a 15 s memo keeps
+			// link previews / crawlers from re-reading rows they already saw.
+			return cached(
+				`events:one:${slug}`,
+				async () => {
+					let { data, error } = await load(true);
+					if (error && isMissingEventStatusError(error)) ({ data, error } = await load(false));
+					if (error) throw error;
+					return data ? toEvent(data, toProfile(data.organizer), 'detail') : undefined;
+				},
+				15_000
+			);
 		},
 		async getTickets(userId) {
 			if (!isUuid(userId)) return [];
 			const { data, error } = await db
 				.from('tickets')
-				.select('*')
+				.select(TICKET_COLUMNS)
 				.eq('owner_id', userId)
-				.order('purchased_at', { ascending: false });
+				.order('purchased_at', { ascending: false })
+				// A wallet does not need the full purchase history of an account.
+				.limit(200);
 			if (error) throw error;
 			return (data ?? []).map(toTicket);
 		},
@@ -1877,58 +2092,67 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (!isUuid(userId)) return [];
 			const { data, error } = await db
 				.from('conversations')
-				.select('*, user:profiles!conversations_user_id_fkey(*), peer:profiles!conversations_peer_id_fkey(*)')
-				.or(`user_id.eq.${userId},peer_id.eq.${userId}`);
+				.select(CONVERSATION_SELECT)
+				.or(`user_id.eq.${userId},peer_id.eq.${userId}`)
+				// Newest thread first, and only the threads a human will scroll.
+				// (The old query returned every conversation the account had ever
+				// had, with both participants' full profile rows.)
+				.order('last_at', { ascending: false })
+				.limit(LIST_PAGE_SIZE);
 			if (error) throw error;
-			const rows = data ?? [];
-			// Resolve the event each chat is about (added in 015_conversation_events).
-			// event_id is read defensively so an un-migrated database still lists threads.
-			const eventIds = [...new Set(rows.map((r: Row) => r.event_id).filter(Boolean))] as string[];
-			const eventRefs = new Map<string, { id: string; slug: string; title: string }>();
-			if (eventIds.length) {
-				const { data: events, error: eventError } = await db
-					.from('events')
-					.select('id,slug,title')
-					.in('id', eventIds);
-				if (!eventError) {
-					for (const ev of events ?? []) eventRefs.set(ev.id, { id: ev.id, slug: ev.slug, title: ev.title });
-				}
-			}
-			return rows.map((r: Row) => ({
-				id: r.id,
-				peer: toProfile(r.user_id === userId ? r.peer : r.user),
-				lastMessage: r.last_message ?? '',
-				lastAt: r.last_at,
-				// Read state is per participant (021): `unread` counts what the row
-				// owner has not opened, `peer_unread` what the other side has not.
-				// peer_unread is read defensively so an un-migrated database lists 0.
-				unread: r.user_id === userId ? (r.unread ?? 0) : (r.peer_unread ?? 0),
-				event: r.event_id ? (eventRefs.get(r.event_id) ?? null) : null
-			}));
+			return mapConversations(db, data ?? [], userId);
 		},
-		async getMessages(conversationId) {
-			if (!isUuid(conversationId)) return [];
+		async getConversation(userId, conversationId) {
+			if (!isUuid(userId) || !isUuid(conversationId)) return undefined;
+			// Single thread by id: opening a chat no longer depends on it being
+			// inside the first page of the inbox list.
 			const { data, error } = await db
-				.from('messages')
-				.select('*')
-				.eq('conversation_id', conversationId)
-				.order('sent_at');
-			if (error) throw error;
-			return (data ?? []).map((r: Row) => ({
-				id: r.id,
-				conversationId: r.conversation_id,
-				senderId: r.sender_id,
-				body: r.body,
-				sentAt: r.sent_at
-			}));
+				.from('conversations')
+				.select(CONVERSATION_SELECT)
+				.eq('id', conversationId)
+				.or(`user_id.eq.${userId},peer_id.eq.${userId}`)
+				.maybeSingle();
+			if (error || !data) return undefined;
+			const [conversation] = await mapConversations(db, [data], userId);
+			return conversation;
 		},
-		async getNotifications(userId) {
+		async getMessages(conversationId, options = {}) {
+			if (!isUuid(conversationId)) return [];
+			const limit = Math.min(Math.max(Number(options.limit ?? LIST_PAGE_SIZE) || LIST_PAGE_SIZE, 1), 100);
+			// Fetch the newest page, then present it in chronological order. The
+			// previous query loaded the entire thread on every open and on every
+			// poll; `before` lets the UI page backwards for older history.
+			let q = db
+				.from('messages')
+				.select(MESSAGE_COLUMNS)
+				.eq('conversation_id', conversationId)
+				.order('sent_at', { ascending: false })
+				.limit(limit);
+			if (options.before) q = q.lt('sent_at', options.before);
+			const { data, error } = await q;
+			if (error) throw error;
+			return (data ?? [])
+				.map((r: Row) => ({
+					id: r.id,
+					conversationId: r.conversation_id,
+					senderId: r.sender_id,
+					body: r.body,
+					sentAt: r.sent_at
+				}))
+				.reverse();
+		},
+		async getNotifications(userId, options = {}) {
 			if (!isUuid(userId)) return [];
+			const limit = Math.min(Math.max(Number(options.limit ?? LIST_PAGE_SIZE) || LIST_PAGE_SIZE, 1), 100);
+			const offset = Math.max(Number(options.offset ?? 0) || 0, 0);
+			// Paged and explicit: the hub used to download every notification the
+			// account had ever received, on the server and again on every poll.
 			const { data, error } = await db
 				.from('notifications')
-				.select('*')
+				.select(NOTIFICATION_COLUMNS)
 				.eq('user_id', userId)
-				.order('at', { ascending: false });
+				.order('at', { ascending: false })
+				.range(offset, offset + limit - 1);
 			if (error) throw error;
 			return (data ?? []).map((r: Row) => ({
 				id: r.id,
@@ -1940,8 +2164,80 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				read: !!r.read
 			}));
 		},
+		async getBadgeCounts(userId) {
+			if (!isUuid(userId)) return { unread: 0, inboxUnread: 0, requests: 0 };
+			// Preferred path: one round trip (migration 036). Falls through to the
+			// three-query version when the function is not installed yet.
+			if (typeof db.rpc === 'function') {
+				try {
+					const { data, error } = await db.rpc('inbox_badge_counts');
+					const row = (Array.isArray(data) ? data[0] : data) as Row | null;
+					if (!error && row) {
+						return {
+							unread: Number(row.unread ?? 0),
+							inboxUnread: Number(row.inbox_unread ?? 0),
+							requests: Number(row.requests ?? 0)
+						};
+					}
+				} catch {
+					/* fall back below */
+				}
+			}
+			// Fallback: two COUNT-only queries and a two-integer scan (bounded,
+			// no profiles, no message bodies).
+			// The previous implementation fetched the entire notification stream
+			// and every conversation (with both participants' profiles) just to
+			// add up two numbers, on every single navigation.
+			const unreadQuery = db
+				.from('notifications')
+				.select('id', { count: 'exact', head: true })
+				.eq('user_id', userId)
+				.eq('read', false);
+			const requestsQuery = db
+				.from('message_requests')
+				.select('id', { count: 'exact', head: true })
+				.eq('organizer_id', userId)
+				.eq('status', 'pending');
+			const conversationCounts = async () => {
+				const { data, error } = await db
+					.from('conversations')
+					.select('user_id,peer_unread,unread')
+					.or(`user_id.eq.${userId},peer_id.eq.${userId}`);
+				if (error) throw error;
+				return (data ?? []).reduce(
+					(sum: number, row: Row) =>
+						sum + Number(row.user_id === userId ? (row.unread ?? 0) : (row.peer_unread ?? 0)),
+					0
+				);
+			};
+			const [notifications, conversations, requests] = await Promise.all([
+				unreadQuery,
+				conversationCounts().catch(async () => {
+					// Database predates 021 (peer_unread): fall back to the owner column.
+					const { data } = await db
+						.from('conversations')
+						.select('user_id,unread')
+						.or(`user_id.eq.${userId},peer_id.eq.${userId}`);
+					return (data ?? []).reduce(
+						(sum: number, row: Row) => sum + (row.user_id === userId ? (row.unread ?? 0) : 0),
+						0
+					);
+				}),
+				requestsQuery
+			]);
+			if (notifications.error) throw notifications.error;
+			return {
+				unread: notifications.count ?? 0,
+				inboxUnread: conversations + (requests.count ?? 0),
+				requests: requests.count ?? 0
+			};
+		},
 		async getProfile(handle) {
-			const { data, error } = await db.from('profiles').select('*').eq('handle', handle).maybeSingle();
+			const { data, error } = await db
+				.from('profiles')
+				.select(PROFILE_FULL_COLUMNS)
+				.eq('handle', handle)
+				.maybeSingle();
 			if (error) throw error;
 			return data ? toProfile(data) : undefined;
 		},
@@ -1950,13 +2246,23 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			const prefix = raw.replace(/^@+/, '').trim().toLowerCase();
 			if (!prefix && raw !== '@') return [];
 			if (!prefix && raw === '@') {
-				const { data, error } = await db.from('profiles').select('*').order('handle').limit(30);
+				const { data, error } = await db
+					.from('profiles')
+					.select(PROFILE_CARD_COLUMNS)
+					.order('handle')
+					.limit(20);
 				if (error) throw error;
 				return (data ?? []).map(toProfile);
 			}
 			const safe = prefix.replace(/[^\p{L}\p{N}_ -]/gu, '').slice(0, 80);
 			if (!safe) return [];
-			const { data, error } = await db.from('profiles').select('*').or(`handle.ilike.%${safe}%,name.ilike.%${safe}%,city.ilike.%${safe}%`).order('handle').limit(30);
+			// Card columns only: a typeahead never needs bios, banners or links.
+			const { data, error } = await db
+				.from('profiles')
+				.select(PROFILE_CARD_COLUMNS)
+				.or(`handle.ilike.%${safe}%,name.ilike.%${safe}%,city.ilike.%${safe}%`)
+				.order('handle')
+				.limit(20);
 			if (error) throw error;
 			return (data ?? []).map(toProfile);
 		},
@@ -1967,10 +2273,12 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 		},
 		async getConnections(profileId, kind) {
 			const column = kind === 'following' ? 'following_id' : 'follower_id';
-			const { data, error } = await db.from('profile_follows')
-				.select(`profile:profiles!profile_follows_${column}_fkey(*)`)
+			const { data, error } = await db
+				.from('profile_follows')
+				.select(`profile:profiles!profile_follows_${column}_fkey(${PROFILE_CARD_COLUMNS})`)
 				.eq(kind === 'following' ? 'follower_id' : 'following_id', profileId)
-				.order('created_at', { ascending: false });
+				.order('created_at', { ascending: false })
+				.limit(100);
 			if (error) throw error;
 			return (data ?? []).map((r) => toProfile(r.profile));
 		},
@@ -1984,22 +2292,59 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 
 		async getProfileEvents(profileId) {
 			if (!isUuid(profileId)) return [];
-			const load = (approvedOnly: boolean) => {
-				let q = db.from('events').select('*, organizer:profiles(*)').order('starts_at');
-				if (approvedOnly) q = q.eq('status', 'published');
-				return q;
+			// Scoped in Postgres. The previous version selected EVERY event in the
+			// catalogue (with the organizer join) and filtered by organizer/speaker
+			// in JavaScript — the largest single query in the app.
+			const columns = `${EVENT_CARD_COLUMNS},speakers,description, organizer:profiles(${PROFILE_CARD_COLUMNS})`;
+			const load = async (approvedOnly: boolean) => {
+				let organized = db
+					.from('events')
+					.select(columns)
+					.eq('organizer_id', profileId)
+					.order('starts_at')
+					.limit(100);
+				let speaking = db
+					.from('events')
+					.select(columns)
+					.contains('speakers', [{ id: profileId }])
+					.order('starts_at')
+					.limit(100);
+				if (approvedOnly) {
+					organized = organized.eq('status', 'published');
+					speaking = speaking.eq('status', 'published');
+				}
+				const [own, asSpeaker] = await Promise.all([organized, speaking]);
+				return { own, asSpeaker };
 			};
-			let { data, error } = await load(true);
-			if (error && isMissingEventStatusError(error)) ({ data, error } = await load(false));
-			if (error) throw error;
-			return sortProfileEvents(
-				(data ?? [])
-					.map((row) => toEvent(row, toProfile(row.organizer)))
-					.filter((event) => isPubliclyAccessible(event) && (event.organizer.id === profileId || event.speakers.some((speaker) =>
+			const collect = async (approvedOnly: boolean) => {
+				let result = await load(approvedOnly);
+				if (result.own.error && isMissingEventStatusError(result.own.error)) {
+					result = await load(false);
+				}
+				// `.contains` needs speakers to be jsonb; on an older database treat
+				// the speaker half as empty rather than failing the whole page.
+				const speakerRows = result.asSpeaker.error ? [] : (result.asSpeaker.data ?? []);
+				return [...(result.own.data ?? []), ...speakerRows];
+			};
+			const rows = await collect(true);
+			const byId = new Map<string, Row>();
+			for (const row of rows) byId.set(String(row.id), row);
+			const qualifies = (row: Row) => {
+				if (row.organizer?.id === profileId) return true;
+				return ((row.speakers ?? []) as Row[]).some(
+					(speaker) =>
 						speaker.id === profileId &&
 						!speaker.displayOnly &&
-						(speaker.invited ? speaker.inviteStatus === 'accepted' : speaker.inviteStatus !== 'declined')
-					)))
+						(speaker.invited
+							? speaker.inviteStatus === 'accepted'
+							: speaker.inviteStatus !== 'declined')
+				);
+			};
+			return sortProfileEvents(
+				[...byId.values()]
+					.filter(qualifies)
+					.map((row) => toEvent(row, toProfile(row.organizer), 'profile'))
+					.filter(isPubliclyAccessible)
 			);
 		},
 		async respondToSpeakerInvite(_inviteeId, eventSlug, accept) {
@@ -2022,7 +2367,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (eventError) throw eventError;
 			if (!event) throw new Error('Event not found');
 			if (event.organizer_id === requesterId) throw new Error('You cannot message yourself');
-			const requestSelect = '*, requester:profiles!message_requests_requester_id_fkey(*), organizer:profiles!message_requests_organizer_id_fkey(*), event:events!message_requests_event_id_fkey(slug,title)';
+			const requestSelect = MESSAGE_REQUEST_COLUMNS;
 			const { data: existing, error: existingError } = await db
 				.from('message_requests')
 				.select(requestSelect)
@@ -2046,10 +2391,11 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (!isUuid(organizerId)) return [];
 			const { data, error } = await db
 				.from('message_requests')
-				.select('*, requester:profiles!message_requests_requester_id_fkey(*), organizer:profiles!message_requests_organizer_id_fkey(*), event:events!message_requests_event_id_fkey(slug,title)')
+				.select(MESSAGE_REQUEST_COLUMNS)
 				.eq('organizer_id', organizerId)
 				.eq('status', 'pending')
-				.order('created_at', { ascending: false });
+				.order('created_at', { ascending: false })
+				.limit(LIST_PAGE_SIZE);
 			if (error) throw error;
 			return (data ?? []).map(toMessageRequest);
 		},
@@ -2057,7 +2403,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (!isUuid(requesterId) || !isUuid(eventId)) return undefined;
 			const { data, error } = await db
 				.from('message_requests')
-				.select('*, requester:profiles!message_requests_requester_id_fkey(*), organizer:profiles!message_requests_organizer_id_fkey(*), event:events!message_requests_event_id_fkey(slug,title)')
+				.select(MESSAGE_REQUEST_COLUMNS)
 				.eq('requester_id', requesterId)
 				.eq('event_id', eventId)
 				.order('created_at', { ascending: false })
@@ -2074,7 +2420,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (responseError) throw responseError;
 			const { data, error } = await db
 				.from('message_requests')
-				.select('*, requester:profiles!message_requests_requester_id_fkey(*), organizer:profiles!message_requests_organizer_id_fkey(*), event:events!message_requests_event_id_fkey(slug,title)')
+				.select(MESSAGE_REQUEST_COLUMNS)
 				.eq('id', requestId)
 				.eq('organizer_id', organizerId)
 				.single();
@@ -2203,7 +2549,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (!isUuid(conversationId) || !isUuid(readerId)) return;
 			const { data: row, error } = await db
 				.from('conversations')
-				.select('*')
+				.select('user_id,peer_id,unread,peer_unread')
 				.eq('id', conversationId)
 				.maybeSingle();
 			if (error || !row) return;
@@ -2238,17 +2584,21 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				return emptyOrganizerPayload();
 			const { data, error } = await db
 				.from('events')
-				.select('*, organizer:profiles(*)')
-				.eq('organizer_id', userId);
+				// Organizers edit their events from this payload, so it keeps the
+				// detail columns — but never `select('*')`, and never unbounded.
+				.select(`${EVENT_DETAIL_COLUMNS}, organizer:profiles(${PROFILE_FULL_COLUMNS})`)
+				.eq('organizer_id', userId)
+				.order('starts_at', { ascending: false })
+				.limit(100);
 			if (error) throw error;
-			const evs = (data ?? []).map((r) => toEvent(r, toProfile(r.organizer)));
+			const evs = (data ?? []).map((r) => toEvent(r, toProfile(r.organizer), 'detail'));
 			const ids = evs.map((e) => e.id);
 			if (ids.length === 0)
 				return emptyOrganizerPayload();
 			const [t, o, c, promosByEvent] = await Promise.all([
-				db.from('tickets').select('*').in('event_id', ids),
-				db.from('orders').select('*').in('event_id', ids),
-				db.from('checkins').select('*').in('event_id', ids),
+				db.from('tickets').select(TICKET_COLUMNS).in('event_id', ids),
+				db.from('orders').select(ORDER_COLUMNS).in('event_id', ids),
+				db.from('checkins').select(CHECKIN_COLUMNS).in('event_id', ids),
 				fetchEventPromos(db, ids)
 			]);
 			for (const event of evs) event.promos = promosByEvent.get(event.id) ?? [];
@@ -2263,23 +2613,31 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (!isUuid(eventId)) return undefined;
 			const { data } = await db
 				.from('events')
-				.select('*, organizer:profiles(*)')
+				.select(`${EVENT_DETAIL_COLUMNS}, organizer:profiles(${PROFILE_FULL_COLUMNS})`)
 				.eq('id', eventId)
 				.maybeSingle();
 			if (!data) return undefined;
-			const event = toEvent(data, toProfile(data.organizer));
+			const event = toEvent(data, toProfile(data.organizer), 'detail');
 			event.promos = (await fetchEventPromos(db, [eventId])).get(eventId) ?? [];
 			return event;
 		},
 		async getEventTickets(eventId) {
 			if (!isUuid(eventId)) return [];
-			const { data, error } = await db.from('tickets').select('*').eq('event_id', eventId);
+			const { data, error } = await db
+				.from('tickets')
+				.select(TICKET_COLUMNS)
+				.eq('event_id', eventId)
+				.limit(5000);
 			if (error) throw error;
 			return (data ?? []).map(toTicket);
 		},
 		async getEventOrders(eventId) {
 			if (!isUuid(eventId)) return [];
-			const { data, error } = await db.from('orders').select('*').eq('event_id', eventId);
+			const { data, error } = await db
+				.from('orders')
+				.select(ORDER_COLUMNS)
+				.eq('event_id', eventId)
+				.limit(5000);
 			if (error) throw error;
 			return (data ?? []).map(toOrder);
 		},
@@ -2287,9 +2645,10 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			if (!isUuid(eventId)) return [];
 			const { data, error } = await db
 				.from('checkins')
-				.select('*')
+				.select(CHECKIN_COLUMNS)
 				.eq('event_id', eventId)
-				.order('at', { ascending: false });
+				.order('at', { ascending: false })
+				.limit(2000);
 			if (error) throw error;
 			return (data ?? []).map(toCheckin);
 		},
@@ -2344,7 +2703,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			let result = await db
 				.from('events')
 				.insert(submission)
-				.select('*, organizer:profiles(*)')
+				.select(`${EVENT_DETAIL_COLUMNS}, organizer:profiles(${PROFILE_FULL_COLUMNS})`)
 				.single();
 			if (result.error && isMissingEventStatusError(result.error)) {
 				// Pre-022 database: no review columns, organizer submissions go live.
@@ -2352,12 +2711,13 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				result = await db
 					.from('events')
 					.insert(legacySubmission)
-					.select('*, organizer:profiles(*)')
+					.select(`${EVENT_DETAIL_COLUMNS}, organizer:profiles(${PROFILE_FULL_COLUMNS})`)
 					.single();
 			}
 			const { data, error } = result;
 			if (error) throw error;
-			const event = toEvent(data, toProfile(data.organizer));
+			const event = toEvent(data, toProfile(data.organizer), 'detail');
+			invalidatePublicCache();
 			try {
 				event.promos = await insertEventPromos(
 					db,
@@ -2507,10 +2867,11 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 				.update(patch)
 				.eq('id', eventId)
 				.eq('organizer_id', userId)
-				.select('*, organizer:profiles(*)')
+				.select(`${EVENT_DETAIL_COLUMNS}, organizer:profiles(${PROFILE_FULL_COLUMNS})`)
 				.single();
 			if (error) throw error;
-			const event = toEvent(data, toProfile(data.organizer));
+			const event = toEvent(data, toProfile(data.organizer), 'detail');
+			invalidatePublicCache();
 			event.promos =
 				updates.promos !== undefined
 					? await replaceEventPromos(db, eventId, normalizeEventPromos(updates.promos))
@@ -2537,6 +2898,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 			}
 			const { error } = await db.from('events').delete().eq('id', eventId).eq('organizer_id', userId);
 			if (error) throw error;
+			invalidatePublicCache();
 		},
 		async broadcastEvent(userId, eventId, message) {
 			if (!isUuid(userId) || !isUuid(eventId)) throw new Error('Invalid event ID');
@@ -2617,14 +2979,14 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 
 			let { data: recipient, error: recipientError } = await db
 				.from('profiles')
-				.select('*')
+				.select(PROFILE_CARD_COLUMNS)
 				.ilike('handle', cleaned)
 				.maybeSingle();
 			if (recipientError) throw recipientError;
 			if (!recipient) {
 				const byName = await db
 					.from('profiles')
-					.select('*')
+					.select(PROFILE_CARD_COLUMNS)
 					.ilike('name', cleaned)
 					.maybeSingle();
 				if (byName.error) throw byName.error;
@@ -2635,7 +2997,7 @@ export function supabaseSource(db: SupabaseClient): DataSource {
 
 			const { data: existing, error: fetchError } = await db
 				.from('tickets')
-				.select('*')
+				.select(TICKET_COLUMNS)
 				.eq('id', ticketId)
 				.eq('owner_id', userId)
 				.maybeSingle();
