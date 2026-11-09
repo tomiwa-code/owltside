@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { CircleCheck, Flag, ShieldAlert } from '@lucide/svelte';
 	import Sheet from '$components/Sheet.svelte';
+	import Turnstile from '$components/Turnstile.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import {
 		REPORT_CATEGORIES,
@@ -36,6 +37,7 @@
 	let error = $state('');
 	let submitting = $state(false);
 	let submitted = $state(false);
+	let captchaToken = $state('');
 
 	const MIN_DETAILS = 10;
 
@@ -45,6 +47,7 @@
 		error = '';
 		submitting = false;
 		submitted = false;
+		captchaToken = '';
 	}
 
 	function dismiss() {
@@ -69,7 +72,7 @@
 			const response = await fetch('/api/reports', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ targetType, targetId, targetLabel, category, details })
+				body: JSON.stringify({ targetType, targetId, targetLabel, category, details, captchaToken })
 			});
 			const payload = (await response.json().catch(() => ({}))) as { error?: string };
 			if (!response.ok) {
@@ -155,6 +158,9 @@
 			{#if error}
 				<p class="rounded-lg bg-error/10 border border-error/30 px-3 py-2 text-body-sm text-error" role="alert">{error}</p>
 			{/if}
+
+			<!-- Bot protection: renders only when PUBLIC_TURNSTILE_SITE_KEY is set. -->
+			<Turnstile onToken={(token) => (captchaToken = token)} />
 
 			<div class="flex flex-col gap-2 pt-1">
 				<button

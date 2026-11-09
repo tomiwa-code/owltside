@@ -1,0 +1,28 @@
+# Owltside — crawl the public event pages, leave the private app alone.
+# The public feeds are cacheable; the endpoints below are per-user or costly to
+# render, so crawlers (and crude scrapers that read this file) are kept out.
+User-agent: *
+Allow: /
+Allow: /explore
+Allow: /events/
+Allow: /users/
+
+Disallow: /api/
+Disallow: /auth/
+Disallow: /inbox
+Disallow: /notifications
+Disallow: /tickets
+Disallow: /organizer
+Disallow: /settings
+Disallow: /profile
+Disallow: /checkout
+
+# Aggressive SEO crawlers that ignore cache-control add no value here.
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: MJ12bot
+Disallow: /

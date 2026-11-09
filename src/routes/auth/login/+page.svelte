@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import ThemeToggle from '$components/ThemeToggle.svelte';
+	import Turnstile from '$components/Turnstile.svelte';
 	import {
 		AtSign,
 		ArrowLeft,
@@ -163,6 +164,9 @@
 							<span>Send Login Code</span>
 						{/if}
 					</button>
+				
+					
+					<Turnstile />
 				</form>
 
 				<div class="relative flex items-center justify-center">
@@ -303,7 +307,10 @@
 					<span>Send Login Code</span>
 				{/if}
 			</button>
-		</form>
+		
+					
+					<Turnstile />
+				</form>
 
 		<div class="relative flex items-center justify-center my-space-md">
 			<div class="w-full h-[1px] bg-[#272831]"></div>

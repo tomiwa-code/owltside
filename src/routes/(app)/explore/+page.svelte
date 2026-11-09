@@ -66,7 +66,7 @@
 			const res = await fetch('/api/events');
 			return res.json();
 		},
-		{ staleTime: 60_000 },
+		{ staleTime: 300_000, persist: { maxAge: 6 * 60 * 60 * 1000 } },
 		data.allEvents
 	);
 	const countFor = (id: string) =>

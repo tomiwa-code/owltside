@@ -1,5 +1,7 @@
 import { safeAuthNext, startGoogleSignIn } from '$lib/server/oauth';
 import { createSupabase } from '$lib/server/supabase';
+import { clientKey } from '$lib/server/rate-limit';
+import { CAPTCHA_FAILURE_MESSAGE, verifyCaptcha } from '$lib/server/captcha';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
 
@@ -9,6 +11,10 @@ export const actions: Actions = {
 		const email = String(form.get('email') ?? '').trim().toLowerCase();
 		const next = safeAuthNext(String(form.get('next') ?? '') || url.searchParams.get('next'));
 		if (!/^\S+@\S+\.\S+$/.test(email)) return fail(400, { error: 'Enter a valid email address', email });
+
+		// One-time-password endpoints are prime email-bomb / enumeration targets.
+		const captcha = await verifyCaptcha(form.get('captchaToken'), clientKey(request, 'unknown'));
+		if (!captcha.ok) return fail(403, { error: CAPTCHA_FAILURE_MESSAGE, email });
 
 		const db = createSupabase(cookies);
 		if (db) {

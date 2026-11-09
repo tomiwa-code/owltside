@@ -203,9 +203,12 @@ describe('Supabase read state is per participant', () => {
 	};
 
 	it('reports the signed-in participant’s own counter', async () => {
+		// The query now pages: `.select(...).or(...).order('last_at').limit(50)`.
 		const chain = {
 			select: vi.fn().mockReturnThis(),
-			or: vi.fn().mockResolvedValue({ data: [row], error: null })
+			or: vi.fn().mockReturnThis(),
+			order: vi.fn().mockReturnThis(),
+			limit: vi.fn().mockResolvedValue({ data: [row], error: null })
 		};
 		const from = vi.fn(() => chain);
 		const source = supabaseSource({ from } as unknown as SupabaseClient);

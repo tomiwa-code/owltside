@@ -31,6 +31,7 @@
 	import Stepper from '$components/Stepper.svelte';
 	import SpeakerInviteNotice from '$components/SpeakerInviteNotice.svelte';
 	import ReportSheet from '$components/ReportSheet.svelte';
+	import Turnstile from '$components/Turnstile.svelte';
 	import { bookmarks, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { countdownLabel, fmtDate, fmtDateFull, fmtTime } from '$lib/utils/dates';
@@ -71,6 +72,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 	let messageDraft = $state('');
 	let messageError = $state('');
 	let messageSending = $state(false);
+	let captchaToken = $state('');
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
@@ -160,7 +162,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 			const response = await fetch('/api/message-requests', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ eventSlug: event.slug, body })
+				body: JSON.stringify({ eventSlug: event.slug, body, captchaToken })
 			});
 			const result = await response.json();
 			if (!response.ok) throw new Error(result.error ?? 'Your request could not be sent');
@@ -1047,6 +1049,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 				<label for="organizer-message" class="text-label-badge uppercase tracking-wider text-on-surface-variant">Your message</label>
 				<textarea id="organizer-message" bind:value={messageDraft} maxlength="2000" rows="5" placeholder="Introduce yourself and tell the organizer what you’d like to discuss…" class="w-full resize-y min-h-28 rounded-xl border border-surface-glass-border bg-surface-base p-3.5 text-body-md text-on-surface placeholder:text-outline-variant focus:outline-none focus:border-primary/50"></textarea>
 				<div class="flex items-center justify-between gap-3 text-label-badge text-on-surface-variant"><span>Up to 2,000 characters</span><span>{messageDraft.length}/2000</span></div>
+				<Turnstile onToken={(token) => (captchaToken = token)} />
 				{#if messageError}<p role="alert" class="rounded-lg border border-error/30 bg-error/10 px-3 py-2 text-body-sm text-error">{messageError}</p>{/if}
 				<div class="flex items-center justify-end gap-2 pt-1">
 					<button type="button" class="h-10 px-4 rounded-full border border-surface-glass-border bg-surface-container-high text-body-sm font-semibold text-on-surface" onclick={() => (showMessageDialog = false)}>Cancel</button>

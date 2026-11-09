@@ -35,17 +35,20 @@
 	const suggested = ['Yes, 8:30 AM confirmed', 'Need 15 min buffer', 'Let me check with venue team'];
 
 	const key = `messages:${conv.id}`;
+	// Realtime INSERTs below keep the thread live; polling is only a safety net
+	// for a dropped socket, so it runs every minute instead of every 4 seconds
+	// (which re-downloaded the entire thread each time).
 	const messages = useQuery<Message[]>(
 		key,
 		async () => (await fetch(`/api/conversations/${conv.id}/messages`)).json(),
-		{ staleTime: 4_000, refetchInterval: 4_000 },
+		{ staleTime: 45_000, refetchInterval: 60_000 },
 		data.messages
 	);
 
 	const conversations = useQuery<Conversation[]>(
 		'conversations:mine',
 		async () => (await fetch('/api/conversations')).json(),
-		{ staleTime: 15_000, refetchInterval: 20_000 },
+		{ staleTime: 60_000, refetchInterval: 300_000 },
 		data.conversations
 	);
 
