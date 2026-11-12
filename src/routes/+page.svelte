@@ -38,7 +38,7 @@
 
 <main class="min-h-dvh w-full flex items-center justify-center bg-surface-base px-gutter pt-safe pb-safe">
 	<div class="w-full max-w-[13rem] flex flex-col items-center text-center">
-		<img src="/logo-stacked.png" alt="Owltside" class="w-28 max-h-28 object-contain" />
+		<img src="/logo-stacked.png" alt="Owltside" class="h-32 w-auto object-contain" />
 		<p class="font-body text-body-sm text-on-surface-variant mt-3 max-w-[12rem] leading-snug">
 			Everything happening around you.
 		</p>

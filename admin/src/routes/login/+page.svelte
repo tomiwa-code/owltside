@@ -348,7 +348,7 @@
 				</div>
 
 				<div class="mt-7 flex items-center gap-2.5">
-					<img src="/logo.png" alt="Owltside" class="h-[20px] w-auto" />
+					<img src="/logo.png" alt="Owltside" class="h-[24px] w-auto" />
 					<span class="chip ml-1 !h-[18px] !text-[8px]">Admin</span>
 				</div>
 

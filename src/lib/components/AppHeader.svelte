@@ -254,7 +254,7 @@
 </script>
 <header class="fixed top-0 inset-x-0 z-50 border-b border-surface-glass-border bg-surface/90 backdrop-blur-xl pt-safe">
 	<div class="mx-auto max-w-[1400px] h-16 px-gutter md:px-6 xl:px-10 flex items-center gap-3 md:gap-5">
-		<a href="/home" aria-label="Owltside home" class="shrink-0"><img src="/logo.png" alt="Owltside logo" class="h-5 md:h-6 w-auto" /></a>
+		<a href="/home" aria-label="Owltside home" class="shrink-0"><img src="/logo.png" alt="Owltside logo" class="h-6 md:h-7 w-auto" /></a>
 		<nav class="hidden md:flex items-center gap-1" aria-label="Primary">
 			{#each nav as item}
 				{#if item.href !== '/organizer' || page.data.operatingIdentity === 'organizer'}
