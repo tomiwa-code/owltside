@@ -2,11 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach } from 'vitest';
 
-const source = vi.hoisted(() => ({ getOrganizer: vi.fn() }));
-vi.mock('$lib/server/supabase', () => ({ createSupabase: () => null }));
-vi.mock('$lib/server/datasource', () => ({ getSource: () => source }));
+/** The organizer ledger the scan load reads through `/api/organizer`. */
+const ledger = vi.hoisted(() => ({ payload: { events: [] as unknown[] } }));
 
-import { load } from '../../src/routes/(app)/organizer/scan/+page.server';
+import { load } from '../../src/routes/(app)/organizer/scan/+page';
 import ScanPage from '../../src/routes/(app)/organizer/scan/+page.svelte';
 import OrganizerPage from '../../src/routes/(app)/organizer/+page.svelte';
 import type { EventItem } from '$lib/types';
@@ -49,11 +48,12 @@ const gatedEvent = {
 
 type ScanLoad = { organizer: { events: EventItem[] }; initialEventId: string };
 
-const loadPage = () =>
+const fetchLedger = vi.fn(async () => new Response(JSON.stringify(ledger.payload)));
+
+const loadPage = (query = '') =>
 	load({
-		locals: { session: { userId: 'u-ada', role: 'organizer' } },
-		cookies: { get: () => '' },
-		url: new URL('http://localhost/organizer/scan')
+		fetch: fetchLedger,
+		url: new URL(`http://localhost/organizer/scan${query}`)
 	} as never) as Promise<ScanLoad>;
 
 /** Layout data every (app) route receives. */
@@ -75,7 +75,7 @@ afterEach(() => {
 
 describe('gate scanner readiness', () => {
 	it('stays open instead of redirecting when no event exists yet', async () => {
-		source.getOrganizer.mockResolvedValue(payloadFor());
+		ledger.payload = payloadFor();
 
 		const result = await loadPage();
 
@@ -85,16 +85,10 @@ describe('gate scanner readiness', () => {
 
 	it('prefers the requested event, then an event that has a gate configured', async () => {
 		const withoutGate = { id: 'e-plain', title: 'Plain Event', gates: [] } as unknown as EventItem;
-		source.getOrganizer.mockResolvedValue(payloadFor([withoutGate, gatedEvent]));
+		ledger.payload = payloadFor([withoutGate, gatedEvent]);
 
 		expect((await loadPage()).initialEventId).toBe('e-rooftop');
-
-		const requested = (await load({
-			locals: { session: { userId: 'u-ada', role: 'organizer' } },
-			cookies: { get: () => '' },
-			url: new URL('http://localhost/organizer/scan?eventId=e-plain')
-		} as never)) as ScanLoad;
-		expect(requested.initialEventId).toBe('e-plain');
+		expect((await loadPage('?eventId=e-plain')).initialEventId).toBe('e-plain');
 	});
 
 	it('opens the security-token step when there is no event at all', () => {

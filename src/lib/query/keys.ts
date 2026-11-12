@@ -16,8 +16,10 @@ export const queryKeys = {
 	/** Explore: the whole public catalogue (bounded pages, up to 200). */
 	eventsCatalogue: ['events:catalogue'] as const,
 	event: (slug: string) => [`events:${slug}`] as const,
+	eventMessageRequest: (slug: string) => [`events:${slug}:message-request`] as const,
 
 	conversations: ['conversations:mine'] as const,
+	conversation: (conversationId: string) => [`conversations:${conversationId}`] as const,
 	messages: (conversationId: string) => [`messages:${conversationId}`] as const,
 	messageRequests: ['message-requests:mine'] as const,
 
@@ -30,7 +32,10 @@ export const queryKeys = {
 	profile: ['profile:me'] as const,
 
 	organizer: ['organizer:me'] as const,
+	organizerEvent: (eventId: string) => [`organizer:event:${eventId}`] as const,
 	approvals: ['approvals:mine'] as const,
+
+	user: (handle: string) => [`users:${handle.toLowerCase()}`] as const,
 
 	connections: (profileId: string, kind: string) => [`connections:${profileId}:${kind}`] as const,
 	profileSearch: (query: string) => [`profiles:search:${query.toLowerCase()}`] as const
@@ -49,7 +54,8 @@ export const keyFamilies = {
 	organizer: 'organizer:',
 	approvals: 'approvals:',
 	connections: 'connections:',
-	profiles: 'profiles:'
+	profiles: 'profiles:',
+	users: 'users:'
 } as const;
 
 /** Normalise the string form used by callers/tests into TanStack's array form. */

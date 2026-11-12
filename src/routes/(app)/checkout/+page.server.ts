@@ -13,43 +13,17 @@ import { computeTotals } from '$lib/server/promos';
 import { hasEventEnded } from '$lib/utils/event-status';
 import { normalizePromoCode } from '$lib/utils/promo';
 
-export const load: PageServerLoad = async ({ url, locals, cookies }) => {
-	const slug = url.searchParams.get('event');
-	if (!slug) error(400, 'Missing event');
-	/* Buying requires an account: unregistered visitors are asked to sign
-	   in and returned to this exact checkout afterwards. */
-	if (!locals.session?.userId) {
-		redirect(303, `/auth/login?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`);
-	}
-	const source = getSource(createSupabase(cookies));
-	const event = await source.getEvent(slug);
-	if (!event) error(404, 'Event not found');
-	if (hasEventEnded(event) || event.status === 'closed') {
-		redirect(303, `/events/${encodeURIComponent(slug)}`);
-	}
-	const tierId = url.searchParams.get('tier') ?? event.tiers.find((t) => t.capacity - t.sold > 0)?.id;
-	const tier = event.tiers.find((t) => t.id === tierId) ?? event.tiers[0];
-	const qty = Math.max(1, Math.min(6, Number(url.searchParams.get('qty') ?? 1)));
-	const promoParam = normalizePromoCode(url.searchParams.get('promo'));
-	const promo = promoParam ? await source.resolvePromoCode(slug, promoParam) : null;
-	return {
-		event,
-		tierId: tier.id,
-		qty,
-		promo,
-		/* Stable per-render key so a double submit resumes the same order
-		   instead of opening a second chargeable transaction. */
-		checkoutKey: crypto.randomUUID(),
-		paystack: paystackConfigured(),
-		paystackPublicKey: resolvePaystackPublicKey() || null,
-		demoMode: locals.demoMode,
-		holder: {
-			name: locals.session?.name ?? 'Guest Explorer',
-			email: locals.session?.email ?? 'guest@owltside.app',
-			authenticated: Boolean(locals.session?.userId)
-		}
-	};
-};
+/**
+ * Server-only checkout facts: whether the gateway is configured and which
+ * public key the browser should use. Everything else (event, tier, quantity,
+ * promo) is read cache-first by the universal `+page.ts` load, whose result is
+ * merged into the same `data`.
+ */
+export const load: PageServerLoad = async ({ locals }) => ({
+	paystack: paystackConfigured(),
+	paystackPublicKey: resolvePaystackPublicKey() || null,
+	demoMode: locals.demoMode
+});
 
 export const actions: Actions = {
 	pay: async ({ request, locals, cookies, url }) => {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import FollowButton from '$components/FollowButton.svelte';
+	import { onMount } from 'svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
@@ -33,6 +34,8 @@
 	import ReportSheet from '$components/ReportSheet.svelte';
 	import Turnstile from '$components/Turnstile.svelte';
 	import { bookmarks, toggleIn } from '$lib/state/prefs.svelte';
+	import { queryClient } from '$lib/query/cache';
+	import { queryKeys } from '$lib/query/keys';
 	import { toast } from '$lib/state/toast.svelte';
 	import { countdownLabel, fmtDate, fmtDateFull, fmtTime } from '$lib/utils/dates';
 	import { hasEventEnded } from '$lib/utils/event-status';
@@ -47,6 +50,14 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 
 	let { data } = $props();
 	const event = $derived(data.event);
+	// View counting moved out of the server load so the page can be served
+	// from the query cache on a tab switch without re-recording a view.
+	onMount(() => {
+		void fetch(`/api/events/${encodeURIComponent(event.slug)}/view`, {
+			method: 'POST',
+			keepalive: true
+		}).catch(() => undefined);
+	});
 	const mapQuery = $derived(formatMapQuery(event.venue, event.city));
 	const mapEmbedUrl = $derived(buildMapEmbedUrl(event.venue, event.city));
 	const appleMobile = $derived(isAppleMobileNavigator());
@@ -167,6 +178,12 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 			const result = await response.json();
 			if (!response.ok) throw new Error(result.error ?? 'Your request could not be sent');
 			messageRequest = result.request as MessageRequest;
+			// Keep the cached detail entry honest, so coming back to this event
+			// shows "pending" instead of offering to send the request again.
+			queryClient.client.setQueryData(queryKeys.eventMessageRequest(event.slug), {
+				request: messageRequest
+			});
+			queryClient.invalidate('message-requests:');
 			showMessageDialog = false;
 			toast('Message request sent to the organizer', 'success');
 		} catch (error) {

@@ -2,6 +2,7 @@ import type { QueryClient } from '@tanstack/svelte-query';
 import { getQueryClient } from './client';
 import { keyMatchesPrefix, toQueryKey } from './keys';
 import { clearPersisted } from './persist';
+import { resetDataChangeClock } from './mutation';
 
 /**
  * Imperative access to the cache, used by event handlers (mark-as-read,
@@ -80,6 +81,7 @@ export const queryClient = {
 	clearAll(): void {
 		client().clear();
 		clearPersisted();
+		resetDataChangeClock();
 	}
 };
 

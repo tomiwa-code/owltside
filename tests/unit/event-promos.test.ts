@@ -17,7 +17,8 @@ vi.mock('$lib/server/datasource', async (importOriginal) => {
 
 import { supabaseSource } from '$lib/server/datasource';
 import { POST as validatePromo } from '../../src/routes/api/events/[slug]/promo/+server';
-import { actions as checkoutActions, load as checkoutLoad } from '../../src/routes/(app)/checkout/+page.server';
+import { actions as checkoutActions } from '../../src/routes/(app)/checkout/+page.server';
+import { load as checkoutLoad } from '../../src/routes/(app)/checkout/+page';
 import { load as checkoutSuccessLoad } from '../../src/routes/(app)/checkout/success/+page.server';
 
 const event = {
@@ -77,11 +78,32 @@ describe('event promo validation endpoint', () => {
 });
 
 describe('checkout promo handling', () => {
+	/**
+	 * The checkout route load reads the event and revalidates the carried code
+	 * through the API, so the stub hands those calls to the real handlers. That
+	 * keeps the assertion about *what* the datasource is asked on the hook.
+	 */
+	const checkoutFetch = () =>
+		vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			if (url === '/api/events/promo-night/promo') {
+				return validatePromo({
+					params: { slug: 'promo-night' },
+					request: new Request(`http://localhost${url}`, init),
+					cookies: { getAll: () => [] }
+				} as never);
+			}
+			if (url === '/api/events/promo-night') {
+				return new Response(JSON.stringify(event), { headers: { 'content-type': 'application/json' } });
+			}
+			return new Response('[]');
+		});
+
 	it('revalidates an event promo carried from the event page', async () => {
 		const result = (await checkoutLoad({
-			url: new URL('http://localhost/checkout?event=promo-night&tier=tier-1&qty=2&promo=early%20bird'),
-			locals: { session: { userId, name: 'Ada', email: 'ada@example.test' }, demoMode: true },
-			cookies: { getAll: () => [] }
+			fetch: checkoutFetch(),
+			parent: async () => ({ session: { userId, name: 'Ada', email: 'ada@example.test', handle: 'ada' } }),
+			url: new URL('http://localhost/checkout?event=promo-night&tier=tier-1&qty=2&promo=early%20bird')
 		} as never)) as unknown as { promo: typeof resolvedPromo };
 
 		expect(source.resolvePromoCode).toHaveBeenCalledWith('promo-night', 'EARLY-BIRD');
