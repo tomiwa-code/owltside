@@ -74,8 +74,16 @@ const TICKET_COLUMNS =
 	'id,code,event_id,event_slug,event_title,event_starts_at,venue,tier_name,holder_name,status,purchased_at,price,cover';
 const ORDER_COLUMNS = 'id,reference,event_id,owner_name,items_label,total,status,created_at';
 const CHECKIN_COLUMNS = 'id,event_id,ticket_code,holder,tier,gate,at,result';
-/** Message requests embed two profiles; keep them to card size. */
-const MESSAGE_REQUEST_COLUMNS = `id,event_id,event_slug,event_title,body,created_at,status,conversation_id,requester:profiles!message_requests_requester_id_fkey(${PROFILE_CARD_COLUMNS}), organizer:profiles!message_requests_organizer_id_fkey(${PROFILE_CARD_COLUMNS}), event:events!message_requests_event_id_fkey(slug,title)`;
+/**
+ * Message requests embed two profiles; keep them to card size.
+ *
+ * The request row itself only stores `event_id` — there are no `event_slug` /
+ * `event_title` columns (see 008_message_requests.sql). The slug and title come
+ * from the embedded event, which is why they are *not* in this list: PostgREST
+ * rejects the whole select with 42703 when a column does not exist, and the
+ * event page runs this query for signed-in visitors only.
+ */
+const MESSAGE_REQUEST_COLUMNS = `id,event_id,body,created_at,status,conversation_id,requester:profiles!message_requests_requester_id_fkey(${PROFILE_CARD_COLUMNS}), organizer:profiles!message_requests_organizer_id_fkey(${PROFILE_CARD_COLUMNS}), event:events!message_requests_event_id_fkey(slug,title)`;
 
 /** Threads/notifications a single screen can render; the rest are paginated. */
 const LIST_PAGE_SIZE = 50;
@@ -1870,8 +1878,11 @@ const toEventSpeaker = (r: Row, index: number): EventSpeaker => ({
 const toMessageRequest = (r: Row): MessageRequest => ({
 	id: r.id,
 	eventId: r.event_id,
-	eventSlug: r.event?.slug ?? r.event_slug,
-	eventTitle: r.event?.title ?? r.event_title,
+	// The request row has no slug/title columns; both come from the embedded
+	// event. Default to empty strings when that embed is filtered out (for
+	// example an event the viewer can no longer read) instead of `undefined`.
+	eventSlug: r.event?.slug ?? r.event_slug ?? '',
+	eventTitle: r.event?.title ?? r.event_title ?? '',
 	requester: toProfile(r.requester),
 	organizer: toProfile(r.organizer),
 	body: r.body,
