@@ -1,5 +1,5 @@
 import AppHeader from '$components/AppHeader.svelte';
-import { queryClient } from '$lib/state/query.svelte';
+import { queryClient } from '$lib/query/cache';
 import type { Conversation, Message, Profile } from '$lib/types';
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

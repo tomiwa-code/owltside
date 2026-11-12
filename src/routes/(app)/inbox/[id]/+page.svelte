@@ -21,36 +21,35 @@
 	import { toast } from '$lib/state/toast.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { notifyIncomingDirectMessage } from '$lib/push.client';
-	import { createChatTransport } from '$lib/realtime';
-	import { useQuery, queryClient } from '$lib/state/query.svelte';
+	import { browser } from '$app/environment';
+	import { getQueryClient } from '$lib/query/client';
+	import { createAppQuery } from '$lib/query/create-query.svelte';
+	import { conversationsQueryOptions, messagesQueryOptions } from '$lib/query/options';
+	import { queryKeys } from '$lib/query/keys';
 	import { fmtTime } from '$lib/utils/dates';
 	import { page } from '$app/state';
 	import type { Conversation, Message } from '$lib/types';
 
 	let { data } = $props();
+	const cache = getQueryClient();
 	const conv = $derived(data.conversation);
 	const meId = $derived(page.data.session?.userId ?? 'u-ada');
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 	let deskScroller: HTMLDivElement | undefined = $state();
 	const suggested = ['Yes, 8:30 AM confirmed', 'Need 15 min buffer', 'Let me check with venue team'];
 
-	const key = `messages:${conv.id}`;
-	// Realtime INSERTs below keep the thread live; polling is only a safety net
-	// for a dropped socket, so it runs every minute instead of every 4 seconds
-	// (which re-downloaded the entire thread each time).
-	const messages = useQuery<Message[]>(
-		key,
-		async () => (await fetch(`/api/conversations/${conv.id}/messages`)).json(),
-		{ staleTime: 45_000, refetchInterval: 60_000 },
-		data.messages
-	);
+	// The server load seeds both caches. From then on the messaging WebSocket
+	// appends messages straight into the thread cache (see realtime-sync.ts);
+	// these queries only poll in demo mode / when no socket can be opened.
+	const messages = createAppQuery(() => ({
+		...messagesQueryOptions(conv.id, data.messages),
+		enabled: browser
+	}));
 
-	const conversations = useQuery<Conversation[]>(
-		'conversations:mine',
-		async () => (await fetch('/api/conversations')).json(),
-		{ staleTime: 60_000, refetchInterval: 300_000 },
-		data.conversations
-	);
+	const conversations = createAppQuery(() => ({
+		...conversationsQueryOptions(data.conversations),
+		enabled: browser
+	}));
 
 	// Read state is decoupled from the live session: a thread is acknowledged
 	// once, when the receiver actively opens it. Messages that arrive while the
@@ -66,7 +65,7 @@
 		acknowledgedThread = id;
 		// Merge the navigation snapshot into the cache (never resurrecting counts
 		// another chat already cleared), then clear this thread for the reader.
-		const cached = queryClient.get<Conversation[]>('conversations:mine')?.data ?? [];
+		const cached = cache.getQueryData<Conversation[]>(queryKeys.conversations) ?? [];
 		const threads = new Map(cached.map((c) => [c.id, c]));
 		for (const c of data.conversations ?? []) if (!threads.has(c.id)) threads.set(c.id, c);
 		const opened = threads.get(id) ?? data.conversation;
@@ -74,14 +73,14 @@
 		// may have been prefetched); acknowledge when either still sees unread.
 		if (Math.max(opened?.unread ?? 0, data.conversation?.unread ?? 0) <= 0) return;
 		threads.set(id, { ...(opened ?? data.conversation), unread: 0 });
-		queryClient.set('conversations:mine', [...threads.values()]);
+		cache.setQueryData(queryKeys.conversations, [...threads.values()]);
 		void fetch(`/api/conversations/${encodeURIComponent(id)}/read`, { method: 'POST' })
 			.then(async (response) => {
 				if (!response.ok) return;
 				// Adopt the server's post-acknowledgement numbers; anything that
 				// arrived after the open stays unread.
 				const payload = await response.json().catch(() => null);
-				if (Array.isArray(payload?.conversations)) queryClient.set('conversations:mine', payload.conversations);
+				if (Array.isArray(payload?.conversations)) cache.setQueryData(queryKeys.conversations, payload.conversations);
 			})
 			.catch(() => {});
 	}
@@ -104,15 +103,6 @@
 
 	let body = $state('');
 	let scroller: HTMLDivElement | undefined = $state();
-
-	// push incoming realtime messages (Supabase) straight into the cache
-	$effect(() => {
-		const transport = createChatTransport();
-		return transport.subscribe(conv.id, (m) => {
-			const current = queryClient.get<Message[]>(key)?.data ?? [];
-			if (!current.some((x) => x.id === m.id)) queryClient.set(key, [...current, m]);
-		});
-	});
 
 	// autoscroll on new messages & dispatch OS push notification for incoming peer replies
 	let seenThreadMsgIds: Set<string> | null = null;
@@ -298,6 +288,9 @@
 				use:enhance={() => async ({ result }) => {
 					if (result.type === 'success') {
 						body = '';
+						// One refetch per sent message is cheap and guarantees the
+						// server's row (id, timestamp) is what the thread shows,
+						// even if the socket drops the echo.
 						await messages.refetch();
 					}
 				}}

@@ -1,5 +1,5 @@
 import AppHeader from '$components/AppHeader.svelte';
-import { queryClient } from '$lib/state/query.svelte';
+import { queryClient } from '$lib/query/cache';
 import type { Conversation, Message, NotificationItem, Profile } from '$lib/types';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';

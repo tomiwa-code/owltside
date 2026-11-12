@@ -56,6 +56,7 @@
 	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 	import { browser } from '$app/environment';
 	import { toast } from '$lib/state/toast.svelte';
+	import { fetchProfileSearch } from '$lib/query/options';
 	import { categories } from '$components/iconMap';
 	import { isValidPromoCode, normalizeEventPromos, normalizePromoCode } from '$lib/utils/promo';
 	import { maskAccountNumber, payoutBankMark } from '$lib/utils/payout';
@@ -411,9 +412,8 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 		if (handle.length < 1) { searchingProfiles = false; return; }
 		searchingProfiles = true;
 		try {
-			const response = await fetch(`/api/profiles/search?q=${encodeURIComponent(handle)}`);
-			if (!response.ok) throw new Error('Profile lookup is unavailable. Try again.');
-			const profiles = (await response.json()) as Profile[];
+			const profiles = await fetchProfileSearch(handle);
+			if (!Array.isArray(profiles)) throw new Error('Profile lookup is unavailable. Try again.');
 			if (sequence === profileSearchSequence) inviteMatches = profiles;
 		} catch (error) {
 			if (sequence === profileSearchSequence) inviteError = error instanceof Error ? error.message : 'Profile lookup is unavailable.';

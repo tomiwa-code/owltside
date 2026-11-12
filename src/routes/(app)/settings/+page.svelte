@@ -33,8 +33,9 @@
 	import RoleSwitcher from '$components/RoleSwitcher.svelte';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
-	import { subscribeTable } from '$lib/realtime';
+	import { browser } from '$app/environment';
+	import { createAppQuery } from '$lib/query/create-query.svelte';
+	import { approvalsQueryOptions } from '$lib/query/options';
 	import { verificationChecks } from '$lib/utils/verification';
 	import { toast } from '$lib/state/toast.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
@@ -75,17 +76,22 @@
 		}
 	}
 	const session = $derived(page.data.session);
-	const approvals = $derived(data.approvals ?? []);
+	// Approval state is shared with the organizer console; the Realtime bridge
+	// invalidates this key when a decision lands, so no full page reload is
+	// needed just to see a verification turn green.
+	const approvalsQuery = createAppQuery(() => ({
+		...approvalsQueryOptions(data.approvals ?? []),
+		enabled: browser && !!session
+	}));
+	const approvals = $derived(
+		Array.isArray(approvalsQuery.data) ? approvalsQuery.data : (data.approvals ?? [])
+	);
 	const isFullyVerified = $derived(
 		!!session && Object.values({
 			...appSettings.value.verification,
 			...verificationChecks(approvals)
 		}).every(Boolean)
 	);
-	$effect(() => {
-		if (!session) return;
-		return subscribeTable('approval_requests', () => { void invalidateAll(); }, `requester_id=eq.${session.userId}`);
-	});
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 

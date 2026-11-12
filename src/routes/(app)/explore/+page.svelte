@@ -31,7 +31,8 @@
 	import EmptyState from '$components/EmptyState.svelte';
 	import { categories } from '$components/iconMap';
 	import { navigating } from '$app/state';
-	import { useQuery } from '$lib/state/query.svelte';
+	import { createAppQuery } from '$lib/query/create-query.svelte';
+	import { eventsQueryOptions } from '$lib/query/options';
 	import { fmtDate, fmtTime } from '$lib/utils/dates';
 	import { formatMoney } from '$lib/utils/money';
 	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
@@ -60,15 +61,9 @@
 	let activeRange = $state<'today' | 'tomorrow' | 'weekend' | 'custom' | null>(null);
 	let visible = $state(6);
 
-	const allEvents = useQuery<EventItem[]>(
-		'events:explore-all',
-		async () => {
-			const res = await fetch('/api/events');
-			return res.json();
-		},
-		{ staleTime: 300_000, persist: { maxAge: 6 * 60 * 60 * 1000 } },
-		data.allEvents
-	);
+	// Same cache entry as the home feed: exploring does not re-download the
+	// catalogue it already has, and the server render seeds it.
+	const allEvents = createAppQuery(() => eventsQueryOptions(data.allEvents));
 	const countFor = (id: string) =>
 		(allEvents.data ?? []).filter((e) => (id === 'all' ? true : e.category === id)).length;
 

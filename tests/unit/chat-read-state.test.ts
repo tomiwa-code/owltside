@@ -1,4 +1,4 @@
-import { queryClient } from '$lib/state/query.svelte';
+import { queryClient } from '$lib/query/cache';
 import { demoSource, supabaseSource } from '$lib/server/datasource';
 import type { Conversation, Message, Profile } from '$lib/types';
 import { cleanup, render, waitFor } from '@testing-library/svelte';

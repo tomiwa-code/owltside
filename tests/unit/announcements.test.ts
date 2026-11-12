@@ -3,7 +3,7 @@ import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import NotificationsPage from '../../src/routes/(app)/notifications/+page.svelte';
 import { isAnnouncement } from '$lib/utils/announcements';
-import { queryClient } from '$lib/state/query.svelte';
+import { queryClient } from '$lib/query/cache';
 import { page } from '$app/state';
 import type { NotificationItem } from '$lib/types';
 

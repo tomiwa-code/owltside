@@ -4,7 +4,7 @@ import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import AppHeader from '$components/AppHeader.svelte';
 import { page } from '$app/state';
-import { queryClient } from '$lib/state/query.svelte';
+import { queryClient } from '$lib/query/cache';
 import { appSettings } from '$lib/state/settings.svelte';
 import {
 	markConversationPushBaseline,

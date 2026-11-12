@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { queryClient } from '$lib/state/query.svelte';
+import { queryClient } from '$lib/query/cache';
 import { demoSource } from '$lib/server/datasource';
 import { isInlineImage, mediaHref } from '$lib/server/media';
 import { verifyCaptcha, captchaConfigured } from '$lib/server/captcha';

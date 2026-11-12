@@ -20,8 +20,8 @@
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import { approvedPayoutAccount, latestVerificationRequest } from '$lib/utils/verification';
-	import { useQuery } from '$lib/state/query.svelte';
-	import { subscribeTable } from '$lib/realtime';
+	import { createAppQuery } from '$lib/query/create-query.svelte';
+	import { approvalsQueryOptions } from '$lib/query/options';
 	import { payoutAccountLabel } from '$lib/utils/payout';
 	import { formatMoney } from '$lib/utils/money';
 	import { fmtDateTime, fmtRelative } from '$lib/utils/dates';
@@ -48,26 +48,10 @@
 
 	const closed = $derived(isEventClosed(data.event));
 
-	const approvalsQuery = useQuery<ApprovalRequest[]>(
-		'approvals:mine',
-		async () => {
-			const response = await fetch('/api/approvals');
-			return response.ok ? await response.json() : [];
-		},
-		{ staleTime: 45_000, refetchInterval: 120_000, enabled: !!page.data.session },
-		(data as { approvals?: ApprovalRequest[] }).approvals
-	);
-	$effect(() => {
-		const uid = page.data.session?.userId;
-		if (!browser || !uid) return;
-		return subscribeTable(
-			'approval_requests',
-			() => {
-				void approvalsQuery.refetch();
-			},
-			`requester_id=eq.${uid}`
-		);
-	});
+	const approvalsQuery = createAppQuery(() => ({
+		...approvalsQueryOptions((data as { approvals?: ApprovalRequest[] }).approvals),
+		enabled: browser && !!page.data.session
+	}));
 	const serverApprovals = $derived(
 		Array.isArray(approvalsQuery.data)
 			? approvalsQuery.data
