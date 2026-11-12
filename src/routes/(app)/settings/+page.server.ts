@@ -1,19 +1,10 @@
 import { fail, redirect } from '@sveltejs/kit';
-import type { Actions, PageServerLoad } from './$types';
+import type { Actions } from './$types';
 import { OPERATING_IDENTITY_COOKIE, isOperatingIdentity } from '$lib/constants/operating-identity';
 import { createSupabase } from '$lib/server/supabase';
 import { getSource } from '$lib/server/datasource';
 import { redactForPublicClient } from '$lib/server/redact-approval';
 import { clearRetiredBiometricCookies } from '$lib/server/biometrics-disabled';
-
-export const load: PageServerLoad = async ({ locals, cookies }) => {
-	// Verification and payout checks wait for an admin decision, so the page needs
-	// the viewer's own requests to show pending / rejected states honestly.
-	const approvals = await getSource(createSupabase(cookies))
-		.listApprovals(locals.session?.userId ?? 'demo')
-		.catch(() => []);
-	return { approvals: approvals.map(redactForPublicClient) };
-};
 
 export const actions: Actions = {
 	setIdentity: async ({ request, cookies, locals }) => {

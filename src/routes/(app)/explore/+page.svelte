@@ -32,7 +32,7 @@
 	import { categories } from '$components/iconMap';
 	import { navigating } from '$app/state';
 	import { createAppQuery } from '$lib/query/create-query.svelte';
-	import { eventsQueryOptions } from '$lib/query/options';
+	import { eventCatalogueQueryOptions } from '$lib/query/options';
 	import { fmtDate, fmtTime } from '$lib/utils/dates';
 	import { formatMoney } from '$lib/utils/money';
 	import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
@@ -63,7 +63,7 @@
 
 	// Same cache entry as the home feed: exploring does not re-download the
 	// catalogue it already has, and the server render seeds it.
-	const allEvents = createAppQuery(() => eventsQueryOptions(data.allEvents));
+	const allEvents = createAppQuery(() => eventCatalogueQueryOptions(data.allEvents));
 	const countFor = (id: string) =>
 		(allEvents.data ?? []).filter((e) => (id === 'all' ? true : e.category === id)).length;
 
