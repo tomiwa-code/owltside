@@ -5,6 +5,8 @@ import { page } from '$app/state';
 const source = vi.hoisted(() => ({
 	mode: 'demo',
 	getEvent: vi.fn(),
+	getEventMessageRequest: vi.fn(),
+	recordEventView: vi.fn(),
 	resolvePromoCode: vi.fn(),
 	createOrder: vi.fn(),
 	getTickets: vi.fn(),
@@ -17,6 +19,7 @@ vi.mock('$lib/server/datasource', async (importOriginal) => {
 	return { ...actual, getSource: () => source };
 });
 
+import { load as eventLoad } from '../../src/routes/(app)/events/[slug]/+page.server';
 import { load as checkoutLoad, actions as checkoutActions } from '../../src/routes/(app)/checkout/+page.server';
 import { load as checkoutSuccessLoad } from '../../src/routes/(app)/checkout/success/+page.server';
 import { load as ticketsLoad } from '../../src/routes/(app)/tickets/+page.server';
@@ -43,6 +46,8 @@ const layoutData = { session: null, demoMode: true, operatingIdentity: 'attendee
 beforeEach(() => {
 	vi.clearAllMocks();
 	source.getEvent.mockResolvedValue(event);
+	source.getEventMessageRequest.mockResolvedValue(undefined);
+	source.recordEventView.mockResolvedValue(undefined);
 	source.resolvePromoCode.mockResolvedValue(null);
 	source.createOrder.mockResolvedValue({ orderId: 'order-1', tickets: [{ id: 'ticket-1' }] });
 	source.getTickets.mockResolvedValue([]);
@@ -134,6 +139,37 @@ describe('guest tickets gates (server)', () => {
 		const response = await apiTickets({ locals: { session: null, demoMode: true }, cookies } as never);
 		expect(response.status).toBe(401);
 		expect(source.getTickets).not.toHaveBeenCalled();
+	});
+});
+
+describe('event detail load (server)', () => {
+	it('still renders the event when the signed-in viewer\u2019s request lookup fails', async () => {
+		// This is the shape of the regression that broke event pages only for
+		// email logins: the request query runs for sessions only, and its error
+		// propagated as a 500 instead of just hiding the contact widget.
+		source.getEventMessageRequest.mockRejectedValueOnce(
+			new Error('column message_requests.event_slug does not exist')
+		);
+		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const result = (await eventLoad({
+			params: { slug: 'promo-night' },
+			locals: { session, demoMode: true },
+			cookies
+		} as never)) as { event: { slug: string }; messageRequest: unknown };
+		expect(result.event.slug).toBe('promo-night');
+		expect(result.messageRequest).toBeNull();
+		expect(source.getEventMessageRequest).toHaveBeenCalledWith(userId, event.id);
+		expect(logged).toHaveBeenCalled();
+		logged.mockRestore();
+	});
+
+	it('does not ask for a message request when the visitor is a guest', async () => {
+		await eventLoad({
+			params: { slug: 'promo-night' },
+			locals: { session: null, demoMode: true },
+			cookies
+		} as never);
+		expect(source.getEventMessageRequest).not.toHaveBeenCalled();
 	});
 });
 
