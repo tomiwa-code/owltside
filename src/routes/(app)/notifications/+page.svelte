@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
-	import { invalidateAll } from '$app/navigation';
+
 	import { page } from '$app/state';
 	import {
 		Bell,
@@ -24,7 +24,11 @@
 	import AnnouncementFooter from '$components/AnnouncementFooter.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
 	import TopBar from '$components/TopBar.svelte';
-	import { useQuery, queryClient } from '$lib/state/query.svelte';
+	import { browser } from '$app/environment';
+	import { createAppQuery } from '$lib/query/create-query.svelte';
+	import { queryClient } from '$lib/query/cache';
+	import { queryKeys } from '$lib/query/keys';
+	import { notificationsQueryOptions } from '$lib/query/options';
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import {
@@ -40,12 +44,9 @@
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
-	const items = useQuery<NotificationItem[]>(
-		'notifications:mine',
-		async () => (await fetch('/api/notifications')).json(),
-		{ staleTime: 60_000, refetchInterval: 300_000 },
-		data.items
-	);
+	// Seeded by the server load; the Realtime bridge prepends new rows, so the
+	// hub updates without polling.
+	const items = createAppQuery(() => ({ ...notificationsQueryOptions(data.items), enabled: browser }));
 
 	// Opening the hub acknowledges the stream. Persist the read state once, and
 	// publish it into the shared cache (AppHeader renders the same key) so the
@@ -64,11 +65,11 @@
 		// snapshot can never roll back a newer stream. The cache is read
 		// non-reactively; publishing must not re-trigger this effect.
 		const acknowledged = new Map(data.items.map((n) => [n.id, n.read ? n : { ...n, read: true }]));
-		const cached = queryClient.get<NotificationItem[]>('notifications:mine')?.data ?? [];
+		const cached = queryClient.get<NotificationItem[]>(queryKeys.notifications)?.data ?? [];
 		const merged = cached.map((n) => acknowledged.get(n.id) ?? n);
 		const known = new Set(merged.map((n) => n.id));
 		for (const n of acknowledged.values()) if (!known.has(n.id)) merged.push(n);
-		queryClient.set('notifications:mine', merged);
+		queryClient.set(queryKeys.notifications, merged);
 	});
 	$effect(() => {
 		// Keep already-seen rows acknowledged if a background poll re-applies
@@ -80,7 +81,7 @@
 			acknowledgedIds.has(n.id) && !n.read ? { ...n, read: true } : n
 		);
 		if (acknowledged.every((n, index) => n === list[index])) return;
-		queryClient.set('notifications:mine', acknowledged);
+		queryClient.set(queryKeys.notifications, acknowledged);
 		void fetch('/api/notifications/read', { method: 'POST' }).catch(() => {});
 	});
 
@@ -257,7 +258,7 @@
 		</div>
 		<div class="flex items-center gap-3">
 			<form method="POST" action="?/markAll" use:enhance={() => async ({ result }) => {
-				if (result.type === 'success') { queryClient.invalidate('notifications'); await invalidateAll(); }
+				if (result.type === 'success') { queryClient.invalidate('notifications:'); queryClient.invalidate('badges:'); }
 			}}>
 				<button class="flex items-center gap-2 h-10 px-4 rounded-lg bg-surface-container-high border border-surface-glass-border text-on-surface text-body-sm hover:bg-surface-bright transition-colors">
 					<CheckCheck class="w-4 h-4 text-primary" /><span>Mark all read</span>
@@ -468,7 +469,7 @@ href={n.href ?? meta.action.href}
 					{/if}
 				</div>
 				<form method="POST" action="?/markAll" use:enhance={() => async ({ result }) => {
-					if (result.type === 'success') { queryClient.invalidate('notifications'); await invalidateAll(); }
+					if (result.type === 'success') { queryClient.invalidate('notifications:'); queryClient.invalidate('badges:'); }
 				}}>
 					<button disabled={deskUnread === 0} class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-high hover:bg-surface-bright text-primary text-body-sm transition-all active:scale-95 disabled:opacity-40 whitespace-nowrap">
 						<CheckCheck class="w-4 h-4" /><span>Mark all read</span>

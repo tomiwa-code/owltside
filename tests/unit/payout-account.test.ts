@@ -4,7 +4,7 @@ import { tick } from 'svelte';
 import SettingsDetails from '$components/SettingsDetails.svelte';
 import { appSettings } from '$lib/state/settings.svelte';
 import { verificationApproval } from '../fixtures/verification';
-import { queryClient } from '$lib/state/query.svelte';
+import { queryClient } from '$lib/query/cache';
 import {
 	isValidNuban,
 	maskAccountNumber,

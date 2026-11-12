@@ -21,7 +21,9 @@
 	import TopBar from '$components/TopBar.svelte';
 	import Avatar from '$components/Avatar.svelte';
 	import { page } from '$app/state';
-	import { useQuery } from '$lib/state/query.svelte';
+	import { browser } from '$app/environment';
+	import { createAppQuery } from '$lib/query/create-query.svelte';
+	import { ticketsQueryOptions } from '$lib/query/options';
 	import { toast } from '$lib/state/toast.svelte';
 	import { fmtDate, fmtDateFull, fmtTime } from '$lib/utils/dates';
 	import { downloadIcs } from '$lib/utils/ics';
@@ -42,12 +44,12 @@ import {
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
-	const tickets = useQuery<Ticket[]>(
-		'tickets:mine',
-		async () => (await fetch('/api/tickets')).json(),
-		{ staleTime: 15_000, enabled: !isGuest },
-		data.tickets
-	);
+	// The vault is seeded by the server load. Refunds/transfers invalidate the
+	// key, and focus/reconnect revalidation keeps it current.
+	const tickets = createAppQuery(() => ({
+		...ticketsQueryOptions(data.tickets),
+		enabled: browser && !isGuest
+	}));
 
 	// One shared vault selection drives both desktop and mobile tabs.
 	let tab = $state<'upcoming' | 'past' | 'archived'>('upcoming');

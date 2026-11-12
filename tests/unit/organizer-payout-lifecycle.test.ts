@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { tick } from 'svelte';
 import { page } from '$app/state';
 import { appSettings } from '$lib/state/settings.svelte';
-import { queryClient } from '$lib/state/query.svelte';
+import { queryClient } from '$lib/query/cache';
 import { computeOrganizer, demoSource, supabaseSource } from '$lib/server/datasource';
 import * as demo from '$lib/server/demo/seed';
 import {

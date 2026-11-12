@@ -1,21 +1,29 @@
 <script lang="ts">
 	import { page, navigating } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
+	import { createAppQuery } from '$lib/query/create-query.svelte';
 	import { Bell, MessageSquare, Search, Settings2 } from '@lucide/svelte';
 	import Avatar from './Avatar.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { profileAppearance } from '$lib/state/profile.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
-	import { queryClient, useQuery } from '$lib/state/query.svelte';
-	import { publicSupabase, subscribeIncomingMessages, subscribeTable } from '$lib/realtime';
+	import { queryClient } from '$lib/query/cache';
+	import { queryKeys } from '$lib/query/keys';
 	import {
-		notifyIncomingDirectMessage,
+		badgesQueryOptions,
+		conversationsQueryOptions,
+		messageRequestsQueryOptions,
+		notificationsQueryOptions
+	} from '$lib/query/options';
+	import {
 		notifyUnreadInboxItems,
 		notifyUnreadStreamItems,
 		syncPushSubscriptionIfGranted
 	} from '$lib/push.client';
 	import { UNREAD_BADGE_CLASS, formatCount } from '$lib/utils/badges';
 	import type { BadgeCounts, Conversation, MessageRequest, NotificationItem } from '$lib/types';
+
 	let search = $state('');
 	const profile = $derived(page.data.currentProfile);
 	const session = $derived(page.data.session);
@@ -26,78 +34,44 @@
 		await goto(search.trim() ? `/explore?q=${encodeURIComponent(search.trim())}` : '/explore');
 	}
 
-	// ── Egress-aware header data ──────────────────────────────────────────────
-	// Realtime is the primary transport when Supabase is configured: a socket
-	// event triggers one refetch. Polling is only a fallback (demo mode, or a
-	// dropped socket), so the cadence is minutes, not seconds, and it pauses
-	// while the tab is hidden (see useQuery's `refetchInterval`).
-	const realtimeConnected = publicSupabase() !== null;
-	const POLL_FALLBACK_MS = realtimeConnected ? 300_000 : 60_000;
+	const signedIn = $derived(!!session);
 
-	// Three numbers, ~60 bytes. This is what the header actually needs to poll.
-	const badges = useQuery<BadgeCounts>(
-		'badges:mine',
-		async () => {
-			const response = await fetch('/api/badges');
-			if (!response.ok) throw new Error('Badge counters are unavailable');
-			const payload = (await response.json()) as Partial<BadgeCounts>;
-			if (typeof payload?.unread !== 'number' || typeof payload?.inboxUnread !== 'number') {
-				throw new Error('Badge counters are unavailable');
-			}
-			return { unread: payload.unread, inboxUnread: payload.inboxUnread, requests: payload.requests ?? 0 };
-		},
-		{ staleTime: 60_000, refetchInterval: 60_000, enabled: !!page.data.session },
-		undefined
-	);
+	// ── Header data ───────────────────────────────────────────────────────────
+	// TanStack Query owns these four caches. The counters are seeded from the
+	// server-rendered layout payload, so the badge paints correctly without a
+	// request on mount; the lists are shared with the inbox/hub screens (same
+	// keys), and the Realtime bridge patches them as events arrive. There is no
+	// polling here anymore — only a slow fallback when no socket exists (demo).
+	const badges = createAppQuery(() => ({
+		...badgesQueryOptions(
+			session
+				? {
+						unread: page.data.unread,
+						inboxUnread: page.data.inboxUnread,
+						// The pending-request count comes from the shared requests list;
+						// the seeded value only fills the type until it loads.
+						requests: 0
+					}
+				: undefined
+		),
+		enabled: browser && signedIn
+	}));
 
-	// The full lists are shared with the dedicated pages (same cache keys), so
-	// opening the inbox/hub reuses whatever is already cached.
-	const notificationsQuery = useQuery<NotificationItem[]>(
-		'notifications:mine',
-		async () => (await fetch('/api/notifications')).json(),
-		{ staleTime: 60_000, refetchInterval: POLL_FALLBACK_MS, enabled: !!page.data.session },
-		undefined
-	);
-	const conversationsQuery = useQuery<Conversation[]>(
-		'conversations:mine',
-		async () => (await fetch('/api/conversations')).json(),
-		{ staleTime: 60_000, refetchInterval: POLL_FALLBACK_MS, enabled: !!page.data.session },
-		undefined
-	);
-	const requestsQuery = useQuery<MessageRequest[]>(
-		'message-requests:mine',
-		async () => {
-			const r = await fetch('/api/message-requests');
-			return r.ok ? await r.json() : [];
-		},
-		{ staleTime: 60_000, refetchInterval: POLL_FALLBACK_MS, enabled: !!page.data.session },
-		undefined
-	);
+	const notificationsQuery = createAppQuery(() => ({
+		...notificationsQueryOptions(),
+		// The notifications hub seeds the same key from its server load.
+		enabled: browser && signedIn
+	}));
 
-	// A cheap counter that is ahead of the cached list means the list is stale:
-	// refresh it once (with a cooldown so a mismatch can never become a loop).
-	let lastBadgeSync = 0;
-	$effect(() => {
-		if (!page.data.session || !badges.data) return;
-		const unreadFromList = Array.isArray(notificationsQuery.data)
-			? notificationsQuery.data.filter((n) => !n.read).length
-			: undefined;
-		const inboxFromLists =
-			Array.isArray(conversationsQuery.data) && Array.isArray(requestsQuery.data)
-				? conversationsQuery.data.reduce((sum, c) => sum + (c.unread ?? 0), 0) + requestsQuery.data.length
-				: undefined;
-		if (Date.now() - lastBadgeSync < 60_000) return;
-		const notificationsStale =
-			unreadFromList !== undefined && badges.data.unread > unreadFromList;
-		const inboxStale = inboxFromLists !== undefined && badges.data.inboxUnread > inboxFromLists;
-		if (!notificationsStale && !inboxStale) return;
-		lastBadgeSync = Date.now();
-		if (notificationsStale) void notificationsQuery.refetch();
-		if (inboxStale) {
-			void conversationsQuery.refetch();
-			void requestsQuery.refetch();
-		}
-	});
+	const conversationsQuery = createAppQuery(() => ({
+		...conversationsQueryOptions(),
+		enabled: browser && signedIn
+	}));
+
+	const requestsQuery = createAppQuery(() => ({
+		...messageRequestsQueryOptions(),
+		enabled: browser && signedIn
+	}));
 
 	// A failed API call can resolve with an error object; never let that wipe a
 	// real count (or crash the header) — fall back to the SSR numbers instead.
@@ -142,6 +116,8 @@
 
 	// Deliver newly arrived inbox messages (conversations) and message requests
 	// to the phone/OS notification tray whenever push & message alerts are enabled.
+	// (Live messages themselves are pushed from the Realtime bridge, which has the
+	// message body even before the list refreshes.)
 	$effect(() => {
 		if (!session?.userId) return;
 		if (conversations === undefined && requests === undefined) return;
@@ -158,94 +134,16 @@
 		);
 	});
 
-	$effect(() => {
-		const uid = session?.userId;
-		if (!uid) return;
-		const unsubNotifs = subscribeTable(
-			'notifications',
-			() => {
-				void notificationsQuery.refetch();
-			},
-			`user_id=eq.${uid}`
-		);
-		const unsubMessages = subscribeIncomingMessages(uid, async (msg) => {
-			await conversationsQuery.refetch();
-			const latestConvs = queryClient.get<Conversation[]>('conversations:mine')?.data;
-			const matched = Array.isArray(latestConvs)
-				? latestConvs.find((c) => c.id === msg.conversationId)
-				: undefined;
-			const nPrefs = appSettings.value.notifications;
-			await notifyIncomingDirectMessage(
-				{
-					id: msg.id,
-					conversationId: msg.conversationId,
-					senderName: matched?.peer?.name ?? 'Owltside User',
-					body: msg.body,
-					sentAt: msg.sentAt
-				},
-				{
-					pushEnabled: nPrefs.pushEnabled,
-					messages: nPrefs.messages !== false,
-					soundHaptics: !nPrefs.quietHours
-				},
-				uid
-			);
-		});
-		const unsubConvOwner = subscribeTable(
-			'conversations',
-			() => {
-				void conversationsQuery.refetch();
-			},
-			`user_id=eq.${uid}`
-		);
-		const unsubConvPeer = subscribeTable(
-			'conversations',
-			() => {
-				void conversationsQuery.refetch();
-			},
-			`peer_id=eq.${uid}`
-		);
-		const unsubMsgReqs = subscribeTable(
-			'message_requests',
-			() => {
-				void requestsQuery.refetch();
-			},
-			`organizer_id=eq.${uid}`
-		);
-
-		const onWake = () => {
-			if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-				void notificationsQuery.refetch();
-				void conversationsQuery.refetch();
-				void requestsQuery.refetch();
-			}
-		};
-		if (typeof document !== 'undefined') {
-			document.addEventListener('visibilitychange', onWake);
-		}
-
-		return () => {
-			unsubNotifs();
-			unsubMessages();
-			unsubConvOwner();
-			unsubConvPeer();
-			unsubMsgReqs();
-			if (typeof document !== 'undefined') {
-				document.removeEventListener('visibilitychange', onWake);
-			}
-		};
-	});
-
 	/**
 	 * The notifications screen acknowledges everything as it opens, so clear the
 	 * shared cache at click time too: the badge disappears on the tap instead of
-	 * flashing until the next poll/paint.
+	 * flashing until the next refetch.
 	 */
 	function clearNotificationBadge() {
 		const items = notifications;
 		if (!items?.some((n) => !n.read)) return;
 		queryClient.set(
-			'notifications:mine',
+			queryKeys.notifications,
 			items.map((n) => (n.read ? n : { ...n, read: true }))
 		);
 		// Persist too, in case the navigation is interrupted before the hub mounts.

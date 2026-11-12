@@ -20,24 +20,29 @@ export const load: LayoutServerLoad = async ({ cookies, url, locals }) => {
 	}
 
 	const source = getSource(createSupabase(cookies));
-	const currentProfile = locals.session ? (await source.getProfile(locals.session.handle).catch(() => null)) ?? null : null;
-	let followingIds: string[] = [];
-	let unread = 0;
-	let inboxUnread = 0;
-	let followLoadError = false;
-	if (locals.session) {
-		try {
-			followingIds = await source.getFollowingIds(locals.session.userId);
-		} catch {
-			followLoadError = true;
-		}
-		try {
-			const badges = await source.getBadgeCounts(locals.session.userId);
-			unread = badges.unread;
-			inboxUnread = badges.inboxUnread;
-		} catch {
-			// Keep the defaults on partial failure; the client refresh below retries.
-		}
-	}
-	return { operatingIdentity, currentProfile, followingIds, unread, inboxUnread, followLoadError };
+	// These reads are independent; awaiting them one after another used to put
+	// three serial round trips on every navigation. They seed the client's
+	// TanStack Query cache (see AppHeader), which owns freshness from then on.
+	const [profile, following, counters] = await Promise.all([
+		locals.session
+			? source.getProfile(locals.session.handle).catch(() => null)
+			: Promise.resolve(null),
+		locals.session
+			? source.getFollowingIds(locals.session.userId).then(
+					(ids) => ({ ids, error: false }),
+					() => ({ ids: [] as string[], error: true })
+				)
+			: Promise.resolve({ ids: [] as string[], error: false }),
+		locals.session
+			? source.getBadgeCounts(locals.session.userId).catch(() => null)
+			: Promise.resolve(null)
+	]);
+	return {
+		operatingIdentity,
+		currentProfile: profile ?? null,
+		followingIds: following.ids,
+		unread: counters?.unread ?? 0,
+		inboxUnread: counters?.inboxUnread ?? 0,
+		followLoadError: following.error
+	};
 };

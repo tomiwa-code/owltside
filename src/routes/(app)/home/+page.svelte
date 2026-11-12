@@ -27,7 +27,8 @@ import Avatar from '$components/Avatar.svelte';
 import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 	import { categories } from '$components/iconMap';
 	import { profileDraft } from '$lib/state/profile.svelte';
-	import { useQuery } from '$lib/state/query.svelte';
+	import { createAppQuery } from '$lib/query/create-query.svelte';
+	import { eventsQueryOptions } from '$lib/query/options';
 	import { toast } from '$lib/state/toast.svelte';
 	import {
 		resolveNearestLocation,
@@ -67,18 +68,10 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 		);
 	});
 
-	const events = useQuery<EventItem[]>(
-		'events:all',
-		async () => {
-			const res = await fetch('/api/events');
-			return res.json();
-		},
-		// The catalogue changes when an organizer publishes, not per page view.
-		// Keep it in memory for five minutes and mirror it to localStorage so a
-		// reload (or a cold PWA start) renders without re-downloading it.
-		{ staleTime: 300_000, persist: { maxAge: 6 * 60 * 60 * 1000 } },
-		data.events
-	);
+	// Server-rendered events seed TanStack's cache (`initialData`), so the first
+	// client render never repeats the request the load already made. The
+	// catalogue is also mirrored to localStorage for a cold PWA start.
+	const events = createAppQuery(() => eventsQueryOptions(data.events));
 
 	const list = $derived(events.data ?? []);
 	const featured = $derived(list.find((e) => e.featured) ?? list[0]);

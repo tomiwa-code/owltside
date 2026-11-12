@@ -23,7 +23,8 @@
 	import QrPass from '$components/QrPass.svelte';
 	import Sheet from '$components/Sheet.svelte';
 	import TopBar from '$components/TopBar.svelte';
-	import { queryClient } from '$lib/state/query.svelte';
+	import { queryClient } from '$lib/query/cache';
+	import { fetchProfileSearch } from '$lib/query/options';
 	import { toast } from '$lib/state/toast.svelte';
 	import { downloadIcs } from '$lib/utils/ics';
 	import { fmtDateFull, fmtRelative, fmtTime } from '$lib/utils/dates';
@@ -117,9 +118,7 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 		}
 		searchingRecipients = true;
 		try {
-			const response = await fetch(`/api/profiles/search?q=${encodeURIComponent(query || '@')}`);
-			if (!response.ok) throw new Error('Could not search users right now.');
-			const profiles = (await response.json()) as Profile[];
+			const profiles = await fetchProfileSearch(query || '@');
 			if (sequence === transferSearchSequence) {
 				transferMatches = (Array.isArray(profiles) ? profiles : []).filter(
 					(profile) =>
@@ -180,8 +179,8 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 					selectedRecipient = null;
 					transferHandle = '';
 					transferMatches = [];
-					queryClient.invalidate('tickets');
-					queryClient.invalidate('notifications');
+					queryClient.invalidate('tickets:');
+					queryClient.invalidate('notifications:');
 					await invalidateAll();
 					const finalHandle =
 						typeof result.data?.transferredTo === 'string' && result.data.transferredTo
@@ -211,8 +210,8 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 				await update();
 				if (result.type === 'success' || result.type === 'redirect') {
 					refundOpen = false;
-					queryClient.invalidate('tickets');
-					queryClient.invalidate('notifications');
+					queryClient.invalidate('tickets:');
+					queryClient.invalidate('notifications:');
 					await invalidateAll();
 					toast('Refund request sent for admin approval', 'success');
 				} else if (result.type === 'failure') {

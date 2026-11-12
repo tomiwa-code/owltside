@@ -48,8 +48,8 @@
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
 	import { approvedPayoutAccount, latestVerificationRequest, verificationChecks } from '$lib/utils/verification';
 	import { maskAccountNumber, payoutAccountLabel } from '$lib/utils/payout';
-	import { useQuery } from '$lib/state/query.svelte';
-	import { subscribeTable } from '$lib/realtime';
+	import { createAppQuery } from '$lib/query/create-query.svelte';
+	import { approvalsQueryOptions, organizerQueryOptions } from '$lib/query/options';
 	import { toast } from '$lib/state/toast.svelte';
 	import { formatMoney } from '$lib/utils/money';
 	import { fmtDate, fmtRelative } from '$lib/utils/dates';
@@ -89,35 +89,16 @@
 		held: 0
 	};
 
-	const org = useQuery<OrganizerPayload>(
-		'organizer:me',
-		async () => (await fetch('/api/organizer')).json(),
-		{ staleTime: 45_000, refetchInterval: 120_000 },
-		data.payload
-	);
+	// Seeded by the server load. The organizer ledger polls slowly (sales are not
+	// published to Realtime); approvals are pushed by the Realtime bridge.
+	const org = createAppQuery(() => organizerQueryOptions(data.payload));
 	const payload = $derived(org.data);
 	// Payout requests and payout-account checks wait for the admin console, so the
 	// console surfaces their state instead of promising money is on its way.
-	const approvalsQuery = useQuery<ApprovalRequest[]>(
-		'approvals:mine',
-		async () => {
-			const response = await fetch('/api/approvals');
-			return response.ok ? await response.json() : [];
-		},
-		{ staleTime: 45_000, refetchInterval: 120_000, enabled: !!page.data.session },
-		(data as { approvals?: ApprovalRequest[] }).approvals
-	);
-	$effect(() => {
-		const uid = page.data.session?.userId;
-		if (!browser || !uid) return;
-		return subscribeTable(
-			'approval_requests',
-			() => {
-				void approvalsQuery.refetch();
-			},
-			`requester_id=eq.${uid}`
-		);
-	});
+	const approvalsQuery = createAppQuery(() => ({
+		...approvalsQueryOptions((data as { approvals?: ApprovalRequest[] }).approvals),
+		enabled: browser && !!page.data.session
+	}));
 	let submittedPayouts = $state<Record<string, ApprovalRequest>>({});
 	let submittingEventId = $state<string | null>(null);
 	const serverApprovals = $derived(

@@ -7,7 +7,10 @@
 	import MessageRequestCard from '$components/MessageRequestCard.svelte';
 	import EmptyState from '$components/EmptyState.svelte';
 	import TopBar from '$components/TopBar.svelte';
-	import { queryClient, useQuery } from '$lib/state/query.svelte';
+	import { browser } from '$app/environment';
+	import { createAppQuery } from '$lib/query/create-query.svelte';
+	import { queryClient } from '$lib/query/cache';
+	import { conversationsQueryOptions, messageRequestsQueryOptions } from '$lib/query/options';
 	import { peerIdentityLabel } from '$lib/constants/operating-identity';
 	import { fmtRelative } from '$lib/utils/dates';
 	import { UNREAD_BADGE_CLASS, formatCount } from '$lib/utils/badges';
@@ -19,22 +22,17 @@
 
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
-	const conversations = useQuery<Conversation[]>(
-		'conversations:mine',
-		async () => (await fetch('/api/conversations')).json(),
-		{ staleTime: 60_000, refetchInterval: 300_000 },
-		data.conversations
-	);
+	// Server-rendered lists hydrate the shared cache; the Realtime bridge keeps
+	// them current, so neither query polls.
+	const conversations = createAppQuery(() => ({
+		...conversationsQueryOptions(data.conversations),
+		enabled: browser
+	}));
 
-	const messageRequests = useQuery<MessageRequest[]>(
-		'message-requests:mine',
-		async () => {
-			const response = await fetch('/api/message-requests');
-			return response.ok ? response.json() : [];
-		},
-		{ staleTime: 60_000, refetchInterval: 300_000 },
-		data.messageRequests ?? []
-	);
+	const messageRequests = createAppQuery(() => ({
+		...messageRequestsQueryOptions(data.messageRequests ?? []),
+		enabled: browser
+	}));
 
 	let inboxView = $state<'messages' | 'requests'>('messages');
 	let search = $state('');
@@ -60,8 +58,8 @@
 					page.data.session?.userId ?? 'default'
 				);
 			}
-			queryClient.invalidate('message-requests:mine');
-			queryClient.invalidate('conversations:mine');
+			queryClient.invalidate('message-requests:');
+			queryClient.invalidate('conversations:');
 			if (accept && result.request?.conversationId) await goto(`/inbox/${result.request.conversationId}`);
 		} catch (error) {
 			toast(error instanceof Error ? error.message : 'Could not update the request.', 'error');
