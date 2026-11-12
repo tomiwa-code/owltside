@@ -1,6 +1,7 @@
 import { enhance } from '$app/forms';
 import type { SubmitFunction } from '@sveltejs/kit';
 import { toast } from '$lib/state/toast.svelte';
+import { markDataChanged } from '$lib/query/mutation';
 
 /** All progressively enhanced forms share pending feedback and double-submit protection. */
 export function busyEnhance(form: HTMLFormElement, submit?: SubmitFunction) {
@@ -38,6 +39,12 @@ export function busyEnhance(form: HTMLFormElement, submit?: SubmitFunction) {
 				// Let Svelte apply new validity/disabled state during the result callback.
 				enable();
 				try {
+					// A successful action (including a redirect) changed server data.
+					// Route loads compare against this clock, so the update()/navigation
+					// that follows refetches instead of serving the pre-action cache.
+					if (result.result.type === 'success' || result.result.type === 'redirect') {
+						markDataChanged();
+					}
 					if (result.result.type === 'error') toast('That request could not be completed. Please try again.', 'error');
 					if (result.result.type === 'failure' && result.result.data?.error) toast(String(result.result.data.error), 'error');
 					if (callback) await callback(result);

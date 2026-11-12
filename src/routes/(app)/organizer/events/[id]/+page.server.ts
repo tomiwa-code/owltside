@@ -3,25 +3,7 @@ import { redactForPublicClient } from '$lib/server/redact-approval';
 import { createSupabase } from '$lib/server/supabase';
 import { isEventClosed } from '$lib/utils/event-status';
 import { fail, redirect } from '@sveltejs/kit';
-import type { Actions, PageServerLoad } from './$types';
-
-export const load: PageServerLoad = async ({ locals, cookies, params }) => {
-	const source = getSource(createSupabase(cookies));
-	const userId = locals.session?.userId ?? 'demo';
-	const organizer = await source.getOrganizer(userId);
-	const event = organizer.events.find((e) => e.id === params.id);
-	if (!event) redirect(302, '/organizer');
-	const [tickets, orders, checkins, approvals] = await Promise.all([
-		source.getEventTickets(params.id),
-		source.getEventOrders(params.id),
-		source.getEventCheckins(params.id),
-		source
-			.listApprovals(userId)
-			.then((rows) => rows.map(redactForPublicClient))
-			.catch(() => [])
-	]);
-	return { organizer, event, tickets, orders, checkins, approvals };
-};
+import type { Actions } from './$types';
 
 export const actions: Actions = {
 	updateEvent: async ({ request, locals, cookies, params }) => {

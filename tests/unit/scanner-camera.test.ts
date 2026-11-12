@@ -1,28 +1,8 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
-const source = vi.hoisted(() => ({ getOrganizer: vi.fn() }));
-vi.mock('$lib/server/supabase', () => ({ createSupabase: () => null }));
-vi.mock('$lib/server/datasource', () => ({ getSource: () => source }));
-
 import ScanPage from '../../src/routes/(app)/organizer/scan/+page.svelte';
 import type { EventItem } from '$lib/types';
-
-const stats = {
-	revenue: 0,
-	netRevenue: 0,
-	refunds: 0,
-	refunded: 0,
-	revenueDeltaPct: null,
-	checkedIn: 0,
-	capacity: 0,
-	orders: 0,
-	soldPct: 0,
-	soldLastHour: 0,
-	payout: 0,
-	held: 0
-};
-const settlements: Record<string, never> = {};
 
 const gatedEvent = {
 	id: 'e-rooftop',
@@ -51,7 +31,8 @@ function renderScanner(events: EventItem[] = [gatedEvent], initialEventId = 'e-r
 		props: {
 			data: {
 				...layoutData,
-				organizer: { events, stats, settlements, checkins: [], orders: [] },
+				// The scan load only ships the open events.
+				organizer: { events },
 				initialEventId
 			}
 		}

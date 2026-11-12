@@ -1,21 +1,7 @@
 import { getSource } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
 import { error, fail, redirect } from '@sveltejs/kit';
-import type { Actions, PageServerLoad } from './$types';
-
-export const load: PageServerLoad = async ({ params, locals, cookies }) => {
-	const source = getSource(createSupabase(cookies));
-	const userId = locals.session?.userId ?? 'demo';
-	const tickets = await source.getTickets(userId);
-	const ticket = tickets.find((t) => t.id === params.id);
-	if (!ticket) error(404, 'Ticket not found');
-	// Refunds need an admin decision, so surface the outstanding request (if any)
-	// rather than pretending the pass was already cancelled.
-	const approvals = await source.listApprovals(userId).catch(() => []);
-	const refundRequest =
-		approvals.find((request) => request.kind === 'refund' && request.subjectId === ticket.id) ?? null;
-	return { ticket, refundRequest };
-};
+import type { Actions } from './$types';
 
 export const actions: Actions = {
 	transfer: async ({ request, params, locals, cookies }) => {

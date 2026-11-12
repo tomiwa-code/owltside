@@ -15,7 +15,8 @@ import {
 } from '$lib/utils/event-status';
 import OrganizerPage from '../../src/routes/(app)/organizer/+page.svelte';
 import ManageEventPage from '../../src/routes/(app)/organizer/events/[id]/+page.svelte';
-import { load as createWizardLoad, actions as createWizardActions } from '../../src/routes/(app)/organizer/create/+page.server';
+import { load as createWizardLoad } from '../../src/routes/(app)/organizer/create/+page';
+import { actions as createWizardActions } from '../../src/routes/(app)/organizer/create/+page.server';
 import { actions as manageEventActions } from '../../src/routes/(app)/organizer/events/[id]/+page.server';
 import type { ApprovalRequest, EventItem } from '$lib/types';
 
@@ -402,11 +403,19 @@ describe('Organizer dashboard payout lifecycle & Past tab', () => {
 		expect(screen.queryByRole('button', { name: /Broadcast to ticket holders/i })).toBeNull();
 		expect(screen.getByRole('button', { name: 'Request Payout' })).not.toBeDisabled();
 
-		// Wizard edit loader redirects closed events to /organizer?tab=past
+		// Wizard edit loader redirects closed events to /organizer?tab=past. It
+		// reads the organizer ledger from the query cache's API instead of the
+		// datasource directly, so the fetch stub answers /api/organizer.
+		const organizerPayload = computeOrganizer([demo.pastSessionEvent], [], [], []);
+		const wizardFetch = vi.fn(async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url === '/api/organizer') return new Response(JSON.stringify(organizerPayload));
+			return new Response('[]');
+		});
 		await expect(
 			createWizardLoad({
-				locals: { session: { userId: 'u-ada', role: 'organizer' } },
-				cookies: { getAll: () => [], get: () => undefined, set: vi.fn(), delete: vi.fn() },
+				fetch: wizardFetch,
+				parent: async () => ({ session: { userId: 'u-ada', role: 'organizer' } }),
 				url: new URL(`http://localhost/organizer/create?edit=${demo.pastSessionEvent.id}`)
 			} as never)
 		).rejects.toMatchObject({ status: 302, location: '/organizer?tab=past' });

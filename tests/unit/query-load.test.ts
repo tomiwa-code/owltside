@@ -1,9 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EventItem, ProfileSnapshot, Ticket } from '$lib/types';
 import { queryClient } from '$lib/query/cache';
 import { load as homeLoad } from '../../src/routes/(app)/home/+page';
 import { load as exploreLoad } from '../../src/routes/(app)/explore/+page';
 import { load as ticketsLoad } from '../../src/routes/(app)/tickets/+page';
+import { load as eventDetailLoad } from '../../src/routes/(app)/events/[slug]/+page';
+import { load as threadLoad } from '../../src/routes/(app)/inbox/[id]/+page';
+import { load as ticketDetailLoad } from '../../src/routes/(app)/tickets/[id]/+page';
+import { load as userProfileLoad } from '../../src/routes/(app)/users/[handle]/+page';
+import { markDataChanged } from '$lib/query/mutation';
 
 /**
  * Route navigations must read the query cache rather than rebuild the payload
@@ -138,5 +143,102 @@ describe('cache-aware route loads', () => {
 		expect(first.events).toHaveLength(1);
 		await profileLoad({ fetch: fetchMock, parent: async () => ({}) } as never);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('refetches a warm entry after a mutation marks the data changed', async () => {
+		const fetchMock = vi.fn(async () => jsonResponse([event('a')]));
+		await homeLoad({ fetch: fetchMock } as never);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+
+		// What every successful `use:enhance` submission does. The clock has
+		// millisecond resolution, and a real action is a round trip away, so
+		// step past the entry's timestamp before marking.
+		await new Promise((resolve) => setTimeout(resolve, 2));
+		markDataChanged();
+
+		await homeLoad({ fetch: fetchMock } as never);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('cache-aware detail loads', () => {
+	const session = { userId: 'u-1', email: 'a@b.c', handle: 'ada', name: 'Ada', role: 'attendee' as const };
+	const detailFetch = vi.fn();
+	beforeEach(() => {
+		detailFetch.mockReset();
+		detailFetch.mockImplementation(async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url.endsWith('/message-request')) return jsonResponse({ request: null });
+			if (url === '/api/events/a') return jsonResponse(event('a'));
+			if (url === '/api/conversations/c1') return jsonResponse({ id: 'c1', peer: { id: 'u-2' } });
+			if (url === '/api/conversations/c1/messages') return jsonResponse([{ id: 'm1', body: 'hi' }]);
+			if (url === '/api/conversations') return jsonResponse([{ id: 'c1' }]);
+			if (url === '/api/tickets') return jsonResponse([{ id: 'tk1', status: 'valid', eventTitle: 'Event' }]);
+			if (url === '/api/approvals') return jsonResponse([]);
+			if (url === '/api/users/ada') return jsonResponse({ profile: { id: 'u-1', handle: 'ada' }, events: [event('a')] });
+			return jsonResponse([]);
+		});
+	});
+
+	const eventArgs = { fetch: detailFetch, parent: async () => ({ session }) };
+
+	it('event detail answers from the cache, per-user state included but separate', async () => {
+		const first = (await eventDetailLoad({ ...eventArgs, params: { slug: 'a' } } as never)) as {
+			event: EventItem;
+			messageRequest: unknown;
+		};
+		expect(first.event.id).toBe('a');
+		expect(first.messageRequest).toBeNull();
+		const calls = detailFetch.mock.calls.length;
+		expect(calls).toBe(2);
+
+		await eventDetailLoad({ ...eventArgs, params: { slug: 'a' } } as never);
+		expect(detailFetch.mock.calls.length).toBe(calls);
+	});
+
+	it('event detail 404s instead of rendering a missing event', async () => {
+		await expect(
+			eventDetailLoad({
+				fetch: async () => new Response('{}', { status: 404 }),
+				parent: async () => ({ session: null }),
+				params: { slug: 'gone' }
+			} as never)
+		).rejects.toMatchObject({ status: 404 });
+	});
+
+	it('a thread reuses both the conversation and the messages caches', async () => {
+		const args = { fetch: detailFetch, params: { id: 'c1' } } as never;
+		const first = (await threadLoad(args)) as { conversation: { id: string }; messages: unknown[] };
+		expect(first.conversation.id).toBe('c1');
+		expect(first.messages).toHaveLength(1);
+		const calls = detailFetch.mock.calls.length;
+
+		await threadLoad(args);
+		expect(detailFetch.mock.calls.length).toBe(calls);
+	});
+
+	it('ticket detail serves the vault cache and 404s for guests', async () => {
+		const args = { fetch: detailFetch, parent: async () => ({ session }), params: { id: 'tk1' } } as never;
+		const first = (await ticketDetailLoad(args)) as { ticket: { id: string } };
+		expect(first.ticket.id).toBe('tk1');
+		const calls = detailFetch.mock.calls.length;
+
+		await ticketDetailLoad(args);
+		expect(detailFetch.mock.calls.length).toBe(calls);
+
+		await expect(
+			ticketDetailLoad({ fetch: detailFetch, parent: async () => ({ session: null }), params: { id: 'tk1' } } as never)
+		).rejects.toMatchObject({ status: 404 });
+	});
+
+	it('a public profile is cached by handle', async () => {
+		const args = { fetch: detailFetch, params: { handle: 'ada' } } as never;
+		const first = (await userProfileLoad(args)) as { profile: { handle: string }; events: EventItem[] };
+		expect(first.profile.handle).toBe('ada');
+		expect(first.events).toHaveLength(1);
+		const calls = detailFetch.mock.calls.length;
+
+		await userProfileLoad(args);
+		expect(detailFetch.mock.calls.length).toBe(calls);
 	});
 });

@@ -1,28 +1,14 @@
 import { validateEventPoster } from '$lib/server/event-poster';
 import { getSource } from '$lib/server/datasource';
-import { approvedPayoutAccount } from '$lib/utils/verification';
 import { createSupabase } from '$lib/server/supabase';
-import { isEventClosed } from '$lib/utils/event-status';
 import { fail, redirect } from '@sveltejs/kit';
+import { isEventClosed } from '$lib/utils/event-status';
 import { z } from 'zod';
 import { NIGERIAN_STATES } from '$lib/constants/nigeria-states';
 import { hasOrganizerIdentity } from '$lib/server/organizer-access';
 import { isValidPromoCode, normalizePromoCode } from '$lib/utils/promo';
 import type { WizardSpeaker } from '$lib/types';
-import type { Actions, PageServerLoad } from './$types';
-
-export const load: PageServerLoad = async ({ locals, cookies, url }) => {
-	const editId = url.searchParams.get('edit');
-	let event;
-	if (editId) {
-		const organizer = await getSource(createSupabase(cookies)).getOrganizer(locals.session?.userId ?? 'demo');
-		event = organizer.events.find((item) => item.id === editId);
-		if (!event) redirect(302, '/organizer');
-		if (isEventClosed(event)) redirect(302, '/organizer?tab=past');
-	}
-	const approvals = await getSource(createSupabase(cookies)).listApprovals(locals.session?.userId ?? 'demo').catch(() => []);
-	return { owner: locals.session?.userId ?? 'demo', event: event ?? null, payoutAccount: approvedPayoutAccount(approvals) };
-};
+import type { Actions } from './$types';
 
 const draftSchema = z.object({
 	poster: z.string().max(7_000_000).default(''),

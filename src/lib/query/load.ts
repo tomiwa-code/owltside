@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import type { QueryKey } from '@tanstack/svelte-query';
 import { getQueryClient } from './client';
+import { dataChangedSince } from './mutation';
 
 /**
  * Cache-aware route data.
@@ -25,6 +26,7 @@ export function cachedValue<T>(key: QueryKey, staleTime: number): T | undefined 
 	const state = cache().getQueryState<T>(key);
 	if (!state || state.data === undefined || state.dataUpdatedAt <= 0) return undefined;
 	if (state.isInvalidated) return undefined;
+	if (dataChangedSince(state.dataUpdatedAt)) return undefined;
 	if (Date.now() - state.dataUpdatedAt > staleTime) return undefined;
 	return state.data;
 }

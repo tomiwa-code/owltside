@@ -19,8 +19,10 @@ vi.mock('$lib/server/datasource', async (importOriginal) => {
 	return { ...actual, getSource: () => source };
 });
 
-import { load as eventLoad } from '../../src/routes/(app)/events/[slug]/+page.server';
-import { load as checkoutLoad, actions as checkoutActions } from '../../src/routes/(app)/checkout/+page.server';
+import { load as eventLoad } from '../../src/routes/(app)/events/[slug]/+page';
+import { GET as eventMessageRequest } from '../../src/routes/api/events/[slug]/message-request/+server';
+import { load as checkoutLoad } from '../../src/routes/(app)/checkout/+page';
+import { load as checkoutServerLoad, actions as checkoutActions } from '../../src/routes/(app)/checkout/+page.server';
 import { load as checkoutSuccessLoad } from '../../src/routes/(app)/checkout/success/+page.server';
 import { load as ticketsLoad } from '../../src/routes/(app)/tickets/+page';
 import { GET as apiTickets } from '../../src/routes/api/tickets/+server';
@@ -41,6 +43,26 @@ const event = {
 	tiers: [{ id: 'tier-1', name: 'General', price: 10_000, sold: 0, capacity: 100 }]
 };
 const cookies = { get: () => undefined, getAll: () => [], set: vi.fn(), delete: vi.fn() };
+/** Route loads now read `/api/…`; this answers them from the mocked source. */
+const jsonResponse = (value: unknown, status = 200) =>
+	new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
+
+const routeFetch = (routes: Record<string, () => unknown | Promise<unknown>>) =>
+	vi.fn(async (input: RequestInfo | URL) => {
+		const url = String(input);
+		for (const [fragment, handler] of Object.entries(routes)) {
+			if (url.includes(fragment)) return jsonResponse(await handler());
+		}
+		return jsonResponse([]);
+	});
+
+const checkoutEvent = {
+	...event,
+	status: 'published',
+	startsAt: '2026-12-01T18:00:00.000Z',
+	endsAt: '2026-12-01T23:00:00.000Z'
+};
+
 const layoutData = { session: null, demoMode: true, operatingIdentity: 'attendee' as const, unread: 0, inboxUnread: 0, currentProfile: null, followingIds: [] as string[], followLoadError: false };
 
 beforeEach(() => {
@@ -63,26 +85,36 @@ afterEach(() => {
 
 describe('guest purchase gates (server)', () => {
 	it('asks guests to sign in before checkout loads, preserving the checkout URL', async () => {
+		const fetch = routeFetch({ '/api/events/': () => checkoutEvent });
 		await expect(
 			checkoutLoad({
-				url: new URL('http://localhost/checkout?event=promo-night&tier=tier-1&qty=2'),
-				locals: { session: null, demoMode: true },
-				cookies
+				fetch,
+				parent: async () => ({ session: null }),
+				url: new URL('http://localhost/checkout?event=promo-night&tier=tier-1&qty=2')
 			} as never)
 		).rejects.toMatchObject({
 			status: 303,
 			location: '/auth/login?next=%2Fcheckout%3Fevent%3Dpromo-night%26tier%3Dtier-1%26qty%3D2'
 		});
+		expect(fetch).not.toHaveBeenCalled();
 		expect(source.getEvent).not.toHaveBeenCalled();
 	});
 
 	it('still loads checkout for signed-in buyers', async () => {
 		const result = (await checkoutLoad({
-			url: new URL('http://localhost/checkout?event=promo-night&tier=tier-1&qty=1'),
-			locals: { session, demoMode: true },
-			cookies
+			fetch: routeFetch({ '/api/events/': () => checkoutEvent }),
+			parent: async () => ({ session }),
+			url: new URL('http://localhost/checkout?event=promo-night&tier=tier-1&qty=1')
 		} as never)) as unknown as { holder: { authenticated: boolean } };
 		expect(result.holder.authenticated).toBe(true);
+	});
+
+	it('keeps the gateway keys on the server load', async () => {
+		const result = (await checkoutServerLoad({
+			locals: { session, demoMode: true }
+		} as never)) as { paystackPublicKey: string | null; demoMode: boolean };
+		expect(result.demoMode).toBe(true);
+		expect(result).toHaveProperty('paystackPublicKey');
 	});
 
 	it('redirects a guest pay attempt to sign-in and never creates an order', async () => {
@@ -155,33 +187,49 @@ describe('guest tickets gates', () => {
 	});
 });
 
-describe('event detail load (server)', () => {
+describe('event detail load (cache-first)', () => {
+	const loadEvent = (signedIn: boolean, fetch: ReturnType<typeof routeFetch>) =>
+		eventLoad({
+			fetch,
+			parent: async () => ({ session: signedIn ? session : null }),
+			params: { slug: 'promo-night' }
+		} as never) as Promise<{ event: { slug: string }; messageRequest: unknown }>;
+
 	it('still renders the event when the signed-in viewer\u2019s request lookup fails', async () => {
 		// This is the shape of the regression that broke event pages only for
 		// email logins: the request query runs for sessions only, and its error
-		// propagated as a 500 instead of just hiding the contact widget.
+		// used to propagate as a 500 instead of just hiding the contact widget.
+		// It now lives in its own endpoint, which degrades to `{ request: null }`.
 		source.getEventMessageRequest.mockRejectedValueOnce(
 			new Error('column message_requests.event_slug does not exist')
 		);
 		const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
-		const result = (await eventLoad({
+		const response = await eventMessageRequest({
 			params: { slug: 'promo-night' },
-			locals: { session, demoMode: true },
+			locals: { session },
 			cookies
-		} as never)) as { event: { slug: string }; messageRequest: unknown };
+		} as never);
+		expect(await response.json()).toEqual({ request: null });
+		expect(logged).toHaveBeenCalled();
+		logged.mockRestore();
+
+		const result = await loadEvent(
+			true,
+			routeFetch({
+				'/message-request': () => ({ request: null }),
+				'/api/events/': () => event
+			})
+		);
 		expect(result.event.slug).toBe('promo-night');
 		expect(result.messageRequest).toBeNull();
 		expect(source.getEventMessageRequest).toHaveBeenCalledWith(userId, event.id);
-		expect(logged).toHaveBeenCalled();
-		logged.mockRestore();
 	});
 
 	it('does not ask for a message request when the visitor is a guest', async () => {
-		await eventLoad({
-			params: { slug: 'promo-night' },
-			locals: { session: null, demoMode: true },
-			cookies
-		} as never);
+		const fetch = routeFetch({ '/api/events/': () => event });
+		const result = await loadEvent(false, fetch);
+		expect(result.messageRequest).toBeNull();
+		expect(fetch.mock.calls.map(([url]) => String(url))).toEqual(['/api/events/promo-night']);
 		expect(source.getEventMessageRequest).not.toHaveBeenCalled();
 	});
 });

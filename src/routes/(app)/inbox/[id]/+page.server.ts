@@ -2,20 +2,7 @@ import { getSource } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
 import { sendWebPushToUser } from '$lib/server/webpush';
 import { error } from '@sveltejs/kit';
-import type { Actions, PageServerLoad } from './$types';
-
-export const load: PageServerLoad = async ({ params, locals, cookies }) => {
-	const source = getSource(createSupabase(cookies));
-	const userId = locals.session?.userId ?? 'demo';
-	const conversations = await source.getConversations(userId);
-	// The inbox list is paged (newest 50), so an older thread is loaded by id
-	// instead of being reported as missing.
-	const conversation =
-		conversations.find((c) => c.id === params.id) ?? (await source.getConversation(userId, params.id));
-	if (!conversation) error(404, 'Conversation not found');
-	const messages = await source.getMessages(params.id);
-	return { conversation, messages, conversations };
-};
+import type { Actions } from './$types';
 
 export const actions: Actions = {
 	send: async ({ request, params, locals, cookies }) => {
