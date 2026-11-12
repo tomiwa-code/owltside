@@ -1,5 +1,5 @@
 // Owltside Service Worker — offline shell cache + native phone/OS push notifications.
-const CACHE = 'owltside-shell-v2';
+const CACHE = 'owltside-shell-v3';
 const PRECACHE = ['/', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {

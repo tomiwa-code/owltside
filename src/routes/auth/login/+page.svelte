@@ -69,10 +69,10 @@
 				style="background-image: radial-gradient(circle at 15% 20%, rgba(99,102,241,0.14) 0, transparent 45%), radial-gradient(circle at 85% 80%, rgba(76,215,246,0.08) 0, transparent 40%);"
 			></div>
 			<div class="relative flex items-center gap-2.5">
-				<img src="/owl-icon.png" alt="Owltside logo" class="w-8 h-8 object-contain" />
-
+				<img src="/logo.png" alt="Owltside" class="h-7 w-auto object-contain" />
 			</div>
 			<div class="relative flex-1 flex flex-col justify-center gap-6">
+				<img src="/logo-stacked.png" alt="Owltside" class="h-32 w-auto object-contain self-start" />
 				<h1 class="font-display text-display-hero text-on-surface">Welcome back to the night side.</h1>
 				<p class="text-body-lg text-on-surface-variant max-w-md">
 					Your instant radar for tonight's music arenas, secret sets, and gate tickets.
