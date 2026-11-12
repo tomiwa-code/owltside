@@ -18,7 +18,7 @@ export const load: PageLoad = async ({ fetch, parent }) => {
 		cachedJson<Ticket[]>(fetch, {
 			key: queryKeys.tickets,
 			url: '/api/tickets',
-			staleTime: 15_000
+			staleTime: STALE_TIME.tickets
 		}).catch(() => [] as Ticket[]),
 		cachedJson<ApprovalRequest[]>(fetch, {
 			key: queryKeys.approvals,

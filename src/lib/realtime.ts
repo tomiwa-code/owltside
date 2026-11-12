@@ -45,7 +45,7 @@ export function realtimeAvailable(): boolean {
  * transport wherever it exists, so live screens do not poll at all; demo mode
  * (and a browser with the socket blocked) keeps a slow safety net.
  */
-export function pollFallbackMs(fallbackMs = 60_000): number | false {
+export function pollFallbackMs(fallbackMs = 3 * 60_000): number | false {
 	return realtimeAvailable() ? false : fallbackMs;
 }
 
