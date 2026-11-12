@@ -39,6 +39,19 @@ export interface Profile {
 	following: number;
 }
 
+/**
+ * The payload the profile tab needs: the signed-in member's public profile,
+ * their tickets, and every event they organize or speak at. Served by
+ * `/api/profile` so the route can load it from the query cache.
+ */
+export interface ProfileSnapshot {
+	session: Session | null;
+	demoMode: boolean;
+	tickets: Ticket[];
+	profile: Profile | null;
+	events: EventItem[];
+}
+
 export type SpeakerInviteStatus = 'pending' | 'accepted' | 'declined';
 
 /**

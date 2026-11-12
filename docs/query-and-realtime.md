@@ -12,25 +12,46 @@ Two layers own runtime data:
 
 ## Where data comes from
 
-SvelteKit server loads still run first. Their payload is passed to the screen and
-becomes the query's `initialData`, with `initialDataUpdatedAt` set to load time.
-That is the main load-time win: the browser paints server HTML and then *does
-not* repeat those requests on mount.
+Route data is loaded by **cache-aware universal loads** (`+page.ts`):
 
 ```
-+layout.server.ts ─┐
-+page.server.ts   ─┴─► page.data ─► createAppQuery(() => …QueryOptions(page.data.x))
-                                             │
-                                   initialData + staleTime
-                                             ▼
-                                    shared QueryClient
-                                             ▲
-                          WebSocket patches ─┘ (messages, notifications, badges)
+         first render (SSR)                    later tab switches (browser)
+                 │                                      │
+     fetch('/api/…') in-process               cachedValue(key, staleTime)
+                 │                                      │
+       +---------------- shared QueryClient ----------------+
+                 │                                      │
+       initialData / SSR HTML                no request, instant page data
 ```
 
-`(app)/+layout.server.ts` resolves the profile, follow graph and badge counters
-with `Promise.all`, so navigation pays one parallel round trip rather than three
-serial ones.
+On the server there is no browser cache, so the loader fetches through the API
+(in-process, with cookies). In the browser the same loader first asks TanStack:
+if the entry is fresh it returns it and **the navigation performs no data
+request at all**; only a stale or cold entry is fetched, which also primes the
+cache for the component that is about to mount.
+
+`(app)/+layout.server.ts` still resolves the profile, follow graph and badge
+counters with `Promise.all`. It deliberately does **not** read `url`, so
+SvelteKit reuses its data across navigations instead of re-running it.
+
+### Why tab switches used to refetch
+
+SvelteKit re-runs a route's leaf `load` on every navigation. When all data came
+from `+page.server.ts`, that meant a fresh database read and a new payload on
+every Home → Explore → Tickets switch; TanStack only deduped requests the
+components made *after* mount, so its cache was never in the navigation path.
+
+Two things changed:
+
+1. Data loads moved to `+page.ts` and consult the query cache first.
+2. The organizer gate moved out of `(app)/+layout.server.ts` into
+   `(app)/organizer/+layout.server.ts`. Reading `url` in the shared layout made
+   its data invalid on every navigation, re-reading the profile, follow graph
+   and badges each time.
+
+The result: the `__data.json` payload for a tab is now only the (reused)
+layout/auth data — ~60 bytes in the demo app — and a warm tab switch issues no
+request at all.
 
 ## Keys and freshness
 
@@ -40,7 +61,9 @@ matches the first segment.
 
 | Query | Key | staleTime | Background refresh |
 | --- | --- | --- | --- |
-| Event catalogue | `events:all` | 5 min | focus / reconnect; mirrored to localStorage for 6 h |
+| Home feed | `events:all` | 5 min | focus / reconnect; mirrored to localStorage for 6 h |
+| Explore catalogue | `events:catalogue` | 5 min | focus / reconnect; bounded 60-event pages, max 200 |
+| Profile snapshot | `profile:me` | 60 s | focus / reconnect; invalidated after profile edits |
 | Conversations | `conversations:mine` | 60 s | socket; 60 s poll only when no socket |
 | Thread | `messages:<id>` | 60 s | socket append; 60 s poll only when no socket |
 | Message requests | `message-requests:mine` | 60 s | socket; 120 s poll only when no socket |
@@ -85,12 +108,15 @@ once, because the socket echo is not a delivery guarantee.
 1. Add the key to `keys.ts` (never build one inline).
 2. Add a `…QueryOptions(initialData)` factory in `options.ts` with its staleTime
    and poll policy.
-3. In the page, `createAppQuery(() => ({ ...xQueryOptions(data.x), enabled: browser }))`.
-4. If it is a list the server already loads, pass that payload so hydration does
-   not refetch.
+3. Load the route data with a universal `+page.ts` using `cachedJson` /
+   `cachedRequest` from `$lib/query/load.ts` — not a server load, which SvelteKit
+   would re-run on every navigation. Keep `+page.server.ts` only for actions.
+4. In the page, `createAppQuery(() => ({ ...xQueryOptions(data.x), enabled: browser }))`.
 
-After a mutation, prefer a targeted `queryClient.invalidate('domain:')` (or
-`invalidatePrefix(keyFamilies.x)`) over `invalidateAll()`.
+After a mutation, invalidate the key **before** `update()`/`invalidateAll()` so
+the re-run load cannot serve the value the action just replaced. Prefer a
+targeted `queryClient.invalidate('domain:')` (or `invalidatePrefix(keyFamilies.x)`)
+over `invalidateAll()`.
 
 ## Tests
 

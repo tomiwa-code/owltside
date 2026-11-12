@@ -9,6 +9,7 @@ import type {
 	NotificationItem,
 	OrganizerPayload,
 	Profile,
+	ProfileSnapshot,
 	Ticket
 } from '$lib/types';
 import { pollFallbackMs } from '$lib/realtime';
@@ -16,6 +17,7 @@ import { STALE_TIME } from './client';
 import { queryClient } from './cache';
 import { queryKeys } from './keys';
 import { readPersistedEntry, writePersisted } from './persist';
+import { fetchEventCatalogue } from './api';
 
 /**
  * Query option factories: one place that knows each endpoint's URL, cache key,
@@ -45,6 +47,25 @@ export function eventsQueryOptions(initialData?: EventItem[]) {
 		queryFn: async () => {
 			const events = await getJson<EventItem[]>('/api/events');
 			writePersisted(queryKeys.events[0], events);
+			return events;
+		},
+		staleTime: STALE_TIME.catalogue,
+		initialData: initialData ?? persisted?.data,
+		initialDataUpdatedAt: initialData ? Date.now() : persisted?.at
+	});
+}
+
+export function eventCatalogueQueryOptions(initialData?: EventItem[]) {
+	// Explore needs the whole catalogue for its category counts and filters, so
+	// it has its own key rather than competing with the home feed's page of 60.
+	const persisted = initialData
+		? undefined
+		: readPersistedEntry<EventItem[]>(queryKeys.eventsCatalogue[0], EVENTS_PERSIST_MAX_AGE);
+	return queryOptions({
+		queryKey: queryKeys.eventsCatalogue,
+		queryFn: async () => {
+			const events = await fetchEventCatalogue();
+			writePersisted(queryKeys.eventsCatalogue[0], events);
 			return events;
 		},
 		staleTime: STALE_TIME.catalogue,
@@ -161,6 +182,15 @@ export function connectionsQueryOptions(profileId: string, kind: 'followers' | '
 		// The sheet offers an explicit retry; a hidden auto-retry would fire a
 		// second request the user did not ask for.
 		retry: false
+	});
+}
+
+export function profileQueryOptions(initialData?: ProfileSnapshot) {
+	return queryOptions({
+		queryKey: queryKeys.profile,
+		queryFn: ({ signal }) => getJson<ProfileSnapshot>('/api/profile', { signal }),
+		staleTime: STALE_TIME.account,
+		initialData
 	});
 }
 

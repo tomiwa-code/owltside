@@ -11,8 +11,10 @@
  * the header, the inbox and the chat screen hit the same cache entry.
  */
 export const queryKeys = {
-	/** Public catalogue; shared by home + explore (same `/api/events` payload). */
+	/** Home feed: newest public events (`/api/events`, default page). */
 	events: ['events:all'] as const,
+	/** Explore: the whole public catalogue (bounded pages, up to 200). */
+	eventsCatalogue: ['events:catalogue'] as const,
 	event: (slug: string) => [`events:${slug}`] as const,
 
 	conversations: ['conversations:mine'] as const,
@@ -24,6 +26,8 @@ export const queryKeys = {
 
 	tickets: ['tickets:mine'] as const,
 	ticket: (id: string) => [`tickets:${id}`] as const,
+
+	profile: ['profile:me'] as const,
 
 	organizer: ['organizer:me'] as const,
 	approvals: ['approvals:mine'] as const,
@@ -41,6 +45,7 @@ export const keyFamilies = {
 	notifications: 'notifications:',
 	badges: 'badges:',
 	tickets: 'tickets:',
+	profile: 'profile:',
 	organizer: 'organizer:',
 	approvals: 'approvals:',
 	connections: 'connections:',

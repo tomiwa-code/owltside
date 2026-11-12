@@ -50,6 +50,8 @@ import {
 } from '$lib/utils/event-status';
 import { settleEvent, settleOrganizer } from '$lib/utils/settlement';
 import { latestVerificationRequest, VERIFICATION_CHECKS } from '$lib/utils/verification';
+import { filterEventList, matches, minPrice, sortEvents } from '$lib/utils/event-filters';
+export { filterEventList, minPrice } from '$lib/utils/event-filters';
 import { mediaHref } from './media';
 
 /**
@@ -546,51 +548,6 @@ export interface DataSource {
 }
 
 /* ────────────────────────────── demo mode ────────────────────────────── */
-
-function matches(e: EventItem, f: EventFilters): boolean {
-	if (f.category && f.category !== 'all' && e.category !== f.category) return false;
-	if (f.freeOnly && e.tiers.some((t) => t.price > 0) === true && !e.tiers.some((t) => t.price === 0))
-		return false;
-	if (f.query) {
-		const q = f.query.trim().toLowerCase();
-		const hay = `${e.title} ${e.venue} ${e.city} ${e.organizer.name} ${e.tags.join(' ')}`.toLowerCase();
-		if (!hay.includes(q)) return false;
-	}
-	if (f.dateFrom && new Date(e.startsAt) < new Date(f.dateFrom)) return false;
-	if (f.dateTo && new Date(e.startsAt) > new Date(`${f.dateTo}T23:59:59`)) return false;
-	return true;
-}
-
-function sortEvents(list: EventItem[], sort: EventFilters['sort']): EventItem[] {
-	const arr = [...list];
-	switch (sort) {
-		case 'popular':
-			return arr.sort((a, b) => b.viewsToday - a.viewsToday);
-		case 'price_asc':
-			return arr.sort((a, b) => minPrice(a) - minPrice(b));
-		case 'price_desc':
-			return arr.sort((a, b) => minPrice(b) - minPrice(a));
-		default:
-			return arr.sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt));
-	}
-}
-
-/**
- * Apply the shared public-feed semantics to an already-loaded catalogue.
- * Used by the explore page so one Postgres read can answer both "what matches
- * these filters" and "what are the category counts" (it used to run the full
- * query twice and download the catalogue twice).
- */
-export function filterEventList(list: EventItem[], filters: EventFilters = {}): EventItem[] {
-	return sortEvents(
-		list.filter((event) => isPubliclyVisible(event) && matches(event, filters)),
-		filters.sort
-	);
-}
-
-export function minPrice(e: EventItem): number {
-	return Math.min(...e.tiers.map((t) => t.price));
-}
 
 function withEffectiveStatus(event: EventItem): EventItem {
 	const status = normalizedEventStatus(event);

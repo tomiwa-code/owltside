@@ -1,6 +1,7 @@
 <script lang="ts">
 	import FollowButton from '$components/FollowButton.svelte';
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
+	import { queryClient } from '$lib/query/cache';
 	import {
 		BadgeCheck,
 		Bell,
@@ -217,6 +218,10 @@
 	function handleProfileEnhance() {
 		savingProfile = true;
 		return async ({ result, update }: { result: any; update: () => Promise<void> }) => {
+			// The action changed profile data; drop the cached snapshot before
+			// `update()` re-runs the route load so it fetches instead of
+			// serving what we just replaced.
+			if (result.type === 'success') queryClient.invalidate('profile:');
 			try { await update(); } finally { savingProfile = false; }
 			if (result.type === 'success') {
 				const saved = result.data as { success?: boolean; name?: string; username?: string; bio?: string; city?: string; link?: string; interests?: string[]; usernameChangedAt?: string | null };

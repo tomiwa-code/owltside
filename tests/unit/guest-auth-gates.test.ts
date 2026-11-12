@@ -22,7 +22,7 @@ vi.mock('$lib/server/datasource', async (importOriginal) => {
 import { load as eventLoad } from '../../src/routes/(app)/events/[slug]/+page.server';
 import { load as checkoutLoad, actions as checkoutActions } from '../../src/routes/(app)/checkout/+page.server';
 import { load as checkoutSuccessLoad } from '../../src/routes/(app)/checkout/success/+page.server';
-import { load as ticketsLoad } from '../../src/routes/(app)/tickets/+page.server';
+import { load as ticketsLoad } from '../../src/routes/(app)/tickets/+page';
 import { GET as apiTickets } from '../../src/routes/api/tickets/+server';
 import { actions as loginActions } from '../../src/routes/auth/login/+page.server';
 import { actions as signupActions } from '../../src/routes/auth/signup/+page.server';
@@ -119,17 +119,30 @@ describe('guest purchase gates (server)', () => {
 	});
 });
 
-describe('guest tickets gates (server)', () => {
+describe('guest tickets gates', () => {
+	const apiFetch = (signedIn: boolean) =>
+		vi.fn(async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (!signedIn) return new Response(JSON.stringify({ error: 'Sign in' }), { status: 401 });
+			if (url.includes('/api/tickets')) return new Response(JSON.stringify(await source.getTickets(userId)));
+			if (url.includes('/api/approvals')) return new Response(JSON.stringify(await source.listApprovals(userId)));
+			return new Response('[]');
+		});
+
 	it('returns no tickets and a null session for guests without touching the demo account', async () => {
-		const result = await ticketsLoad({ locals: { session: null, demoMode: true }, cookies } as never);
+		const fetch = apiFetch(false);
+		const result = await ticketsLoad({ fetch, parent: async () => ({ session: null }) } as never);
 		expect(result).toEqual({ tickets: [], approvals: [], session: null });
+		expect(fetch).not.toHaveBeenCalled();
 		expect(source.getTickets).not.toHaveBeenCalled();
 	});
 
 	it('loads the signed-in holder\u2019s own tickets', async () => {
-		const result = (await ticketsLoad({ locals: { session, demoMode: true }, cookies } as never)) as unknown as {
+		const fetch = apiFetch(true);
+		const result = (await ticketsLoad({ fetch, parent: async () => ({ session }) } as never)) as unknown as {
 			session: typeof session;
 		};
+		expect(fetch).toHaveBeenCalledWith('/api/tickets');
 		expect(source.getTickets).toHaveBeenCalledWith(userId);
 		expect(source.listApprovals).toHaveBeenCalledWith(userId);
 		expect(result.session.userId).toBe(userId);

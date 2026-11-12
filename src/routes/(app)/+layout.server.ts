@@ -1,8 +1,7 @@
 import { getSource } from '$lib/server/datasource';
 import { createSupabase } from '$lib/server/supabase';
-import { redirect } from '@sveltejs/kit';
+import { detectHeaderLocation } from '$lib/utils/organizers';
 import type { LayoutServerLoad } from './$types';
-import { hasOrganizerIdentity } from '$lib/server/organizer-access';
 
 /**
  * Every navigation runs this load, so it stays deliberately cheap.
@@ -12,12 +11,13 @@ import { hasOrganizerIdentity } from '$lib/server/organizer-access';
  * badge numbers. `getBadgeCounts()` does the counting in Postgres — two
  * COUNT-only queries and a two-integer scan — and returns bytes, not rows.
  */
-export const load: LayoutServerLoad = async ({ cookies, url, locals }) => {
+export const load: LayoutServerLoad = async ({ cookies, request, locals }) => {
 	const operatingIdentity = locals.session?.role ?? 'guest';
-
-	if (url.pathname === '/organizer' || url.pathname.startsWith('/organizer/')) {
-		if (!hasOrganizerIdentity(locals.session)) redirect(303, '/settings?identity=organizer-required');
-	}
+	// Read the visitor's approximate city from the edge headers. Deliberately
+	// no `url` here: a load that tracks the URL is invalidated on *every*
+	// navigation, which used to re-read the profile, follow graph and badge
+	// counters on each tab switch. Route-specific gates live in nested layouts.
+	const detectedLocation = detectHeaderLocation(request?.headers);
 
 	const source = getSource(createSupabase(cookies));
 	// These reads are independent; awaiting them one after another used to put
@@ -43,6 +43,7 @@ export const load: LayoutServerLoad = async ({ cookies, url, locals }) => {
 		followingIds: following.ids,
 		unread: counters?.unread ?? 0,
 		inboxUnread: counters?.inboxUnread ?? 0,
-		followLoadError: following.error
+		followLoadError: following.error,
+		...(detectedLocation ? { detectedLocation } : {})
 	};
 };

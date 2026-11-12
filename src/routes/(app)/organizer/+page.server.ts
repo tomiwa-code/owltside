@@ -3,20 +3,7 @@ import { redactForPublicClient } from '$lib/server/redact-approval';
 import { createSupabase } from '$lib/server/supabase';
 import { hasOrganizerIdentity } from '$lib/server/organizer-access';
 import { fail } from '@sveltejs/kit';
-import type { Actions, PageServerLoad } from './$types';
-
-export const load: PageServerLoad = async ({ locals, cookies }) => {
-	const source = getSource(createSupabase(cookies));
-	const userId = locals.session?.userId ?? 'demo';
-	const [payload, approvals] = await Promise.all([
-		source.getOrganizer(userId).catch(() => computeOrganizer([], [], [], [])),
-		source
-			.listApprovals(userId)
-			.then((rows) => rows.map(redactForPublicClient))
-			.catch(() => [])
-	]);
-	return { payload, approvals };
-};
+import type { Actions } from './$types';
 
 export const actions: Actions = {
 	/** Broadcast an announcement to every ticket owner of one of your events. */
