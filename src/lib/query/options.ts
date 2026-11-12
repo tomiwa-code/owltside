@@ -36,7 +36,23 @@ async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
 	return (await response.json()) as T;
 }
 
-const EVENTS_PERSIST_MAX_AGE = 6 * 60 * 60 * 1000;
+/**
+ * A cold start may paint the last visit's catalogue for a full day: event cards
+ * are public and the entry is replaced as soon as TanStack revalidates.
+ */
+const EVENTS_PERSIST_MAX_AGE = 24 * 60 * 60 * 1000;
+
+/**
+ * Poll cadences used *only* when no Realtime socket can be opened (demo mode,
+ * or a browser that never connected). Live updates normally arrive over the
+ * socket, so these are a safety net and can afford to be slack.
+ */
+const FALLBACK_POLL = {
+	/** Conversations, threads, badge counters: the busiest surfaces. */
+	inbox: 3 * 60 * 1000,
+	/** Notifications, message requests, approvals, the organizer ledger. */
+	quiet: 5 * 60 * 1000
+} as const;
 
 export function eventsQueryOptions(initialData?: EventItem[]) {
 	// The catalogue is identical for every visitor and safe to keep on disk:
@@ -80,7 +96,7 @@ export function conversationsQueryOptions(initialData?: Conversation[]) {
 		queryFn: ({ signal }) => getJson<Conversation[]>('/api/conversations', { signal }),
 		staleTime: STALE_TIME.inbox,
 		// Realtime patches this cache; polling only exists where there is no socket.
-		refetchInterval: pollFallbackMs(60_000),
+		refetchInterval: pollFallbackMs(FALLBACK_POLL.inbox),
 		initialData
 	});
 }
@@ -91,7 +107,7 @@ export function messagesQueryOptions(conversationId: string, initialData?: Messa
 		queryFn: ({ signal }) =>
 			getJson<Message[]>(`/api/conversations/${encodeURIComponent(conversationId)}/messages`, { signal }),
 		staleTime: STALE_TIME.inbox,
-		refetchInterval: pollFallbackMs(60_000),
+		refetchInterval: pollFallbackMs(FALLBACK_POLL.inbox),
 		initialData
 	});
 }
@@ -103,7 +119,7 @@ export function messageRequestsQueryOptions(initialData?: MessageRequest[]) {
 		// header keeps its server-rendered counter instead of showing zero.
 		queryFn: ({ signal }) => getJson<MessageRequest[]>('/api/message-requests', { signal }),
 		staleTime: STALE_TIME.inbox,
-		refetchInterval: pollFallbackMs(120_000),
+		refetchInterval: pollFallbackMs(FALLBACK_POLL.quiet),
 		initialData
 	});
 }
@@ -113,7 +129,7 @@ export function notificationsQueryOptions(initialData?: NotificationItem[]) {
 		queryKey: queryKeys.notifications,
 		queryFn: ({ signal }) => getJson<NotificationItem[]>('/api/notifications', { signal }),
 		staleTime: STALE_TIME.live,
-		refetchInterval: pollFallbackMs(120_000),
+		refetchInterval: pollFallbackMs(FALLBACK_POLL.quiet),
 		initialData
 	});
 }
@@ -133,7 +149,7 @@ export function badgesQueryOptions(initialData?: BadgeCounts) {
 			} satisfies BadgeCounts;
 		},
 		staleTime: STALE_TIME.live,
-		refetchInterval: pollFallbackMs(60_000),
+		refetchInterval: pollFallbackMs(FALLBACK_POLL.inbox),
 		initialData
 	});
 }
@@ -142,7 +158,7 @@ export function ticketsQueryOptions(initialData?: Ticket[]) {
 	return queryOptions({
 		queryKey: queryKeys.tickets,
 		queryFn: ({ signal }) => getJson<Ticket[]>('/api/tickets', { signal }),
-		staleTime: 15_000,
+		staleTime: STALE_TIME.tickets,
 		initialData
 	});
 }
@@ -154,7 +170,7 @@ export function organizerQueryOptions(initialData?: OrganizerPayload) {
 		staleTime: STALE_TIME.organizer,
 		// Sales and check-ins are not published to Realtime, so this one keeps a
 		// slow poll while the organizer console is open.
-		refetchInterval: 120_000,
+		refetchInterval: FALLBACK_POLL.quiet,
 		initialData
 	});
 }
@@ -166,7 +182,7 @@ export function approvalsQueryOptions(initialData?: ApprovalRequest[]) {
 		staleTime: STALE_TIME.account,
 		// Decisions land on the admin console; Realtime invalidates this key when
 		// that is configured, with a slow poll as the demo-mode safety net.
-		refetchInterval: pollFallbackMs(120_000),
+		refetchInterval: pollFallbackMs(FALLBACK_POLL.quiet),
 		initialData
 	});
 }

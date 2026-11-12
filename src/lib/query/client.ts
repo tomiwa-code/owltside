@@ -14,27 +14,41 @@ import { QueryClient } from '@tanstack/svelte-query';
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
 
-/** Default freshness windows, in one place so screens stay consistent. */
+/**
+ * Default freshness windows, in one place so screens stay consistent.
+ *
+ * These are deliberately generous: every one of these resources is also pushed
+ * over Realtime, and every mutation marks the cache dirty (see
+ * `$lib/query/mutation`), so a longer window costs correctness nothing — it only
+ * removes the background refetch that used to fire while a visitor was reading.
+ */
 export const STALE_TIME = {
 	/** Public event catalogue: changes only when an organizer publishes. */
-	catalogue: 5 * MINUTE,
+	catalogue: 30 * MINUTE,
 	/** Badge counters + notification stream: pushed over Realtime. */
-	live: 60 * SECOND,
+	live: 5 * MINUTE,
 	/** Inbox lists + threads: pushed over Realtime. */
-	inbox: 60 * SECOND,
+	inbox: 5 * MINUTE,
 	/** Organizer ledger: sales are not published to Realtime (see options.ts). */
-	organizer: 45 * SECOND,
+	organizer: 2 * MINUTE,
 	/** Wallets, approvals, profiles. */
-	account: 60 * SECOND
+	account: 10 * MINUTE,
+	/** The ticket vault: passes only change on transfer, refund or check-in. */
+	tickets: 5 * MINUTE
 } as const;
 
-export const GC_TIME = 10 * MINUTE;
+/**
+ * How long an unused entry stays in memory (and on disk, for the catalogue).
+ * Deliberately longer than the longest staleTime: an entry that is evicted at
+ * the moment it goes stale would turn a revisit into a cold fetch.
+ */
+export const GC_TIME = 60 * MINUTE;
 
 export function makeQueryClient(): QueryClient {
 	return new QueryClient({
 		defaultOptions: {
 			queries: {
-				staleTime: 30 * SECOND,
+				staleTime: 2 * MINUTE,
 				gcTime: GC_TIME,
 				// One retry is enough for a flaky mobile network; TanStack's
 				// exponential backoff stops a broken endpoint from hammering.

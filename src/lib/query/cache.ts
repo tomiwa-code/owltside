@@ -62,7 +62,7 @@ export const queryClient = {
 	},
 
 	/** Return fresh cached data, or fetch it (deduped) when stale. */
-	ensure<T>(key: KeyInput, fetcher: () => Promise<T>, staleTime = 30_000): Promise<T> {
+	ensure<T>(key: KeyInput, fetcher: () => Promise<T>, staleTime = 2 * 60_000): Promise<T> {
 		return client().fetchQuery({ queryKey: toQueryKey(key), queryFn: fetcher, staleTime });
 	},
 

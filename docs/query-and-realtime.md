@@ -85,25 +85,39 @@ matches the first segment.
 
 | Query | Key | staleTime | Background refresh |
 | --- | --- | --- | --- |
-| Home feed | `events:all` | 5 min | focus / reconnect; mirrored to localStorage for 6 h |
-| Explore catalogue | `events:catalogue` | 5 min | focus / reconnect; bounded 60-event pages, max 200 |
-| Profile snapshot | `profile:me` | 60 s | focus / reconnect; invalidated after profile edits |
-| Conversations | `conversations:mine` | 60 s | socket; 60 s poll only when no socket |
-| Thread | `messages:<id>` | 60 s | socket append; 60 s poll only when no socket |
-| Message requests | `message-requests:mine` | 60 s | socket; 120 s poll only when no socket |
-| Notifications | `notifications:mine` | 60 s | socket; 120 s poll only when no socket |
-| Badges | `badges:mine` | 60 s | socket; 60 s poll only when no socket |
-| Tickets | `tickets:mine` | 15 s | focus / reconnect |
-| Organizer ledger | `organizer:me` | 45 s | 120 s poll (sales are not published) |
-| Organizer event manager | `organizer:event:<id>` | 45 s | refetch after each action |
-| Event detail | `events:<slug>` | 60 s | focus / reconnect |
-| Event message-request state | `events:<slug>:message-request` | 60 s | written after a request is sent |
-| Conversation | `conversations:<id>` | 60 s | socket; 60 s poll only when no socket |
-| Public profile | `users:<handle>` | 60 s | focus / reconnect |
-| Approvals | `approvals:mine` | 60 s | socket; 120 s poll only when no socket |
+| Home feed | `events:all` | 30 min | focus / reconnect; mirrored to localStorage for 24 h |
+| Explore catalogue | `events:catalogue` | 30 min | focus / reconnect; bounded 60-event pages, max 200 |
+| Profile snapshot | `profile:me` | 10 min | focus / reconnect; invalidated after profile edits |
+| Conversations | `conversations:mine` | 5 min | socket; 3 min poll only when no socket |
+| Thread | `messages:<id>` | 5 min | socket append; 3 min poll only when no socket |
+| Message requests | `message-requests:mine` | 5 min | socket; 5 min poll only when no socket |
+| Notifications | `notifications:mine` | 5 min | socket; 5 min poll only when no socket |
+| Badges | `badges:mine` | 5 min | socket; 3 min poll only when no socket |
+| Tickets | `tickets:mine` | 5 min | focus / reconnect |
+| Organizer ledger | `organizer:me` | 2 min | 5 min poll (sales are not published) |
+| Organizer event manager | `organizer:event:<id>` | 2 min | refetch after each action |
+| Event detail | `events:<slug>` | 5 min | focus / reconnect |
+| Event message-request state | `events:<slug>:message-request` | 5 min | written after a request is sent |
+| Conversation | `conversations:<id>` | 5 min | socket; 3 min poll only when no socket |
+| Public profile | `users:<handle>` | 10 min | focus / reconnect |
+| Approvals | `approvals:mine` | 10 min | socket; 5 min poll only when no socket |
 
-The catalogue is also persisted under `owltside.query.v2:` so a cold PWA start
-can render last visit's events while it revalidates.
+The catalogue is also persisted under `owltside.query.v2:` for up to 24 h, so a
+cold PWA start can render last visit's events while it revalidates.
+
+### Why the windows are generous
+
+Realtime is a push channel, not a poll: a new message, notification or approval
+arrives over the socket and patches the cache immediately, and every successful
+action marks the cache dirty (`markDataChanged()`, see below). The staleness
+window therefore only decides how often a *background* refetch happens on top of
+that, so it is set in minutes rather than seconds. The fallback polls (used only
+when no socket can be opened) are a safety net in the same spirit: 3 min for
+conversations, threads and badges, 5 min for notifications, message requests,
+approvals and the organizer ledger.
+
+`gcTime` is 60 min — longer than the longest `staleTime`, so an entry cannot be
+evicted at the moment it goes stale and turn a revisit into a cold fetch.
 
 ## Realtime behaviour
 
