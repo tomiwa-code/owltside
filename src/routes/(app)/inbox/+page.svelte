@@ -98,7 +98,6 @@
 	<div class="border-b border-surface-glass-border bg-surface-container-low/60">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-5 flex flex-wrap items-center justify-between gap-4">
 			<span class="flex items-center gap-3 min-w-0">
-				<span class="{MONO} text-on-surface-variant">Communication_Suite //</span>
 				<span class="font-display text-headline-lg text-on-surface">Direct Comms</span>
 				<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{(conversations.data ?? []).length} Sessions</span>
 				{#if unreadCount > 0}
@@ -109,11 +108,6 @@
 				<button type="button" role="tab" aria-selected={inboxView === 'messages'} onclick={() => (inboxView = 'messages')} class="h-9 px-3 rounded-full text-body-sm font-semibold {inboxView === 'messages' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}">Messages</button>
 				<button type="button" role="tab" aria-selected={inboxView === 'requests'} onclick={() => (inboxView = 'requests')} class="h-9 px-3 rounded-full text-body-sm font-semibold {inboxView === 'requests' ? 'bg-primary text-on-primary' : 'text-on-surface-variant'}">Requests <span class="ml-1 font-code text-label-badge">{requestCount}</span></button>
 			</div>
-			<span class="flex items-center gap-3 {MONO} text-on-surface-variant">
-				<span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> Latency: 18ms</span>
-				<span class="text-outline-variant">|</span>
-				<span>Gate_Node: 0x7E3-West-Africa</span>
-			</span>
 		</div>
 	</div>
 
@@ -129,7 +123,6 @@
 				Open a thread from the index to view the encrypted message flow, speaker passes and
 				suggested replies for that peer.
 			</p>
-			<span class="{MONO} text-on-surface-variant">Peer Synced • Mesh Gateway 0x7E3</span>
 		</section>
 	</div>
 

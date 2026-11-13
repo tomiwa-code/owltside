@@ -136,6 +136,5 @@
 		<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
 			<SlidersHorizontal class="w-3.5 h-3.5" /> Filter: Active Chats
 		</span>
-		<span class="{MONO} text-on-surface-variant">Peer Synced</span>
 	</div>
 </aside>

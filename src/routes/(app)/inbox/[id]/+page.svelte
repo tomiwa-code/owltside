@@ -151,14 +151,8 @@
 	<div class="border-b border-surface-glass-border bg-surface-container-low/60">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-5 flex flex-wrap items-center justify-between gap-4">
 			<span class="flex items-center gap-3 min-w-0">
-				<span class="{MONO} text-on-surface-variant">Communication_Suite //</span>
 				<span class="font-display text-headline-lg text-on-surface">Direct Comms</span>
 				<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{(conversations.data ?? []).length} Sessions</span>
-			</span>
-			<span class="flex items-center gap-3 {MONO} text-on-surface-variant">
-				<span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse"></span> Latency: 18ms</span>
-				<span class="text-outline-variant">|</span>
-				<span>Gate_Node: 0x7E3-West-Africa</span>
 			</span>
 		</div>
 	</div>
@@ -206,7 +200,7 @@
 			{/if}
 			<div class="px-4 py-2 flex items-center justify-center gap-2 border-b border-surface-glass-border">
 				<Lock class="w-3.5 h-3.5 text-primary" />
-				<span class="{MONO} text-on-surface-variant">End-to-end encrypted session • OWLTSIDE Mesh Gateway 0x7E3</span>
+				<span class="{MONO} text-on-surface-variant">End-to-end encrypted session</span>
 			</div>
 
 			<div bind:this={deskScroller} class="flex-1 overflow-y-auto p-5 flex flex-col gap-5">
@@ -350,7 +344,7 @@
 	<div class="flex flex-col w-full md:max-w-2xl md:mx-auto flex-1 pb-chat-composer md:pb-24">
 		<div class="flex justify-center mt-space-xs px-gutter">
 			<span class="inline-flex items-center gap-1.5 px-space-md py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant text-label-badge text-center">
-				<Lock class="w-3.5 h-3.5 text-primary shrink-0" /> End-to-end encrypted session • OWLTSIDE Mesh Gateway
+				<Lock class="w-3.5 h-3.5 text-primary shrink-0" /> End-to-end encrypted session
 			</span>
 		</div>
 		{#if conv.event}
