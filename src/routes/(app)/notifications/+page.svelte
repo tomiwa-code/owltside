@@ -248,12 +248,7 @@
 
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-10 pb-2 flex flex-wrap items-end justify-between gap-4">
 		<div class="min-w-0">
-			<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
-				<span>Audit_Stream</span>
-				<span class="text-outline-variant">/</span>
-				<span>Terminal_RX</span>
-			</span>
-			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-3">Notifications & System Alerts</h1>
+			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface">Notifications & System Alerts</h1>
 			<p class="text-body-md text-on-surface-variant mt-2">Real-time security telemetry, smart pass rotation states, and verified organizer dispatches.</p>
 		</div>
 		<div class="flex items-center gap-3">
@@ -426,7 +421,6 @@ href={n.href ?? meta.action.href}
 					</span>
 					<h2 class="font-display text-headline-md text-on-surface">All quiet</h2>
 					<p class="text-body-sm text-on-surface-variant max-w-sm">New passes, security rotations and organizer dispatches will land in this stream.</p>
-					<span class="{MONO} text-on-surface-variant">Audit_Stream Idle • Node 0x7E3</span>
 				</section>
 			{/each}
 		</div>
