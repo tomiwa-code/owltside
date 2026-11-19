@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { PGlite } from '@electric-sql/pglite';
+import { calculateFeeQuote, DEFAULT_FEE_POLICY, DEFAULT_FEE_RULES } from '$lib/server/fees';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -197,6 +198,23 @@ describe('checkout is priced and reserved by the database', () => {
 			platformFeeKobo: 80_000, processingFeeKobo: 35_000,
 			buyerTotalKobo: 1_115_000, organizerNetKobo: 1_000_000, feeBearer: 'PASS'
 		});
+	});
+
+	it.each([
+		// Ticket price in naira; expected platform, processing and buyer amounts in kobo.
+		[20_000, 110_000, 40_000, 2_150_000],
+		[200_000, 500_000, 200_000, 20_700_000]
+	])('matches the quote and seeded SQL checkout for one ₦%i ticket', async (price, platform, processing, total) => {
+		const expected = { platformFeeKobo: platform, processingFeeKobo: processing, buyerTotalKobo: total };
+		const quoted = calculateFeeQuote({ ticketPriceKobo: price * 100, feeBearer: 'PASS', rules: DEFAULT_FEE_RULES, policy: DEFAULT_FEE_POLICY });
+		expect(quoted).toMatchObject(expected);
+
+		await db.query("update public.events set tiers = jsonb_set(tiers, '{0,price}', to_jsonb($1::integer)) where id = $2", [price, eventId]);
+		const order = await pendingOrder(buyer, [{ tierId: 'ga', qty: 1 }]);
+		expect(order.amountKobo).toBe(total);
+		await asRole('postgres');
+		const audit = await db.query<{ quote: Json }>('select quote from public.fee_quote_audit where event_id = $1', [eventId]);
+		expect(audit.rows[0].quote).toMatchObject(expected);
 	});
 
 	it('deducts the platform fee from organizer proceeds when the event absorbs it', async () => {

@@ -3881,7 +3881,7 @@ CREATE TABLE IF NOT EXISTS public.platform_settings (
   currency text NOT NULL DEFAULT 'NGN' CHECK (currency = 'NGN'),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-INSERT INTO public.platform_settings(id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.platform_settings(id, processing_cap_kobo) VALUES (1, 200000) ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.fee_rules(name,min_price_kobo,max_price_kobo,percentage_bps,fixed_fee_kobo,cap_kobo,is_active,priority)
 VALUES
