@@ -80,7 +80,8 @@ code paths switch to the live backend — no component changes.
      (`'user' | 'admin' | 'superadmin'`) with normalization and privilege-escalation
      guards so the Admin console shares the same Supabase login as the main app
    - `033_payment_integrity.sql` — server-authoritative order reservation and settlement
-   - `034_tiered_fee_engine.sql` and `035_fee_checkout_integration.sql` — [ticket fee setup and troubleshooting](docs/tiered-fees.md)
+   - `034_tiered_fee_engine.sql`, `035_fee_checkout_integration.sql` and
+     `037_fee_quote_config.sql` — [ticket fee setup and troubleshooting](docs/tiered-fees.md)
 3. Set env vars in the **public web app** (`PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
    `PAYSTACK_SECRET_KEY`, `QR_SIGNING_SECRET`) and redeploy.
 

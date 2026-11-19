@@ -2,10 +2,13 @@
 
 Apply `supabase/sql/034_tiered_fee_engine.sql` and then
 `supabase/sql/035_fee_checkout_integration.sql` after the existing database
-schema/payment migrations (up through `033_payment_integrity.sql`). These are
-idempotent migrations; `034` creates and seeds the editable fee configuration,
-and `035` updates the server-side pending-order RPC while preserving its
-inventory reservation and idempotency behavior.
+schema/payment migrations (up through `033_payment_integrity.sql`), then
+`supabase/sql/037_fee_quote_config.sql`. These are idempotent migrations; `034`
+creates and seeds the editable fee configuration, `035` updates the
+server-side pending-order RPC while preserving its inventory reservation and
+idempotency behavior, and `037` adds the read-only
+`public.fee_quote_config()` function the public quote endpoint uses when the
+web deployment has no service-role key.
 
 All monetary values persisted by the fee engine are integer kobo; percentages
 are basis points. The seeded defaults are:
@@ -49,24 +52,52 @@ Every database-backed quote is appended to `public.fee_quote_audit`. Checkout
 orders preserve the same fee breakdown in their audit record and retain the
 existing order idempotency key.
 
+## How a quote survives a broken configuration
+
+`POST /api/v1/fees/quote` is display-only — the amount that is actually charged
+is computed inside `create_pending_order` — so it degrades instead of failing:
+
+1. **Fee tables** through the service-role client (the normal path).
+2. **`public.fee_quote_config()`** through the visitor's own client when the web
+   deployment has no `SUPABASE_SERVICE_ROLE_KEY` (migration 037).
+3. **The documented seed defaults** when neither can be read, so the page shows
+   a real fee breakdown instead of “Unavailable”.
+
+Every demotion is logged once, and an audit-insert failure is logged but never
+turns a quote into an error. Reads are bounded (4 s for the tables, 2.5 s for
+the RPC), so an unreachable database cannot stall an event page.
+
 ## If a live ticket shows “Service fee unavailable”
 
-Check the **public web app's** runtime logs for `Fee quote failed` after loading
-an event (not the admin app's logs). A failed quote is not proof of a missing
-migration. The log distinguishes event lookup, fee rules, processing policy,
-calculation, and audit insert errors.
+Check the **public web app's** runtime logs after loading an event (not the
+admin app's logs):
 
-- For a missing client or invalid API key, confirm the web deployment's
-  `PUBLIC_SUPABASE_URL` and private `SUPABASE_SERVICE_ROLE_KEY` (or
-  `SUPABASE_SECRET_KEY`) belong to the same project. Redeploy after changing
-  environment variables. Never paste keys into tickets or browser code.
-- For a missing relation or column, check that project in Supabase SQL Editor:
-  `select fee_bearer from public.events limit 1;`,
+- `Fee quote fell back to the seed fee configuration` — the quote still worked,
+  but `reason` names the source that failed. This is the line that used to be a
+  hard “Unavailable”.
+- `Fee quote failed` — nothing could be quoted. The log distinguishes event
+  lookup, calculation and (now non-fatal) audit errors.
+- `Fee quote audit failed` — bookkeeping only; buyers are unaffected.
+
+Fixes, by the `reason` in the log:
+
+- `service-role client is not configured` — either add
+  `SUPABASE_SERVICE_ROLE_KEY` (same project as `PUBLIC_SUPABASE_URL`) to the web
+  deployment and redeploy, or apply migration 037 so the public RPC serves the
+  configuration. Never paste keys into tickets or browser code.
+- `fee_quote_config(): not deployed` — apply
+  `supabase/sql/037_fee_quote_config.sql` (it only adds one read-only function;
+  it does not touch data).
+- For a missing relation or column, check the project in the Supabase SQL
+  Editor: `select fee_bearer from public.events limit 1;`,
   `select count(*) from public.fee_rules where is_active;`, and
   `select id from public.platform_settings where id = 1;`. Older copies of
-  `000_full_schema.sql` stopped at 033. If SQL succeeds but PostgREST reports
-  a stale schema cache, run `NOTIFY pgrst, 'reload schema';`.
-- For an uncovered price, check active price ranges in **Settings → Ticket
-  fee rules**. For an audit write error, use its database code to distinguish
-  missing privileges from a constraint failure; don't grant browser roles
-  access to fee tables to make a quote work.
+  `000_full_schema.sql` stopped at 033. If SQL succeeds but PostgREST reports a
+  stale schema cache, run `NOTIFY pgrst, 'reload schema';`.
+- `No active fee rule covers this ticket price` (a real 503) — the readable
+  rules leave a gap at that price. Fix the ranges in **Settings → Ticket fee
+  rules**; the checkout RPC rejects the same price, so this one must be fixed
+  rather than hidden.
+- For an audit write error, use its database code to distinguish missing
+  privileges from a constraint failure; don't grant browser roles access to fee
+  tables to make a quote work.
