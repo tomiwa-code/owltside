@@ -79,6 +79,16 @@ export function calculateFeeQuote(input: {
 	};
 }
 
+export interface FeeConfiguration {
+	rules: FeeRule[];
+	policy: FeePolicy;
+}
+
+/** The documented seed configuration, used only when the database cannot be read. */
+export function defaultFeeConfiguration(): FeeConfiguration {
+	return { rules: DEFAULT_FEE_RULES.map((rule) => ({ ...rule })), policy: { ...DEFAULT_FEE_POLICY } };
+}
+
 function mapRule(row: Record<string, unknown>): FeeRule {
 	return {
 		id: String(row.id), name: String(row.name), minPriceKobo: Number(row.min_price_kobo),
@@ -87,21 +97,89 @@ function mapRule(row: Record<string, unknown>): FeeRule {
 		capKobo: row.cap_kobo === null ? null : Number(row.cap_kobo), isActive: row.is_active === true, priority: Number(row.priority)
 	};
 }
-export async function loadFeeConfiguration(db: SupabaseClient): Promise<{ rules: FeeRule[]; policy: FeePolicy }> {
+
+function mapPolicy(p: Record<string, unknown>): FeePolicy {
+	const bearer = p.processing_fee_bearer;
+	if (bearer !== undefined && bearer !== null && bearer !== 'ABSORB' && bearer !== 'PASS') {
+		throw new Error(`Fee policy has an invalid processing fee bearer (${String(bearer)})`);
+	}
+	return {
+		processingBps: integer(Number(p.processing_bps), 'processingBps'),
+		processingFixedKobo: integer(Number(p.processing_fixed_kobo), 'processingFixedKobo'),
+		processingCapKobo: p.processing_cap_kobo === null ? null : integer(Number(p.processing_cap_kobo), 'processingCapKobo'),
+		freeTicketProcessingFeeKobo: integer(Number(p.free_ticket_processing_fee_kobo), 'freeTicketProcessingFeeKobo'),
+		processingFeeBearer: (bearer as FeeBearer | null | undefined) ?? 'PASS',
+		currency: String(p.currency ?? 'NGN')
+	};
+}
+
+export async function loadFeeConfiguration(db: SupabaseClient): Promise<FeeConfiguration> {
 	const [rulesResult, policyResult] = await Promise.all([
 		db.from('fee_rules').select('*').eq('is_active', true).order('priority', { ascending: true }),
 		db.from('platform_settings').select('*').eq('id', 1).single()
 	]);
 	if (rulesResult.error) throw new Error(`Fee rules unavailable (${rulesResult.error.code}): ${rulesResult.error.message}`);
 	if (policyResult.error) throw new Error(`Fee policy unavailable (${policyResult.error.code}): ${policyResult.error.message}`);
-	const p = policyResult.data as Record<string, unknown>;
 	return {
 		rules: (rulesResult.data ?? []).map((row) => mapRule(row as Record<string, unknown>)),
+		policy: mapPolicy(policyResult.data as Record<string, unknown>)
+	};
+}
+
+/**
+ * Read the same configuration through `public.fee_quote_config()` (migration
+ * 037). That function is executable by every client role, so a deployment
+ * whose web environment has no service-role key can still quote real prices
+ * instead of falling back to the seed defaults.
+ *
+ * Returns `null` when the function has not been deployed yet.
+ */
+export async function loadFeeConfigurationViaRpc(db: SupabaseClient): Promise<FeeConfiguration | null> {
+	const { data, error } = await db.rpc('fee_quote_config');
+	if (error) {
+		// PGRST202 = PostgREST could not find the function: migration 037 is missing.
+		if (error.code === 'PGRST202' || /could not find the function|does not exist/i.test(error.message ?? '')) return null;
+		throw new Error(`Fee configuration unavailable (${error.code}): ${error.message}`);
+	}
+	if (!data) return null;
+	return parseFeeConfigurationPayload(data);
+}
+
+/** Map the camelCase JSON returned by `public.fee_quote_config()` to `FeeConfiguration`. */
+export function parseFeeConfigurationPayload(payload: unknown): FeeConfiguration {
+	const body = payload as { rules?: unknown; policy?: unknown } | null;
+	if (!body || typeof body !== 'object') throw new Error('Fee configuration payload is empty');
+	const policy = body.policy;
+	if (!policy || typeof policy !== 'object') throw new Error('Fee configuration payload has no processing policy');
+	if (!Array.isArray(body.rules)) throw new Error('Fee configuration payload has no rule list');
+	const rules = body.rules.map((entry, index) => {
+		const rule = entry as Record<string, unknown>;
+		const name = typeof rule.name === 'string' && rule.name.trim() ? rule.name : `fee rule ${index + 1}`;
+		return {
+			id: String(rule.id ?? name),
+			name,
+			minPriceKobo: integer(rule.minPriceKobo, `${name}.minPriceKobo`),
+			maxPriceKobo: rule.maxPriceKobo === null || rule.maxPriceKobo === undefined ? null : integer(rule.maxPriceKobo, `${name}.maxPriceKobo`),
+			percentageBps: integer(rule.percentageBps, `${name}.percentageBps`),
+			fixedFeeKobo: integer(rule.fixedFeeKobo, `${name}.fixedFeeKobo`),
+			capKobo: rule.capKobo === null || rule.capKobo === undefined ? null : integer(rule.capKobo, `${name}.capKobo`),
+			isActive: rule.isActive !== false,
+			// Priority is an ordering hint, not an amount: any integer is valid.
+			priority: typeof rule.priority === 'number' && Number.isSafeInteger(rule.priority) ? rule.priority : 0
+		} satisfies FeeRule;
+	});
+	const p = policy as Record<string, unknown>;
+	const bearer = p.processingFeeBearer;
+	if (bearer !== 'ABSORB' && bearer !== 'PASS') throw new Error('Fee configuration has an invalid processing fee bearer');
+	return {
+		rules,
 		policy: {
-			processingBps: Number(p.processing_bps), processingFixedKobo: Number(p.processing_fixed_kobo),
-			processingCapKobo: p.processing_cap_kobo === null ? null : Number(p.processing_cap_kobo),
-			freeTicketProcessingFeeKobo: Number(p.free_ticket_processing_fee_kobo),
-			processingFeeBearer: (p.processing_fee_bearer as FeeBearer) ?? 'PASS', currency: String(p.currency ?? 'NGN')
+			processingBps: integer(p.processingBps, 'processingBps'),
+			processingFixedKobo: integer(p.processingFixedKobo, 'processingFixedKobo'),
+			processingCapKobo: p.processingCapKobo === null || p.processingCapKobo === undefined ? null : integer(p.processingCapKobo, 'processingCapKobo'),
+			freeTicketProcessingFeeKobo: integer(p.freeTicketProcessingFeeKobo, 'freeTicketProcessingFeeKobo'),
+			processingFeeBearer: bearer,
+			currency: String(p.currency ?? 'NGN')
 		}
 	};
 }
