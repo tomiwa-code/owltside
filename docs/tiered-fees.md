@@ -21,6 +21,11 @@ Payment processing is independently configured in `public.platform_settings`:
 ₦0, and buyer-paid by default. Fee amounts and fee bearers are recomputed on
 the server when an order is created; client quotes are display-only.
 
+For older installations, check the processing cap in **Settings → Ticket fee rules**.
+The original SQL seed left it blank (uncapped). To use the documented ₦2,000
+cap, enter `200000` kobo and save. Existing policies are never overwritten by
+the seed.
+
 ## Admin configuration
 
 The Admin console's **Settings → Ticket fee rules** tab edits active price
