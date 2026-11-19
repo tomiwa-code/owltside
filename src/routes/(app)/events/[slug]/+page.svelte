@@ -123,7 +123,8 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 	const discount = $derived(promoDiscount(base, appliedPromo));
 	const fee = $derived(feeQuote?.unit.feeBearer === 'PASS' ? feeQuote.totals.platformFeeKobo / 100 : 0);
 	const processingFee = $derived(feeQuote?.unit.processingFeeBearer === 'PASS' ? feeQuote.totals.processingFeeKobo / 100 : 0);
-	const totalPayable = $derived(Math.max(0, (feeQuote?.totals.buyerTotalKobo ?? Math.round(base * 100)) / 100 - discount));
+	const totalPayable = $derived(feeQuote ? Math.max(0, feeQuote.totals.buyerTotalKobo / 100 - discount) : null);
+	const totalPayableLabel = $derived(totalPayable !== null ? formatMoney(totalPayable, currency.value) : feeQuoteError ? 'Unavailable' : 'Calculating…');
 	const soldPct = $derived.by(() => {
 		const cap = event.tiers.reduce((s, t) => s + t.capacity, 0);
 		const sold = event.tiers.reduce((s, t) => s + t.sold, 0);
@@ -650,7 +651,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 					{/if}
 					<div class="flex items-center justify-between gap-3 border-t border-surface-glass-border pt-3">
 						<span class="text-body-md font-semibold text-on-surface">Total Payable</span>
-						<span class="font-display text-headline-md font-bold text-on-surface">{formatMoney(totalPayable, currency.value)}</span>
+						<span class="font-display text-headline-md font-bold text-on-surface">{totalPayableLabel}</span>
 					</div>
 				</div>
 
@@ -661,7 +662,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 					</div>
 				{:else}
 					<button type="button" onclick={checkout} class="w-full h-12 rounded-lg bg-primary text-on-primary font-semibold flex items-center justify-center gap-2 hover:bg-primary-container transition-colors glow-primary">
-						<span class="{MONO}">Proceed to Checkout • {formatMoney(totalPayable, currency.value)}</span>
+						<span class="{MONO}">Proceed to Checkout • {totalPayableLabel}</span>
 						<ArrowRight class="w-4 h-4" />
 					</button>
 					<span class="text-body-sm text-on-surface-variant text-center">Zero risk. Tickets are transferable &amp; verifiable in real-time.</span>
@@ -996,7 +997,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 					{#if feeQuote && feeQuote.totals.processingFeeKobo > 0}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Payment processing fee{feeQuote.unit.processingFeeBearer === 'ABSORB' ? ' (covered by organizer)' : ''}</span><span class="font-code text-on-surface">{formatMoney(processingFee, currency.value)}</span></div>{/if}
 					{#if feeQuoteError}<p class="text-label-badge text-error" role="status">{feeQuoteError}</p>{/if}
 					{#if discount > 0}<div class="flex items-center justify-between gap-2 text-body-sm"><span class="text-on-surface-variant">Partner pass incentive</span><span class="font-code font-bold text-accent-emerald">−{formatMoney(discount, currency.value)}</span></div>{/if}
-					<div class="flex items-center justify-between gap-2 border-t border-surface-glass-border pt-3"><span class="text-body-md font-semibold text-on-surface">Total payable</span><span class="font-display text-headline-md font-bold text-on-surface">{formatMoney(totalPayable, currency.value)}</span></div>
+					<div class="flex items-center justify-between gap-2 border-t border-surface-glass-border pt-3"><span class="text-body-md font-semibold text-on-surface">Total payable</span><span class="font-display text-headline-md font-bold text-on-surface">{totalPayableLabel}</span></div>
 				</div>
 				<div class="flex flex-col gap-1.5 border-t border-surface-glass-border pt-3 text-label-badge text-on-surface-variant"><span class="flex items-center gap-2"><Lock class="w-3.5 h-3.5 text-accent-emerald" />256-bit SSL encrypted checkout</span><span class="flex items-center gap-2"><ShieldCheck class="w-3.5 h-3.5 text-accent-emerald" />Dynamic HMAC anti-clone ticket</span><span class="flex items-center gap-2"><BadgeCheck class="w-3.5 h-3.5 text-accent-emerald" />Paystack &amp; Flutterwave rails</span></div>
 			</section>
@@ -1031,7 +1032,7 @@ import type { MessageRequest, ResolvedPromo } from '$lib/types';
 				<div class="flex flex-col">
 					<span class="text-label-badge text-on-surface-variant uppercase tracking-wider">Total Amount</span>
 					<div class="flex items-baseline gap-1">
-						<span class="font-display text-headline-lg-mobile text-on-surface font-bold tracking-tight">{totalPayable === 0 ? 'Free' : formatMoney(totalPayable, currency.value)}</span>
+						<span class="font-display text-headline-lg-mobile text-on-surface font-bold tracking-tight">{totalPayable === 0 ? 'Free' : totalPayableLabel}</span>
 						<span class="text-body-sm text-on-surface-variant font-medium">({qty} {tier.name})</span>
 					</div>
 				</div>

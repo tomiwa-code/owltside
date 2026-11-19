@@ -49,6 +49,10 @@ $old$;
 $new$;
 BEGIN
   v_source := pg_get_functiondef('public.create_pending_order(text,jsonb,text,text)'::regprocedure);
+  -- A fresh install may already include this migration in the consolidated schema.
+  IF position(v_new in v_source) > 0 AND position('insert into public.fee_quote_audit' in v_source) > 0 THEN
+    RETURN;
+  END IF;
   v_source := replace(v_source, '  v_fee numeric := 0;',
     '  v_fee numeric := 0;' || E'\n  v_processing numeric := 0;\n  v_platform_kobo bigint := 0;\n  v_processing_kobo bigint := 0;\n  v_price_kobo bigint := 0;\n  v_raw_fee_kobo bigint := 0;\n  v_raw_processing_kobo bigint := 0;\n  v_rule public.fee_rules%rowtype;\n  v_policy public.platform_settings%rowtype;');
   IF position(v_old in v_source) = 0 THEN

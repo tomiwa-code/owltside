@@ -43,3 +43,25 @@ management endpoints are also available under `/api/v1/fees/rules` (admin-only).
 Every database-backed quote is appended to `public.fee_quote_audit`. Checkout
 orders preserve the same fee breakdown in their audit record and retain the
 existing order idempotency key.
+
+## If a live ticket shows “Service fee unavailable”
+
+Check the **public web app's** runtime logs for `Fee quote failed` after loading
+an event (not the admin app's logs). A failed quote is not proof of a missing
+migration. The log distinguishes event lookup, fee rules, processing policy,
+calculation, and audit insert errors.
+
+- For a missing client or invalid API key, confirm the web deployment's
+  `PUBLIC_SUPABASE_URL` and private `SUPABASE_SERVICE_ROLE_KEY` (or
+  `SUPABASE_SECRET_KEY`) belong to the same project. Redeploy after changing
+  environment variables. Never paste keys into tickets or browser code.
+- For a missing relation or column, check that project in Supabase SQL Editor:
+  `select fee_bearer from public.events limit 1;`,
+  `select count(*) from public.fee_rules where is_active;`, and
+  `select id from public.platform_settings where id = 1;`. Older copies of
+  `000_full_schema.sql` stopped at 033. If SQL succeeds but PostgREST reports
+  a stale schema cache, run `NOTIFY pgrst, 'reload schema';`.
+- For an uncovered price, check active price ranges in **Settings → Ticket
+  fee rules**. For an audit write error, use its database code to distinguish
+  missing privileges from a constraint failure; don't grant browser roles
+  access to fee tables to make a quote work.

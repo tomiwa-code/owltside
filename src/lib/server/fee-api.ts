@@ -12,14 +12,14 @@ export async function isPlatformAdmin(cookies: Cookies, userId?: string | null):
 
 export function adminDb() {
 	const db = createSupabaseAdmin();
-	if (!db) throw new Error('Fee management requires SUPABASE_SERVICE_ROLE_KEY');
+	if (!db) throw new Error('Fee service client unavailable: check the Supabase URL and server-side service key in the web deployment');
 	return db;
 }
 
 export async function getEventForFee(cookies: Cookies, id: string) {
 	const db = createSupabase(cookies);
 	if (!db) throw new Error('Database is not configured');
-	const { data, error } = await db.from('events').select('id,organizer_id,fee_bearer,tiers').eq('id', id).maybeSingle();
-	if (error) throw new Error(error.message);
+	const { data, error } = await db.from('events').select('organizer_id,fee_bearer').eq('id', id).maybeSingle();
+	if (error) throw new Error(`Event fee lookup failed (${error.code}): ${error.message}`);
 	return data;
 }
