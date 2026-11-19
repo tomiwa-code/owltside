@@ -92,8 +92,8 @@ export async function loadFeeConfiguration(db: SupabaseClient): Promise<{ rules:
 		db.from('fee_rules').select('*').eq('is_active', true).order('priority', { ascending: true }),
 		db.from('platform_settings').select('*').eq('id', 1).single()
 	]);
-	if (rulesResult.error) throw new Error(`Fee rules unavailable: ${rulesResult.error.message}`);
-	if (policyResult.error) throw new Error(`Fee policy unavailable: ${policyResult.error.message}`);
+	if (rulesResult.error) throw new Error(`Fee rules unavailable (${rulesResult.error.code}): ${rulesResult.error.message}`);
+	if (policyResult.error) throw new Error(`Fee policy unavailable (${policyResult.error.code}): ${policyResult.error.message}`);
 	const p = policyResult.data as Record<string, unknown>;
 	return {
 		rules: (rulesResult.data ?? []).map((row) => mapRule(row as Record<string, unknown>)),
@@ -114,5 +114,5 @@ export async function logFeeQuote(db: SupabaseClient, input: {
 		idempotency_key: input.idempotencyKey ?? null, quantity: input.quantity,
 		quote: input.quote
 	});
-	if (error && !(error.code === '23505' && input.idempotencyKey)) throw new Error(`Could not record fee quote: ${error.message}`);
+	if (error && !(error.code === '23505' && input.idempotencyKey)) throw new Error(`Could not record fee quote (${error.code}): ${error.message}`);
 }

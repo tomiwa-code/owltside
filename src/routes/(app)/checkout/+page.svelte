@@ -64,7 +64,8 @@ import type { ResolvedPromo } from '$lib/types';
 	const platformCharge = $derived(feeQuote?.unit.feeBearer === 'PASS' ? (feeQuote.totals.platformFeeKobo / 100) : 0);
 	const processingCharge = $derived(feeQuote?.unit.processingFeeBearer === 'PASS' ? (feeQuote.totals.processingFeeKobo / 100) : 0);
 	const fee = $derived(platformCharge);
-	const total = $derived(feeQuote ? Math.max(0, feeQuote.totals.buyerTotalKobo / 100 - discount) : base);
+	const total = $derived(feeQuote ? Math.max(0, feeQuote.totals.buyerTotalKobo / 100 - discount) : null);
+	const totalLabel = $derived(total !== null ? formatMoney(total) : feeQuoteFailed ? 'Unavailable' : 'Calculating…');
 
 	// reservation countdown 10:00
 	let secondsLeft = $state(600);
@@ -383,8 +384,8 @@ import type { ResolvedPromo } from '$lib/types';
 							<p class="text-body-sm text-on-surface-variant pt-1">Denominated in Nigerian Naira (NGN)</p>
 						</div>
 						<div class="text-right shrink-0">
-							<span class="font-display text-[38px] leading-none font-bold text-on-surface">{formatMoney(total)}</span>
-							<p class="font-code text-label-badge text-on-surface-variant pt-1">≈ {formatMoney(total, 'USD')} Equiv.</p>
+							<span class="font-display text-[38px] leading-none font-bold text-on-surface">{totalLabel}</span>
+							{#if total !== null}<p class="font-code text-label-badge text-on-surface-variant pt-1">≈ {formatMoney(total, 'USD')} Equiv.</p>{/if}
 						</div>
 					</div>
 
@@ -398,7 +399,7 @@ import type { ResolvedPromo } from '$lib/types';
 							<span>Opening Paystack…</span>
 						{:else}
 							<Lock class="w-4 h-4" />
-							<span>Complete Payment • {formatMoney(total)}</span>
+							<span>Complete Payment • {totalLabel}</span>
 						{/if}
 					</button>
 					<span class="flex items-center justify-center gap-1.5 text-body-sm text-on-surface-variant">
@@ -577,7 +578,7 @@ import type { ResolvedPromo } from '$lib/types';
 				<div class="pt-2 flex items-center justify-between bg-surface-container-low border border-surface-glass-border p-space-sm rounded-lg">
 					<div>
 						<span class="text-body-sm text-on-surface-variant block">Total Payable Now (NGN)</span>
-						<span class="font-display text-headline-lg-mobile text-on-surface font-bold">{formatMoney(total)}</span>
+						<span class="font-display text-headline-lg-mobile text-on-surface font-bold">{totalLabel}</span>
 					</div>
 					<span class="text-label-badge text-on-surface-variant bg-surface-container px-2 py-1 rounded border border-surface-glass-border">NGN Only</span>
 				</div>
@@ -649,7 +650,7 @@ import type { ResolvedPromo } from '$lib/types';
 		<div class="max-w-md mx-auto flex items-center gap-3">
 			<div class="flex flex-col min-w-0">
 				<span class="text-label-badge text-on-surface-variant uppercase">Total</span>
-				<span class="font-display text-headline-md text-on-surface font-bold">{formatMoney(total)}</span>
+				<span class="font-display text-headline-md text-on-surface font-bold">{totalLabel}</span>
 			</div>
 			<button
 				type="button"

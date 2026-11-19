@@ -17,16 +17,13 @@ export { supabaseConfigured };
  * Never use this to answer a user request directly: it bypasses every policy.
  * Callers must validate input and authorization before touching it.
  */
-let adminClient: SupabaseClient | null | undefined;
+let adminClient: SupabaseClient | undefined;
 
 export function createSupabaseAdmin(): SupabaseClient | null {
 	if (adminClient !== undefined) return adminClient;
 	const url = resolveSupabaseUrl();
-	const key = (privateEnv.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-	if (!url || !key) {
-		adminClient = null;
-		return adminClient;
-	}
+	const key = privateEnv.SUPABASE_SERVICE_ROLE_KEY?.trim() || privateEnv.SUPABASE_SECRET_KEY?.trim();
+	if (!url || !key) return null;
 	adminClient = createClient(url, key, {
 		auth: { persistSession: false, autoRefreshToken: false }
 	});

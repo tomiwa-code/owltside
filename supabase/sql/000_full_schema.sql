@@ -3849,3 +3849,140 @@ create trigger guard_event_promo_usage
   for each row execute function public.guard_event_promo_usage();
 
 commit;
+
+-- 034_tiered_fee_engine.sql
+-- Configurable tiered service fees. All monetary amounts are integer kobo.
+ALTER TABLE public.events
+  ADD COLUMN IF NOT EXISTS fee_bearer text NOT NULL DEFAULT 'PASS'
+  CHECK (fee_bearer IN ('ABSORB', 'PASS'));
+
+CREATE TABLE IF NOT EXISTS public.fee_rules (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  min_price_kobo bigint NOT NULL CHECK (min_price_kobo >= 0),
+  max_price_kobo bigint CHECK (max_price_kobo IS NULL OR max_price_kobo >= min_price_kobo),
+  percentage_bps integer NOT NULL CHECK (percentage_bps >= 0),
+  fixed_fee_kobo bigint NOT NULL DEFAULT 0 CHECK (fixed_fee_kobo >= 0),
+  cap_kobo bigint CHECK (cap_kobo IS NULL OR cap_kobo >= 0),
+  is_active boolean NOT NULL DEFAULT true,
+  priority integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS fee_rules_active_range_idx ON public.fee_rules(is_active, priority, min_price_kobo, max_price_kobo);
+
+CREATE TABLE IF NOT EXISTS public.platform_settings (
+  id integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  processing_bps integer NOT NULL DEFAULT 150 CHECK (processing_bps >= 0),
+  processing_fixed_kobo bigint NOT NULL DEFAULT 10000 CHECK (processing_fixed_kobo >= 0),
+  processing_cap_kobo bigint CHECK (processing_cap_kobo IS NULL OR processing_cap_kobo >= 0),
+  free_ticket_processing_fee_kobo bigint NOT NULL DEFAULT 0 CHECK (free_ticket_processing_fee_kobo >= 0),
+  processing_fee_bearer text NOT NULL DEFAULT 'PASS' CHECK (processing_fee_bearer IN ('ABSORB', 'PASS')),
+  currency text NOT NULL DEFAULT 'NGN' CHECK (currency = 'NGN'),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO public.platform_settings(id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.fee_rules(name,min_price_kobo,max_price_kobo,percentage_bps,fixed_fee_kobo,cap_kobo,is_active,priority)
+VALUES
+ ('low_price_default',1,199999,400,10000,NULL,true,10),
+ ('mid_range_default',200000,1500000,600,10000,NULL,true,20),
+ ('high_price_default',1500001,NULL,500,10000,500000,true,30)
+ON CONFLICT (name) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS public.fee_quote_audit (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  event_id uuid REFERENCES public.events(id) ON DELETE SET NULL,
+  organizer_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  idempotency_key text,
+  quantity integer NOT NULL CHECK (quantity > 0),
+  quote jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS fee_quote_audit_idempotency_key_idx
+  ON public.fee_quote_audit(idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS fee_quote_audit_created_at_idx ON public.fee_quote_audit(created_at DESC);
+
+ALTER TABLE public.fee_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.platform_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fee_quote_audit ENABLE ROW LEVEL SECURITY;
+-- No browser role may change pricing, settings or audit records. Server routes use service role.
+REVOKE ALL ON public.fee_rules, public.platform_settings, public.fee_quote_audit FROM anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.fee_rules, public.platform_settings TO service_role;
+GRANT SELECT, INSERT ON public.fee_quote_audit TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE public.fee_quote_audit_id_seq TO service_role;
+
+CREATE OR REPLACE FUNCTION public.touch_fee_rule_updated_at()
+RETURNS trigger LANGUAGE plpgsql SET search_path = public AS $$
+BEGIN NEW.updated_at = now(); RETURN NEW; END $$;
+DROP TRIGGER IF EXISTS fee_rules_touch_updated_at ON public.fee_rules;
+CREATE TRIGGER fee_rules_touch_updated_at BEFORE UPDATE ON public.fee_rules
+FOR EACH ROW EXECUTE FUNCTION public.touch_fee_rule_updated_at();
+
+-- 035_fee_checkout_integration.sql
+-- Replace the legacy hard-coded checkout formula inside the existing reservation RPC.
+-- Quotes/order amounts remain server-authoritative and the RPC's idempotency lock is preserved.
+DO $$
+DECLARE
+  v_source text;
+  v_old text := $old$
+  -- Matches the checkout's long-standing maths: buyers pay the organiser share
+  -- plus a platform fee of 5% + ₦100 per paid pass; free passes carry none.
+  v_net := greatest(0, v_gross - v_discount);
+  v_fee := case when v_gross <= 0 then 0 else round(v_gross * 0.05) + 100 * v_total_qty end;
+  v_grand := greatest(0, v_gross + v_fee - v_discount);
+  v_amount_kobo := round(v_grand * 100)::bigint;
+$old$;
+  v_new text := $new$
+  -- Price every ticket against the same editable rule rows used by fee quotes.
+  v_platform_kobo := 0;
+  v_processing_kobo := 0;
+  for v_item in select * from jsonb_array_elements(p_items)
+  loop
+    v_qty := (v_item ->> 'qty')::int;
+    select t into v_tier from jsonb_array_elements(v_event.tiers) t where t ->> 'id' = v_item ->> 'tierId';
+    v_price_kobo := round((v_tier ->> 'price')::numeric * 100)::bigint;
+    if v_price_kobo < 0 then raise exception 'Ticket price cannot be negative'; end if;
+    if v_price_kobo > 0 then
+      select * into v_rule from public.fee_rules
+       where is_active and v_price_kobo >= min_price_kobo
+         and (max_price_kobo is null or v_price_kobo <= max_price_kobo)
+       order by priority asc limit 1;
+      if not found then raise exception 'No active fee rule covers this ticket price'; end if;
+      v_raw_fee_kobo := round(v_price_kobo::numeric * v_rule.percentage_bps / 10000)::bigint + v_rule.fixed_fee_kobo;
+      v_platform_kobo := v_platform_kobo + least(v_raw_fee_kobo, coalesce(v_rule.cap_kobo, v_raw_fee_kobo)) * v_qty;
+      select * into v_policy from public.platform_settings where id = 1;
+      v_raw_processing_kobo := round(v_price_kobo::numeric * v_policy.processing_bps / 10000)::bigint + v_policy.processing_fixed_kobo;
+      v_processing_kobo := v_processing_kobo + least(v_raw_processing_kobo, coalesce(v_policy.processing_cap_kobo, v_raw_processing_kobo)) * v_qty;
+    else
+      select * into v_policy from public.platform_settings where id = 1;
+      v_processing_kobo := v_processing_kobo + least(v_policy.free_ticket_processing_fee_kobo, coalesce(v_policy.processing_cap_kobo, v_policy.free_ticket_processing_fee_kobo)) * v_qty;
+    end if;
+  end loop;
+  v_fee := v_platform_kobo / 100.0;
+  v_processing := v_processing_kobo / 100.0;
+  v_net := v_gross - v_discount
+    - case when v_event.fee_bearer = 'ABSORB' then v_fee else 0 end
+    - case when v_policy.processing_fee_bearer = 'ABSORB' then v_processing else 0 end;
+  v_grand := greatest(0, v_gross - v_discount
+    + case when v_event.fee_bearer = 'PASS' then v_fee else 0 end
+    + case when v_policy.processing_fee_bearer = 'PASS' then v_processing else 0 end);
+  v_amount_kobo := round(v_grand * 100)::bigint;
+$new$;
+BEGIN
+  v_source := pg_get_functiondef('public.create_pending_order(text,jsonb,text,text)'::regprocedure);
+  -- A fresh install may already include this migration in the consolidated schema.
+  IF position(v_new in v_source) > 0 AND position('insert into public.fee_quote_audit' in v_source) > 0 THEN
+    RETURN;
+  END IF;
+  v_source := replace(v_source, '  v_fee numeric := 0;',
+    '  v_fee numeric := 0;' || E'\n  v_processing numeric := 0;\n  v_platform_kobo bigint := 0;\n  v_processing_kobo bigint := 0;\n  v_price_kobo bigint := 0;\n  v_raw_fee_kobo bigint := 0;\n  v_raw_processing_kobo bigint := 0;\n  v_rule public.fee_rules%rowtype;\n  v_policy public.platform_settings%rowtype;');
+  IF position(v_old in v_source) = 0 THEN
+    RAISE EXCEPTION 'Could not patch create_pending_order fee calculation; expected legacy block was not found';
+  END IF;
+  v_source := replace(v_source, v_old, v_new);
+  v_source := replace(v_source,
+    '  v_amount_kobo := round(v_grand * 100)::bigint;',
+    '  v_amount_kobo := round(v_grand * 100)::bigint;' || E'\n  insert into public.fee_quote_audit(event_id, organizer_id, idempotency_key, quantity, quote) values (v_event.id, v_event.organizer_id, case when v_key is null then null else ''checkout:'' || v_key end, v_total_qty, jsonb_build_object(''ticketPriceKobo'', round((v_gross - v_discount) * 100)::bigint, ''platformFeeKobo'', v_platform_kobo, ''processingFeeKobo'', v_processing_kobo, ''buyerTotalKobo'', v_amount_kobo, ''organizerNetKobo'', round(v_net * 100)::bigint, ''feeBearer'', v_event.fee_bearer, ''currency'', ''NGN''));');
+  EXECUTE v_source;
+END $$;

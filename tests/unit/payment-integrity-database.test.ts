@@ -113,8 +113,6 @@ beforeAll(async () => {
 		alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
 	`);
 	await db.exec(seed);
-	await db.exec(readFileSync('supabase/sql/034_tiered_fee_engine.sql', 'utf8'));
-	await db.exec(readFileSync('supabase/sql/035_fee_checkout_integration.sql', 'utf8'));
 	await asRole('postgres');
 }, 60_000);
 
@@ -161,6 +159,14 @@ afterAll(async () => {
 });
 
 describe('checkout is priced and reserved by the database', () => {
+	it('includes the fee migrations in fresh installs and tolerates reapplying them', async () => {
+		for (const file of ['034_tiered_fee_engine.sql', '035_fee_checkout_integration.sql']) {
+			const migration = readFileSync(`supabase/sql/${file}`, 'utf8');
+			expect(seed).toContain(migration.trim());
+			await db.exec(migration);
+		}
+	});
+
 	it('no longer exposes the free-minting create_order RPC', async () => {
 		await asRole('authenticated', buyer);
 		await expect(
