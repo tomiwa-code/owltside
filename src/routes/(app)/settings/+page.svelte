@@ -215,7 +215,7 @@
 			</button>
 			<button type="button" onclick={() => (openCategory = 'help')} class="w-full flex items-center gap-4 p-5 hover:bg-surface-container-high/50 transition-colors text-left">
 				<span class="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><HelpCircle class="w-5 h-5 text-primary" /></span>
-				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Help & Legal</span><span class="block text-body-sm text-on-surface-variant truncate">Support • Terms • Privacy • Cookies • Licenses</span></span>
+				<span class="flex-1 min-w-0"><span class="block text-body-md font-semibold text-on-surface">Help & Legal</span><span class="block text-body-sm text-on-surface-variant truncate">Refunds • Terms • Privacy • Organizer TSA • Cookies</span></span>
 				<ChevronRight class="w-5 h-5 text-on-surface-variant shrink-0" />
 			</button>
 		</div>
@@ -324,7 +324,7 @@
 					</button>
 					<button type="button" onclick={() => (openCategory = 'help')} class="w-full flex items-center gap-3 p-4 hover:bg-surface-container-high/50 transition-colors text-left">
 						<span class="w-9 h-9 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0"><HelpCircle class="w-5 h-5 text-primary" /></span>
-						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Help & Legal</span><span class="block text-xs text-on-surface-variant truncate">Support • Terms • Privacy</span></span>
+						<span class="flex-1 min-w-0"><span class="block text-body-sm font-semibold text-on-surface">Help & Legal</span><span class="block text-xs text-on-surface-variant truncate">Refunds • Terms • Privacy • TSA</span></span>
 						<ChevronRight class="w-4 h-4 text-on-surface-variant shrink-0" />
 					</button>
 				</div>

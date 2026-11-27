@@ -417,7 +417,11 @@
 				<span class="w-px h-4 bg-outline-variant/40"></span>
 				<span class="{MONO} text-on-surface-variant">Event Ticketing Architecture</span>
 			</div>
-			<div class="flex items-center gap-5">
+			<div class="flex flex-wrap items-center justify-center gap-5">
+				<a href="/legal#refunds" class="{MONO} text-on-surface-variant transition-colors hover:text-primary">Refunds</a>
+				<a href="/legal#terms" class="{MONO} text-on-surface-variant transition-colors hover:text-primary">Terms</a>
+				<a href="/legal#privacy" class="{MONO} text-on-surface-variant transition-colors hover:text-primary">Privacy</a>
+				<a href="/legal#tsa" class="{MONO} text-on-surface-variant transition-colors hover:text-primary">Organizer TSA</a>
 				<a
 					href={adminUrl}
 					class="flex items-center gap-1 {MONO} text-on-surface-variant transition-colors hover:text-primary"
@@ -432,7 +436,7 @@
 					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
 					System Status: 99.98% Optimal
 				</span>
-				<span class="{MONO} text-on-surface-variant">© {new Date().getFullYear()} Owltside Protocol</span>
+				<span class="{MONO} text-on-surface-variant">© {new Date().getFullYear()} Owltside</span>
 			</div>
 		</div>
 	</footer>
