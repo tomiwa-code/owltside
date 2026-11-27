@@ -1,15 +1,12 @@
 <script lang="ts">
 	import { busyEnhance as enhance } from '$lib/utils/enhance';
+	import { goto } from '$app/navigation';
 	import {
-		ArrowLeft,
 		ArrowRight,
 		ArrowUpRight,
 		BadgeCheck,
-		Bell,
-		CalendarDays,
 		Lock,
 		MoreVertical,
-		Search,
 		Send,
 		ShieldCheck,
 		Smile,
@@ -18,7 +15,6 @@
 	import Avatar from '$components/Avatar.svelte';
 	import DesktopInboxList from '$components/DesktopInboxList.svelte';
 	import TopBar from '$components/TopBar.svelte';
-	import { toast } from '$lib/state/toast.svelte';
 	import { appSettings } from '$lib/state/settings.svelte';
 	import { notifyIncomingDirectMessage } from '$lib/push.client';
 	import { browser } from '$app/environment';
@@ -151,7 +147,7 @@
 	<div class="border-b border-surface-glass-border bg-surface-container-low/60">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-5 flex flex-wrap items-center justify-between gap-4">
 			<span class="flex items-center gap-3 min-w-0">
-				<span class="font-display text-headline-lg text-on-surface">Direct Comms</span>
+				<span class="font-display text-headline-lg text-on-surface">Inbox</span>
 				<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{(conversations.data ?? []).length} Sessions</span>
 			</span>
 		</div>
@@ -174,16 +170,14 @@
 					<a href="/users/{conv.peer.handle}" class="block text-body-sm text-on-surface-variant truncate pt-0.5 hover:text-primary hover:underline transition-colors">{conv.peer.bio ?? `@${conv.peer.handle}`}</a>
 				</div>
 				<div class="flex items-center gap-1 shrink-0">
-					{#each [CalendarDays, MoreVertical] as Icon, i (i)}
-						<button
-							type="button"
-							aria-label="Session action"
-							onclick={() => toast('Schedule rails ship with the comms node v2', 'info')}
-							class="w-10 h-10 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
-						>
-							<Icon class="w-4.5 h-4.5" />
-						</button>
-					{/each}
+					<button
+						type="button"
+						aria-label="View {conv.peer.name} profile"
+						onclick={() => goto(`/users/${conv.peer.handle}`)}
+						class="w-10 h-10 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
+					>
+						<MoreVertical class="w-4.5 h-4.5" />
+					</button>
 				</div>
 			</div>
 
@@ -356,14 +350,6 @@
 				<a href="/events/{conv.event.slug}" aria-label="Open event brief" class="h-9 px-3 rounded-full bg-primary/10 text-primary text-label-badge font-semibold flex items-center gap-1 shrink-0">Open <ArrowUpRight class="w-3.5 h-3.5" /></a>
 			</div>
 		{/if}
-		<div class="mx-gutter mt-2 flex gap-2">
-				{#each [{ icon: CalendarDays, label: 'Schedule' }] as action (action.label)}
-					{@const Icon = action.icon}
-					<button type="button" class="h-10 flex-1 rounded-xl bg-surface-container border border-surface-glass-border text-on-surface-variant flex items-center justify-center gap-2 text-label-badge" onclick={() => toast('Schedule rails ship with the comms node v2', 'info')}>
-						<Icon class="w-4 h-4" />{action.label}
-					</button>
-				{/each}
-			</div>
 
 		<div bind:this={scroller} class="flex flex-col gap-space-md px-margin pt-space-xs overflow-y-auto flex-1 max-h-[calc(100dvh-18rem)]">
 			{#each messages.data ?? [] as m, i (m.id)}

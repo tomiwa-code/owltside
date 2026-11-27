@@ -19,7 +19,6 @@
 		ChevronLeft,
 		ChevronRight,
 		MapPin,
-		Radio,
 		Search,
 		ShieldCheck
 	} from '@lucide/svelte';
@@ -116,10 +115,6 @@
 		<div class="flex items-end justify-between gap-6">
 			<div>
 				<h1 class="font-display text-display-hero text-on-surface pt-3">Live Signals &amp; Gatherings</h1>
-			</div>
-			<div class="hidden lg:flex items-center gap-2 pb-2">
-				<Radio class="w-4 h-4 text-tertiary" />
-				<span class="{MONO} text-on-surface-variant">42 active gates in Lagos today</span>
 			</div>
 		</div>
 		<div class="flex flex-wrap items-center gap-2 pt-7">
