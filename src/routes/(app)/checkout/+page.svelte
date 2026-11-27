@@ -406,6 +406,9 @@ import type { ResolvedPromo } from '$lib/types';
 						<ShieldCheck class="w-4 h-4 text-accent-emerald shrink-0" />
 						Instant pass added directly to your OWLTSIDE wallet after Paystack confirmation
 					</span>
+					<p class="text-center text-xs text-on-surface-variant">
+						By completing payment, you agree to Owltside’s <a href="/legal#refunds" class="text-primary underline">Refund Policy</a> and <a href="/legal#terms" class="text-primary underline">Terms of Use</a> (NGN only; service &amp; processing fees are non-refundable).
+					</p>
 				</div>
 				<div class="grid grid-cols-3 border-t border-surface-glass-border bg-surface-base">
 					<span class="flex flex-col items-center gap-2 py-4 px-2 text-center">
@@ -458,11 +461,15 @@ import type { ResolvedPromo } from '$lib/types';
 			</span>
 			<span class="text-body-sm text-on-surface-variant">© {new Date().getFullYear()} OWLTSIDE Protocol. Engineered for nocturnal creators &amp; urban nodes.</span>
 			<span class="flex items-center gap-6">
-				{#each ['Status', 'Privacy & Terms', 'Telemetry'] as link}
-					<button type="button" onclick={() => toast(`${link} console ships with the organizer suite`, 'info')} class="font-code text-label-badge tracking-[0.08em] text-on-surface-variant hover:text-on-surface transition-colors">
-						{link}
-					</button>
-				{/each}
+				<a href="/legal#refunds" class="font-code text-label-badge tracking-[0.08em] text-on-surface-variant hover:text-on-surface transition-colors">
+					Refund Policy
+				</a>
+				<a href="/legal#terms" class="font-code text-label-badge tracking-[0.08em] text-on-surface-variant hover:text-on-surface transition-colors">
+					Terms of Use
+				</a>
+				<a href="/legal#privacy" class="font-code text-label-badge tracking-[0.08em] text-on-surface-variant hover:text-on-surface transition-colors">
+					Privacy Policy
+				</a>
 			</span>
 		</div>
 	</footer>
@@ -642,6 +649,9 @@ import type { ResolvedPromo } from '$lib/types';
 					</p>
 				</div>
 			</div>
+			<p class="px-1 text-center text-xs text-on-surface-variant">
+				Subject to Owltside’s <a href="/legal#refunds" class="text-primary underline">Refund Policy</a> &amp; <a href="/legal#terms" class="text-primary underline">Terms of Use</a>. Owltside fees are non-refundable.
+			</p>
 		</form>
 	</div>
 

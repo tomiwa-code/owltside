@@ -565,6 +565,7 @@ import { canUseTicketActions, isVerifiedTicket, ticketStatusLabel } from '$lib/u
 				<div class="min-w-0">
 					<p class="font-code text-label-badge tracking-wide text-on-surface">{verified ? 'Verified — refund unavailable' : refundEligible ? 'Eligible for Full Refund' : 'Organizer Policy Review'}</p>
 					<p class="text-body-sm text-on-surface-variant mt-0.5">{verified ? 'This pass has already been checked in at the gate.' : refundEligible ? `Valid policy window until ${refundDeadlineLabel} WAT` : 'Your request will be reviewed under the organizer’s refund policy.'}</p>
+					<p class="text-xs text-on-surface-variant mt-1">Platform &amp; processing fees are non-refundable. <a href="/legal#refunds" class="text-primary underline">Read the Refund Policy</a>.</p>
 				</div>
 			</div>
 		</div>

@@ -168,7 +168,7 @@
 
 					<label class="flex items-start gap-2.5 cursor-pointer select-none">
 						<input type="checkbox" name="terms" value="accepted" bind:checked={terms} required class="mt-0.5 w-4 h-4 rounded accent-[#c0c1ff]" />
-						<span class="text-body-sm text-on-surface-variant">I agree to the <a href="/legal#terms" class="text-primary font-medium underline">Terms</a> and <a href="/legal#privacy" class="text-primary font-medium underline">Privacy Policy</a>.</span>
+						<span class="text-body-sm text-on-surface-variant">I agree to the <a href="/legal#terms" class="text-primary font-medium underline">Terms of Use</a>, <a href="/legal#privacy" class="text-primary font-medium underline">Privacy Policy</a>, and <a href="/legal#refunds" class="text-primary font-medium underline">Refund Policy</a>.</span>
 					</label>
 					<label class="flex items-start gap-2.5 cursor-pointer select-none">
 						<input type="checkbox" name="ageConfirmed" value="confirmed" bind:checked={ageConfirmed} required class="mt-0.5 w-4 h-4 rounded accent-[#c0c1ff]" />
@@ -326,7 +326,7 @@
 
 			<label class="flex items-start gap-2.5 cursor-pointer select-none">
 				<input type="checkbox" name="terms" value="accepted" bind:checked={terms} required class="mt-0.5 w-4 h-4 rounded accent-[#c0c1ff]" />
-				<span class="text-body-sm text-on-surface-variant">I agree to the <a href="/legal#terms" class="text-primary font-medium underline">Terms</a> and <a href="/legal#privacy" class="text-primary font-medium underline">Privacy Policy</a>.</span>
+				<span class="text-body-sm text-on-surface-variant">I agree to the <a href="/legal#terms" class="text-primary font-medium underline">Terms of Use</a>, <a href="/legal#privacy" class="text-primary font-medium underline">Privacy Policy</a>, and <a href="/legal#refunds" class="text-primary font-medium underline">Refund Policy</a>.</span>
 			</label>
 			<label class="flex items-start gap-2.5 cursor-pointer select-none">
 				<input type="checkbox" name="ageConfirmed" value="confirmed" bind:checked={ageConfirmed} required class="mt-0.5 w-4 h-4 rounded accent-[#c0c1ff]" />
