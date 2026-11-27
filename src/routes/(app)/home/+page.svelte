@@ -196,12 +196,8 @@ import DesktopHomeFeed from '$components/DesktopHomeFeed.svelte';
 		<!-- featured hero -->
 		{#if featured && (category === 'all' || featured.category === category)}
 			<div class="flex flex-col gap-space-xs">
-				<div class="flex items-center justify-between">
-					<div class="flex items-center gap-1.5">
-						<span class="w-2 h-2 rounded-full bg-accent-amber animate-pulse"></span>
-						<span class="font-display text-headline-md text-on-surface">Curated Spotlight</span>
-					</div>
-					<span class="text-label-badge text-tertiary">Official Partner</span>
+				<div class="flex items-center">
+					<span class="font-display text-headline-md text-on-surface">Curated Spotlight</span>
 				</div>
 				<HeroCard event={featured} />
 			</div>

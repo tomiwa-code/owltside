@@ -251,4 +251,22 @@ describe('verified organizers and user location', () => {
 
 		expect(screen.getAllByText('Abuja').length).toBeGreaterThanOrEqual(2);
 	});
+
+	it('keeps Curated Spotlight and removes active gates badge, amber dot, and Official Partner label on home', () => {
+		const { container } = render(HomePage, {
+			props: {
+				data: {
+					...layoutData,
+					events: demoEvents
+				}
+			}
+		});
+
+		const spotlightHeading = screen.getByText('Curated Spotlight');
+		expect(spotlightHeading).toBeInTheDocument();
+		expect(spotlightHeading.parentElement?.querySelector('.bg-accent-amber')).toBeNull();
+		expect(screen.queryByText(/active gates in Lagos today/i)).not.toBeInTheDocument();
+		expect(screen.queryByText(/Official Partner/i)).not.toBeInTheDocument();
+		expect(container.textContent).not.toMatch(/42 active gates/i);
+	});
 });

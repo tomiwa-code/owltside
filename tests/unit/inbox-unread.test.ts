@@ -173,4 +173,25 @@ describe('inbox unread counts', () => {
 		expect(await screen.findByRole('link', { name: 'Inbox, 120 unread' })).toBeInTheDocument();
 		expect(screen.getByText('99+')).toBeInTheDocument();
 	});
+
+	it('displays Inbox instead of Direct Comms and omits the Schedule button in chat', () => {
+		const inboxView = render(InboxPage, {
+			data: { ...layout, conversations: conversationsPayload(), messageRequests: [] }
+		});
+		expect(screen.getAllByText('Inbox').length).toBeGreaterThanOrEqual(2);
+		expect(screen.queryByText(/Direct Comms/i)).not.toBeInTheDocument();
+		inboxView.unmount();
+
+		render(ChatPage, {
+			data: {
+				...layout,
+				conversation: personA(),
+				messages,
+				conversations: conversationsPayload()
+			}
+		});
+		expect(screen.getByText('Inbox')).toBeInTheDocument();
+		expect(screen.queryByText(/Direct Comms/i)).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: /Schedule/i })).not.toBeInTheDocument();
+	});
 });

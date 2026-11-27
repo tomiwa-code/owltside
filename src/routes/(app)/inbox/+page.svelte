@@ -98,7 +98,7 @@
 	<div class="border-b border-surface-glass-border bg-surface-container-low/60">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-5 flex flex-wrap items-center justify-between gap-4">
 			<span class="flex items-center gap-3 min-w-0">
-				<span class="font-display text-headline-lg text-on-surface">Direct Comms</span>
+				<span class="font-display text-headline-lg text-on-surface">Inbox</span>
 				<span class="{MONO} bg-surface-container-high border border-surface-glass-border text-on-surface px-2 py-0.5 rounded">{(conversations.data ?? []).length} Sessions</span>
 				{#if unreadCount > 0}
 					<span class="{MONO} bg-red-600 text-white px-2 py-0.5 rounded" aria-label="{formatCount(unreadCount)} unread messages">{formatCount(unreadCount)} Unread</span>
