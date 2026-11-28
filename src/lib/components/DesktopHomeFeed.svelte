@@ -220,15 +220,12 @@
 			<!-- trending -->
 			<section>
 				<div class="flex items-center justify-between gap-4">
-					<div class="flex items-center gap-2.5 min-w-0">
-						<span class="w-2 h-2 rounded-full bg-primary"></span>
-						<h2 class="font-display text-headline-lg text-on-surface truncate">Trending This Week in Lagos</h2>
-					</div>
+					<h2 class="font-display text-headline-lg text-on-surface truncate min-w-0">Trending This Week in Lagos</h2>
 					<button
 						onclick={() => goto('/explore')}
 						class="{MONO} text-primary flex items-center gap-1 hover:underline shrink-0"
 					>
-						<span>View Index</span>
+						<span>More</span>
 						<ArrowUpRight class="w-3.5 h-3.5" />
 					</button>
 				</div>
@@ -414,10 +411,6 @@
 				<a href="/legal#terms" class="{MONO} text-on-surface-variant transition-colors hover:text-primary">Terms</a>
 				<a href="/legal#privacy" class="{MONO} text-on-surface-variant transition-colors hover:text-primary">Privacy</a>
 				<a href="/legal#tsa" class="{MONO} text-on-surface-variant transition-colors hover:text-primary">Organizer TSA</a>
-				<span class="flex items-center gap-1.5 {MONO} text-on-surface-variant">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
-					System Status: 99.98% Optimal
-				</span>
 				<span class="{MONO} text-on-surface-variant">© {new Date().getFullYear()} Owltside</span>
 			</div>
 		</div>

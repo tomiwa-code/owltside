@@ -1134,8 +1134,8 @@
 							<span class="text-on-surface">{payoutLinked ? '₦0 — paid by buyers' : '—'}</span>
 						</div>
 						<div class="flex items-center justify-between gap-3">
-							<span class="text-on-surface-variant">Next Automated Sweep</span>
-							<span class="text-on-surface">{payoutLinked ? 'Tonight at 23:59 WAT' : '—'}</span>
+							<span class="text-on-surface-variant">Payout Timing</span>
+							<span class="text-on-surface">{payoutLinked ? 'After the event ends' : '—'}</span>
 						</div>
 					</div>
 					{#if !payoutLinked}
@@ -1153,19 +1153,8 @@
 
 	<footer class="mt-4 border-t border-surface-glass-border">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
-			<span class="flex items-center gap-3">
-				<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
-				<span class="w-px h-4 bg-outline-variant/40"></span>
-				<span class="{MONO} text-on-surface-variant">Decentralized Event Protocol</span>
-			</span>
-			<span class="flex items-center gap-5">
-				<span class="flex items-center gap-1.5 {MONO} text-on-surface-variant">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
-					Mainnet 99.98% Operational
-				</span>
-				<span class="{MONO} text-on-surface-variant">Latency: 24ms</span>
-				<span class="{MONO} text-on-surface-variant">© {new Date().getFullYear()} Owltside Protocol</span>
-			</span>
+			<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
+			<span class="{MONO} text-on-surface-variant">© {new Date().getFullYear()} Owltside Protocol</span>
 		</div>
 	</footer>
 </div>
@@ -1628,12 +1617,12 @@
 		<section class="flex flex-col gap-space-sm rounded-xl bg-surface-container border border-outline-variant/30 p-space-md shadow-sm">
 			<div class="flex items-center justify-between gap-2"><h2 class="font-display text-headline-md text-on-surface">Settlement Account</h2><span class="inline-flex items-center gap-1 text-label-badge {payoutLinked ? 'text-accent-emerald' : 'text-on-surface-variant'}"><ShieldCheck class="w-3.5 h-3.5 {payoutLinked ? 'text-accent-emerald' : 'text-outline-variant'}" />{payoutLinked ? 'KYC active' : payoutAccountPending ? 'KYC pending' : 'Not verified'}</span></div>
 			{#if payoutLinked}
-				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3"><div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">{payout.bank}</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div><span class="block font-code text-label-badge text-on-surface-variant pt-1">Account: {maskAccountNumber(payout.accountNumber)}</span><div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">Paystack Split Active</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Platform commission</span><span class="text-on-surface">₦0 — paid by buyers</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">Tonight at 23:59 WAT</span></div></div></div>
+				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3"><div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">{payout.bank}</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div><span class="block font-code text-label-badge text-on-surface-variant pt-1">Account: {maskAccountNumber(payout.accountNumber)}</span><div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">Paystack Split Active</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Platform commission</span><span class="text-on-surface">₦0 — paid by buyers</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Payout timing</span><span class="text-on-surface">After the event ends</span></div></div></div>
 			{:else}
 				<div class="rounded-lg bg-surface-container-high/60 border border-outline-variant/20 p-3">
 					<div class="flex items-start justify-between gap-2"><span class="font-display text-body-lg font-bold text-on-surface">{payout.bank || 'No payout account linked'}</span><span class="text-label-badge text-on-surface-variant">NGN default</span></div>
 					<span class="block font-code text-label-badge text-on-surface-variant pt-1">{payout.accountNumber ? `Account: ${maskAccountNumber(payout.accountNumber)}` : 'Account: —'}</span>
-					<div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">{payoutLinked ? 'Paystack Split Active' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Platform commission</span><span class="text-on-surface">{payoutLinked ? '₦0 — paid by buyers' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Next automated sweep</span><span class="text-on-surface">{payoutLinked ? 'Tonight at 23:59 WAT' : '—'}</span></div></div>
+					<div class="flex flex-col gap-2 border-t border-outline-variant/20 mt-3 pt-3 text-body-sm"><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Split mechanism</span><span class="text-on-surface">{payoutLinked ? 'Paystack Split Active' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Platform commission</span><span class="text-on-surface">{payoutLinked ? '₦0 — paid by buyers' : '—'}</span></div><div class="flex items-center justify-between gap-2"><span class="text-on-surface-variant">Payout timing</span><span class="text-on-surface">{payoutLinked ? 'After the event ends' : '—'}</span></div></div>
 					<p class="text-xs text-on-surface-variant mt-3">Verify your payout account in Settings → Verification to enable settlements.</p>
 				</div>
 			{/if}

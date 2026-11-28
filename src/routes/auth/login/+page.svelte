@@ -215,10 +215,6 @@
 				<span class="{MONO} text-on-surface-variant">Event Ticketing Architecture</span>
 			</div>
 			<div class="flex items-center gap-5">
-				<span class="flex items-center gap-1.5 {MONO} text-on-surface-variant">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
-					System Status: 99.98% Optimal
-				</span>
 				<span class="{MONO} text-on-surface-variant">© {new Date().getFullYear()} Owltside Protocol</span>
 			</div>
 		</div>
