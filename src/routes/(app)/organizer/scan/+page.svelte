@@ -772,19 +772,8 @@
 
 	<footer class="mt-4 border-t border-surface-glass-border">
 		<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
-			<span class="flex items-center gap-3">
-				<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
-				<span class="w-px h-4 bg-outline-variant/40"></span>
-				<span class="{MONO} text-on-surface-variant">Decentralized Event Protocol</span>
-			</span>
-			<span class="flex items-center gap-5">
-				<span class="flex items-center gap-1.5 {MONO} text-on-surface-variant">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
-					Mainnet 99.98% Operational
-				</span>
-				<span class="{MONO} text-on-surface-variant">Latency: 24ms</span>
-				<span class="{MONO} text-on-surface-variant">© {new Date().getFullYear()} Owltside Protocol</span>
-			</span>
+			<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
+			<span class="{MONO} text-on-surface-variant">© {new Date().getFullYear()} Owltside Protocol</span>
 		</div>
 	</footer>
 </div>

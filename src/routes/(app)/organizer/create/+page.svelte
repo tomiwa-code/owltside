@@ -1013,14 +1013,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 		<!-- footer -->
 		<footer class="border-t border-surface-glass-border">
 			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
-				<span class="flex items-center gap-3">
-					<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
-					<span class="{MONO} text-on-surface-variant">Decentralized Event Protocol</span>
-				</span>
-				<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
-					Mainnet 99.98% Operational • Latency: 24ms
-				</span>
+				<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
 				<span class="text-body-sm text-on-surface-variant">© {new Date().getFullYear()} OWLTSIDE Protocol. All rights reserved.</span>
 			</div>
 		</footer>
@@ -1235,14 +1228,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 		<!-- footer -->
 		<footer class="border-t border-surface-glass-border">
 			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
-				<span class="flex items-center gap-3">
-					<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
-					<span class="{MONO} text-on-surface-variant">Decentralized Event Protocol</span>
-				</span>
-				<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
-					Mainnet 99.98% Operational • Latency: 24ms
-				</span>
+				<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
 				<span class="text-body-sm text-on-surface-variant">© {new Date().getFullYear()} OWLTSIDE Protocol. All rights reserved.</span>
 			</div>
 		</footer>
@@ -1502,14 +1488,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 		<!-- footer -->
 		<footer class="border-t border-surface-glass-border">
 			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
-				<span class="flex items-center gap-3">
-					<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
-					<span class="{MONO} text-on-surface-variant">Decentralized Event Protocol</span>
-				</span>
-				<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
-					Mainnet 99.98% Operational • Latency: 24ms
-				</span>
+				<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
 				<span class="text-body-sm text-on-surface-variant">© {new Date().getFullYear()} OWLTSIDE Protocol. All rights reserved.</span>
 			</div>
 		</footer>
@@ -1903,14 +1882,7 @@ import type { Profile, WizardSpeaker } from '$lib/types';
 		<!-- footer -->
 		<footer class="mt-8 border-t border-surface-glass-border">
 			<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 py-6 flex flex-col lg:flex-row items-center justify-between gap-3">
-				<span class="flex items-center gap-3">
-					<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
-					<span class="{MONO} text-on-surface-variant">Decentralized Event Protocol</span>
-				</span>
-				<span class="flex items-center gap-2 {MONO} text-on-surface-variant">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
-					Mainnet 99.98% Operational • Latency: 24ms
-				</span>
+				<span class="font-display font-bold text-on-surface tracking-tight">OWLTSIDE</span>
 				<span class="text-body-sm text-on-surface-variant">© {new Date().getFullYear()} OWLTSIDE Protocol. All rights reserved.</span>
 			</div>
 		</footer>

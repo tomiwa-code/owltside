@@ -107,12 +107,7 @@ import type { EventItem } from '$lib/types';
 
 	<div class="mx-auto w-full max-w-[1400px] px-6 xl:px-10 pt-10 pb-2 flex flex-wrap items-end justify-between gap-4">
 		<div class="min-w-0">
-			<span class="flex items-center gap-2 {MONO_DESKTOP} text-on-surface-variant">
-				<span>Identity_Node</span>
-				<span class="text-outline-variant">/</span>
-				<span>Public_Profile</span>
-			</span>
-			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface mt-3">Profile & Pass Portfolio</h1>
+			<h1 class="font-display text-[30px] leading-9 font-bold tracking-tight text-on-surface">Profile & Pass Portfolio</h1>
 			<p class="text-body-md text-on-surface-variant mt-2">Public identity, vault readiness and the pass calendar for {profile.name}.</p>
 		</div>
 		<div class="flex items-center gap-3">
@@ -304,10 +299,6 @@ import type { EventItem } from '$lib/types';
 				<span class="{MONO_DESKTOP} text-on-surface-variant">Event Ticketing Architecture</span>
 			</span>
 			<span class="flex items-center gap-5">
-				<span class="flex items-center gap-1.5 {MONO_DESKTOP} text-on-surface-variant">
-					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
-					System Status: 99.98% Optimal
-				</span>
 				<span class="{MONO_DESKTOP} text-on-surface-variant">© {new Date().getFullYear()} Owltside Protocol</span>
 			</span>
 		</div>
