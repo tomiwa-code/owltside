@@ -30,7 +30,6 @@
 	import { bookmarks, currency, toggleIn } from '$lib/state/prefs.svelte';
 	import { toast } from '$lib/state/toast.svelte';
 	import { page } from '$app/state';
-	import { env as publicEnv } from '$env/dynamic/public';
 	import { fmtDate, fmtTime, fmtDateFull } from '$lib/utils/dates';
 	import { formatMoney } from '$lib/utils/money';
 	import {
@@ -58,8 +57,6 @@
 	);
 
 	const WRAP = 'mx-auto w-full max-w-[1400px] px-6 xl:px-10';
-	/** Internal control plane — operators only; exposed as a discreet footer link. */
-	const adminUrl = publicEnv.PUBLIC_ADMIN_URL || 'http://localhost:5174';
 	const MONO = 'font-code text-label-badge tracking-[0.14em] uppercase';
 
 	/* ── feed state ─────────────────────────────────────────────────────── */
@@ -417,16 +414,6 @@
 				<a href="/legal#terms" class="{MONO} text-on-surface-variant transition-colors hover:text-primary">Terms</a>
 				<a href="/legal#privacy" class="{MONO} text-on-surface-variant transition-colors hover:text-primary">Privacy</a>
 				<a href="/legal#tsa" class="{MONO} text-on-surface-variant transition-colors hover:text-primary">Organizer TSA</a>
-				<a
-					href={adminUrl}
-					class="flex items-center gap-1 {MONO} text-on-surface-variant transition-colors hover:text-primary"
-					rel="noreferrer"
-					target="_blank"
-					title="Owltside Admin — internal control plane"
-				>
-					Admin Console
-					<ArrowUpRight size={11} />
-				</a>
 				<span class="flex items-center gap-1.5 {MONO} text-on-surface-variant">
 					<span class="w-1.5 h-1.5 rounded-full bg-accent-emerald"></span>
 					System Status: 99.98% Optimal
