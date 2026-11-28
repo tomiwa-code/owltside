@@ -397,9 +397,8 @@ npm install
 npm run dev      # http://localhost:5174
 ```
 
-The public app links to it from the desktop footer via `PUBLIC_ADMIN_URL`
-(default `http://localhost:5174`), and the admin sidebar links back via
-`PUBLIC_APP_URL`.
+The public app does not link to the admin app — it is reached directly at its
+deployment URL, and the admin sidebar links back via `PUBLIC_APP_URL`.
 
 ### Verification and admin-requested updates
 

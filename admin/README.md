@@ -3,8 +3,8 @@
 Internal, admin-only workspace for the Owltside event, ticketing and payments
 platform. It is a **separate SvelteKit app** (`owltside/admin`) that reads and
 governs the same platform data as the customer app, and links back to it from
-the sidebar (`PUBLIC_APP_URL`). The public app links here from its desktop
-footer (`PUBLIC_ADMIN_URL`).
+the sidebar (`PUBLIC_APP_URL`). The public app does not link to the admin app —
+reach it directly at its deployment URL.
 
 ```text
 owltside/            customer app  → http://localhost:5173
